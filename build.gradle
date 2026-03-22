@@ -1,0 +1,46 @@
+plugins {
+    id 'groovy'
+    id 'java-gradle-plugin'
+    id 'maven-publish'
+}
+
+group = 'com.dochiri'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+    gradlePluginPortal()
+}
+
+dependencies {
+    implementation gradleApi()
+    implementation localGroovy()
+    implementation 'com.github.spotbugs.snom:spotbugs-gradle-plugin:6.0.26'
+
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+gradlePlugin {
+    plugins {
+        lintConvention {
+            id = 'com.dochiri.lint-convention'
+            implementationClass = 'com.dochiri.convention.plugin.LintConventionPlugin'
+            displayName = 'Dochiri Lint Convention'
+            description = 'Convention plugin for Checkstyle, PMD, and SpotBugs.'
+        }
+    }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+}
+
+test {
+    useJUnitPlatform()
+}
