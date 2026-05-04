@@ -21,4 +21,4 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 
 ## 자세한 내용
 
-- [AI 코드 컨벤션을 빌드에서 강제해 일관성 지키기](docs/velog/AI%20코드%20컨벤션을%20빌드에서%20강제해%20일관성%20지키기.md)
+- [AI 코드 컨벤션을 빌드에서 강제해 일관성 지키기](https://velog.io/@dochiri0916/AI-%EC%BD%94%EB%93%9C-%EC%BB%A8%EB%B2%A4%EC%85%98%EC%9D%84-%EB%B9%8C%EB%93%9C%EC%97%90%EC%84%9C-%EA%B0%95%EC%A0%9C%ED%95%B4-%EC%9D%BC%EA%B4%80%EC%84%B1-%EC%A7%80%ED%82%A4%EA%B8%B0)
