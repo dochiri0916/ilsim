@@ -1,10 +1,10 @@
-# 프레젠테이션 컨벤션
+# 인바운드 웹 어댑터 컨벤션
 
 ## 핵심 원칙
 
 - 컨트롤러는 인바운드 유스케이스(`port/in`)만 호출한다.
-- 프레젠테이션은 인프라스트럭처 구현체에 직접 의존하지 않는다.
-- 요청/응답 DTO는 프레젠테이션 계층에 둔다.
+- 인바운드 웹 어댑터는 아웃바운드 어댑터 구현체에 직접 의존하지 않는다.
+- 요청/응답 DTO는 `adapter.in.web` 계층에 둔다.
 
 ## 요청 처리 원칙
 
@@ -24,8 +24,11 @@
 
 ## 자동 검증
 
-- 샘플 `HexagonalArchitectureTest`(ArchUnit)
-  - `presentation -> infrastructure` 직접 의존 금지
+- `validateArchUnitArchitecture`
+  - `adapter.in.web -> adapter.out` 직접 의존 금지
+- `validateClaudeConventions`
+  - Controller/Request/Response의 `adapter.in.web` 패키지 위치 검증
+  - 컨트롤러가 `application..port.in..` 외 계층 타입을 직접 import하지 않는지 검증
 - `checkstyleMain`, `pmdMain`, `spotbugsMain`
   - 스타일/품질/버그 기본 검증
 

@@ -4,7 +4,7 @@
 
 - 애플리케이션 서비스는 유스케이스 인터페이스(`port/in`)를 구현한다.
 - 애플리케이션은 도메인과 포트(`port/in`, `port/out`)에만 의존한다.
-- 애플리케이션은 `infrastructure`, `presentation`에 직접 의존하지 않는다.
+- 애플리케이션은 `adapter.in.web`, `adapter.out`에 직접 의존하지 않는다.
 - 유스케이스 입출력은 `Command`, `Result` DTO로 분리한다.
 
 ## 포트 설계 원칙
@@ -21,16 +21,19 @@
 ## DTO 원칙
 
 - 애플리케이션 외부 응답에 필요한 조회 전용 모델은 `port/out/dto`에 둔다.
-- 프레젠테이션 DTO와 도메인 모델을 직접 섞지 않는다.
+- 인바운드 웹 어댑터 DTO와 도메인 모델을 직접 섞지 않는다.
 
 ## 자동 검증
 
 - `validateHexagonalArchitecture`
-  - 애플리케이션 -> `infrastructure`/`presentation` 의존 금지
+  - 애플리케이션 -> `adapter` 의존 금지
+- `validateArchUnitArchitecture`
+  - 컴파일된 클래스 기준 애플리케이션 레이어 의존성 규칙 재검증
+- `validateClaudeConventions`
+  - UseCase/Command/Query/Result/Port/Service의 패키지와 타입 규칙 검증
+  - 컨트롤러가 애플리케이션 `port/in` 외 구현체에 의존하지 않는지 검증
 - `checkstyleMain`, `pmdMain`, `spotbugsMain`
   - 스타일/소스 품질/바이트코드 버그 기본 검증
-- 샘플 `HexagonalArchitectureTest`(ArchUnit)
-  - 애플리케이션 레이어 의존성 규칙 재검증
 
 ## 리뷰 검증
 
