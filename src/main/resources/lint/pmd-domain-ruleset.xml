@@ -9,6 +9,7 @@
     <rule ref="category/java/bestpractices.xml"/>
     <rule ref="category/java/codestyle.xml">
         <exclude name="ShortClassName"/>
+        <exclude name="ShortVariable"/>
     </rule>
     <rule ref="category/java/design.xml/CyclomaticComplexity">
         <properties>

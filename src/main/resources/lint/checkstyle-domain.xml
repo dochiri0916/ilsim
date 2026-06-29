@@ -6,6 +6,9 @@
     <property name="severity" value="error"/>
     <property name="charset" value="UTF-8"/>
 
+    <module name="FileTabCharacter"/>
+    <module name="NewlineAtEndOfFile"/>
+
     <module name="LineLength">
         <property name="max" value="120"/>
     </module>
@@ -14,9 +17,15 @@
         <module name="AvoidStarImport"/>
         <module name="NeedBraces"/>
         <module name="UnusedImports"/>
+        <module name="OneTopLevelClass"/>
+        <module name="OuterTypeFilename"/>
+        <module name="OneStatementPerLine"/>
+        <module name="MultipleVariableDeclarations"/>
+        <module name="ModifierOrder"/>
+        <module name="RedundantModifier"/>
         <module name="FinalClass"/>
         <module name="IllegalImport">
-            <property name="illegalPkgs" value="org.springframework,jakarta.persistence,javax.persistence,com.querydsl"/>
+            <property name="illegalPkgs" value="org.springframework,jakarta.persistence,javax.persistence,com.querydsl,lombok"/>
         </module>
     </module>
 </module>

@@ -23,12 +23,12 @@ class HexagonalArchitectureValidator {
                 if (layer == 'domain' && (SourceInspector.isInLayer(imported, convention.applicationPackageSegment)
                         || SourceInspector.isInLayer(imported, convention.infrastructurePackageSegment)
                         || SourceInspector.isInLayer(imported, convention.presentationPackageSegment))) {
-                    violations.add("${project.relativePath(file)} imports ${imported} (domain -> application/infrastructure/presentation forbidden)")
+                    violations.add("${project.relativePath(file)} imports ${imported} (domain -> application/adapter forbidden)")
                 }
 
                 if (layer == 'application' && (SourceInspector.isInLayer(imported, convention.infrastructurePackageSegment)
                         || SourceInspector.isInLayer(imported, convention.presentationPackageSegment))) {
-                    violations.add("${project.relativePath(file)} imports ${imported} (application -> infrastructure/presentation forbidden)")
+                    violations.add("${project.relativePath(file)} imports ${imported} (application -> adapter forbidden)")
                 }
             }
         }
@@ -44,10 +44,10 @@ class HexagonalArchitectureValidator {
             return 'application'
         }
         if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)) {
-            return 'infrastructure'
+            return 'adapter.out'
         }
         if (SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)) {
-            return 'presentation'
+            return 'adapter.in.web'
         }
         return null
     }

@@ -32,17 +32,16 @@ class DomainStaticFactoryValidator {
             if (className == null || classExceptions.contains(className)) {
                 return
             }
-
-            if (hasPublicConstructor(content, className)) {
-                violations.add("${project.relativePath(file)} class '${className}' must not expose public constructor (use static factory)")
+            if (className.endsWith('Exception') || className.endsWith('Service')) {
+                return
             }
 
-            if (!hasPrivateNoArgConstructor(content, className)) {
-                violations.add("${project.relativePath(file)} class '${className}' must declare private no-arg constructor")
+            if (hasNonPrivateConstructor(content, className)) {
+                violations.add("${project.relativePath(file)} class '${className}' must not expose public/protected constructor (use static factory)")
             }
 
-            if (hasArgumentConstructor(content, className)) {
-                violations.add("${project.relativePath(file)} class '${className}' must not declare argument constructors (use static factory only)")
+            if (!hasPrivateConstructor(content, className)) {
+                violations.add("${project.relativePath(file)} class '${className}' must declare a private constructor")
             }
 
             if (!hasPublicStaticFactoryMethod(content, className)) {
@@ -57,13 +56,13 @@ class DomainStaticFactoryValidator {
         return (source =~ /(?m)\b(interface|enum|record)\b/).find()
     }
 
-    private static boolean hasPublicConstructor(String source, String className) {
-        String pattern = "(?m)^\\s*public\\s+${className}\\s*\\("
+    private static boolean hasNonPrivateConstructor(String source, String className) {
+        String pattern = "(?m)^\\s*(public|protected)\\s+${className}\\s*\\("
         return (source =~ pattern).find()
     }
 
-    private static boolean hasPrivateNoArgConstructor(String source, String className) {
-        String constructorPattern = "(?m)^\\s*private\\s+${className}\\s*\\(\\s*\\)"
+    private static boolean hasPrivateConstructor(String source, String className) {
+        String constructorPattern = "(?m)^\\s*private\\s+${className}\\s*\\("
         if ((source =~ constructorPattern).find()) {
             return true
         }
@@ -76,18 +75,6 @@ class DomainStaticFactoryValidator {
                 continue
             }
             if ((args =~ /access\s*=\s*AccessLevel\.PRIVATE/).find()) {
-                return true
-            }
-        }
-        return false
-    }
-
-    private static boolean hasArgumentConstructor(String source, String className) {
-        String pattern = "(?m)^\\s*(public|protected|private)\\s+${className}\\s*\\(([^)]*)\\)"
-        def matcher = source =~ pattern
-        while (matcher.find()) {
-            String args = matcher.group(2)?.trim()
-            if (args != null && !args.isEmpty()) {
                 return true
             }
         }
