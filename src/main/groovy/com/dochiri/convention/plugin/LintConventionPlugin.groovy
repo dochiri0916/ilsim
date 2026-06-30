@@ -26,10 +26,12 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.testing.jacoco.plugins.JacocoPluginExtension
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
 class LintConventionPlugin implements Plugin<Project> {
+    private static final String LOMBOK_DEPENDENCY = 'org.projectlombok:lombok:1.18.36'
     private static final List<String> REQUIRED_CHECK_TASK_NAMES = [
             'checkstyleDomain',
             'pmdDomain',
@@ -69,6 +71,12 @@ class LintConventionPlugin implements Plugin<Project> {
             mutationScoreMinimum: 80,
             testStrengthMinimum: 85
     ].asImmutable()
+    private static final Map<String, String> REQUIRED_PACKAGE_SEGMENT_VALUES = [
+            domainPackageSegment        : 'domain',
+            applicationPackageSegment   : 'application',
+            infrastructurePackageSegment: 'adapter.out',
+            presentationPackageSegment  : 'adapter.in.web'
+    ].asImmutable()
 
     @Override
     void apply(Project project) {
@@ -76,6 +84,7 @@ class LintConventionPlugin implements Plugin<Project> {
                 project.extensions.create('hexagonalConvention', HexagonalConventionExtension)
 
         configureJava21Convention(project)
+        configureLombokConvention(project)
 
         project.pluginManager.apply('checkstyle')
         project.pluginManager.apply('pmd')
@@ -118,6 +127,9 @@ class LintConventionPlugin implements Plugin<Project> {
 
         project.tasks.withType(Checkstyle).configureEach { Checkstyle task ->
             task.dependsOn(prepareLintConfig)
+            if (task.name != 'checkstyleDomain') {
+                task.configFile = checkstyleConfig.get().asFile
+            }
             task.reports { reports ->
                 reports.xml.required = true
                 reports.html.required = true
@@ -134,6 +146,10 @@ class LintConventionPlugin implements Plugin<Project> {
 
         project.tasks.withType(Pmd).configureEach { Pmd task ->
             task.dependsOn(prepareLintConfig)
+            if (task.name != 'pmdDomain') {
+                task.ruleSets = []
+                task.ruleSetFiles = project.files(pmdRuleset.get().asFile)
+            }
             task.reports { reports ->
                 reports.xml.required = true
                 reports.html.required = true
@@ -150,6 +166,9 @@ class LintConventionPlugin implements Plugin<Project> {
 
         project.tasks.withType(SpotBugsTask).configureEach { SpotBugsTask task ->
             task.dependsOn(prepareLintConfig)
+            if (task.name != 'spotbugsDomain') {
+                task.excludeFilter.set(spotbugsExclude)
+            }
             task.reports { reports ->
                 def htmlReport = reports.findByName('html')
                 if (htmlReport != null) {
@@ -226,6 +245,8 @@ class LintConventionPlugin implements Plugin<Project> {
             }
 
             project.tasks.withType(Test).configureEach { Test task ->
+                task.useJUnitPlatform()
+                task.ignoreFailures = false
                 task.finalizedBy(jacocoTestReport)
             }
 
@@ -431,6 +452,13 @@ class LintConventionPlugin implements Plugin<Project> {
                 validateRequiredCheckTasks(project, convention)
             }
         }
+
+        project.gradle.taskGraph.whenReady { graph ->
+            def checkTask = project.tasks.findByName('check')
+            if (checkTask != null && graph.hasTask(checkTask)) {
+                validateRequiredCheckTasks(project, convention)
+            }
+        }
     }
 
     private static void validateRequiredCheckTasks(Project project, HexagonalConventionExtension convention) {
@@ -438,6 +466,7 @@ class LintConventionPlugin implements Plugin<Project> {
             task instanceof Checkstyle || task instanceof Pmd || task instanceof SpotBugsTask
         }.collect { task -> task.name }.toSet()
         Set<String> protectedTaskNames = (REQUIRED_CHECK_TASK_NAMES + qualityTaskNames + [
+                'check',
                 'test',
                 'jacocoTestReport',
                 'jacocoTestCoverageVerification'
@@ -451,16 +480,21 @@ class LintConventionPlugin implements Plugin<Project> {
             isTaskExcluded(project, taskName)
         }.sort()
 
-        List<String> disabledTasks = REQUIRED_CHECK_TASK_NAMES.findAll { String taskName ->
+        List<String> disabledTasks = protectedTaskNames.findAll { String taskName ->
             def task = project.tasks.findByName(taskName)
             task != null && !task.enabled
-        }
+        }.sort()
         List<String> disabledQualityTasks = qualityTaskNames.findAll { String taskName ->
             def task = project.tasks.findByName(taskName)
             task != null && !task.enabled
         }.sort()
 
         List<String> ignoredFailureTasks = []
+        project.tasks.withType(Test).each { Test task ->
+            if (task.ignoreFailures) {
+                ignoredFailureTasks.add(task.name)
+            }
+        }
         project.tasks.withType(Checkstyle).each { Checkstyle task ->
             if (task.ignoreFailures) {
                 ignoredFailureTasks.add(task.name)
@@ -490,12 +524,25 @@ class LintConventionPlugin implements Plugin<Project> {
         }.collect { String flagName, Integer minimum ->
             "${flagName}=${convention."${flagName}"} < ${minimum}"
         }
+        List<String> modifiedPackageSegments = REQUIRED_PACKAGE_SEGMENT_VALUES.findAll {
+            String propertyName, String requiredValue ->
+                convention.hasProperty(propertyName) && convention."${propertyName}" != requiredValue
+        }.collect { String propertyName, String requiredValue ->
+            "${propertyName}=${convention."${propertyName}"} != ${requiredValue}"
+        }
+        List<String> conventionExceptions = findConventionExceptionUsage(convention)
         List<String> unsatisfiedOnlyIfTasks = onlyIfProtectedTaskNames.findAll { String taskName ->
             def task = project.tasks.findByName(taskName)
             task != null && task.enabled && !isOnlyIfSatisfied(task)
         }.sort()
+        List<String> missingCheckDependencies = findMissingCheckDependencies(project, protectedTaskNames - ['check'])
+        List<String> modifiedTestConfigurations = findModifiedTestConfigurations(project)
         List<String> emptySourceTasks = findEmptySourceTasks(project, convention)
+        List<String> missingQualitySourceFiles = findMissingQualitySourceFiles(project, convention)
         List<String> emptyCoverageTasks = findEmptyCoverageTasks(project)
+        List<String> modifiedCoverageInputs = findModifiedCoverageInputs(project)
+        List<String> modifiedBytecodeAnalysisInputs = findModifiedBytecodeAnalysisInputs(project)
+        List<String> modifiedQualityConfigurations = findModifiedQualityConfigurations(project)
 
         if (excludedTasks.isEmpty()
                 && disabledTasks.isEmpty()
@@ -504,9 +551,17 @@ class LintConventionPlugin implements Plugin<Project> {
                 && relaxedConventionFlags.isEmpty()
                 && relaxedCoverageMinimums.isEmpty()
                 && relaxedScoreMinimums.isEmpty()
+                && modifiedPackageSegments.isEmpty()
+                && conventionExceptions.isEmpty()
                 && unsatisfiedOnlyIfTasks.isEmpty()
+                && missingCheckDependencies.isEmpty()
+                && modifiedTestConfigurations.isEmpty()
                 && emptySourceTasks.isEmpty()
-                && emptyCoverageTasks.isEmpty()) {
+                && missingQualitySourceFiles.isEmpty()
+                && emptyCoverageTasks.isEmpty()
+                && modifiedCoverageInputs.isEmpty()
+                && modifiedBytecodeAnalysisInputs.isEmpty()
+                && modifiedQualityConfigurations.isEmpty()) {
             return
         }
 
@@ -532,14 +587,38 @@ class LintConventionPlugin implements Plugin<Project> {
         if (!relaxedScoreMinimums.isEmpty()) {
             violations.add("relaxed mutation score minimums: ${relaxedScoreMinimums.join(', ')}")
         }
+        if (!modifiedPackageSegments.isEmpty()) {
+            violations.add("modified package segments: ${modifiedPackageSegments.join(', ')}")
+        }
+        if (!conventionExceptions.isEmpty()) {
+            violations.add("convention exception lists must be empty: ${conventionExceptions.join(', ')}")
+        }
         if (!unsatisfiedOnlyIfTasks.isEmpty()) {
             violations.add("onlyIf-skipped tasks: ${unsatisfiedOnlyIfTasks.join(', ')}")
+        }
+        if (!missingCheckDependencies.isEmpty()) {
+            violations.add("check missing dependencies: ${missingCheckDependencies.join(', ')}")
+        }
+        if (!modifiedTestConfigurations.isEmpty()) {
+            violations.add("modified test execution configurations: ${modifiedTestConfigurations.join(', ')}")
         }
         if (!emptySourceTasks.isEmpty()) {
             violations.add("empty source tasks: ${emptySourceTasks.join(', ')}")
         }
+        if (!missingQualitySourceFiles.isEmpty()) {
+            violations.add("quality tasks missing source files: ${missingQualitySourceFiles.join('; ')}")
+        }
         if (!emptyCoverageTasks.isEmpty()) {
             violations.add("empty coverage tasks: ${emptyCoverageTasks.join(', ')}")
+        }
+        if (!modifiedCoverageInputs.isEmpty()) {
+            violations.add("modified coverage inputs: ${modifiedCoverageInputs.join(', ')}")
+        }
+        if (!modifiedBytecodeAnalysisInputs.isEmpty()) {
+            violations.add("modified bytecode analysis inputs: ${modifiedBytecodeAnalysisInputs.join(', ')}")
+        }
+        if (!modifiedQualityConfigurations.isEmpty()) {
+            violations.add("modified quality rule configurations: ${modifiedQualityConfigurations.join(', ')}")
         }
 
         throw new GradleException(
@@ -561,6 +640,57 @@ class LintConventionPlugin implements Plugin<Project> {
         } catch (Exception ignored) {
             return true
         }
+    }
+
+    private static List<String> findConventionExceptionUsage(HexagonalConventionExtension convention) {
+        [
+                'entitySingularNameExceptions',
+                'pluralTableNameExceptions',
+                'domainStaticFactoryExceptions'
+        ].findAll { String propertyName ->
+            convention.hasProperty(propertyName) && !convention."${propertyName}".isEmpty()
+        }.collect { String propertyName ->
+            "${propertyName}=${convention."${propertyName}"}"
+        }
+    }
+
+    private static List<String> findMissingCheckDependencies(Project project, Set<String> expectedTaskNames) {
+        def checkTask = project.tasks.findByName('check')
+        if (checkTask == null) {
+            return ['check']
+        }
+
+        Set<String> dependencyNames = checkTask.taskDependencies
+                .getDependencies(checkTask)
+                .collect { task -> task.name }
+                .toSet()
+
+        expectedTaskNames.findAll { String taskName ->
+            project.tasks.findByName(taskName) != null && !dependencyNames.contains(taskName)
+        }.sort()
+    }
+
+    private static List<String> findModifiedTestConfigurations(Project project) {
+        List<String> violations = []
+        project.tasks.withType(Test).each { Test task ->
+            if (task.includes != null && !task.includes.isEmpty()) {
+                violations.add("${task.name}.includes=${task.includes}")
+            }
+            if (task.excludes != null && !task.excludes.isEmpty()) {
+                violations.add("${task.name}.excludes=${task.excludes}")
+            }
+            if (task.filter.includePatterns != null && !task.filter.includePatterns.isEmpty()) {
+                violations.add("${task.name}.filter.includePatterns=${task.filter.includePatterns}")
+            }
+            if (task.filter.excludePatterns != null && !task.filter.excludePatterns.isEmpty()) {
+                violations.add("${task.name}.filter.excludePatterns=${task.filter.excludePatterns}")
+            }
+            JacocoTaskExtension jacoco = task.extensions.findByType(JacocoTaskExtension)
+            if (jacoco != null && !jacoco.enabled) {
+                violations.add("${task.name}.jacoco.enabled=false")
+            }
+        }
+        return violations.sort()
     }
 
     private static List<String> findEmptySourceTasks(Project project, HexagonalConventionExtension convention) {
@@ -588,6 +718,44 @@ class LintConventionPlugin implements Plugin<Project> {
             def task = project.tasks.findByName(taskName)
             task != null && task.enabled && !hasTaskSourceFiles(task)
         }
+    }
+
+    private static List<String> findMissingQualitySourceFiles(
+            Project project,
+            HexagonalConventionExtension convention
+    ) {
+        List<File> mainJavaFiles = javaFiles(project, 'src/main/java')
+        List<File> testJavaFiles = javaFiles(project, 'src/test/java')
+        List<File> domainJavaFiles = mainJavaFiles.findAll { File file ->
+            hasPathSegment(file, convention.domainPackageSegment)
+        }
+
+        Map<String, List<File>> expectedSourceFiles = [
+                checkstyleMain  : mainJavaFiles,
+                pmdMain         : mainJavaFiles,
+                checkstyleTest  : testJavaFiles,
+                pmdTest         : testJavaFiles,
+                checkstyleDomain: domainJavaFiles,
+                pmdDomain       : domainJavaFiles
+        ]
+
+        List<String> violations = []
+        expectedSourceFiles.each { String taskName, List<File> expectedFiles ->
+            if (expectedFiles.isEmpty()) {
+                return
+            }
+            def task = project.tasks.findByName(taskName)
+            if (task == null || !task.enabled) {
+                return
+            }
+
+            List<File> actualFiles = task.source.files.findAll { File file -> file.isFile() }.toList()
+            List<File> missingFiles = missingExpectedFiles(expectedFiles, actualFiles)
+            if (!missingFiles.isEmpty()) {
+                violations.add("${taskName}: ${limitedRelativeFiles(project, missingFiles)}")
+            }
+        }
+        return violations.sort()
     }
 
     private static boolean hasTaskSourceFiles(def task) {
@@ -621,6 +789,211 @@ class LintConventionPlugin implements Plugin<Project> {
         return []
     }
 
+    private static List<String> findModifiedCoverageInputs(Project project) {
+        SourceSetContainer sourceSets = project.extensions.findByType(SourceSetContainer)
+        def mainSourceSet = sourceSets?.findByName('main')
+        if (mainSourceSet == null) {
+            return []
+        }
+
+        Set<File> expectedClassDirs = mainSourceSet.output.classesDirs.files
+        Set<File> expectedExecutionDataFiles = expectedJacocoExecutionDataFiles(project)
+
+        List<String> violations = []
+        ['jacocoTestReport', 'jacocoTestCoverageVerification'].each { String taskName ->
+            def task = project.tasks.findByName(taskName)
+            if (task == null || !task.enabled) {
+                return
+            }
+
+            List<File> missingClassDirs = missingExpectedFiles(expectedClassDirs, task.classDirectories.files)
+            if (!missingClassDirs.isEmpty()) {
+                violations.add("${taskName}.classDirectories missing ${limitedRelativeFiles(project, missingClassDirs)}")
+            }
+
+            Set<File> actualExecutionDataFiles = executionDataFiles(task)
+            List<File> missingExecutionData = missingExpectedFiles(expectedExecutionDataFiles, actualExecutionDataFiles)
+            if (!missingExecutionData.isEmpty()) {
+                violations.add("${taskName}.executionData missing ${limitedRelativeFiles(project, missingExecutionData)}")
+            }
+        }
+        return violations.sort()
+    }
+
+    private static List<String> findModifiedBytecodeAnalysisInputs(Project project) {
+        SourceSetContainer sourceSets = project.extensions.findByType(SourceSetContainer)
+        def mainSourceSet = sourceSets?.findByName('main')
+        def testSourceSet = sourceSets?.findByName('test')
+        if (mainSourceSet == null) {
+            return []
+        }
+
+        List<String> violations = []
+        [
+                spotbugsMain  : mainSourceSet,
+                spotbugsDomain: mainSourceSet,
+                spotbugsTest  : testSourceSet
+        ].each { String taskName, def sourceSet ->
+            if (sourceSet == null) {
+                return
+            }
+            def task = project.tasks.findByName(taskName)
+            if (task == null || !task.enabled) {
+                return
+            }
+
+            List<File> missingClassDirs = missingExpectedFiles(sourceSet.output.classesDirs.files, task.classDirs.files)
+            if (!missingClassDirs.isEmpty()) {
+                violations.add("${taskName}.classDirs missing ${limitedRelativeFiles(project, missingClassDirs)}")
+            }
+
+            List<File> missingSourceDirs = missingExpectedFiles(sourceSet.allSource.srcDirs, task.sourceDirs.files)
+            if (!missingSourceDirs.isEmpty()) {
+                violations.add("${taskName}.sourceDirs missing ${limitedRelativeFiles(project, missingSourceDirs)}")
+            }
+        }
+        return violations.sort()
+    }
+
+    private static List<String> findModifiedQualityConfigurations(Project project) {
+        File expectedCheckstyleConfig = lintConfigFile(project, 'checkstyle/checkstyle.xml')
+        File expectedCheckstyleDomainConfig = lintConfigFile(project, 'checkstyle/checkstyle-domain.xml')
+        File expectedPmdRuleset = lintConfigFile(project, 'pmd/ruleset.xml')
+        File expectedPmdDomainRuleset = lintConfigFile(project, 'pmd/ruleset-domain.xml')
+        File expectedSpotBugsExclude = lintConfigFile(project, 'spotbugs/exclude.xml')
+        File expectedSpotBugsDomainInclude = lintConfigFile(project, 'spotbugs/include-domain.xml')
+
+        List<String> violations = []
+
+        project.tasks.withType(Checkstyle).each { Checkstyle task ->
+            File expectedConfig = task.name == 'checkstyleDomain'
+                    ? expectedCheckstyleDomainConfig
+                    : expectedCheckstyleConfig
+            if (!sameFile(task.configFile, expectedConfig)) {
+                violations.add("${task.name}.configFile=${relativeFile(project, task.configFile)}")
+            }
+        }
+
+        project.tasks.withType(Pmd).each { Pmd task ->
+            File expectedRuleset = task.name == 'pmdDomain' ? expectedPmdDomainRuleset : expectedPmdRuleset
+            if (task.ruleSets != null && !task.ruleSets.isEmpty()) {
+                violations.add("${task.name}.ruleSets=${task.ruleSets}")
+            }
+            Set<File> actualRulesetFiles = task.ruleSetFiles == null
+                    ? [] as Set<File>
+                    : task.ruleSetFiles.files.findAll { File file -> file != null }.toSet()
+            if (!sameFileSet(actualRulesetFiles, [expectedRuleset] as Set<File>)) {
+                violations.add("${task.name}.ruleSetFiles=${relativeFiles(project, actualRulesetFiles)}")
+            }
+        }
+
+        project.tasks.withType(SpotBugsTask).each { SpotBugsTask task ->
+            if (task.name == 'spotbugsDomain') {
+                File actualInclude = regularFilePropertyFile(task.includeFilter)
+                if (!sameFile(actualInclude, expectedSpotBugsDomainInclude)) {
+                    violations.add("${task.name}.includeFilter=${relativeFile(project, actualInclude)}")
+                }
+            } else {
+                File actualExclude = regularFilePropertyFile(task.excludeFilter)
+                if (!sameFile(actualExclude, expectedSpotBugsExclude)) {
+                    violations.add("${task.name}.excludeFilter=${relativeFile(project, actualExclude)}")
+                }
+            }
+        }
+
+        return violations.sort()
+    }
+
+    private static File lintConfigFile(Project project, String relativePath) {
+        project.layout.buildDirectory.file("lint-convention/${relativePath}").get().asFile
+    }
+
+    private static boolean sameFileSet(Set<File> actualFiles, Set<File> expectedFiles) {
+        actualFiles.collect { File file -> canonicalPath(file) }.toSet() ==
+                expectedFiles.collect { File file -> canonicalPath(file) }.toSet()
+    }
+
+    private static boolean sameFile(File actualFile, File expectedFile) {
+        actualFile != null && expectedFile != null && canonicalPath(actualFile) == canonicalPath(expectedFile)
+    }
+
+    private static String canonicalPath(File file) {
+        try {
+            return file.canonicalPath
+        } catch (IOException ignored) {
+            return file.absolutePath
+        }
+    }
+
+    private static String relativeFiles(Project project, Set<File> files) {
+        if (files.isEmpty()) {
+            return '<empty>'
+        }
+        files.collect { File file -> relativeFile(project, file) }.sort().join('|')
+    }
+
+    private static String relativeFile(Project project, File file) {
+        if (file == null) {
+            return '<empty>'
+        }
+        project.relativePath(file)
+    }
+
+    private static File regularFilePropertyFile(def regularFileProperty) {
+        try {
+            return regularFileProperty.asFile.orNull as File
+        } catch (Exception ignored) {
+            // Fall through for Gradle APIs that expose RegularFile instead of Provider<File>.
+        }
+        try {
+            def regularFile = regularFileProperty.orNull
+            return regularFile == null ? null : regularFile.asFile as File
+        } catch (Exception ignored) {
+            return null
+        }
+    }
+
+    private static Set<File> expectedJacocoExecutionDataFiles(Project project) {
+        Set<File> files = [] as Set<File>
+        project.tasks.withType(Test).each { Test task ->
+            JacocoTaskExtension jacoco = task.extensions.findByType(JacocoTaskExtension)
+            if (jacoco != null && jacoco.destinationFile != null) {
+                files.add(jacoco.destinationFile)
+            }
+        }
+        return files
+    }
+
+    private static Set<File> executionDataFiles(def task) {
+        try {
+            return task.executionData.files.findAll { File file -> file != null }.toSet()
+        } catch (Exception ignored) {
+            return [] as Set<File>
+        }
+    }
+
+    private static List<File> missingExpectedFiles(Collection<File> expectedFiles, Collection<File> actualFiles) {
+        Set<String> actualPaths = actualFiles
+                .findAll { File file -> file != null }
+                .collect { File file -> canonicalPath(file) }
+                .toSet()
+        expectedFiles
+                .findAll { File file -> file != null && !actualPaths.contains(canonicalPath(file)) }
+                .sort { File left, File right -> canonicalPath(left) <=> canonicalPath(right) }
+    }
+
+    private static String limitedRelativeFiles(Project project, Collection<File> files) {
+        List<String> relativePaths = files
+                .collect { File file -> relativeFile(project, file) }
+                .sort()
+        int limit = 5
+        String visiblePaths = relativePaths.take(limit).join(', ')
+        if (relativePaths.size() <= limit) {
+            return visiblePaths
+        }
+        return "${visiblePaths}, ... +${relativePaths.size() - limit} more"
+    }
+
     private static List<File> javaFiles(Project project, String relativePath) {
         File directory = project.file(relativePath)
         if (!directory.exists()) {
@@ -645,6 +1018,21 @@ class LintConventionPlugin implements Plugin<Project> {
             }
             project.tasks.withType(JavaCompile).configureEach { JavaCompile task ->
                 task.options.release.set(21)
+            }
+        }
+    }
+
+    private static void configureLombokConvention(Project project) {
+        project.pluginManager.withPlugin('java') {
+            [
+                    'compileOnly',
+                    'annotationProcessor',
+                    'testCompileOnly',
+                    'testAnnotationProcessor'
+            ].each { String configurationName ->
+                if (project.configurations.findByName(configurationName) != null) {
+                    project.dependencies.add(configurationName, LOMBOK_DEPENDENCY)
+                }
             }
         }
     }
