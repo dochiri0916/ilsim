@@ -330,7 +330,9 @@ class ClaudeConventionValidator {
             if (bodyEnd < 0) {
                 continue
             }
-            validateGivenWhenThen(project, file, source.substring(bodyStart + 1, bodyEnd), methodName, violations)
+            String body = source.substring(bodyStart + 1, bodyEnd)
+            validateGivenWhenThen(project, file, body, methodName, violations)
+            validateTestAssertionQuality(project, file, body, methodName, violations)
         }
     }
 
@@ -379,6 +381,32 @@ class ClaudeConventionValidator {
                 && !(givenIndex < whenIndex && whenIndex < thenIndex)) {
             violations.add("${path} test method '${methodName}' must order comments as // given, // when, // then")
         }
+    }
+
+    private static void validateTestAssertionQuality(
+            Project project,
+            File file,
+            String body,
+            String methodName,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        boolean observableAssertion = hasObservableAssertion(body)
+        if (observableAssertion) {
+            return
+        }
+
+        if (hasNoExceptionOnlyAssertion(body)) {
+            violations.add("${path} test method '${methodName}' must not rely only on no-exception assertions")
+            return
+        }
+
+        if (hasMockVerification(body)) {
+            violations.add("${path} test method '${methodName}' must not verify mocks without result/state/exception assertions")
+            return
+        }
+
+        violations.add("${path} test method '${methodName}' must assert observable result, state, stored value, event, or exception")
     }
 
     private static void validateTypePackageConvention(
@@ -1093,6 +1121,33 @@ class ClaudeConventionValidator {
     private static int commentIndex(String body, String phase) {
         def matcher = body =~ /(?m)^\s*\/\/\s*${phase}\b/
         return matcher.find() ? matcher.start() : -1
+    }
+
+    private static boolean hasObservableAssertion(String body) {
+        String searchableSource = stripCommentsAndStrings(body)
+        return (searchableSource =~ /(?m)\b(?:Assertions\s*\.\s*)?assert(?!DoesNotThrow\b)[A-Z][A-Za-z0-9_]*\s*\(/).find()
+                || (searchableSource =~ /(?m)\bassertThat(?:ThrownBy|ExceptionOfType)?\s*\(/).find()
+                || hasMeaningfulAssertThatCode(searchableSource)
+                || (searchableSource =~ /(?m)\bthen\s*\([^)]*\)\s*\.\s*(?:is|has|contains|startsWith|endsWith|matches|isEqualTo|isTrue|isFalse|isNull|isNotNull|isEmpty|isNotEmpty)\b/).find()
+                || (searchableSource =~ /(?m)^\s*assert\s+[^;]+;/).find()
+                || (searchableSource =~ /(?m)\bfail\s*\(/).find()
+    }
+
+    private static boolean hasMeaningfulAssertThatCode(String searchableSource) {
+        return (searchableSource =~ /(?m)\bassertThatCode\s*\(/).find()
+                && !(searchableSource =~ /(?m)\bassertThatCode\s*\([^;]*\.doesNotThrowAnyException\s*\(/).find()
+    }
+
+    private static boolean hasNoExceptionOnlyAssertion(String body) {
+        String searchableSource = stripCommentsAndStrings(body)
+        return (searchableSource =~ /(?m)\b(?:Assertions\s*\.\s*)?assertDoesNotThrow\s*\(/).find()
+                || (searchableSource =~ /(?m)\bassertThatCode\s*\([^;]*\.doesNotThrowAnyException\s*\(/).find()
+    }
+
+    private static boolean hasMockVerification(String body) {
+        String searchableSource = stripCommentsAndStrings(body)
+        return (searchableSource =~ /(?m)\bverify\s*\(/).find()
+                || (searchableSource =~ /(?m)\bthen\s*\([^)]*\)\s*\.\s*should\s*\(/).find()
     }
 
     private static int findMatchingBrace(String source, int openBraceIndex) {

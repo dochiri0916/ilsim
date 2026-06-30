@@ -235,6 +235,65 @@ class ClaudeConventionValidatorTest {
         assert !violations.any { it.contains("must include '// then'") }
     }
 
+    @Test
+    void 'rejects weak Java test assertions'() {
+        Project project = sampleProject()
+        writeTestJava(project, 'com/example/order/OrderServiceTest.java', '''
+                package com.example.order;
+
+                import org.junit.jupiter.api.DisplayName;
+                import org.junit.jupiter.api.Test;
+
+                class OrderServiceTest {
+
+                    @Test
+                    @DisplayName("주문 생성 흐름을 실행한다")
+                    void assertionless() {
+                        // given
+                        int actual = 1;
+
+                        // when
+                        actual++;
+
+                        // then
+                        System.out.println(actual);
+                    }
+
+                    @Test
+                    @DisplayName("주문 생성 시 예외가 발생하지 않는다")
+                    void noExceptionOnly() {
+                        // given
+                        Runnable command = () -> {};
+
+                        // when
+                        Runnable actual = command;
+
+                        // then
+                        assertDoesNotThrow(actual::run);
+                    }
+
+                    @Test
+                    @DisplayName("주문 저장소를 호출한다")
+                    void verifyOnly() {
+                        // given
+                        Object repository = new Object();
+
+                        // when
+                        Object order = new Object();
+
+                        // then
+                        verify(repository).save(order);
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("test method 'assertionless' must assert observable result") }
+        assert violations.any { it.contains("test method 'noExceptionOnly' must not rely only on no-exception assertions") }
+        assert violations.any { it.contains("test method 'verifyOnly' must not verify mocks without result/state/exception assertions") }
+    }
+
     private Project sampleProject() {
         File projectDir = new File(tempDir, UUID.randomUUID().toString())
         projectDir.mkdirs()
