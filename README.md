@@ -16,7 +16,7 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 - `validateChangedCodeCoverage` 태스크로 Git diff 기반 변경 코드 커버리지를 `check`에서 검증합니다.
 - PIT 플러그인이 적용된 프로젝트는 `validatePitMutationGate`로 Domain/Application 변이 테스트 기준을 검증할 수 있습니다.
 - `validateMigrationConventions` 태스크로 SQL migration의 `{target}_id` unique, 참조 컬럼 인덱스/FK, 기술 id 참조 금지를 검증합니다.
-- 핵심 검증 태스크를 `enabled = false`로 끄거나 품질 태스크를 `ignoreFailures = true`로 완화하면 `check`에서 실패합니다.
+- 핵심 검증 태스크를 `enabled = false`로 끄거나, 품질 태스크를 `ignoreFailures = true`로 완화하거나, 컨벤션 enforcement 플래그를 `false`로 낮추면 `check`에서 실패합니다.
 
 ## 요구 사항
 
@@ -97,9 +97,18 @@ plugins {
 `check`는 핵심 검증을 끄는 설정도 함께 검증합니다.
 다음과 같은 설정은 컨벤션 위반을 숨기므로 허용하지 않습니다.
 
+```bash
+./gradlew check -x validateClaudeConventions
+./gradlew check -x test
+```
+
 ```groovy
 tasks.named('validateClaudeConventions') {
     enabled = false
+}
+
+tasks.named('validateClaudeConventions') {
+    onlyIf { false }
 }
 
 tasks.withType(Pmd).configureEach {
@@ -109,10 +118,24 @@ tasks.withType(Pmd).configureEach {
 tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
     ignoreFailures = true
 }
+
+tasks.named('checkstyleMain') {
+    source = files()
+}
+
+hexagonalConvention {
+    enforceStrictClaudeConventions = false
+    enforceTestConventions = false
+    enforceApiDtoLayerSeparation = false
+    enforceDomainRawScalarProhibition = false
+    domainLineCoverageMinimum = 0.10
+}
 ```
 
 위와 같은 설정이 있으면 `Build convention verification must not be disabled` 오류로 실패합니다.
 컨벤션 위반은 검증을 끄지 말고 코드를 리팩터링해서 해결해야 합니다.
+
+테스트 코드에서 `@Disabled`나 JUnit Assumptions로 실패 테스트를 건너뛰는 것도 `validateClaudeConventions`에서 실패합니다.
 
 변경된 Production 코드 커버리지는 `check`에서 자동으로 실행됩니다.
 기준 ref는 `origin/main`, `origin/master`, `main`, `master` 순서로 자동 탐색합니다.
@@ -146,6 +169,11 @@ if [ ! -x ./gradlew ]; then
   exit 1
 fi
 
+if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "com.dochiri.lint-convention"; then
+  echo "ERROR: com.dochiri.lint-convention plugin is not applied"
+  exit 1
+fi
+
 ./gradlew check
 EOF
 ```
@@ -166,6 +194,12 @@ mkdir -p .git/hooks
 cat > .git/hooks/pre-push <<'EOF'
 #!/bin/sh
 set -eu
+
+if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "com.dochiri.lint-convention"; then
+  echo "ERROR: com.dochiri.lint-convention plugin is not applied"
+  exit 1
+fi
+
 ./gradlew check
 EOF
 chmod +x .git/hooks/pre-push
@@ -200,6 +234,13 @@ jobs:
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify build convention plugin
+        run: |
+          if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "com.dochiri.lint-convention"; then
+            echo "com.dochiri.lint-convention plugin is not applied"
+            exit 1
+          fi
 
       - run: ./gradlew check -PchangedCoverageBaseRef=origin/main
 ```

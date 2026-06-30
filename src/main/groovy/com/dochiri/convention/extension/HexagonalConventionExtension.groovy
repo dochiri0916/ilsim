@@ -25,6 +25,10 @@ class HexagonalConventionExtension {
     BigDecimal changedBranchCoverageMinimum = 0.85
 
     boolean enforcePitOnCheck = false
+    boolean enforceTestConventions = true
+    boolean enforceApiDtoLayerSeparation = true
+    boolean enforceDomainRawScalarProhibition = true
+    boolean enforceStrictClaudeConventions = true
     int mutationScoreMinimum = 80
     int testStrengthMinimum = 85
 }

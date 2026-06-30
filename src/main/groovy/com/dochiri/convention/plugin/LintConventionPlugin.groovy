@@ -44,6 +44,31 @@ class LintConventionPlugin implements Plugin<Project> {
             'validateMigrationConventions',
             'validateJavaVersionConvention'
     ].asImmutable()
+    private static final List<String> REQUIRED_TRUE_CONVENTION_FLAGS = [
+            'enforceDomainEntitySeparation',
+            'enforceDomainStaticFactoryMethod',
+            'requireTableAnnotation',
+            'enforceTestConventions',
+            'enforceApiDtoLayerSeparation',
+            'enforceDomainRawScalarProhibition',
+            'enforceStrictClaudeConventions'
+    ].asImmutable()
+    private static final Map<String, BigDecimal> MINIMUM_COVERAGE_VALUES = [
+            overallLineCoverageMinimum        : 0.85G,
+            overallBranchCoverageMinimum      : 0.80G,
+            domainLineCoverageMinimum         : 0.95G,
+            domainBranchCoverageMinimum       : 0.90G,
+            applicationLineCoverageMinimum    : 0.90G,
+            applicationBranchCoverageMinimum  : 0.85G,
+            infrastructureLineCoverageMinimum : 0.80G,
+            infrastructureBranchCoverageMinimum: 0.70G,
+            changedLineCoverageMinimum        : 0.90G,
+            changedBranchCoverageMinimum      : 0.85G
+    ].asImmutable()
+    private static final Map<String, Integer> MINIMUM_SCORE_VALUES = [
+            mutationScoreMinimum: 80,
+            testStrengthMinimum: 85
+    ].asImmutable()
 
     @Override
     void apply(Project project) {
@@ -403,16 +428,37 @@ class LintConventionPlugin implements Plugin<Project> {
             task.dependsOn(validateMigrationConventions)
             task.dependsOn(validateJavaVersionConvention)
             task.doFirst {
-                validateRequiredCheckTasks(project)
+                validateRequiredCheckTasks(project, convention)
             }
         }
     }
 
-    private static void validateRequiredCheckTasks(Project project) {
+    private static void validateRequiredCheckTasks(Project project, HexagonalConventionExtension convention) {
+        Set<String> qualityTaskNames = project.tasks.matching { task ->
+            task instanceof Checkstyle || task instanceof Pmd || task instanceof SpotBugsTask
+        }.collect { task -> task.name }.toSet()
+        Set<String> protectedTaskNames = (REQUIRED_CHECK_TASK_NAMES + qualityTaskNames + [
+                'test',
+                'jacocoTestReport',
+                'jacocoTestCoverageVerification'
+        ]).toSet()
+        Set<String> onlyIfProtectedTaskNames = protectedTaskNames - [
+                'jacocoTestReport',
+                'jacocoTestCoverageVerification'
+        ]
+
+        List<String> excludedTasks = protectedTaskNames.findAll { String taskName ->
+            isTaskExcluded(project, taskName)
+        }.sort()
+
         List<String> disabledTasks = REQUIRED_CHECK_TASK_NAMES.findAll { String taskName ->
             def task = project.tasks.findByName(taskName)
             task != null && !task.enabled
         }
+        List<String> disabledQualityTasks = qualityTaskNames.findAll { String taskName ->
+            def task = project.tasks.findByName(taskName)
+            task != null && !task.enabled
+        }.sort()
 
         List<String> ignoredFailureTasks = []
         project.tasks.withType(Checkstyle).each { Checkstyle task ->
@@ -431,16 +477,69 @@ class LintConventionPlugin implements Plugin<Project> {
             }
         }
 
-        if (disabledTasks.isEmpty() && ignoredFailureTasks.isEmpty()) {
+        List<String> relaxedConventionFlags = REQUIRED_TRUE_CONVENTION_FLAGS.findAll { String flagName ->
+            convention.hasProperty(flagName) && convention."${flagName}" == false
+        }
+        List<String> relaxedCoverageMinimums = MINIMUM_COVERAGE_VALUES.findAll { String flagName, BigDecimal minimum ->
+            convention.hasProperty(flagName) && convention."${flagName}" < minimum
+        }.collect { String flagName, BigDecimal minimum ->
+            "${flagName}=${convention."${flagName}"} < ${minimum}"
+        }
+        List<String> relaxedScoreMinimums = MINIMUM_SCORE_VALUES.findAll { String flagName, Integer minimum ->
+            convention.hasProperty(flagName) && convention."${flagName}" < minimum
+        }.collect { String flagName, Integer minimum ->
+            "${flagName}=${convention."${flagName}"} < ${minimum}"
+        }
+        List<String> unsatisfiedOnlyIfTasks = onlyIfProtectedTaskNames.findAll { String taskName ->
+            def task = project.tasks.findByName(taskName)
+            task != null && task.enabled && !isOnlyIfSatisfied(task)
+        }.sort()
+        List<String> emptySourceTasks = findEmptySourceTasks(project, convention)
+        List<String> emptyCoverageTasks = findEmptyCoverageTasks(project)
+
+        if (excludedTasks.isEmpty()
+                && disabledTasks.isEmpty()
+                && disabledQualityTasks.isEmpty()
+                && ignoredFailureTasks.isEmpty()
+                && relaxedConventionFlags.isEmpty()
+                && relaxedCoverageMinimums.isEmpty()
+                && relaxedScoreMinimums.isEmpty()
+                && unsatisfiedOnlyIfTasks.isEmpty()
+                && emptySourceTasks.isEmpty()
+                && emptyCoverageTasks.isEmpty()) {
             return
         }
 
         List<String> violations = []
+        if (!excludedTasks.isEmpty()) {
+            violations.add("-x excluded tasks: ${excludedTasks.join(', ')}")
+        }
         if (!disabledTasks.isEmpty()) {
             violations.add("disabled tasks: ${disabledTasks.join(', ')}")
         }
+        if (!disabledQualityTasks.isEmpty()) {
+            violations.add("disabled quality tasks: ${disabledQualityTasks.join(', ')}")
+        }
         if (!ignoredFailureTasks.isEmpty()) {
             violations.add("ignoreFailures=true tasks: ${ignoredFailureTasks.join(', ')}")
+        }
+        if (!relaxedConventionFlags.isEmpty()) {
+            violations.add("relaxed convention flags: ${relaxedConventionFlags.join(', ')}")
+        }
+        if (!relaxedCoverageMinimums.isEmpty()) {
+            violations.add("relaxed coverage minimums: ${relaxedCoverageMinimums.join(', ')}")
+        }
+        if (!relaxedScoreMinimums.isEmpty()) {
+            violations.add("relaxed mutation score minimums: ${relaxedScoreMinimums.join(', ')}")
+        }
+        if (!unsatisfiedOnlyIfTasks.isEmpty()) {
+            violations.add("onlyIf-skipped tasks: ${unsatisfiedOnlyIfTasks.join(', ')}")
+        }
+        if (!emptySourceTasks.isEmpty()) {
+            violations.add("empty source tasks: ${emptySourceTasks.join(', ')}")
+        }
+        if (!emptyCoverageTasks.isEmpty()) {
+            violations.add("empty coverage tasks: ${emptyCoverageTasks.join(', ')}")
         }
 
         throw new GradleException(
@@ -448,6 +547,92 @@ class LintConventionPlugin implements Plugin<Project> {
                         + "${violations.join('; ')}. "
                         + 'Fix the violations instead of disabling convention checks.'
         )
+    }
+
+    private static boolean isTaskExcluded(Project project, String taskName) {
+        project.gradle.startParameter.excludedTaskNames.any { String excludedTaskName ->
+            excludedTaskName == taskName || excludedTaskName.endsWith(":${taskName}")
+        }
+    }
+
+    private static boolean isOnlyIfSatisfied(def task) {
+        try {
+            return task.onlyIf.isSatisfiedBy(task)
+        } catch (Exception ignored) {
+            return true
+        }
+    }
+
+    private static List<String> findEmptySourceTasks(Project project, HexagonalConventionExtension convention) {
+        List<File> mainJavaFiles = javaFiles(project, 'src/main/java')
+        List<File> testJavaFiles = javaFiles(project, 'src/test/java')
+        List<File> domainJavaFiles = mainJavaFiles.findAll { File file ->
+            hasPathSegment(file, convention.domainPackageSegment)
+        }
+
+        List<String> emptySourceTasks = []
+        if (!mainJavaFiles.isEmpty()) {
+            emptySourceTasks.addAll(emptySourceTaskNames(project, ['checkstyleMain', 'pmdMain']))
+        }
+        if (!testJavaFiles.isEmpty()) {
+            emptySourceTasks.addAll(emptySourceTaskNames(project, ['checkstyleTest', 'pmdTest']))
+        }
+        if (!domainJavaFiles.isEmpty()) {
+            emptySourceTasks.addAll(emptySourceTaskNames(project, ['checkstyleDomain', 'pmdDomain']))
+        }
+        return emptySourceTasks.sort()
+    }
+
+    private static List<String> emptySourceTaskNames(Project project, List<String> taskNames) {
+        taskNames.findAll { String taskName ->
+            def task = project.tasks.findByName(taskName)
+            task != null && task.enabled && !hasTaskSourceFiles(task)
+        }
+    }
+
+    private static boolean hasTaskSourceFiles(def task) {
+        try {
+            return !task.source.files.findAll { File file -> file.isFile() }.isEmpty()
+        } catch (Exception ignored) {
+            return true
+        }
+    }
+
+    private static List<String> findEmptyCoverageTasks(Project project) {
+        if (javaFiles(project, 'src/main/java').isEmpty()) {
+            return []
+        }
+
+        def verificationTask = project.tasks.findByName('jacocoTestCoverageVerification')
+        if (verificationTask == null || !verificationTask.enabled) {
+            return []
+        }
+
+        try {
+            boolean compiledClassesExist = project.file('build/classes/java/main').exists()
+                    || project.file('build/classes/groovy/main').exists()
+            if (compiledClassesExist
+                    && verificationTask.classDirectories.files.findAll { File file -> file.exists() }.isEmpty()) {
+                return ['jacocoTestCoverageVerification']
+            }
+        } catch (Exception ignored) {
+            return []
+        }
+        return []
+    }
+
+    private static List<File> javaFiles(Project project, String relativePath) {
+        File directory = project.file(relativePath)
+        if (!directory.exists()) {
+            return []
+        }
+        project.fileTree(directory) {
+            include '**/*.java'
+        }.files.findAll { File file -> file.isFile() }.toList()
+    }
+
+    private static boolean hasPathSegment(File file, String segment) {
+        file.path.split(/[\\\/]/).contains(segment)
     }
 
     private static void configureJava21Convention(Project project) {
