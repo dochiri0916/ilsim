@@ -30,6 +30,21 @@ import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
 class LintConventionPlugin implements Plugin<Project> {
+    private static final List<String> REQUIRED_CHECK_TASK_NAMES = [
+            'checkstyleDomain',
+            'pmdDomain',
+            'spotbugsDomain',
+            'validateArchUnitArchitecture',
+            'validateChangedCodeCoverage',
+            'jacocoTestCoverageVerification',
+            'validateHexagonalArchitecture',
+            'validateEntityNamingConvention',
+            'validateDomainStaticFactoryConvention',
+            'validateClaudeConventions',
+            'validateMigrationConventions',
+            'validateJavaVersionConvention'
+    ].asImmutable()
+
     @Override
     void apply(Project project) {
         HexagonalConventionExtension convention =
@@ -387,7 +402,52 @@ class LintConventionPlugin implements Plugin<Project> {
             task.dependsOn(validateClaudeConventions)
             task.dependsOn(validateMigrationConventions)
             task.dependsOn(validateJavaVersionConvention)
+            task.doFirst {
+                validateRequiredCheckTasks(project)
+            }
         }
+    }
+
+    private static void validateRequiredCheckTasks(Project project) {
+        List<String> disabledTasks = REQUIRED_CHECK_TASK_NAMES.findAll { String taskName ->
+            def task = project.tasks.findByName(taskName)
+            task != null && !task.enabled
+        }
+
+        List<String> ignoredFailureTasks = []
+        project.tasks.withType(Checkstyle).each { Checkstyle task ->
+            if (task.ignoreFailures) {
+                ignoredFailureTasks.add(task.name)
+            }
+        }
+        project.tasks.withType(Pmd).each { Pmd task ->
+            if (task.ignoreFailures) {
+                ignoredFailureTasks.add(task.name)
+            }
+        }
+        project.tasks.withType(SpotBugsTask).each { SpotBugsTask task ->
+            if (task.ignoreFailures) {
+                ignoredFailureTasks.add(task.name)
+            }
+        }
+
+        if (disabledTasks.isEmpty() && ignoredFailureTasks.isEmpty()) {
+            return
+        }
+
+        List<String> violations = []
+        if (!disabledTasks.isEmpty()) {
+            violations.add("disabled tasks: ${disabledTasks.join(', ')}")
+        }
+        if (!ignoredFailureTasks.isEmpty()) {
+            violations.add("ignoreFailures=true tasks: ${ignoredFailureTasks.join(', ')}")
+        }
+
+        throw new GradleException(
+                'Build convention verification must not be disabled. '
+                        + "${violations.join('; ')}. "
+                        + 'Fix the violations instead of disabling convention checks.'
+        )
     }
 
     private static void configureJava21Convention(Project project) {

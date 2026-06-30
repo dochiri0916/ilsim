@@ -16,6 +16,7 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 - `validateChangedCodeCoverage` 태스크로 Git diff 기반 변경 코드 커버리지를 `check`에서 검증합니다.
 - PIT 플러그인이 적용된 프로젝트는 `validatePitMutationGate`로 Domain/Application 변이 테스트 기준을 검증할 수 있습니다.
 - `validateMigrationConventions` 태스크로 SQL migration의 `{target}_id` unique, 참조 컬럼 인덱스/FK, 기술 id 참조 금지를 검증합니다.
+- 핵심 검증 태스크를 `enabled = false`로 끄거나 품질 태스크를 `ignoreFailures = true`로 완화하면 `check`에서 실패합니다.
 
 ## 요구 사항
 
@@ -92,6 +93,26 @@ plugins {
 - `validateChangedCodeCoverage`
 - `jacocoTestReport`
 - `jacocoTestCoverageVerification`
+
+`check`는 핵심 검증을 끄는 설정도 함께 검증합니다.
+다음과 같은 설정은 컨벤션 위반을 숨기므로 허용하지 않습니다.
+
+```groovy
+tasks.named('validateClaudeConventions') {
+    enabled = false
+}
+
+tasks.withType(Pmd).configureEach {
+    ignoreFailures = true
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+    ignoreFailures = true
+}
+```
+
+위와 같은 설정이 있으면 `Build convention verification must not be disabled` 오류로 실패합니다.
+컨벤션 위반은 검증을 끄지 말고 코드를 리팩터링해서 해결해야 합니다.
 
 변경된 Production 코드 커버리지는 `check`에서 자동으로 실행됩니다.
 기준 ref는 `origin/main`, `origin/master`, `main`, `master` 순서로 자동 탐색합니다.
