@@ -237,6 +237,79 @@ class ClaudeConventionValidatorTest {
     }
 
     @Test
+    void 'accepts domain event with past tense name without Event suffix'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/domain/model/OrderId.java', '''
+                package com.example.order.domain.model;
+
+                import java.util.Objects;
+                import java.util.UUID;
+
+                public record OrderId(UUID value) {
+
+                    public OrderId {
+                        Objects.requireNonNull(value);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/event/OrderPlaced.java', '''
+                package com.example.order.domain.event;
+
+                import com.example.order.domain.model.OrderId;
+                import java.util.Objects;
+
+                public record OrderPlaced(OrderId orderId) {
+
+                    public OrderPlaced {
+                        Objects.requireNonNull(orderId);
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains("domain event 'OrderPlaced'") }
+        assert !violations.any { it.contains("domain model 'OrderPlaced' must live in domain.model package") }
+    }
+
+    @Test
+    void 'rejects domain event name with Event suffix'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/domain/model/OrderId.java', '''
+                package com.example.order.domain.model;
+
+                import java.util.Objects;
+                import java.util.UUID;
+
+                public record OrderId(UUID value) {
+
+                    public OrderId {
+                        Objects.requireNonNull(value);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/event/OrderPlacedEvent.java', '''
+                package com.example.order.domain.event;
+
+                import com.example.order.domain.model.OrderId;
+                import java.util.Objects;
+
+                public record OrderPlacedEvent(OrderId orderId) {
+
+                    public OrderPlacedEvent {
+                        Objects.requireNonNull(orderId);
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("domain event 'OrderPlacedEvent' must use a past-tense name without Event suffix") }
+    }
+
+    @Test
     void 'rejects exception architecture violations'() {
         Project project = sampleProject()
         writeApplication(project)
@@ -287,7 +360,9 @@ class ClaudeConventionValidatorTest {
         writeTestJava(project, 'com/example/order/OrderServiceTest.java', '''
                 package com.example.order;
 
+                import org.junit.jupiter.api.Disabled;
                 import org.junit.jupiter.api.DisplayName;
+                import org.junit.jupiter.api.Assumptions;
                 import org.junit.jupiter.api.Test;
 
                 class OrderServiceTest {
@@ -413,6 +488,33 @@ class ClaudeConventionValidatorTest {
                         // then
                         verify(repository).save(order);
                     }
+
+                    @Disabled
+                    @Test
+                    @DisplayName("비활성화된 테스트는 허용하지 않는다")
+                    void disabledTest() {
+                        // given
+                        int actual = 1;
+
+                        // when
+                        actual++;
+
+                        // then
+                        assert actual == 2;
+                    }
+
+                    @Test
+                    @DisplayName("가정으로 테스트를 건너뛰지 않는다")
+                    void assumptionSkipped() {
+                        // given
+                        int actual = 1;
+
+                        // when
+                        Assumptions.assumeTrue(false);
+
+                        // then
+                        assert actual == 1;
+                    }
                 }
                 ''')
 
@@ -421,6 +523,8 @@ class ClaudeConventionValidatorTest {
         assert violations.any { it.contains("test method 'assertionless' must assert observable result") }
         assert violations.any { it.contains("test method 'noExceptionOnly' must not rely only on no-exception assertions") }
         assert violations.any { it.contains("test method 'verifyOnly' must not verify mocks without result/state/exception assertions") }
+        assert violations.any { it.contains('tests must not use @Disabled') }
+        assert violations.any { it.contains("test method 'assumptionSkipped' must not use JUnit assumptions") }
     }
 
     private Project sampleProject() {

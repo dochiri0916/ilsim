@@ -146,7 +146,7 @@ class ClaudeConventionValidator {
             validateExceptionArchitecture(project, file, source, packageName, type, convention, violations)
 
             if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
-                validateDomain(project, file, source, type, violations)
+                validateDomain(project, file, source, packageName, type, convention, violations)
             }
 
             if (SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)) {
@@ -449,6 +449,10 @@ class ClaudeConventionValidator {
             List<String> violations
     ) {
         String path = project.relativePath(file)
+        if (hasDisabledTestAnnotation(source)) {
+            violations.add("${path} tests must not use @Disabled; fix or delete skipped tests")
+        }
+
         def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)+)\s*(?:public|protected|private)?\s*(?:final\s+)?(?:void|[A-Za-z_][A-Za-z0-9_$.<>]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*(?:throws\s+[^{]+)?\{/
         while (matcher.find()) {
             String annotations = matcher.group(1)
@@ -525,6 +529,11 @@ class ClaudeConventionValidator {
             List<String> violations
     ) {
         String path = project.relativePath(file)
+        if (usesJUnitAssumption(body)) {
+            violations.add("${path} test method '${methodName}' must not use JUnit assumptions to skip execution")
+            return
+        }
+
         boolean observableAssertion = hasObservableAssertion(body)
         if (observableAssertion) {
             return
@@ -578,13 +587,15 @@ class ClaudeConventionValidator {
         }
 
         if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
-            if (type.name.endsWith('Event')) {
-                if (!packageName.contains('.event')) {
-                    violations.add("${path} domain event '${type.name}' must live in domain.event package")
+            if (isDomainEventPackage(packageName, convention)) {
+                if (type.name.endsWith('Event')) {
+                    violations.add("${path} domain event '${type.name}' must use a past-tense name without Event suffix")
                 }
                 if (type.kind != 'record') {
                     violations.add("${path} domain event '${type.name}' must be a record")
                 }
+            } else if (type.name.endsWith('Event')) {
+                violations.add("${path} domain event '${type.name}' must live in domain.event package")
             } else if (type.name.endsWith('Exception') || type.name.endsWith('ErrorCode')) {
                 if (!packageName.contains('.exception')) {
                     violations.add("${path} domain exception support '${type.name}' must live in domain.exception package")
@@ -753,7 +764,9 @@ class ClaudeConventionValidator {
             Project project,
             File file,
             String source,
+            String packageName,
             TypeDeclaration type,
+            HexagonalConventionExtension convention,
             List<String> violations
     ) {
         String path = project.relativePath(file)
@@ -806,7 +819,7 @@ class ClaudeConventionValidator {
         }
 
         if (type.kind == 'record') {
-            validateDomainRecord(project, file, source, type, violations)
+            validateDomainRecord(project, file, source, packageName, type, convention, violations)
         }
 
         extractFieldDeclarations(source).each { FieldDeclaration field ->
@@ -829,7 +842,9 @@ class ClaudeConventionValidator {
             Project project,
             File file,
             String source,
+            String packageName,
             TypeDeclaration type,
+            HexagonalConventionExtension convention,
             List<String> violations
     ) {
         String path = project.relativePath(file)
@@ -843,7 +858,7 @@ class ClaudeConventionValidator {
             }
         }
 
-        boolean singleValueObject = isSingleComponentValueObject(type, components)
+        boolean singleValueObject = isSingleComponentValueObject(type, components, packageName, convention)
         components.each { RecordComponent component ->
             if (isRawScalarType(component.type) && !singleValueObject) {
                 violations.add("${path} domain record component '${component.name}' must use a Value Object instead of raw scalar '${component.type}'")
@@ -1257,6 +1272,11 @@ class ClaudeConventionValidator {
         }
     }
 
+    private static boolean hasDisabledTestAnnotation(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*Disabled\b/).find()
+    }
+
     private static boolean containsKorean(String value) {
         return (value =~ /[\uAC00-\uD7A3]/).find()
     }
@@ -1291,6 +1311,11 @@ class ClaudeConventionValidator {
         String searchableSource = stripCommentsAndStrings(body)
         return (searchableSource =~ /(?m)\bverify\s*\(/).find()
                 || (searchableSource =~ /(?m)\bthen\s*\([^)]*\)\s*\.\s*should\s*\(/).find()
+    }
+
+    private static boolean usesJUnitAssumption(String body) {
+        String searchableSource = stripCommentsAndStrings(body)
+        return (searchableSource =~ /(?m)\b(?:Assumptions\s*\.\s*)?assume(?:True|False|That|NoException)\s*\(/).find()
     }
 
     private static int findMatchingBrace(String source, int openBraceIndex) {
@@ -1480,6 +1505,11 @@ class ClaudeConventionValidator {
         return RAW_SCALAR_TYPES.contains(normalizeType(type))
     }
 
+    private static boolean isDomainEventPackage(String packageName, HexagonalConventionExtension convention) {
+        String marker = ".${convention.domainPackageSegment}.event"
+        return packageName != null && (packageName.endsWith(marker) || packageName.contains("${marker}."))
+    }
+
     private static boolean looksLikeIdReference(String name) {
         return name ==~ /.*Id(s)?$/
     }
@@ -1488,8 +1518,15 @@ class ClaudeConventionValidator {
         return normalizeType(type).endsWith('Id')
     }
 
-    private static boolean isSingleComponentValueObject(TypeDeclaration type, List<RecordComponent> components) {
-        return components.size() == 1 && !type.name.endsWith('Event')
+    private static boolean isSingleComponentValueObject(
+            TypeDeclaration type,
+            List<RecordComponent> components,
+            String packageName,
+            HexagonalConventionExtension convention
+    ) {
+        return components.size() == 1
+                && !isDomainEventPackage(packageName, convention)
+                && !type.name.endsWith('Event')
     }
 
     private static String domainIdentifierFieldName(String typeName) {
