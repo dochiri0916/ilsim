@@ -110,6 +110,221 @@ class ClaudeConventionValidatorTest {
     }
 
     @Test
+    void 'accepts method level transaction and required args constructor injection'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface RegisterOrderUseCase {
+                    void register();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/out/OrderRepositoryPort.java', '''
+                package com.example.order.application.port.out;
+
+                public interface OrderRepositoryPort {
+                    void save();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.out.OrderRepositoryPort;
+                import lombok.RequiredArgsConstructor;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                @RequiredArgsConstructor
+                public final class RegisterOrderService implements RegisterOrderUseCase {
+
+                    private final OrderRepositoryPort orderRepositoryPort;
+
+                    @Override
+                    @Transactional
+                    public void register() {
+                        orderRepositoryPort.save();
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains('@Transactional must be declared on public application service methods') }
+        assert !violations.any { it.contains('must declare @RequiredArgsConstructor') }
+        assert !violations.any { it.contains('must implement exactly one UseCase') }
+    }
+
+    @Test
+    void 'rejects class level transaction and missing method level transaction'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface RegisterOrderUseCase {
+                    void register();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                @Transactional
+                public final class RegisterOrderService implements RegisterOrderUseCase {
+
+                    @Override
+                    public void register() {
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('@Transactional must be declared on public application service methods, not on the class') }
+        assert violations.any { it.contains("public application service method 'register' must declare @Transactional") }
+    }
+
+    @Test
+    void 'rejects field injection without required args constructor'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface RegisterOrderUseCase {
+                    void register();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/out/OrderRepositoryPort.java', '''
+                package com.example.order.application.port.out;
+
+                public interface OrderRepositoryPort {
+                    void save();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.out.OrderRepositoryPort;
+                import org.springframework.beans.factory.annotation.Autowired;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public final class RegisterOrderService implements RegisterOrderUseCase {
+
+                    @Autowired
+                    private OrderRepositoryPort orderRepositoryPort;
+
+                    @Override
+                    @Transactional
+                    public void register() {
+                        orderRepositoryPort.save();
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('must use final fields with @RequiredArgsConstructor instead of @Autowired injection') }
+        assert violations.any { it.contains('dependencies must be private final fields') }
+    }
+
+    @Test
+    void 'rejects service implementing multiple use cases and adapter implementing multiple ports'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface RegisterOrderUseCase {
+                    void register();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/CancelOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface CancelOrderUseCase {
+                    void cancel();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/OrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.CancelOrderUseCase;
+                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public final class OrderService implements RegisterOrderUseCase, CancelOrderUseCase {
+
+                    @Override
+                    @Transactional
+                    public void register() {
+                    }
+
+                    @Override
+                    @Transactional
+                    public void cancel() {
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/out/PaymentPort.java', '''
+                package com.example.order.application.port.out;
+
+                public interface PaymentPort {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/out/RefundPort.java', '''
+                package com.example.order.application.port.out;
+
+                public interface RefundPort {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/out/payment/PaymentAdapter.java', '''
+                package com.example.order.adapter.out.payment;
+
+                import com.example.order.application.port.out.PaymentPort;
+                import com.example.order.application.port.out.RefundPort;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public final class PaymentAdapter implements PaymentPort, RefundPort {
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("application service 'OrderService' must implement exactly one UseCase for SRP") }
+        assert violations.any { it.contains("adapter 'PaymentAdapter' must implement only one outbound Port for SRP") }
+    }
+
+    @Test
+    void 'rejects ambiguous responsibility names'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/domain/model/OrderManager.java', '''
+                package com.example.order.domain.model;
+
+                public final class OrderManager {
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("type 'OrderManager' has an ambiguous responsibility name") }
+    }
+
+    @Test
     void 'rejects packages outside bounded context topology'() {
         Project project = sampleProject()
         writeApplication(project)
@@ -234,6 +449,58 @@ class ClaudeConventionValidatorTest {
         assert !violations.any { it.contains('package must follow {context}/domain') }
         assert !violations.any { it.contains('root package may contain only') }
         assert !violations.any { it.contains('global package must be limited') }
+    }
+
+    @Test
+    void 'rejects else and requires early return'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/error/FlowGuard.java', '''
+                package com.example.global.error;
+
+                public final class FlowGuard {
+
+                    int select(boolean active) {
+                        if (active) {
+                            return 1;
+                        } else {
+                            return 0;
+                        }
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('must not use else; use guard clauses and early return') }
+    }
+
+    @Test
+    void 'accepts early return and ignores else in comments and strings'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/error/FlowGuard.java', '''
+                package com.example.global.error;
+
+                public final class FlowGuard {
+
+                    String select(boolean active) {
+                        // else in comments must not count
+                        String label = "else in text must not count";
+                        String block = """
+                                else in text block must not count
+                                """;
+                        if (!active) {
+                            return label;
+                        }
+                        return block;
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains('must not use else; use guard clauses and early return') }
     }
 
     @Test
@@ -437,6 +704,73 @@ class ClaudeConventionValidatorTest {
         assert !violations.any { it.contains("must include '// given'") }
         assert !violations.any { it.contains("must include '// when'") }
         assert !violations.any { it.contains("must include '// then'") }
+    }
+
+    @Test
+    void 'rejects placeholder given when then comments without section code'() {
+        Project project = sampleProject()
+        writeTestJava(project, 'com/example/order/OrderServiceTest.java', '''
+                package com.example.order;
+
+                import org.junit.jupiter.api.DisplayName;
+                import org.junit.jupiter.api.Test;
+
+                class OrderServiceTest {
+
+                    @Test
+                    @DisplayName("주문을 생성한다")
+                    void createOrder() {
+                        // given
+
+                        // when
+
+                        // then
+
+                        int actual = 1;
+                        assert actual == 1;
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("// given section must contain code") }
+        assert violations.any { it.contains("// when section must contain code") }
+    }
+
+    @Test
+    void 'accepts when then combined section for exception assertions'() {
+        Project project = sampleProject()
+        writeTestJava(project, 'com/example/order/OrderServiceTest.java', '''
+                package com.example.order;
+
+                import org.junit.jupiter.api.DisplayName;
+                import org.junit.jupiter.api.Test;
+
+                import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+                class OrderServiceTest {
+
+                    @Test
+                    @DisplayName("취소된 주문은 다시 취소할 수 없다")
+                    void cannotCancelTwice() {
+                        // given
+                        Runnable command = () -> {
+                            throw new IllegalStateException("cancelled");
+                        };
+
+                        // when & then
+                        assertThatThrownBy(command::run)
+                                .isInstanceOf(IllegalStateException.class);
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains("must include '// when'") }
+        assert !violations.any { it.contains("must include '// then'") }
+        assert !violations.any { it.contains('section must contain code') }
     }
 
     @Test

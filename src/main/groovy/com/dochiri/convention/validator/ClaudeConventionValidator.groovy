@@ -132,13 +132,15 @@ class ClaudeConventionValidator {
             String source = file.getText(StandardCharsets.UTF_8.name())
             String packageName = SourceInspector.extractPackageName(source)
             validateCommonPackageUsage(project, file, source, packageName, violations)
+            validateNoElseUsage(project, file, source, violations)
 
             TypeDeclaration type = TypeDeclaration.from(source)
             if (type == null) {
                 return
             }
 
-            validateTechnicalAnnotationPlacement(project, file, source, packageName, convention, violations)
+            validateSingleResponsibility(project, file, source, packageName, type, convention, violations)
+            validateTechnicalAnnotationPlacement(project, file, source, packageName, type, convention, violations)
             validateWebErrorTypePlacement(project, file, source, packageName, convention, violations)
             validatePackageTopology(project, file, packageName, type, applicationRootPackages, violations)
             validateTypePackageConvention(project, file, packageName, type, convention, violations)
@@ -214,11 +216,54 @@ class ClaudeConventionValidator {
         return path.replace(File.separatorChar, '/' as char).split('/').contains(segment)
     }
 
+    private static void validateNoElseUsage(Project project, File file, String source, List<String> violations) {
+        String codeOnly = stripCommentsAndStrings(source)
+        if ((codeOnly =~ /\belse\b/).find()) {
+            String path = project.relativePath(file)
+            violations.add("${path} must not use else; use guard clauses and early return")
+        }
+    }
+
+    private static void validateSingleResponsibility(
+            Project project,
+            File file,
+            String source,
+            String packageName,
+            TypeDeclaration type,
+            HexagonalConventionExtension convention,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        if (type.name ==~ /.*(Manager|Helper|Utils?)$/) {
+            violations.add("${path} type '${type.name}' has an ambiguous responsibility name; use a specific domain, use case, port, adapter, mapper, or factory name")
+        }
+
+        if (SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
+                && packageName.contains('.service')
+                && type.kind == 'class') {
+            int useCaseCount = countImplementedInterfacesEndingWith(source, type.name, 'UseCase')
+            if (useCaseCount > 1) {
+                violations.add("${path} application service '${type.name}' must implement exactly one UseCase for SRP")
+            }
+        }
+
+        if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)
+                && type.kind == 'class'
+                && !SourceInspector.isEntityClass(source)
+                && !type.name.endsWith('Mapper')) {
+            int portCount = countImplementedInterfacesEndingWith(source, type.name, 'Port')
+            if (portCount > 1) {
+                violations.add("${path} adapter '${type.name}' must implement only one outbound Port for SRP")
+            }
+        }
+    }
+
     private static void validateTechnicalAnnotationPlacement(
             Project project,
             File file,
             String source,
             String packageName,
+            TypeDeclaration type,
             HexagonalConventionExtension convention,
             List<String> violations
     ) {
@@ -243,6 +288,14 @@ class ClaudeConventionValidator {
 
         if (hasAnnotation(source, 'Transactional') && !applicationService) {
             violations.add("${path} @Transactional is only allowed on concrete application services")
+        }
+        if (applicationService && hasClassLevelAnnotation(source, type.name, 'Transactional')) {
+            violations.add("${path} @Transactional must be declared on public application service methods, not on the class")
+        }
+        if (applicationService) {
+            findPublicMethodNamesWithoutAnnotation(source, 'Transactional').each { String methodName ->
+                violations.add("${path} public application service method '${methodName}' must declare @Transactional")
+            }
         }
     }
 
@@ -388,6 +441,18 @@ class ClaudeConventionValidator {
                 && !hasAnyAnnotation(source, ['Component', 'Repository'])) {
             violations.add("${path} outbound adapter '${type.name}' must declare @Component or @Repository instead of being wired by ContextConfig")
         }
+
+        if (isSpringComponentType(source, packageName, type, convention)) {
+            if (usesAutowiredInjection(source)) {
+                violations.add("${path} Spring component '${type.name}' must use final fields with @RequiredArgsConstructor instead of @Autowired injection")
+            }
+            if (hasPrivateFinalInstanceField(source) && !hasAnnotation(source, 'RequiredArgsConstructor')) {
+                violations.add("${path} Spring component '${type.name}' with final dependencies must declare @RequiredArgsConstructor")
+            }
+            if (hasNonFinalPrivateInstanceField(source) && hasDependencyField(source)) {
+                violations.add("${path} Spring component '${type.name}' dependencies must be private final fields")
+            }
+        }
     }
 
     private static void validateExceptionArchitecture(
@@ -502,23 +567,93 @@ class ClaudeConventionValidator {
             List<String> violations
     ) {
         String path = project.relativePath(file)
-        int givenIndex = commentIndex(body, 'given')
-        int whenIndex = commentIndex(body, 'when')
-        int thenIndex = commentIndex(body, 'then')
+        PhaseComment given = findPhaseComment(body, 'given')
+        PhaseComment when = findPhaseComment(body, 'when')
+        PhaseComment then = findPhaseComment(body, 'then')
+        PhaseComment whenThen = findWhenThenComment(body)
 
-        if (givenIndex < 0) {
+        if (given == null) {
             violations.add("${path} test method '${methodName}' must include '// given'")
         }
-        if (whenIndex < 0) {
-            violations.add("${path} test method '${methodName}' must include '// when'")
+        if (when == null && whenThen == null) {
+            violations.add("${path} test method '${methodName}' must include '// when' or '// when & then'")
         }
-        if (thenIndex < 0) {
-            violations.add("${path} test method '${methodName}' must include '// then'")
+        if (then == null && whenThen == null) {
+            violations.add("${path} test method '${methodName}' must include '// then' or '// when & then'")
         }
-        if (givenIndex >= 0 && whenIndex >= 0 && thenIndex >= 0
-                && !(givenIndex < whenIndex && whenIndex < thenIndex)) {
+
+        if (given != null && when != null && then != null) {
+            validateSeparatedGivenWhenThen(project, file, body, methodName, given, when, then, violations)
+            return
+        }
+
+        if (given != null && whenThen != null) {
+            validateCombinedWhenThen(project, file, body, methodName, given, whenThen, violations)
+        }
+    }
+
+    private static void validateSeparatedGivenWhenThen(
+            Project project,
+            File file,
+            String body,
+            String methodName,
+            PhaseComment given,
+            PhaseComment when,
+            PhaseComment then,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        if (!(given.start < when.start && when.start < then.start)) {
             violations.add("${path} test method '${methodName}' must order comments as // given, // when, // then")
+            return
         }
+
+        validateNonEmptyTestSection(project, file, methodName, 'given', body.substring(given.end, when.start), violations)
+        validateNonEmptyTestSection(project, file, methodName, 'when', body.substring(when.end, then.start), violations)
+        validateNonEmptyTestSection(project, file, methodName, 'then', body.substring(then.end), violations)
+
+        if (!hasObservableAssertion(body.substring(then.end))) {
+            violations.add("${path} test method '${methodName}' // then section must assert observable result")
+        }
+    }
+
+    private static void validateCombinedWhenThen(
+            Project project,
+            File file,
+            String body,
+            String methodName,
+            PhaseComment given,
+            PhaseComment whenThen,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        if (!(given.start < whenThen.start)) {
+            violations.add("${path} test method '${methodName}' must order comments as // given, // when & then")
+            return
+        }
+
+        validateNonEmptyTestSection(project, file, methodName, 'given', body.substring(given.end, whenThen.start), violations)
+        String whenThenBody = body.substring(whenThen.end)
+        validateNonEmptyTestSection(project, file, methodName, 'when & then', whenThenBody, violations)
+
+        if (!hasObservableAssertion(whenThenBody)) {
+            violations.add("${path} test method '${methodName}' // when & then section must assert observable result")
+        }
+    }
+
+    private static void validateNonEmptyTestSection(
+            Project project,
+            File file,
+            String methodName,
+            String sectionName,
+            String sectionBody,
+            List<String> violations
+    ) {
+        if (hasExecutableCode(sectionBody)) {
+            return
+        }
+        String path = project.relativePath(file)
+        violations.add("${path} test method '${methodName}' // ${sectionName} section must contain code; do not leave placeholder comments")
     }
 
     private static void validateTestAssertionQuality(
@@ -1131,7 +1266,7 @@ class ClaudeConventionValidator {
     }
 
     private static boolean hasForbiddenDomainAnnotation(String source) {
-        return (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*(?:Autowired|Component|Service|Repository|Entity|Table|Getter|Setter|Data|Builder|NoArgsConstructor)\b/).find()
+        return (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*(?:Autowired|Component|Service|Repository|Entity|Table|Getter|Setter|Data|Builder|NoArgsConstructor|RequiredArgsConstructor|AllArgsConstructor)\b/).find()
     }
 
     private static boolean throwsJdkBasicException(String source) {
@@ -1156,6 +1291,87 @@ class ClaudeConventionValidator {
 
     private static boolean hasAnnotation(String source, String annotation) {
         return (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()
+    }
+
+    private static boolean hasClassLevelAnnotation(String source, String typeName, String annotation) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /(?ms)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b(?:\([^)]*\))?(?:\s*@\s*[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?)*\s*(?:public\s+)?(?:(?:final|abstract)\s+)?(?:class|record|interface|enum)\s+${typeName}\b/).find()
+    }
+
+    private static List<String> findPublicMethodNamesWithoutAnnotation(String source, String annotation) {
+        List<String> methodNames = []
+        def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)*)^\s*public\s+(?!class\b)(?!interface\b)(?!enum\b)(?!record\b)(?!static\b)(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.<>, ?\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{/
+        while (matcher.find()) {
+            String annotations = matcher.group(1)
+            String methodName = matcher.group(2)
+            if (!(annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()) {
+                methodNames.add(methodName)
+            }
+        }
+        return methodNames
+    }
+
+    private static int countImplementedInterfacesEndingWith(String source, String typeName, String suffix) {
+        String searchableSource = stripCommentsAndStrings(source)
+        def matcher = searchableSource =~ /(?ms)\bclass\s+${typeName}\s+implements\s+([^{]+)\{/
+        if (!matcher.find()) {
+            return 0
+        }
+        splitTopLevelComma(matcher.group(1)).count { String type ->
+            simplifyTypeName(type).endsWith(suffix)
+        }
+    }
+
+    private static String simplifyTypeName(String type) {
+        String withoutGenerics = type.replaceAll(/<.*>/, '').trim()
+        String simpleName = withoutGenerics.tokenize('.').last()
+        return simpleName.replaceAll(/\s+/, '')
+    }
+
+    private static boolean isSpringComponentType(
+            String source,
+            String packageName,
+            TypeDeclaration type,
+            HexagonalConventionExtension convention
+    ) {
+        if (type.kind != 'class') {
+            return false
+        }
+        boolean applicationService = SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
+                && packageName.contains('.service')
+                && type.name.endsWith('Service')
+        boolean adapter = SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)
+                || SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
+                || isGlobalErrorPackage(packageName)
+        return applicationService || adapter || hasAnyAnnotation(source, [
+                'Component',
+                'Service',
+                'Repository',
+                'RestController',
+                'Controller',
+                'RestControllerAdvice',
+                'ControllerAdvice'
+        ])
+    }
+
+    private static boolean usesAutowiredInjection(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*Autowired\b/).find()
+    }
+
+    private static boolean hasPrivateFinalInstanceField(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /(?m)^\s*private\s+final\s+(?!static\b)[A-Za-z_][A-Za-z0-9_$.]*(?:\s*<[^;=()]+>)?(?:\s*\[\])?\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:;|=)/).find()
+    }
+
+    private static boolean hasNonFinalPrivateInstanceField(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /(?m)^\s*private\s+(?!static\b)(?!final\b)[A-Za-z_][A-Za-z0-9_$.]*(?:\s*<[^;=()]+>)?(?:\s*\[\])?\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:;|=)/).find()
+    }
+
+    private static boolean hasDependencyField(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /(?m)^\s*private\s+(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.]*(?:Port|Repository|RepositoryPort|UseCase|Client|Service|Mapper|Factory|Publisher|Producer|Consumer|Template|EntityManager|Clock)\b/).find()
     }
 
     private static String findApplicationRootPackage(String packageName, Set<String> applicationRootPackages) {
@@ -1281,9 +1497,21 @@ class ClaudeConventionValidator {
         return (value =~ /[\uAC00-\uD7A3]/).find()
     }
 
-    private static int commentIndex(String body, String phase) {
-        def matcher = body =~ /(?m)^\s*\/\/\s*${phase}\b/
-        return matcher.find() ? matcher.start() : -1
+    private static PhaseComment findPhaseComment(String body, String phase) {
+        String combinedWhenThenGuard = phase == 'when' ? '(?!\\s*&\\s*then)' : ''
+        def matcher = body =~ /(?m)^\s*\/\/\s*${phase}\b${combinedWhenThenGuard}.*$/
+        return matcher.find() ? new PhaseComment(matcher.start(), matcher.end()) : null
+    }
+
+    private static PhaseComment findWhenThenComment(String body) {
+        def matcher = body =~ /(?m)^\s*\/\/\s*when\s*&\s*then\b.*$/
+        return matcher.find() ? new PhaseComment(matcher.start(), matcher.end()) : null
+    }
+
+    private static boolean hasExecutableCode(String value) {
+        String codeOnly = stripCommentsAndStrings(value)
+                .replaceAll(/[\s;]/, '')
+        return !codeOnly.isBlank()
     }
 
     private static boolean hasObservableAssertion(String body) {
@@ -1478,6 +1706,7 @@ class ClaudeConventionValidator {
         return source
                 .replaceAll(/(?s)\/\*.*?\*\//, ' ')
                 .replaceAll(/(?m)\/\/.*$/, ' ')
+                .replaceAll('(?s)"""[\\s\\S]*?"""', '""')
                 .replaceAll(/(?s)"(?:\\.|[^"\\])*"/, '""')
                 .replaceAll(/(?s)'(?:\\.|[^'\\])*'/, "''")
     }
@@ -1572,6 +1801,16 @@ class ClaudeConventionValidator {
         private FieldDeclaration(String type, String name) {
             this.type = type
             this.name = name
+        }
+    }
+
+    private static class PhaseComment {
+        final int start
+        final int end
+
+        private PhaseComment(int start, int end) {
+            this.start = start
+            this.end = end
         }
     }
 
