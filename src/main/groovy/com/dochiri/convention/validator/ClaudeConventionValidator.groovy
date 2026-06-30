@@ -59,15 +59,17 @@ class ClaudeConventionValidator {
         }.each { File file ->
             String source = file.getText(StandardCharsets.UTF_8.name())
             String packageName = SourceInspector.extractPackageName(source)
+            validateCommonPackageUsage(project, file, source, packageName, violations)
+
             TypeDeclaration type = TypeDeclaration.from(source)
             if (type == null) {
                 return
             }
 
-            validateCommonPackageUsage(project, file, source, packageName, violations)
             validateTechnicalAnnotationPlacement(project, file, source, packageName, convention, violations)
             validateWebErrorTypePlacement(project, file, source, packageName, convention, violations)
             validateTypePackageConvention(project, file, packageName, type, convention, violations)
+            validateSpringComponentRegistration(project, file, source, packageName, type, convention, violations)
 
             if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
                 validateDomain(project, file, source, type, violations)
@@ -110,7 +112,7 @@ class ClaudeConventionValidator {
             List<String> violations
     ) {
         String path = project.relativePath(file)
-        if (SourceInspector.isInLayer(packageName, 'common')) {
+        if (SourceInspector.isInLayer(packageName, 'common') || hasPathSegment(path, 'common')) {
             violations.add("${path} common package is not allowed; use a shared module or context-local package")
         }
         SourceInspector.extractImports(source).each { String imported ->
@@ -118,6 +120,10 @@ class ClaudeConventionValidator {
                 violations.add("${path} must not import common package '${imported}'")
             }
         }
+    }
+
+    private static boolean hasPathSegment(String path, String segment) {
+        return path.replace(File.separatorChar, '/' as char).split('/').contains(segment)
     }
 
     private static void validateTechnicalAnnotationPlacement(
@@ -168,6 +174,39 @@ class ClaudeConventionValidator {
 
         String path = project.relativePath(file)
         violations.add("${path} Spring Web error types are only allowed in adapter.in.web or global.error")
+    }
+
+    private static void validateSpringComponentRegistration(
+            Project project,
+            File file,
+            String source,
+            String packageName,
+            TypeDeclaration type,
+            HexagonalConventionExtension convention,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+
+        if (type.name.endsWith('ContextConfig')) {
+            violations.add("${path} context-specific ContextConfig is not allowed; register application services and adapters as Spring components")
+        }
+
+        if (SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
+                && packageName.contains('.service')
+                && type.kind == 'class'
+                && type.name.endsWith('Service')
+                && !hasAnnotation(source, 'Service')) {
+            violations.add("${path} application service '${type.name}' must declare @Service")
+        }
+
+        if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)
+                && type.kind == 'class'
+                && !isAbstractClass(source, type.name)
+                && !SourceInspector.isEntityClass(source)
+                && !type.name.endsWith('Mapper')
+                && !hasAnyAnnotation(source, ['Component', 'Repository'])) {
+            violations.add("${path} outbound adapter '${type.name}' must declare @Component or @Repository instead of being wired by ContextConfig")
+        }
     }
 
     private static void validateTypePackageConvention(
@@ -768,6 +807,14 @@ class ClaudeConventionValidator {
 
     private static boolean hasAnnotation(String source, String annotation) {
         return (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()
+    }
+
+    private static boolean hasAnyAnnotation(String source, List<String> annotations) {
+        return annotations.any { String annotation -> hasAnnotation(source, annotation) }
+    }
+
+    private static boolean isAbstractClass(String source, String typeName) {
+        return (source =~ /(?m)^\s*(?:public\s+)?abstract\s+class\s+${typeName}\b/).find()
     }
 
     private static boolean hasProtectedNoArgsConstructor(String source) {
