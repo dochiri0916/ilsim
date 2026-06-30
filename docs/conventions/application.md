@@ -3,6 +3,7 @@
 ## 핵심 원칙
 
 - 애플리케이션 서비스는 유스케이스 인터페이스(`port/in`)를 구현한다.
+- 애플리케이션 서비스는 `@Service`로 등록한다.
 - 애플리케이션은 도메인과 포트(`port/in`, `port/out`)에만 의존한다.
 - 애플리케이션은 `adapter.in.web`, `adapter.out`에 직접 의존하지 않는다.
 - 유스케이스 입출력은 `Command`, `Result` DTO로 분리한다.
@@ -31,6 +32,7 @@
   - 컴파일된 클래스 기준 애플리케이션 레이어 의존성 규칙 재검증
 - `validateClaudeConventions`
   - UseCase/Command/Query/Result/Port/Service의 패키지와 타입 규칙 검증
+  - 애플리케이션 서비스의 `@Service` 등록 검증
   - 컨트롤러가 애플리케이션 `port/in` 외 구현체에 의존하지 않는지 검증
 - `checkstyleMain`, `pmdMain`, `spotbugsMain`
   - 스타일/소스 품질/바이트코드 버그 기본 검증

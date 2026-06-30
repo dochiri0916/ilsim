@@ -5,6 +5,7 @@
 - `adapter.out`은 아웃바운드 포트 구현체 위치다.
 - JPA 엔티티, QueryDSL, 외부 시스템 연동 코드는 아웃바운드 어댑터에만 둔다.
 - 도메인 모델과 영속 엔티티는 Mapper로 변환한다.
+- 아웃바운드 어댑터 구현체는 `ContextConfig`에서 `@Bean`으로 조립하지 않고 `@Component` 또는 `@Repository`로 등록한다.
 
 ## 영속성 원칙
 
@@ -35,6 +36,7 @@
   - 기술 어노테이션(`@Entity`, `@Table`, `@Repository`)의 `adapter.out` 위치 검증
   - JPA Entity의 `@Getter`, protected `@NoArgsConstructor`, `Long id`, `String {target}Id` 구조 검증
   - JPA Entity/JpaRepository/PersistenceAdapter의 persistence 패키지와 구현 규칙 검증
+  - 아웃바운드 어댑터 구현체의 `@Component`/`@Repository` 등록 검증
   - JPA 연관관계 어노테이션과 Entity 객체 참조 필드 금지
   - Mapper의 final class/private constructor/Spring Bean 등록 금지 검증
 - `validateMigrationConventions`
