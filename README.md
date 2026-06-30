@@ -9,6 +9,7 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 - 레이어 의존성 규칙(`domain -> application/adapter` 금지, `application -> adapter` 금지)을 Validator로 강제합니다.
 - 도메인/엔티티 분리, 엔티티 단수/테이블 복수 네이밍, 정적 팩토리 규칙을 자동 검증합니다.
 - `validateClaudeConventions` 태스크로 패키지/네이밍, Domain record, JPA Entity, Mapper, Controller 의존성, Spring 컴포넌트 등록 규칙을 검증합니다.
+- Java 테스트 메서드의 한국어 `@DisplayName`과 `// given`, `// when`, `// then` 구조를 검증합니다.
 - 도메인 전용 품질 게이트(`checkstyleDomain`, `pmdDomain`, `spotbugsDomain`)를 별도로 실행할 수 있습니다.
 - `validateArchUnitArchitecture` 태스크로 컴파일된 클래스의 레이어 의존성을 ArchUnit으로 검증합니다.
 - `jacocoTestReport`, `jacocoTestCoverageVerification`을 `check`에 연결해 전체/계층별 커버리지를 검증합니다.
@@ -34,7 +35,7 @@ cd ~/programming/utility/build-convention
 
 ```text
 id      = com.dochiri.lint-convention
-version = 1.5.2
+version = 1.0.0
 ```
 
 ## 사용 프로젝트 설정
@@ -56,7 +57,7 @@ pluginManagement {
 ```groovy
 plugins {
     id 'java'
-    id 'com.dochiri.lint-convention' version '1.5.2'
+    id 'com.dochiri.lint-convention' version '1.0.0'
 }
 ```
 
@@ -67,7 +68,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '3.5.0'
     id 'io.spring.dependency-management' version '1.1.7'
-    id 'com.dochiri.lint-convention' version '1.5.2'
+    id 'com.dochiri.lint-convention' version '1.0.0'
 }
 ```
 

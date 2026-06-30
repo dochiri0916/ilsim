@@ -22,6 +22,51 @@ class ClaudeConventionValidator {
             'HttpStatus',
             'HttpStatusCode'
     ] as Set
+    private static final Set<String> TECHNICAL_EXCEPTION_PACKAGES = [
+            'jakarta.persistence',
+            'javax.persistence',
+            'org.hibernate',
+            'org.springframework.dao',
+            'org.springframework.web.client',
+            'org.springframework.web.reactive.function.client',
+            'feign',
+            'okhttp3',
+            'retrofit2',
+            'software.amazon.awssdk',
+            'com.amazonaws',
+            'org.apache.http'
+    ] as Set
+    private static final Set<String> TECHNICAL_EXCEPTION_TYPES = [
+            'AmazonClientException',
+            'AmazonServiceException',
+            'ConnectException',
+            'DataAccessException',
+            'FeignException',
+            'FileNotFoundException',
+            'HibernateException',
+            'HttpClientErrorException',
+            'HttpServerErrorException',
+            'IOException',
+            'JDBCException',
+            'PersistenceException',
+            'RestClientException',
+            'SdkException',
+            'SocketException',
+            'SocketTimeoutException',
+            'SQLException',
+            'SQLIntegrityConstraintViolationException',
+            'SQLTimeoutException',
+            'TimeoutException',
+            'WebClientException',
+            'WebClientResponseException'
+    ] as Set
+    private static final Set<String> TEST_METHOD_ANNOTATIONS = [
+            'Test',
+            'ParameterizedTest',
+            'RepeatedTest',
+            'TestFactory',
+            'TestTemplate'
+    ] as Set
     private static final Set<String> RAW_SCALAR_TYPES = [
             'String',
             'java.lang.String',
@@ -70,6 +115,7 @@ class ClaudeConventionValidator {
             validateWebErrorTypePlacement(project, file, source, packageName, convention, violations)
             validateTypePackageConvention(project, file, packageName, type, convention, violations)
             validateSpringComponentRegistration(project, file, source, packageName, type, convention, violations)
+            validateExceptionArchitecture(project, file, source, packageName, type, convention, violations)
 
             if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
                 validateDomain(project, file, source, type, violations)
@@ -100,6 +146,7 @@ class ClaudeConventionValidator {
                 validateController(project, file, source, convention, violations)
             }
         }
+        validateTestConventions(project, violations)
 
         return violations
     }
@@ -206,6 +253,131 @@ class ClaudeConventionValidator {
                 && !type.name.endsWith('Mapper')
                 && !hasAnyAnnotation(source, ['Component', 'Repository'])) {
             violations.add("${path} outbound adapter '${type.name}' must declare @Component or @Repository instead of being wired by ContextConfig")
+        }
+    }
+
+    private static void validateExceptionArchitecture(
+            Project project,
+            File file,
+            String source,
+            String packageName,
+            TypeDeclaration type,
+            HexagonalConventionExtension convention,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        boolean domain = SourceInspector.isInLayer(packageName, convention.domainPackageSegment)
+        boolean application = SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
+        boolean outboundPort = application && packageName.contains('.port.out')
+        boolean globalError = isGlobalErrorPackage(packageName)
+        boolean webAdapter = SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
+
+        if ((domain || application || outboundPort) && exposesTechnicalException(source)) {
+            violations.add("${path} domain/application/outbound port must not expose DB/HTTP/SDK/Spring technical exception types")
+        }
+
+        if ((globalError || webAdapter) && exposesExceptionMessageAsProblemDetail(source)) {
+            violations.add("${path} must not expose exception.getMessage() as ProblemDetail detail")
+        }
+
+        if ((globalError || webAdapter) && hardCodesProblemDetailTitleOrDetail(source)) {
+            violations.add("${path} must resolve user-facing ProblemDetail title/detail through message catalog or MessageSource")
+        }
+
+        if (globalError && type.name == 'GlobalExceptionHandler'
+                && importsDomainOrApplicationException(source, convention)) {
+            violations.add("${path} GlobalExceptionHandler must delegate domain/application exception mapping to ApiExceptionMapper")
+        }
+
+        if (implementsApiExceptionMapper(source) && !globalError && !webAdapter) {
+            violations.add("${path} ApiExceptionMapper implementations must live in adapter.in.web or global.error")
+        }
+    }
+
+    private static void validateTestConventions(Project project, List<String> violations) {
+        File testJavaDir = project.file('src/test/java')
+        if (!testJavaDir.exists()) {
+            return
+        }
+
+        project.fileTree(testJavaDir) {
+            include '**/*.java'
+        }.files.each { File file ->
+            String source = file.getText(StandardCharsets.UTF_8.name())
+            validateJavaTestFile(project, file, source, violations)
+        }
+    }
+
+    private static void validateJavaTestFile(
+            Project project,
+            File file,
+            String source,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)+)\s*(?:public|protected|private)?\s*(?:final\s+)?(?:void|[A-Za-z_][A-Za-z0-9_$.<>]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*(?:throws\s+[^{]+)?\{/
+        while (matcher.find()) {
+            String annotations = matcher.group(1)
+            String methodName = matcher.group(2)
+            if (!hasTestMethodAnnotation(annotations)) {
+                continue
+            }
+
+            validateDisplayName(project, file, annotations, methodName, violations)
+
+            int bodyStart = matcher.end() - 1
+            int bodyEnd = findMatchingBrace(source, bodyStart)
+            if (bodyEnd < 0) {
+                continue
+            }
+            validateGivenWhenThen(project, file, source.substring(bodyStart + 1, bodyEnd), methodName, violations)
+        }
+    }
+
+    private static void validateDisplayName(
+            Project project,
+            File file,
+            String annotations,
+            String methodName,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        def matcher = annotations =~ /@(?:[A-Za-z_][A-Za-z0-9_]*\.)?DisplayName\s*\(\s*"([^"]*)"\s*\)/
+        if (!matcher.find()) {
+            violations.add("${path} test method '${methodName}' must declare @DisplayName in Korean")
+            return
+        }
+
+        String displayName = matcher.group(1)
+        if (!containsKorean(displayName)) {
+            violations.add("${path} test method '${methodName}' @DisplayName must be written in Korean")
+        }
+    }
+
+    private static void validateGivenWhenThen(
+            Project project,
+            File file,
+            String body,
+            String methodName,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        int givenIndex = commentIndex(body, 'given')
+        int whenIndex = commentIndex(body, 'when')
+        int thenIndex = commentIndex(body, 'then')
+
+        if (givenIndex < 0) {
+            violations.add("${path} test method '${methodName}' must include '// given'")
+        }
+        if (whenIndex < 0) {
+            violations.add("${path} test method '${methodName}' must include '// when'")
+        }
+        if (thenIndex < 0) {
+            violations.add("${path} test method '${methodName}' must include '// then'")
+        }
+        if (givenIndex >= 0 && whenIndex >= 0 && thenIndex >= 0
+                && !(givenIndex < whenIndex && whenIndex < thenIndex)) {
+            violations.add("${path} test method '${methodName}' must order comments as // given, // when, // then")
         }
     }
 
@@ -863,6 +1035,142 @@ class ClaudeConventionValidator {
         return (source =~ /Objects::isNull/).find()
                 || (source =~ /\.contains\s*\(\s*null\s*\)/).find()
                 || (source =~ /==\s*null/).find()
+    }
+
+    private static boolean exposesTechnicalException(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        boolean imported = SourceInspector.extractImports(source).any { String imported ->
+            TECHNICAL_EXCEPTION_PACKAGES.any { String packageName ->
+                imported == packageName || imported.startsWith("${packageName}.")
+            } || TECHNICAL_EXCEPTION_TYPES.contains(imported.substring(imported.lastIndexOf('.') + 1))
+        }
+        if (imported) {
+            return true
+        }
+        return TECHNICAL_EXCEPTION_TYPES.any { String typeName ->
+            (searchableSource =~ /(?m)\b(?:throws|catch\s*\(|new\s+)${Pattern.quote(typeName)}\b/).find()
+                    || (searchableSource =~ /(?m)\b${Pattern.quote(typeName)}\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:;|,|\))/).find()
+        }
+    }
+
+    private static boolean exposesExceptionMessageAsProblemDetail(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /(?m)\.setDetail\s*\([^)]*\.getMessage\s*\(/).find()
+                || (searchableSource =~ /(?m)forStatusAndDetail\s*\([^)]*\.getMessage\s*\(/).find()
+    }
+
+    private static boolean hardCodesProblemDetailTitleOrDetail(String source) {
+        return (source =~ /(?m)\.set(?:Title|Detail)\s*\(\s*"[^"]+"\s*\)/).find()
+                || (source =~ /(?m)forStatusAndDetail\s*\([^,]+,\s*"[^"]+"\s*\)/).find()
+    }
+
+    private static boolean importsDomainOrApplicationException(
+            String source,
+            HexagonalConventionExtension convention
+    ) {
+        return SourceInspector.extractImports(source).any { String imported ->
+            (SourceInspector.isInLayer(imported, convention.domainPackageSegment)
+                    && imported.contains('.exception.'))
+                    || (SourceInspector.isInLayer(imported, convention.applicationPackageSegment)
+                    && imported.contains('.exception.'))
+        }
+    }
+
+    private static boolean implementsApiExceptionMapper(String source) {
+        return (source =~ /(?m)\bimplements\s+[A-Za-z0-9_,\s<>]*ApiExceptionMapper\b/).find()
+    }
+
+    private static boolean hasTestMethodAnnotation(String annotations) {
+        return TEST_METHOD_ANNOTATIONS.any { String annotation ->
+            (annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()
+        }
+    }
+
+    private static boolean containsKorean(String value) {
+        return (value =~ /[\uAC00-\uD7A3]/).find()
+    }
+
+    private static int commentIndex(String body, String phase) {
+        def matcher = body =~ /(?m)^\s*\/\/\s*${phase}\b/
+        return matcher.find() ? matcher.start() : -1
+    }
+
+    private static int findMatchingBrace(String source, int openBraceIndex) {
+        int depth = 0
+        boolean inString = false
+        boolean inChar = false
+        boolean inLineComment = false
+        boolean inBlockComment = false
+        boolean escaped = false
+
+        for (int index = openBraceIndex; index < source.length(); index++) {
+            char current = source.charAt(index)
+            char next = index + 1 < source.length() ? source.charAt(index + 1) : (char) 0
+
+            if (inLineComment) {
+                if (current == '\n' as char || current == '\r' as char) {
+                    inLineComment = false
+                }
+                continue
+            }
+            if (inBlockComment) {
+                if (current == '*' as char && next == '/' as char) {
+                    inBlockComment = false
+                    index++
+                }
+                continue
+            }
+            if (inString) {
+                if (!escaped && current == '"' as char) {
+                    inString = false
+                }
+                escaped = !escaped && current == '\\' as char
+                if (current != '\\' as char) {
+                    escaped = false
+                }
+                continue
+            }
+            if (inChar) {
+                if (!escaped && current == '\'' as char) {
+                    inChar = false
+                }
+                escaped = !escaped && current == '\\' as char
+                if (current != '\\' as char) {
+                    escaped = false
+                }
+                continue
+            }
+
+            if (current == '/' as char && next == '/' as char) {
+                inLineComment = true
+                index++
+                continue
+            }
+            if (current == '/' as char && next == '*' as char) {
+                inBlockComment = true
+                index++
+                continue
+            }
+            if (current == '"' as char) {
+                inString = true
+                escaped = false
+                continue
+            }
+            if (current == '\'' as char) {
+                inChar = true
+                escaped = false
+                continue
+            }
+            if (current == '{' as char) {
+                depth++
+            } else if (current == '}' as char) {
+                depth--
+                if (depth == 0) {
+                    return index
+                }
+            }
+        }
+        return -1
     }
 
     private static boolean referencesInnerLayerPackage(String source, HexagonalConventionExtension convention) {
