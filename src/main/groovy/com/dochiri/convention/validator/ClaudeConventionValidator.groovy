@@ -72,6 +72,12 @@ class ClaudeConventionValidator {
             'application',
             'adapter'
     ] as Set
+    private static final Set<String> RESERVED_CONTEXT_NAMES = [
+            'common',
+            'config',
+            'infrastructure',
+            'shared'
+    ] as Set
     private static final Set<String> DOMAIN_CHILD_SEGMENTS = [
             'model',
             'event',
@@ -303,6 +309,11 @@ class ClaudeConventionValidator {
 
         if (CONTEXT_LAYER_SEGMENTS.contains(segments.first())) {
             violations.add("${path} package must be context-first: use {context}/${segments.first()}..., not ${segments.first()}/{context}...")
+            return
+        }
+
+        if (RESERVED_CONTEXT_NAMES.contains(segments.first())) {
+            violations.add("${path} package '${segments.first()}' is not a bounded context; use a real context name before domain, application, or adapter")
             return
         }
 

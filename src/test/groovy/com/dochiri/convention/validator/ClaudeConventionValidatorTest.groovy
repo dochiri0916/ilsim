@@ -149,6 +149,12 @@ class ClaudeConventionValidatorTest {
                 public final class OrderController {
                 }
                 ''')
+        writeJava(project, 'com/example/infrastructure/adapter/out/OrderPersistenceAdapter.java', '''
+                package com.example.infrastructure.adapter.out;
+
+                public final class OrderPersistenceAdapter {
+                }
+                ''')
         writeJava(project, 'com/example/config/OrderProperties.java', '''
                 package com.example.config;
 
@@ -160,7 +166,8 @@ class ClaudeConventionValidatorTest {
 
         assert violations.any { it.contains('package must follow {context}/domain, {context}/application, or {context}/adapter structure') }
         assert violations.any { it.contains('package must be context-first') }
-        assert violations.any { it.contains("bounded context package 'config' must contain domain, application, or adapter") }
+        assert violations.any { it.contains("package 'infrastructure' is not a bounded context") }
+        assert violations.any { it.contains("package 'config' is not a bounded context") }
     }
 
     @Test
