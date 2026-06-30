@@ -147,17 +147,25 @@ class LintConventionPlugin implements Plugin<Project> {
                 task.description = 'Validates changed production code coverage from JaCoCo XML and git diff.'
                 task.dependsOn(jacocoTestReport)
                 task.inputs.file(project.layout.buildDirectory.file('reports/jacoco/test/jacocoTestReport.xml'))
-                task.inputs.property('changedCoverageBaseRef', changedCoverageBaseRef.orElse(''))
+                task.inputs.property('changedCoverageBaseRef', changedCoverageBaseRef.orElse('auto'))
                 task.doLast {
                     File jacocoXmlReport = project.layout.buildDirectory
                             .file('reports/jacoco/test/jacocoTestReport.xml')
                             .get()
                             .asFile
+                    String resolvedBaseRef = resolveChangedCoverageBaseRef(project, changedCoverageBaseRef.orNull)
+                    if (resolvedBaseRef == null) {
+                        project.logger.lifecycle(
+                                'Skipping changed code coverage: no base ref found. '
+                                        + 'Set -PchangedCoverageBaseRef=origin/main to enforce it.'
+                        )
+                        return
+                    }
                     List<String> violations = ChangedCodeCoverageValidator.validate(
                             project,
                             convention,
                             jacocoXmlReport,
-                            changedCoverageBaseRef.orNull
+                            resolvedBaseRef
                     )
                     if (!violations.isEmpty()) {
                         throw new GradleException("Changed code coverage violations:\n - ${violations.join('\n - ')}")
@@ -254,9 +262,7 @@ class LintConventionPlugin implements Plugin<Project> {
                 task.dependsOn(validateArchUnitArchitecture)
                 task.dependsOn(jacocoTestReport)
                 task.dependsOn(jacocoTestCoverageVerification)
-                if (changedCoverageBaseRef.present) {
-                    task.dependsOn(validateChangedCodeCoverage)
-                }
+                task.dependsOn(validateChangedCodeCoverage)
             }
 
             project.afterEvaluate {
@@ -279,8 +285,10 @@ class LintConventionPlugin implements Plugin<Project> {
                     validatePitMutationGate.configure { task ->
                         task.dependsOn(project.tasks.named('pitest'))
                     }
-                }
-                if (convention.enforcePitOnCheck) {
+                    project.tasks.named('check') { task ->
+                        task.dependsOn(validatePitMutationGate)
+                    }
+                } else if (convention.enforcePitOnCheck) {
                     project.tasks.named('check') { task ->
                         task.dependsOn(validatePitMutationGate)
                     }
@@ -336,6 +344,7 @@ class LintConventionPlugin implements Plugin<Project> {
             task.description = 'Validates CLAUDE.md driven architecture and DDD conventions.'
             task.inputs.files(project.fileTree(project.projectDir) {
                 include 'src/main/java/**/*.java'
+                include 'src/test/java/**/*.java'
             })
             task.doLast {
                 List<String> violations = ClaudeConventionValidator.validate(project, convention)
@@ -424,6 +433,36 @@ class LintConventionPlugin implements Plugin<Project> {
             }
         }
         return violations
+    }
+
+    private static String resolveChangedCoverageBaseRef(Project project, String configuredBaseRef) {
+        if (configuredBaseRef != null && !configuredBaseRef.isBlank()) {
+            return configuredBaseRef
+        }
+
+        ['origin/main', 'origin/master', 'main', 'master'].find { String candidate ->
+            gitRefExists(project, candidate)
+        }
+    }
+
+    private static boolean gitRefExists(Project project, String ref) {
+        try {
+            Process process = new ProcessBuilder([
+                    'git',
+                    '-C',
+                    project.projectDir.absolutePath,
+                    'rev-parse',
+                    '--verify',
+                    ref
+            ])
+                    .directory(project.projectDir)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start()
+            return process.waitFor() == 0
+        } catch (IOException ignored) {
+            return false
+        }
     }
 
     private static void materializeResource(String resourcePath, File outputFile) {

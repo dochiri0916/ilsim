@@ -9,11 +9,11 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 - 레이어 의존성 규칙(`domain -> application/adapter` 금지, `application -> adapter` 금지)을 Validator로 강제합니다.
 - 도메인/엔티티 분리, 엔티티 단수/테이블 복수 네이밍, 정적 팩토리 규칙을 자동 검증합니다.
 - `validateClaudeConventions` 태스크로 패키지/네이밍, Domain record, JPA Entity, Mapper, Controller 의존성, Spring 컴포넌트 등록 규칙을 검증합니다.
-- Java 테스트 메서드의 한국어 `@DisplayName`과 `// given`, `// when`, `// then` 구조를 검증합니다.
+- Java 테스트 메서드의 한국어 `@DisplayName`, `// given`, `// when`, `// then` 구조, assertion 없는 테스트와 no-exception/verify-only 테스트를 검증합니다.
 - 도메인 전용 품질 게이트(`checkstyleDomain`, `pmdDomain`, `spotbugsDomain`)를 별도로 실행할 수 있습니다.
 - `validateArchUnitArchitecture` 태스크로 컴파일된 클래스의 레이어 의존성을 ArchUnit으로 검증합니다.
 - `jacocoTestReport`, `jacocoTestCoverageVerification`을 `check`에 연결해 전체/계층별 커버리지를 검증합니다.
-- `validateChangedCodeCoverage` 태스크로 CI에서 Git diff 기반 변경 코드 커버리지를 검증할 수 있습니다.
+- `validateChangedCodeCoverage` 태스크로 Git diff 기반 변경 코드 커버리지를 `check`에서 검증합니다.
 - PIT 플러그인이 적용된 프로젝트는 `validatePitMutationGate`로 Domain/Application 변이 테스트 기준을 검증할 수 있습니다.
 - `validateMigrationConventions` 태스크로 SQL migration의 `{target}_id` unique, 참조 컬럼 인덱스/FK, 기술 id 참조 금지를 검증합니다.
 
@@ -89,16 +89,17 @@ plugins {
 - `validateClaudeConventions`
 - `validateMigrationConventions`
 - `validateJavaVersionConvention`
+- `validateChangedCodeCoverage`
 - `jacocoTestReport`
 - `jacocoTestCoverageVerification`
 
-변경된 Production 코드 커버리지를 CI에서 강제하려면 기준 브랜치를 함께 넘깁니다.
+변경된 Production 코드 커버리지는 `check`에서 자동으로 실행됩니다.
+기준 ref는 `origin/main`, `origin/master`, `main`, `master` 순서로 자동 탐색합니다.
+명시적으로 지정하려면 다음처럼 기준 브랜치를 넘깁니다.
 
 ```bash
 ./gradlew check -PchangedCoverageBaseRef=origin/main
 ```
-
-이 옵션이 있으면 `validateChangedCodeCoverage`도 `check`에 포함됩니다.
 
 ## 로컬에서 `check` 실행 강제
 
@@ -124,14 +125,7 @@ if [ ! -x ./gradlew ]; then
   exit 1
 fi
 
-BASE_REF="${CHANGED_COVERAGE_BASE_REF:-origin/main}"
-
-if git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
-  ./gradlew check -PchangedCoverageBaseRef="$BASE_REF"
-else
-  echo "WARN: $BASE_REF not found. Running ./gradlew check without changed coverage."
-  ./gradlew check
-fi
+./gradlew check
 EOF
 ```
 
@@ -224,7 +218,8 @@ hexagonalConvention {
 }
 ```
 
-PIT는 `info.solidsoft.pitest` 플러그인이 적용된 프로젝트에서 설정됩니다. `check`에 묶고 싶다면 다음 옵션을 켭니다.
+PIT는 `info.solidsoft.pitest` 플러그인이 적용된 프로젝트에서 자동으로 `check`에 포함됩니다.
+PIT 플러그인을 적용하지 않은 프로젝트에서 강제로 실패시키고 싶다면 다음 옵션을 켭니다.
 
 ```groovy
 hexagonalConvention {
