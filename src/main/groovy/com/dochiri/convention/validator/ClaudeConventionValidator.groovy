@@ -67,6 +67,25 @@ class ClaudeConventionValidator {
             'TestFactory',
             'TestTemplate'
     ] as Set
+    private static final Set<String> CONTEXT_LAYER_SEGMENTS = [
+            'domain',
+            'application',
+            'adapter'
+    ] as Set
+    private static final Set<String> DOMAIN_CHILD_SEGMENTS = [
+            'model',
+            'event',
+            'exception'
+    ] as Set
+    private static final Set<String> APPLICATION_CHILD_SEGMENTS = [
+            'port',
+            'exception',
+            'service'
+    ] as Set
+    private static final Set<String> ADAPTER_CHILD_SEGMENTS = [
+            'in',
+            'out'
+    ] as Set
     private static final Set<String> RAW_SCALAR_TYPES = [
             'String',
             'java.lang.String',
@@ -98,10 +117,12 @@ class ClaudeConventionValidator {
 
     static List<String> validate(Project project, HexagonalConventionExtension convention) {
         List<String> violations = []
-
-        SourceInspector.collectMainSourceFiles(project).findAll { File file ->
+        List<File> mainSourceFiles = SourceInspector.collectMainSourceFiles(project).findAll { File file ->
             file.name.endsWith('.java')
-        }.each { File file ->
+        }
+        Set<String> applicationRootPackages = collectApplicationRootPackages(mainSourceFiles)
+
+        mainSourceFiles.each { File file ->
             String source = file.getText(StandardCharsets.UTF_8.name())
             String packageName = SourceInspector.extractPackageName(source)
             validateCommonPackageUsage(project, file, source, packageName, violations)
@@ -113,6 +134,7 @@ class ClaudeConventionValidator {
 
             validateTechnicalAnnotationPlacement(project, file, source, packageName, convention, violations)
             validateWebErrorTypePlacement(project, file, source, packageName, convention, violations)
+            validatePackageTopology(project, file, packageName, type, applicationRootPackages, violations)
             validateTypePackageConvention(project, file, packageName, type, convention, violations)
             validateSpringComponentRegistration(project, file, source, packageName, type, convention, violations)
             validateExceptionArchitecture(project, file, source, packageName, type, convention, violations)
@@ -149,6 +171,19 @@ class ClaudeConventionValidator {
         validateTestConventions(project, violations)
 
         return violations
+    }
+
+    private static Set<String> collectApplicationRootPackages(List<File> mainSourceFiles) {
+        mainSourceFiles.collect { File file ->
+            String source = file.getText(StandardCharsets.UTF_8.name())
+            TypeDeclaration type = TypeDeclaration.from(source)
+            if (type == null || !type.name.endsWith('Application')) {
+                return null
+            }
+            SourceInspector.extractPackageName(source)
+        }.findAll { String packageName ->
+            packageName != null && !packageName.isBlank()
+        }.toSet()
     }
 
     private static void validateCommonPackageUsage(
@@ -221,6 +256,94 @@ class ClaudeConventionValidator {
 
         String path = project.relativePath(file)
         violations.add("${path} Spring Web error types are only allowed in adapter.in.web or global.error")
+    }
+
+    private static void validatePackageTopology(
+            Project project,
+            File file,
+            String packageName,
+            TypeDeclaration type,
+            Set<String> applicationRootPackages,
+            List<String> violations
+    ) {
+        if (packageName == null || packageName.isBlank()) {
+            return
+        }
+
+        String path = project.relativePath(file)
+        if (type.name.endsWith('Application') && applicationRootPackages.contains(packageName)) {
+            return
+        }
+
+        String rootPackage = findApplicationRootPackage(packageName, applicationRootPackages)
+        if (rootPackage == null) {
+            if (!applicationRootPackages.isEmpty()) {
+                violations.add("${path} package '${packageName}' must be under application root package '${applicationRootPackages.sort().join(', ')}'")
+            }
+            return
+        }
+
+        if (packageName == rootPackage) {
+            violations.add("${path} root package may contain only the application bootstrap class")
+            return
+        }
+
+        String relativePackage = packageName.substring(rootPackage.length() + 1)
+        List<String> segments = relativePackage.split('\\.').toList()
+        if (segments.isEmpty()) {
+            return
+        }
+
+        if (segments.first() == 'global') {
+            if (segments.size() < 2 || segments[1] != 'error') {
+                violations.add("${path} global package must be limited to global.error")
+            }
+            return
+        }
+
+        if (CONTEXT_LAYER_SEGMENTS.contains(segments.first())) {
+            violations.add("${path} package must be context-first: use {context}/${segments.first()}..., not ${segments.first()}/{context}...")
+            return
+        }
+
+        if (segments.size() < 2) {
+            violations.add("${path} bounded context package '${segments.first()}' must contain domain, application, or adapter")
+            return
+        }
+
+        String contextName = segments[0]
+        String layerName = segments[1]
+        if (!CONTEXT_LAYER_SEGMENTS.contains(layerName)) {
+            violations.add("${path} package must follow {context}/domain, {context}/application, or {context}/adapter structure")
+            return
+        }
+
+        if (segments.size() < 3) {
+            violations.add("${path} ${contextName}.${layerName} package must declare a valid child package")
+            return
+        }
+
+        validateLayerChildPackage(project, file, contextName, layerName, segments[2], violations)
+    }
+
+    private static void validateLayerChildPackage(
+            Project project,
+            File file,
+            String contextName,
+            String layerName,
+            String childName,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        if (layerName == 'domain' && !DOMAIN_CHILD_SEGMENTS.contains(childName)) {
+            violations.add("${path} ${contextName}.domain package must use model, event, or exception")
+        }
+        if (layerName == 'application' && !APPLICATION_CHILD_SEGMENTS.contains(childName)) {
+            violations.add("${path} ${contextName}.application package must use port, exception, or service")
+        }
+        if (layerName == 'adapter' && !ADAPTER_CHILD_SEGMENTS.contains(childName)) {
+            violations.add("${path} ${contextName}.adapter package must use in or out")
+        }
     }
 
     private static void validateSpringComponentRegistration(
@@ -1007,6 +1130,15 @@ class ClaudeConventionValidator {
 
     private static boolean hasAnnotation(String source, String annotation) {
         return (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()
+    }
+
+    private static String findApplicationRootPackage(String packageName, Set<String> applicationRootPackages) {
+        applicationRootPackages
+                .findAll { String rootPackage ->
+                    packageName == rootPackage || packageName.startsWith("${rootPackage}.")
+                }
+                .sort { String left, String right -> right.length() <=> left.length() }
+                .with { List<String> matches -> matches.isEmpty() ? null : matches.first() }
     }
 
     private static boolean hasAnyAnnotation(String source, List<String> annotations) {
