@@ -224,6 +224,7 @@ class LintConventionPluginTest {
     @Test
     void 'check fails when spotbugs class dirs are narrowed'() {
         Project project = sampleProject()
+        new File(project.projectDir, 'build/classes/java/main').mkdirs()
         project.tasks.named('spotbugsMain').get().classDirs.setFrom(project.files())
 
         GradleException exception = assertThrows(GradleException) {
@@ -238,6 +239,9 @@ class LintConventionPluginTest {
     @Test
     void 'check fails when jacoco class dirs are narrowed'() {
         Project project = sampleProject()
+        File compiledClass = new File(project.projectDir, 'build/classes/java/main/com/example/Sample.class')
+        compiledClass.parentFile.mkdirs()
+        compiledClass.text = 'compiled'
         project.tasks.named('jacocoTestCoverageVerification').get().classDirectories.setFrom(project.files())
 
         GradleException exception = assertThrows(GradleException) {

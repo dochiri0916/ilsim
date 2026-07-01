@@ -796,7 +796,7 @@ class LintConventionPlugin implements Plugin<Project> {
             return []
         }
 
-        Set<File> expectedClassDirs = mainSourceSet.output.classesDirs.files
+        Set<File> expectedClassDirs = existingFiles(mainSourceSet.output.classesDirs.files)
         Set<File> expectedExecutionDataFiles = expectedJacocoExecutionDataFiles(project)
 
         List<String> violations = []
@@ -806,9 +806,14 @@ class LintConventionPlugin implements Plugin<Project> {
                 return
             }
 
-            List<File> missingClassDirs = missingExpectedFiles(expectedClassDirs, task.classDirectories.files)
-            if (!missingClassDirs.isEmpty()) {
-                violations.add("${taskName}.classDirectories missing ${limitedRelativeFiles(project, missingClassDirs)}")
+            if (!expectedClassDirs.isEmpty()) {
+                List<File> missingClassFiles = missingCoverageClassFiles(project, expectedClassDirs, task)
+                if (!missingClassFiles.isEmpty()) {
+                    violations.add(
+                            "${taskName}.classDirectories narrowed coverage output, "
+                                    + "missing ${limitedRelativeFiles(project, missingClassFiles)}"
+                    )
+                }
             }
 
             Set<File> actualExecutionDataFiles = executionDataFiles(task)
@@ -842,9 +847,12 @@ class LintConventionPlugin implements Plugin<Project> {
                 return
             }
 
-            List<File> missingClassDirs = missingExpectedFiles(sourceSet.output.classesDirs.files, task.classDirs.files)
-            if (!missingClassDirs.isEmpty()) {
-                violations.add("${taskName}.classDirs missing ${limitedRelativeFiles(project, missingClassDirs)}")
+            Set<File> expectedClassDirs = existingFiles(sourceSet.output.classesDirs.files)
+            if (!expectedClassDirs.isEmpty()) {
+                List<File> missingClassDirs = missingExpectedFiles(expectedClassDirs, task.classDirs.files)
+                if (!missingClassDirs.isEmpty()) {
+                    violations.add("${taskName}.classDirs missing ${limitedRelativeFiles(project, missingClassDirs)}")
+                }
             }
 
             List<File> missingSourceDirs = missingExpectedFiles(sourceSet.allSource.srcDirs, task.sourceDirs.files)
@@ -980,6 +988,40 @@ class LintConventionPlugin implements Plugin<Project> {
         expectedFiles
                 .findAll { File file -> file != null && !actualPaths.contains(canonicalPath(file)) }
                 .sort { File left, File right -> canonicalPath(left) <=> canonicalPath(right) }
+    }
+
+    private static List<File> missingCoverageClassFiles(Project project, Collection<File> expectedClassDirs, def task) {
+        Set<File> expectedClassFiles = classFilesInDirs(project, expectedClassDirs)
+        if (expectedClassFiles.isEmpty()) {
+            return []
+        }
+        Set<File> actualClassFiles = classFilesInFileCollection(task.classDirectories)
+        missingExpectedFiles(expectedClassFiles, actualClassFiles)
+    }
+
+    private static Set<File> classFilesInDirs(Project project, Collection<File> dirs) {
+        dirs.collectMany { File dir ->
+            if (dir == null || !dir.exists()) {
+                return []
+            }
+            project.fileTree(dir) {
+                include '**/*.class'
+            }.files
+        }.toSet()
+    }
+
+    private static Set<File> classFilesInFileCollection(def fileCollection) {
+        try {
+            return fileCollection.asFileTree.files
+                    .findAll { File file -> file != null && file.isFile() && file.name.endsWith('.class') }
+                    .toSet()
+        } catch (Exception ignored) {
+            return [] as Set<File>
+        }
+    }
+
+    private static Set<File> existingFiles(Collection<File> files) {
+        files.findAll { File file -> file != null && file.exists() }.toSet()
     }
 
     private static String limitedRelativeFiles(Project project, Collection<File> files) {
