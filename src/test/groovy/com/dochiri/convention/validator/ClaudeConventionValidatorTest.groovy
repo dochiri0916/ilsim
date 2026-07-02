@@ -325,6 +325,48 @@ class ClaudeConventionValidatorTest {
     }
 
     @Test
+    void 'rejects quality tool suppress warnings in production code'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/member/adapter/out/persistence/MemberEntity.java', '''
+                package com.example.member.adapter.out.persistence;
+
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.GeneratedValue;
+                import jakarta.persistence.GenerationType;
+                import jakarta.persistence.Id;
+                import jakarta.persistence.Table;
+                import lombok.AccessLevel;
+                import lombok.Getter;
+                import lombok.NoArgsConstructor;
+
+                @Entity
+                @Table(name = "members")
+                @Getter
+                @NoArgsConstructor(access = AccessLevel.PROTECTED)
+                @SuppressWarnings("PMD.ImmutableField")
+                public class MemberEntity {
+
+                    @Getter(AccessLevel.NONE)
+                    @Id
+                    @GeneratedValue(strategy = GenerationType.IDENTITY)
+                    private Long id;
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/OrderService.java', '''
+                package com.example.order.application.service;
+
+                @edu.umd.cs.findbugs.annotations.SuppressFBWarnings("EI_EXPOSE_REP2")
+                public final class OrderService {
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.count { it.contains('must not suppress PMD/Checkstyle/SpotBugs warnings') } == 2
+    }
+
+    @Test
     void 'rejects packages outside bounded context topology'() {
         Project project = sampleProject()
         writeApplication(project)
@@ -443,12 +485,56 @@ class ClaudeConventionValidatorTest {
                 public final class GlobalExceptionHandler {
                 }
                 ''')
+        writeJava(project, 'com/example/global/web/ApiWebConfig.java', '''
+                package com.example.global.web;
+
+                import lombok.RequiredArgsConstructor;
+                import org.springframework.context.annotation.Configuration;
+
+                @Configuration
+                @RequiredArgsConstructor
+                public final class ApiWebConfig {
+                }
+                ''')
 
         List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains('package must follow {context}/domain') }
         assert !violations.any { it.contains('root package may contain only') }
         assert !violations.any { it.contains('global package must be limited') }
+    }
+
+    @Test
+    void 'does not treat plain global error exceptions as Spring components'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/error/AuthenticationRequiredException.java', '''
+                package com.example.global.error;
+
+                public final class AuthenticationRequiredException extends RuntimeException {
+                    private static final long serialVersionUID = 1L;
+                    private final GlobalErrorCode errorCode;
+
+                    private AuthenticationRequiredException(final GlobalErrorCode errorCode) {
+                        this.errorCode = errorCode;
+                    }
+
+                    public static AuthenticationRequiredException authenticationRequired() {
+                        return new AuthenticationRequiredException(GlobalErrorCode.AUTHENTICATION_REQUIRED);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/global/error/GlobalErrorCode.java', '''
+                package com.example.global.error;
+
+                public enum GlobalErrorCode {
+                    AUTHENTICATION_REQUIRED
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains('with final dependencies must declare @RequiredArgsConstructor') }
     }
 
     @Test
@@ -619,6 +705,301 @@ class ClaudeConventionValidatorTest {
         assert violations.any { it.contains('GlobalExceptionHandler must delegate') }
         assert violations.any { it.contains('must not expose exception.getMessage()') }
         assert violations.any { it.contains('must resolve user-facing ProblemDetail title/detail') }
+    }
+
+    @Test
+    void 'rejects MessageSource bundles and Value injection'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeResource(project, 'messages/messages.properties', '''
+                error.authentication.required=인증이 필요합니다.
+                ''')
+        writeJava(project, 'com/example/global/error/ApiProblemMessageResolver.java', '''
+                package com.example.global.error;
+
+                import org.springframework.beans.factory.annotation.Value;
+                import org.springframework.context.MessageSource;
+
+                public final class ApiProblemMessageResolver {
+
+                    private final MessageSource messageSource;
+
+                    @Value("${api.problem.type-prefix}")
+                    private String typePrefix;
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('messages/messages.properties must not use MessageSource message bundle resources') }
+        assert violations.any { it.contains('must not use MessageSource') }
+        assert violations.any { it.contains('must not use @Value') }
+    }
+
+    @Test
+    void 'rejects domain invariant exceptions without ErrorCode factories'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/member/domain/exception/InvalidMemberIdException.java', '''
+                package com.example.member.domain.exception;
+
+                public final class InvalidMemberIdException extends RuntimeException {
+
+                    private static final long serialVersionUID = 1L;
+
+                    public InvalidMemberIdException(String message) {
+                        super(message);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/member/domain/model/MemberId.java', '''
+                package com.example.member.domain.model;
+
+                import com.example.member.domain.exception.InvalidMemberIdException;
+
+                import static java.util.Objects.requireNonNull;
+
+                public record MemberId(String value) {
+
+                    public MemberId {
+                        requireNonNull(value, "회원 ID는 null일 수 없습니다.");
+                        value = value.strip();
+                        if (value.isBlank()) {
+                            throw new InvalidMemberIdException("회원 ID는 공백일 수 없습니다.");
+                        }
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("domain exception 'InvalidMemberIdException' must keep constructors private") }
+        assert violations.any { it.contains("domain exception 'InvalidMemberIdException' must expose at least one static factory") }
+        assert violations.any { it.contains('domain invariants must not use requireNonNull') }
+        assert violations.any { it.contains('domain must raise exceptions through static factory methods') }
+        assert violations.any { it.contains('domain must use ErrorCode-based exceptions') }
+    }
+
+    @Test
+    void 'rejects application exceptions created with string messages'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/exception/EmptyCartException.java', '''
+                package com.example.order.application.exception;
+
+                public final class EmptyCartException extends RuntimeException {
+
+                    private static final long serialVersionUID = 1L;
+
+                    public EmptyCartException(String message) {
+                        super(message);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/PlaceOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.exception.EmptyCartException;
+
+                public final class PlaceOrderService {
+
+                    public void place() {
+                        throw new EmptyCartException("장바구니가 비어 있습니다.");
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("application exception 'EmptyCartException' must keep constructors private") }
+        assert violations.any { it.contains("application exception 'EmptyCartException' must expose at least one static factory") }
+        assert violations.any { it.contains('application must raise exceptions through static factory methods') }
+        assert violations.any { it.contains('application must use ErrorCode-based exceptions') }
+    }
+
+    @Test
+    void 'rejects exception detail fields that match accessors'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/member/application/exception/MemberApplicationErrorCode.java', '''
+                package com.example.member.application.exception;
+
+                public enum MemberApplicationErrorCode {
+                    DUPLICATE_EMAIL
+                }
+                ''')
+        writeJava(project, 'com/example/member/application/exception/DuplicateEmailException.java', '''
+                package com.example.member.application.exception;
+
+                public final class DuplicateEmailException extends RuntimeException {
+
+                    private static final long serialVersionUID = 1L;
+
+                    private final MemberApplicationErrorCode errorCode;
+                    private final String email;
+
+                    private DuplicateEmailException(final MemberApplicationErrorCode errorCode, final String email) {
+                        super(errorCode.name());
+                        this.errorCode = errorCode;
+                        this.email = email;
+                    }
+
+                    public static DuplicateEmailException duplicated(final String email) {
+                        return new DuplicateEmailException(MemberApplicationErrorCode.DUPLICATE_EMAIL, email);
+                    }
+
+                    public MemberApplicationErrorCode code() {
+                        return errorCode;
+                    }
+
+                    public String email() {
+                        return email;
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("exception detail field 'email' must use a context-specific internal name") }
+    }
+
+    @Test
+    void 'rejects Spring Security dependency, generic DTOs, manual MVC extension wiring, and English exception messages'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/member/application/service/RegisterMemberService.java', '''
+                package com.example.member.application.service;
+
+                import org.springframework.security.crypto.password.PasswordEncoder;
+
+                public final class RegisterMemberService {
+
+                    private final PasswordEncoder passwordEncoder;
+
+                    RegisterMemberService(final PasswordEncoder passwordEncoder) {
+                        this.passwordEncoder = passwordEncoder;
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/member/adapter/in/web/WebConfig.java', '''
+                package com.example.member.adapter.in.web;
+
+                import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+                import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+                public final class WebConfig implements WebMvcConfigurer {
+
+                    @Override
+                    public void addInterceptors(final InterceptorRegistry registry) {
+                        registry.addInterceptor(new LoginCheckInterceptor());
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/member/adapter/in/web/response/MemberResponse.java', '''
+                package com.example.member.adapter.in.web.response;
+
+                public final class MemberResponse {
+                }
+                ''')
+        writeJava(project, 'com/example/member/adapter/out/security/RuntimeGuard.java', '''
+                package com.example.member.adapter.out.security;
+
+                public final class RuntimeGuard {
+
+                    void guard() {
+                        throw new IllegalStateException("invalid password");
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('application must depend on a password port') }
+        assert violations.any { it.contains('web configuration must inject Interceptor/ArgumentResolver components') }
+        assert violations.any { it.contains("API DTO 'MemberResponse' must be a record") }
+        assert violations.any { it.contains("API DTO 'MemberResponse' must be responsibility-specific") }
+        assert violations.any { it.contains('exception message string literals must be written in Korean') }
+    }
+
+    @Test
+    void 'keeps JPA domain identifier naming as domain id instead of public id'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/member/adapter/out/persistence/MemberEntity.java', '''
+                package com.example.member.adapter.out.persistence;
+
+                import jakarta.persistence.Column;
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Id;
+                import lombok.AccessLevel;
+                import lombok.Getter;
+                import lombok.NoArgsConstructor;
+
+                @Entity
+                @Getter
+                @NoArgsConstructor(access = AccessLevel.PROTECTED)
+                public class MemberEntity {
+
+                    @Getter(AccessLevel.NONE)
+                    @Id
+                    private Long id;
+
+                    @Column(nullable = false, unique = true, length = 32)
+                    private String memberId;
+
+                    @Column(nullable = false, length = 32)
+                    private String orderId;
+
+                    private MemberEntity(final Long id, final String memberId, final String orderId) {
+                        this.id = id;
+                        this.memberId = memberId;
+                        this.orderId = orderId;
+                    }
+
+                    static MemberEntity create(final String memberId, final String orderId) {
+                        return new MemberEntity(null, memberId, orderId);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
+                package com.example.order.adapter.out.persistence;
+
+                import jakarta.persistence.Column;
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Id;
+                import lombok.AccessLevel;
+                import lombok.Getter;
+                import lombok.NoArgsConstructor;
+
+                @Entity
+                @Getter
+                @NoArgsConstructor(access = AccessLevel.PROTECTED)
+                public class OrderEntity {
+
+                    @Getter(AccessLevel.NONE)
+                    @Id
+                    private Long id;
+
+                    @Column(nullable = false, unique = true, length = 32)
+                    private String publicId;
+
+                    private OrderEntity(final Long id, final String publicId) {
+                        this.id = id;
+                        this.publicId = publicId;
+                    }
+
+                    static OrderEntity create(final String publicId) {
+                        return new OrderEntity(null, publicId);
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains("JPA entity 'MemberEntity' must declare private String memberId") }
+        assert !violations.any { it.contains("JPA reference field 'orderId' must store identifier VO value as String") }
+        assert violations.any { it.contains("JPA entity 'OrderEntity' must declare private String orderId") }
+        assert violations.any { it.contains("JPA reference field 'publicId' must use '{target}Id' naming") }
     }
 
     @Test
@@ -884,6 +1265,12 @@ class ClaudeConventionValidatorTest {
 
     private static void writeTestJava(Project project, String path, String source) {
         File file = new File(project.projectDir, "src/test/java/${path}")
+        file.parentFile.mkdirs()
+        file.text = source.stripIndent().trim() + System.lineSeparator()
+    }
+
+    private static void writeResource(Project project, String path, String source) {
+        File file = new File(project.projectDir, "src/main/resources/${path}")
         file.parentFile.mkdirs()
         file.text = source.stripIndent().trim() + System.lineSeparator()
     }

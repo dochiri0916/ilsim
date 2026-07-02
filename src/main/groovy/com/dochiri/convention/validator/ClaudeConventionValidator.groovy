@@ -120,6 +120,16 @@ class ClaudeConventionValidator {
             'Character',
             'java.lang.Character'
     ] as Set
+    private static final Set<String> GENERIC_API_DTO_NAMES = [
+            'ApiRequest',
+            'ApiResponse',
+            'BaseRequest',
+            'BaseResponse',
+            'CommonRequest',
+            'CommonResponse',
+            'DefaultRequest',
+            'DefaultResponse'
+    ] as Set
 
     static List<String> validate(Project project, HexagonalConventionExtension convention) {
         List<String> violations = []
@@ -127,12 +137,16 @@ class ClaudeConventionValidator {
             file.name.endsWith('.java')
         }
         Set<String> applicationRootPackages = collectApplicationRootPackages(mainSourceFiles)
+        validateNoMessageBundleResources(project, violations)
 
         mainSourceFiles.each { File file ->
             String source = file.getText(StandardCharsets.UTF_8.name())
             String packageName = SourceInspector.extractPackageName(source)
             validateCommonPackageUsage(project, file, source, packageName, violations)
             validateNoElseUsage(project, file, source, violations)
+            validateNoQualityToolSuppressUsage(project, file, source, violations)
+            validateNoI18nOrValueInjection(project, file, source, violations)
+            validateExceptionMessageLanguage(project, file, source, violations)
 
             TypeDeclaration type = TypeDeclaration.from(source)
             if (type == null) {
@@ -216,11 +230,51 @@ class ClaudeConventionValidator {
         return path.replace(File.separatorChar, '/' as char).split('/').contains(segment)
     }
 
+    private static void validateNoMessageBundleResources(Project project, List<String> violations) {
+        File resourcesDir = project.file('src/main/resources')
+        if (!resourcesDir.exists()) {
+            return
+        }
+
+        project.fileTree(resourcesDir) {
+            include '**/messages*.properties'
+        }.files.each { File file ->
+            violations.add("${project.relativePath(file)} must not use MessageSource message bundle resources; use code-based ApiErrorMessageProvider catalog")
+        }
+    }
+
     private static void validateNoElseUsage(Project project, File file, String source, List<String> violations) {
         String codeOnly = stripCommentsAndStrings(source)
         if ((codeOnly =~ /\belse\b/).find()) {
             String path = project.relativePath(file)
             violations.add("${path} must not use else; use guard clauses and early return")
+        }
+    }
+
+    private static void validateNoQualityToolSuppressUsage(
+            Project project,
+            File file,
+            String source,
+            List<String> violations
+    ) {
+        if (hasQualityToolSuppressWarnings(source)) {
+            violations.add("${project.relativePath(file)} must not suppress PMD/Checkstyle/SpotBugs warnings; fix the violation or convention rule")
+        }
+    }
+
+    private static void validateNoI18nOrValueInjection(
+            Project project,
+            File file,
+            String source,
+            List<String> violations
+    ) {
+        String searchableSource = stripCommentsAndStrings(source)
+        String path = project.relativePath(file)
+        if (importsOrUsesType(source, searchableSource, 'org.springframework.context.MessageSource', 'MessageSource')) {
+            violations.add("${path} must not use MessageSource; use code-based ApiErrorMessageProvider catalog")
+        }
+        if ((searchableSource =~ /(?m)@\s*(?:org\.springframework\.beans\.factory\.annotation\.)?Value\b/).find()) {
+            violations.add("${path} must not use @Value; bind configuration with record @ConfigurationProperties")
         }
     }
 
@@ -354,8 +408,8 @@ class ClaudeConventionValidator {
         }
 
         if (segments.first() == 'global') {
-            if (segments.size() < 2 || segments[1] != 'error') {
-                violations.add("${path} global package must be limited to global.error")
+            if (segments.size() < 2 || !['error', 'web'].contains(segments[1])) {
+                violations.add("${path} global package must be limited to global.error or global.web")
             }
             return
         }
@@ -424,6 +478,9 @@ class ClaudeConventionValidator {
         if (type.name.endsWith('ContextConfig')) {
             violations.add("${path} context-specific ContextConfig is not allowed; register application services and adapters as Spring components")
         }
+        if (isWebMvcConfiguration(source) && instantiatesWebMvcExtension(source)) {
+            violations.add("${path} web configuration must inject Interceptor/ArgumentResolver components instead of creating them with new")
+        }
 
         if (SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
                 && packageName.contains('.service')
@@ -480,7 +537,7 @@ class ClaudeConventionValidator {
         }
 
         if ((globalError || webAdapter) && hardCodesProblemDetailTitleOrDetail(source)) {
-            violations.add("${path} must resolve user-facing ProblemDetail title/detail through message catalog or MessageSource")
+            violations.add("${path} must resolve user-facing ProblemDetail title/detail through code-based message catalog")
         }
 
         if (globalError && type.name == 'GlobalExceptionHandler'
@@ -720,6 +777,16 @@ class ClaudeConventionValidator {
                 && !packageName.contains('.response')) {
             violations.add("${path} response DTO '${type.name}' must live in adapter.in.web.response package")
         }
+        if ((type.name.endsWith('Request') || type.name.endsWith('Response'))
+                && SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
+                && !globalError) {
+            if (type.kind != 'record') {
+                violations.add("${path} API DTO '${type.name}' must be a record")
+            }
+            if (hasGenericApiDtoName(packageName, type.name)) {
+                violations.add("${path} API DTO '${type.name}' must be responsibility-specific, not context-wide or generic")
+            }
+        }
 
         if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
             if (isDomainEventPackage(packageName, convention)) {
@@ -770,12 +837,24 @@ class ClaudeConventionValidator {
     ) {
         String path = project.relativePath(file)
 
+        if (dependsOnSpringSecurity(source)) {
+            violations.add("${path} application must depend on a password port, not Spring Security types")
+        }
+
         if (type.name.endsWith('Exception')) {
             if (!(source =~ /\bextends\s+RuntimeException\b/).find()) {
                 violations.add("${path} application exception '${type.name}' must extend RuntimeException")
             }
             if (!hasSerialVersionUid(source)) {
                 violations.add("${path} application exception '${type.name}' must declare serialVersionUID")
+            }
+            validateExceptionFactoryPolicy(path, 'application', type.name, source, violations)
+        } else {
+            if (throwsDirectExceptionConstruction(source)) {
+                violations.add("${path} application must raise exceptions through static factory methods, not direct constructors")
+            }
+            if (constructsExceptionWithStringLiteral(source)) {
+                violations.add("${path} application must use ErrorCode-based exceptions, not string message constructors")
             }
         }
 
@@ -917,6 +996,7 @@ class ClaudeConventionValidator {
             if (!hasSerialVersionUid(source)) {
                 violations.add("${path} domain exception '${type.name}' must declare serialVersionUID")
             }
+            validateExceptionFactoryPolicy(path, 'domain', type.name, source, violations)
             return
         }
 
@@ -936,6 +1016,15 @@ class ClaudeConventionValidator {
 
         if (throwsJdkBasicException(source)) {
             violations.add("${path} domain must use domain-specific exceptions instead of JDK basic exceptions")
+        }
+        if (usesRequireNonNull(source)) {
+            violations.add("${path} domain invariants must not use requireNonNull; throw a domain-specific exception factory instead")
+        }
+        if (throwsDirectExceptionConstruction(source)) {
+            violations.add("${path} domain must raise exceptions through static factory methods, not direct constructors")
+        }
+        if (constructsExceptionWithStringLiteral(source)) {
+            violations.add("${path} domain must use ErrorCode-based exceptions, not string message constructors")
         }
 
         boolean globalErrorImported = false
@@ -964,8 +1053,8 @@ class ClaudeConventionValidator {
             if (isRawScalarType(field.type)) {
                 violations.add("${path} domain field '${field.name}' must use a Value Object instead of raw scalar '${field.type}'")
             }
-            if (field.name.endsWith('PublicId')) {
-                violations.add("${path} domain reference field '${field.name}' must use '{Target}Id' naming, not '*PublicId'")
+            if (isPublicIdName(field.name)) {
+                violations.add("${path} domain reference field '${field.name}' must use '{Target}Id' naming, not 'publicId' or '*PublicId'")
             }
             if (looksLikeIdReference(field.name) && field.name != 'id' && !isIdentifierVoType(field.type)) {
                 violations.add("${path} domain reference field '${field.name}' must use an identifier Value Object type")
@@ -998,8 +1087,8 @@ class ClaudeConventionValidator {
             if (isRawScalarType(component.type) && !singleValueObject) {
                 violations.add("${path} domain record component '${component.name}' must use a Value Object instead of raw scalar '${component.type}'")
             }
-            if (component.name.endsWith('PublicId')) {
-                violations.add("${path} domain reference component '${component.name}' must use '{Target}Id' naming, not '*PublicId'")
+            if (isPublicIdName(component.name)) {
+                violations.add("${path} domain reference component '${component.name}' must use '{Target}Id' naming, not 'publicId' or '*PublicId'")
             }
             if (looksLikeIdReference(component.name) && component.name != 'id' && !isIdentifierVoType(component.type)) {
                 violations.add("${path} domain reference component '${component.name}' must use an identifier Value Object type")
@@ -1153,8 +1242,8 @@ class ClaudeConventionValidator {
             if (field.type.endsWith('Entity')) {
                 violations.add("${path} JPA entity '${type.name}' must not hold entity reference field '${field.name}'")
             }
-            if (field.name.endsWith('PublicId')) {
-                violations.add("${path} JPA reference field '${field.name}' must use '{target}Id' naming, not '*PublicId'")
+            if (isPublicIdName(field.name)) {
+                violations.add("${path} JPA reference field '${field.name}' must use '{target}Id' naming, not 'publicId' or '*PublicId'")
             }
             if (looksLikeIdReference(field.name)
                     && !(field.name in ['id', primaryIdentifierField])
@@ -1219,6 +1308,22 @@ class ClaudeConventionValidator {
         return fields
     }
 
+    private static List<FieldDeclaration> extractInstanceFieldDeclarations(String source) {
+        List<FieldDeclaration> fields = []
+        def matcher = source =~ /(?m)^\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:private|protected|public)\s+((?:static\s+|final\s+|transient\s+|volatile\s+)*)((?:[A-Za-z_][A-Za-z0-9_$.]*)(?:\s*<[^;=()]+>)?(?:\s*\[\])?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|;)/
+        while (matcher.find()) {
+            String modifiers = matcher.group(1)
+            if (modifiers.contains('static')) {
+                continue
+            }
+            fields.add(new FieldDeclaration(
+                    normalizeType(matcher.group(2)),
+                    matcher.group(3)
+            ))
+        }
+        return fields
+    }
+
     private static List<RecordComponent> extractRecordComponents(String source, String recordName) {
         def matcher = source =~ /(?s)\brecord\s+${recordName}\s*\((.*?)\)/
         if (!matcher.find()) {
@@ -1271,6 +1376,107 @@ class ClaudeConventionValidator {
 
     private static boolean throwsJdkBasicException(String source) {
         return (source =~ /(?m)\bthrow\s+new\s+(?:IllegalArgumentException|IllegalStateException|NullPointerException)\b/).find()
+    }
+
+    private static void validateExceptionFactoryPolicy(
+            String path,
+            String layer,
+            String typeName,
+            String source,
+            List<String> violations
+    ) {
+        if (!isAbstractClass(source, typeName)) {
+            if (hasNonPrivateConstructor(source, typeName)) {
+                violations.add("${path} ${layer} exception '${typeName}' must keep constructors private and expose static factory methods")
+            }
+            if (!hasAnyStaticFactoryReturning(source, typeName)) {
+                violations.add("${path} ${layer} exception '${typeName}' must expose at least one static factory returning '${typeName}'")
+            }
+        }
+        if (constructsSameExceptionWithStringLiteral(source, typeName)) {
+            violations.add("${path} ${layer} exception '${typeName}' must use ErrorCode-based constructors, not string messages")
+        }
+        validateExceptionDetailFieldNames(path, layer, source, violations)
+    }
+
+    private static void validateExceptionDetailFieldNames(
+            String path,
+            String layer,
+            String source,
+            List<String> violations
+    ) {
+        Set<String> methodNames = extractZeroArgumentPublicMethodNames(source)
+        extractInstanceFieldDeclarations(source)
+                .findAll { FieldDeclaration field -> field.name != 'serialVersionUID' && methodNames.contains(field.name) }
+                .each { FieldDeclaration field ->
+                    violations.add("${path} ${layer} exception detail field '${field.name}' must use a context-specific internal name instead of matching accessor '${field.name}()'")
+                }
+    }
+
+    private static Set<String> extractZeroArgumentPublicMethodNames(String source) {
+        Set<String> methodNames = []
+        def matcher = source =~ /(?m)^\s*public\s+(?!static\b)(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.]*(?:\s*<[^;=()]+>)?(?:\s*\[\])?\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)/
+        while (matcher.find()) {
+            methodNames.add(matcher.group(1))
+        }
+        return methodNames
+    }
+
+    private static void validateExceptionMessageLanguage(
+            Project project,
+            File file,
+            String source,
+            List<String> violations
+    ) {
+        String searchableSource = stripComments(source)
+        def matcher = searchableSource =~ /(?m)\b(?:new\s+[A-Za-z_][A-Za-z0-9_$.]*Exception|super)\s*\(\s*"((?:\\.|[^"\\])*)"/
+        while (matcher.find()) {
+            if (!containsKorean(matcher.group(1))) {
+                violations.add("${project.relativePath(file)} exception message string literals must be written in Korean")
+            }
+        }
+    }
+
+    private static boolean usesRequireNonNull(String source) {
+        return (source =~ /(?m)\b(?:Objects\s*\.\s*)?requireNonNull\s*\(/).find()
+    }
+
+    private static boolean hasQualityToolSuppressWarnings(String source) {
+        return (source =~ /(?s)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)?SuppressWarnings\s*\([^)]*(?:PMD|pmd|Checkstyle|checkstyle|SpotBugs|spotbugs|FindBugs|findbugs)[^)]*\)/).find()
+                || (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_.]*\.)?SuppressFBWarnings\b/).find()
+    }
+
+    private static boolean throwsDirectExceptionConstruction(String source) {
+        def matcher = source =~ /(?m)\bthrow\s+new\s+([A-Za-z_][A-Za-z0-9_]*Exception)\s*\(/
+        while (matcher.find()) {
+            if (!(matcher.group(1) in ['IllegalArgumentException', 'IllegalStateException', 'NullPointerException'])) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static boolean constructsExceptionWithStringLiteral(String source) {
+        return (source =~ /(?m)\bnew\s+[A-Za-z_][A-Za-z0-9_]*Exception\s*\(\s*"/).find()
+    }
+
+    private static boolean constructsSameExceptionWithStringLiteral(String source, String typeName) {
+        return (source =~ /(?m)\bnew\s+${typeName}\s*\(\s*"/).find()
+    }
+
+    private static boolean dependsOnSpringSecurity(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return SourceInspector.extractImports(source).any { String imported ->
+            imported.startsWith('org.springframework.security.')
+        } || (searchableSource =~ /\borg\.springframework\.security\./).find()
+    }
+
+    private static boolean hasNonPrivateConstructor(String source, String className) {
+        return (source =~ /(?m)^\s*(?:public|protected)?\s*${className}\s*\(/).find()
+    }
+
+    private static boolean hasAnyStaticFactoryReturning(String source, String typeName) {
+        return (source =~ /(?m)^\s*(?:public\s+)?static\s+${typeName}\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/).find()
     }
 
     private static boolean hasNullGuard(String source) {
@@ -1342,7 +1548,6 @@ class ClaudeConventionValidator {
                 && type.name.endsWith('Service')
         boolean adapter = SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)
                 || SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
-                || isGlobalErrorPackage(packageName)
         return applicationService || adapter || hasAnyAnnotation(source, [
                 'Component',
                 'Service',
@@ -1385,6 +1590,17 @@ class ClaudeConventionValidator {
 
     private static boolean hasAnyAnnotation(String source, List<String> annotations) {
         return annotations.any { String annotation -> hasAnnotation(source, annotation) }
+    }
+
+    private static boolean isWebMvcConfiguration(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /\bWebMvcConfigurer\b/).find()
+                || (searchableSource =~ /\badd(?:Interceptors|ArgumentResolvers)\s*\(/).find()
+    }
+
+    private static boolean instantiatesWebMvcExtension(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /\bnew\s+[A-Za-z_][A-Za-z0-9_]*(?:Interceptor|ArgumentResolver)\s*\(/).find()
     }
 
     private static boolean isAbstractClass(String source, String typeName) {
@@ -1685,6 +1901,64 @@ class ClaudeConventionValidator {
                 .toSet()
     }
 
+    private static boolean hasGenericApiDtoName(String packageName, String typeName) {
+        if (GENERIC_API_DTO_NAMES.contains(typeName)) {
+            return true
+        }
+
+        String contextName = boundedContextName(packageName)
+        if (contextName == null) {
+            return false
+        }
+
+        return typeName == "${capitalizeAscii(contextName)}Request"
+                || typeName == "${capitalizeAscii(contextName)}Response"
+    }
+
+    private static String boundedContextName(String packageName) {
+        if (packageName == null || packageName.isBlank()) {
+            return null
+        }
+
+        List<String> segments = packageName.split('\\.').toList()
+        int adapterIndex = segments.indexOf('adapter')
+        if (adapterIndex > 0) {
+            return segments[adapterIndex - 1]
+        }
+
+        int domainIndex = segments.indexOf('domain')
+        if (domainIndex > 0) {
+            return segments[domainIndex - 1]
+        }
+
+        int applicationIndex = segments.indexOf('application')
+        if (applicationIndex > 0) {
+            return segments[applicationIndex - 1]
+        }
+
+        return null
+    }
+
+    private static String capitalizeAscii(String value) {
+        if (value == null || value.isBlank()) {
+            return value
+        }
+        return value.substring(0, 1).toUpperCase(Locale.ROOT) + value.substring(1)
+    }
+
+    private static boolean importsOrUsesType(
+            String source,
+            String searchableSource,
+            String qualifiedName,
+            String simpleName
+    ) {
+        boolean imported = SourceInspector.extractImports(source).any { String imported ->
+            imported == qualifiedName
+                    || (imported.endsWith('.*') && qualifiedName.startsWith(imported.substring(0, imported.length() - 1)))
+        }
+        return imported || (searchableSource =~ /(?m)\b${Pattern.quote(simpleName)}\b/).find()
+    }
+
     private static boolean usesAnyType(String source, Set<String> typeNames) {
         String searchableSource = stripCommentsAndStrings(source)
         return typeNames.any { String typeName ->
@@ -1709,6 +1983,12 @@ class ClaudeConventionValidator {
                 .replaceAll('(?s)"""[\\s\\S]*?"""', '""')
                 .replaceAll(/(?s)"(?:\\.|[^"\\])*"/, '""')
                 .replaceAll(/(?s)'(?:\\.|[^'\\])*'/, "''")
+    }
+
+    private static String stripComments(String source) {
+        return source
+                .replaceAll(/(?s)\/\*.*?\*\//, ' ')
+                .replaceAll(/(?m)\/\/.*$/, ' ')
     }
 
     private static boolean isGlobalErrorPackage(String packageName) {
@@ -1741,6 +2021,10 @@ class ClaudeConventionValidator {
 
     private static boolean looksLikeIdReference(String name) {
         return name ==~ /.*Id(s)?$/
+    }
+
+    private static boolean isPublicIdName(String name) {
+        return name == 'publicId' || name.endsWith('PublicId')
     }
 
     private static boolean isIdentifierVoType(String type) {

@@ -406,6 +406,7 @@ class LintConventionPlugin implements Plugin<Project> {
             task.inputs.files(project.fileTree(project.projectDir) {
                 include 'src/main/java/**/*.java'
                 include 'src/test/java/**/*.java'
+                include 'src/main/resources/**/messages*.properties'
             })
             task.doLast {
                 List<String> violations = ClaudeConventionValidator.validate(project, convention)
