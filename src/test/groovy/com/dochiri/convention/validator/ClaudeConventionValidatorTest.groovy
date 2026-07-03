@@ -770,21 +770,22 @@ class ClaudeConventionValidatorTest {
                 import com.example.member.application.exception.MemberErrorCode;
                 import java.util.Map;
 
-                public final class MemberErrorMessageProvider implements ApiErrorMessageProvider {
+                  public final class MemberErrorMessageProvider implements ApiErrorMessageProvider {
 
-                    public Map<String, ApiErrorMessage> errorMessages() {
-                        return Map.entry(MemberErrorCode.DUPLICATE_EMAIL.name(), new ApiErrorMessage("중복", "중복입니다."));
-                    }
-                }
-                ''')
+                      public Map<String, ApiErrorMessage> errorMessages() {
+                          return Map.of("MEMBER.DUPLICATE_EMAIL", new ApiErrorMessage("중복", "중복입니다."));
+                      }
+                  }
+                  ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+          List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains('must use ApiErrorCode.from(errorCode), not Enum.name()') }
-    }
+          assert violations.any { it.contains('must use ApiErrorCode.from(errorCode), not Enum.name()') }
+          assert violations.any { it.contains('must use ApiErrorCode.from(errorCode), not hard-coded string literals') }
+      }
 
-    @Test
-    void 'rejects raw command value repository lookups before VO normalization'() {
+      @Test
+      void 'rejects raw command value repository lookups before VO normalization'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/member/application/port/in/RegisterMemberCommand.java', '''
@@ -833,11 +834,141 @@ class ClaudeConventionValidatorTest {
 
         List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains('must create a VO and pass normalized vo.value() to repository exists/find calls') }
-    }
+          assert violations.any { it.contains('must create a VO and pass normalized vo.value() to repository exists/find calls') }
+      }
 
-    @Test
-    void 'rejects path based public API exclusions and nullable authenticated member resolver'() {
+      @Test
+      void 'rejects direct cross context aggregate references in domain model'() {
+          Project project = sampleProject()
+          writeApplication(project)
+          writeJava(project, 'com/example/member/domain/model/Member.java', '''
+                  package com.example.member.domain.model;
+
+                  public record Member(MemberId id) {
+
+                      public Member {
+                          if (id == null) {
+                              throw new IllegalArgumentException();
+                          }
+                      }
+                  }
+                  ''')
+          writeJava(project, 'com/example/member/domain/model/MemberId.java', '''
+                  package com.example.member.domain.model;
+
+                  public record MemberId(String value) {
+
+                      public MemberId {
+                          if (value == null) {
+                              throw new IllegalArgumentException();
+                          }
+                          if (value.isBlank()) {
+                              throw new IllegalArgumentException();
+                          }
+                      }
+
+                      public static MemberId generate() {
+                          return new MemberId("member-id");
+                      }
+                  }
+                  ''')
+          writeJava(project, 'com/example/order/domain/model/Order.java', '''
+                  package com.example.order.domain.model;
+
+                  import com.example.member.domain.model.Member;
+
+                  public record Order(OrderId id, Member member) {
+
+                      public Order {
+                          if (id == null || member == null) {
+                              throw new IllegalArgumentException();
+                          }
+                      }
+                  }
+                  ''')
+          writeJava(project, 'com/example/order/domain/model/OrderId.java', '''
+                  package com.example.order.domain.model;
+
+                  public record OrderId(String value) {
+
+                      public OrderId {
+                          if (value == null) {
+                              throw new IllegalArgumentException();
+                          }
+                          if (value.isBlank()) {
+                              throw new IllegalArgumentException();
+                          }
+                      }
+
+                      public static OrderId generate() {
+                          return new OrderId("order-id");
+                      }
+                  }
+                  ''')
+
+          List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+          assert violations.any { it.contains("must reference other aggregate 'Member' by identifier VO") }
+      }
+
+      @Test
+      void 'rejects modifying multiple aggregate repositories in one transaction'() {
+          Project project = sampleProject()
+          writeApplication(project)
+          writeJava(project, 'com/example/order/application/port/in/PlaceOrderUseCase.java', '''
+                  package com.example.order.application.port.in;
+
+                  public interface PlaceOrderUseCase {
+                      void place();
+                  }
+                  ''')
+          writeJava(project, 'com/example/order/application/port/out/OrderRepositoryPort.java', '''
+                  package com.example.order.application.port.out;
+
+                  public interface OrderRepositoryPort {
+                      void save();
+                  }
+                  ''')
+          writeJava(project, 'com/example/order/application/port/out/CartRepositoryPort.java', '''
+                  package com.example.order.application.port.out;
+
+                  public interface CartRepositoryPort {
+                      void delete();
+                  }
+                  ''')
+          writeJava(project, 'com/example/order/application/service/PlaceOrderService.java', '''
+                  package com.example.order.application.service;
+
+                  import com.example.order.application.port.in.PlaceOrderUseCase;
+                  import com.example.order.application.port.out.CartRepositoryPort;
+                  import com.example.order.application.port.out.OrderRepositoryPort;
+                  import lombok.RequiredArgsConstructor;
+                  import org.springframework.stereotype.Service;
+                  import org.springframework.transaction.annotation.Transactional;
+
+                  @Service
+                  @RequiredArgsConstructor
+                  public final class PlaceOrderService implements PlaceOrderUseCase {
+
+                      private final OrderRepositoryPort orderRepositoryPort;
+                      private final CartRepositoryPort cartRepositoryPort;
+
+                      @Override
+                      @Transactional
+                      public void place() {
+                          orderRepositoryPort.save();
+                          cartRepositoryPort.delete();
+                      }
+                  }
+                  ''')
+
+          List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+          assert violations.any { it.contains("application service method 'place' must not modify multiple aggregate repositories") }
+      }
+
+      @Test
+      void 'rejects path based public API exclusions and nullable authenticated member resolver'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/global/web/ApiWebConfig.java', '''

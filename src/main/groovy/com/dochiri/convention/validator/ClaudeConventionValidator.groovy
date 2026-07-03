@@ -570,10 +570,13 @@ class ClaudeConventionValidator {
         if (!implementsErrorCodeMappingProvider(source) && !implementsApiErrorMessageProvider(source)) {
             return
         }
-        if (usesEnumNameAsProviderMapKey(source)) {
-            violations.add("${project.relativePath(file)} error mapping/message provider must use ApiErrorCode.from(errorCode), not Enum.name(), for API code keys")
-        }
-    }
+          if (usesEnumNameAsProviderMapKey(source)) {
+              violations.add("${project.relativePath(file)} error mapping/message provider must use ApiErrorCode.from(errorCode), not Enum.name(), for API code keys")
+          }
+          if (usesStringLiteralAsProviderMapKey(source)) {
+              violations.add("${project.relativePath(file)} error mapping/message provider must use ApiErrorCode.from(errorCode), not hard-coded string literals, for API code keys")
+          }
+      }
 
     private static void validateWebAuthenticationArchitecture(
             Project project,
@@ -881,9 +884,14 @@ class ClaudeConventionValidator {
         if (dependsOnSpringSecurity(source)) {
             violations.add("${path} application must depend on a password port, not Spring Security types")
         }
-        if (packageName.contains('.service') && callsRepositoryWithRawCommandValue(source)) {
-            violations.add("${path} application service must create a VO and pass normalized vo.value() to repository exists/find calls")
-        }
+          if (packageName.contains('.service') && callsRepositoryWithRawCommandValue(source)) {
+              violations.add("${path} application service must create a VO and pass normalized vo.value() to repository exists/find calls")
+          }
+          if (packageName.contains('.service')) {
+              findTransactionalMethodsModifyingMultipleRepositories(source).each { RepositoryMutation mutation ->
+                  violations.add("${path} application service method '${mutation.methodName}' must not modify multiple aggregate repositories in one transaction: ${mutation.repositoryNames.join(', ')}")
+              }
+          }
 
         if (type.name.endsWith('Exception')) {
             if (!(source =~ /\bextends\s+RuntimeException\b/).find()) {
@@ -1086,11 +1094,13 @@ class ClaudeConventionValidator {
             violations.add("${path} domain must not declare DB technical id fields")
         }
 
-        if (type.kind == 'record') {
-            validateDomainRecord(project, file, source, packageName, type, convention, violations)
-        }
+          if (type.kind == 'record') {
+              validateDomainRecord(project, file, source, packageName, type, convention, violations)
+          }
 
-        extractFieldDeclarations(source).each { FieldDeclaration field ->
+          validateCrossContextAggregateReferences(project, file, source, packageName, type, convention, violations)
+
+          extractFieldDeclarations(source).each { FieldDeclaration field ->
             if (isRawCollectionType(field.type)) {
                 violations.add("${path} domain field '${field.name}' must use a first-class collection record instead of '${field.type}'")
             }
@@ -1106,11 +1116,11 @@ class ClaudeConventionValidator {
         }
     }
 
-    private static void validateDomainRecord(
-            Project project,
-            File file,
-            String source,
-            String packageName,
+      private static void validateDomainRecord(
+              Project project,
+              File file,
+              String source,
+              String packageName,
             TypeDeclaration type,
             HexagonalConventionExtension convention,
             List<String> violations
@@ -1158,10 +1168,10 @@ class ClaudeConventionValidator {
         if (entityId != null && !hasEqualsAndHashCode(source)) {
             violations.add("${path} domain entity record with identifier VO must override equals and hashCode using id")
         }
-        if (entityId != null && !hasStaticFactoryReturning(source, type.name)) {
-            violations.add("${path} domain entity record with identifier VO must expose a static factory returning '${type.name}'")
-        }
-        if (components.size() == 1
+          if (entityId != null && !hasStaticFactoryReturning(source, type.name)) {
+              violations.add("${path} domain entity record with identifier VO must expose a static factory returning '${type.name}'")
+          }
+          if (components.size() == 1
                 && isRawCollectionType(components.first().type)
                 && !(source =~ /\b(?:List|Set|Map)\.copyOf\s*\(/).find()) {
             violations.add("${path} first-class collection record '${type.name}' must defensively copy its collection")
@@ -1169,14 +1179,64 @@ class ClaudeConventionValidator {
         if (components.size() == 1
                 && isRawCollectionType(components.first().type)
                 && !checksNullElements(source)) {
-            violations.add("${path} first-class collection record '${type.name}' must reject null elements")
-        }
-    }
+              violations.add("${path} first-class collection record '${type.name}' must reject null elements")
+          }
+      }
 
-    private static void validateJpaEntity(
-            Project project,
-            File file,
-            String source,
+      private static void validateCrossContextAggregateReferences(
+              Project project,
+              File file,
+              String source,
+              String packageName,
+              TypeDeclaration type,
+              HexagonalConventionExtension convention,
+              List<String> violations
+      ) {
+          String currentContext = boundedContextName(packageName)
+          if (currentContext == null) {
+              return
+          }
+
+          Set<String> memberTypeNames = domainMemberTypeNames(source, type)
+          SourceInspector.extractImports(source).each { String imported ->
+              if (!imported.contains(".${convention.domainPackageSegment}.model.")) {
+                  return
+              }
+
+              String importedContext = boundedContextName(imported)
+              if (importedContext == null || importedContext == currentContext) {
+                  return
+              }
+
+              String importedTypeName = imported.substring(imported.lastIndexOf('.') + 1)
+              if (importedTypeName != capitalizeAscii(importedContext)) {
+                  return
+              }
+              if (!memberTypeNames.contains(importedTypeName)) {
+                  return
+              }
+
+              violations.add("${project.relativePath(file)} domain aggregate must reference other aggregate '${importedTypeName}' by identifier VO, not direct object reference")
+          }
+      }
+
+      private static Set<String> domainMemberTypeNames(String source, TypeDeclaration type) {
+          Set<String> memberTypeNames = []
+          extractFieldDeclarations(source).each { FieldDeclaration field ->
+              memberTypeNames.addAll(tokenizedTypeNames(field.type))
+          }
+          if (type.kind == 'record') {
+              extractRecordComponents(source, type.name).each { RecordComponent component ->
+                  memberTypeNames.addAll(tokenizedTypeNames(component.type))
+              }
+          }
+          return memberTypeNames
+      }
+
+      private static void validateJpaEntity(
+              Project project,
+              File file,
+              String source,
             String packageName,
             TypeDeclaration type,
             HexagonalConventionExtension convention,
@@ -1750,10 +1810,15 @@ class ClaudeConventionValidator {
         return (source =~ /(?m)\bimplements\s+[A-Za-z0-9_,\s<>]*ApiErrorMessageProvider\b/).find()
     }
 
-    private static boolean usesEnumNameAsProviderMapKey(String source) {
-        String sourceWithoutComments = stripComments(source)
-        return (sourceWithoutComments =~ /(?s)\bMap\.(?:entry|of|ofEntries)\s*\([^;{}]*\.name\s*\(/).find()
-    }
+      private static boolean usesEnumNameAsProviderMapKey(String source) {
+          String sourceWithoutComments = stripComments(source)
+          return (sourceWithoutComments =~ /(?s)\bMap\.(?:entry|of|ofEntries)\s*\([^;{}]*\.name\s*\(/).find()
+      }
+
+      private static boolean usesStringLiteralAsProviderMapKey(String source) {
+          String sourceWithoutComments = stripComments(source)
+          return (sourceWithoutComments =~ /(?s)\bMap\.(?:entry|of|ofEntries)\s*\(\s*"[^"]+"\s*,/).find()
+      }
 
     private static boolean usesApiExcludePathPatterns(String source) {
         return (source =~ /(?s)\.excludePathPatterns\s*\([^;]*"\/api\//).find()
@@ -1769,9 +1834,67 @@ class ClaudeConventionValidator {
         return (stripCommentsAndStrings(source) =~ /(?m)\breturn\s+null\s*;/).find()
     }
 
-    private static boolean callsRepositoryWithRawCommandValue(String source) {
-        return (stripCommentsAndStrings(source) =~ /(?m)\.\s*(?:exists|find)[A-Za-z0-9_]*\s*\(\s*(?:command|cmd|query)\s*\.\s*[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)\s*\)/).find()
-    }
+      private static boolean callsRepositoryWithRawCommandValue(String source) {
+          return (stripCommentsAndStrings(source) =~ /(?m)\.\s*(?:exists|find)[A-Za-z0-9_]*\s*\(\s*(?:command|cmd|query)\s*\.\s*[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)\s*\)/).find()
+      }
+
+      private static List<RepositoryMutation> findTransactionalMethodsModifyingMultipleRepositories(String source) {
+          Set<String> repositoryFieldNames = extractRepositoryFieldNames(source)
+          if (repositoryFieldNames.size() < 2) {
+              return []
+          }
+
+          List<RepositoryMutation> mutations = []
+          def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)*)^\s*public\s+(?!class\b)(?!interface\b)(?!enum\b)(?!record\b)(?!static\b)(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.<>, ?\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{/
+          while (matcher.find()) {
+              String annotations = matcher.group(1)
+              if (!hasTransactionalAnnotation(annotations) || hasReadOnlyTransaction(annotations)) {
+                  continue
+              }
+
+              int bodyStart = matcher.end() - 1
+              int bodyEnd = findMatchingBrace(source, bodyStart)
+              if (bodyEnd < 0) {
+                  continue
+              }
+
+              String methodName = matcher.group(2)
+              String body = source.substring(bodyStart + 1, bodyEnd)
+              List<String> modifiedRepositoryNames = repositoryFieldNames.findAll { String repositoryName ->
+                  callsRepositoryMutation(body, repositoryName)
+              }.sort()
+              if (modifiedRepositoryNames.size() > 1) {
+                  mutations.add(new RepositoryMutation(methodName, modifiedRepositoryNames))
+              }
+          }
+          return mutations
+      }
+
+      private static Set<String> extractRepositoryFieldNames(String source) {
+          extractInstanceFieldDeclarations(source)
+                  .findAll { FieldDeclaration field ->
+                      field.type.endsWith('RepositoryPort')
+                              || field.type.endsWith('Repository')
+                              || field.name.endsWith('RepositoryPort')
+                              || field.name.endsWith('Repository')
+                  }
+                  .collect { FieldDeclaration field -> field.name }
+                  .toSet()
+      }
+
+      private static boolean hasTransactionalAnnotation(String annotations) {
+          return (annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*Transactional\b/).find()
+      }
+
+      private static boolean hasReadOnlyTransaction(String annotations) {
+          return (annotations =~ /(?s)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*Transactional\s*\([^)]*readOnly\s*=\s*true/).find()
+      }
+
+      private static boolean callsRepositoryMutation(String body, String repositoryName) {
+          String searchableBody = stripCommentsAndStrings(body)
+          String quotedRepositoryName = Pattern.quote(repositoryName)
+          return (searchableBody =~ /(?m)\b${quotedRepositoryName}\s*\.\s*(?:save|delete|update|insert|persist|remove)[A-Za-z0-9_]*\s*\(/).find()
+      }
 
     private static boolean hasTestMethodAnnotation(String annotations) {
         return TEST_METHOD_ANNOTATIONS.any { String annotation ->
@@ -2170,6 +2293,16 @@ class ClaudeConventionValidator {
         private PhaseComment(int start, int end) {
             this.start = start
             this.end = end
+        }
+    }
+
+    private static class RepositoryMutation {
+        final String methodName
+        final List<String> repositoryNames
+
+        private RepositoryMutation(String methodName, List<String> repositoryNames) {
+            this.methodName = methodName
+            this.repositoryNames = repositoryNames
         }
     }
 
