@@ -192,6 +192,133 @@ class ClaudeConventionValidatorTest {
     }
 
     @Test
+    void 'rejects invalid transaction read only boundaries'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/GetOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface GetOrderUseCase {
+                    void getOrder();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/GetOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.GetOrderUseCase;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public final class GetOrderService implements GetOrderUseCase {
+
+                    @Override
+                    @Transactional
+                    public void getOrder() {
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/UpdateOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface UpdateOrderUseCase {
+                    void updateOrder();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/out/OrderRepositoryPort.java', '''
+                package com.example.order.application.port.out;
+
+                public interface OrderRepositoryPort {
+                    void save();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/UpdateOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.UpdateOrderUseCase;
+                import com.example.order.application.port.out.OrderRepositoryPort;
+                import lombok.RequiredArgsConstructor;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                @RequiredArgsConstructor
+                public final class UpdateOrderService implements UpdateOrderUseCase {
+
+                    private final OrderRepositoryPort orderRepositoryPort;
+
+                    @Override
+                    @Transactional(readOnly = true)
+                    public void updateOrder() {
+                        orderRepositoryPort.save();
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("query application service method 'getOrder' must declare @Transactional(readOnly = true)") }
+        assert violations.any { it.contains("read-only transaction method 'updateOrder' must not call repository mutation methods") }
+        assert violations.any { it.contains("state-changing application service method 'updateOrder' must not use readOnly = true") }
+    }
+
+    @Test
+    void 'rejects unsafe transaction controls and side effects'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface RegisterOrderUseCase {
+                    void register();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import lombok.RequiredArgsConstructor;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.TransactionDefinition;
+                import org.springframework.transaction.annotation.Propagation;
+                import org.springframework.transaction.annotation.Transactional;
+                import org.springframework.transaction.support.TransactionTemplate;
+                import org.springframework.web.reactive.function.client.WebClient;
+
+                @Service
+                @RequiredArgsConstructor
+                public final class RegisterOrderService implements RegisterOrderUseCase {
+
+                    private final TransactionTemplate transactionTemplate;
+                    private final WebClient webClient;
+
+                    @Override
+                    @Transactional
+                    public void register() {
+                        webClient.get();
+                        this.saveInternally();
+                    }
+
+                    @Transactional(propagation = Propagation.REQUIRES_NEW)
+                    public void saveInternally() {
+                        transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                    }
+
+                    @Transactional
+                    private void persist() {
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('must not use REQUIRES_NEW, NESTED, NOT_SUPPORTED, or TransactionTemplate') }
+        assert violations.any { it.contains("non-public method 'persist' must not declare @Transactional") }
+        assert violations.any { it.contains("transactional method 'saveInternally' must not be called through self-invocation") }
+        assert violations.any { it.contains("transaction method 'register' must not call external side effects inside the transaction") }
+    }
+
+    @Test
     void 'rejects field injection without required args constructor'() {
         Project project = sampleProject()
         writeApplication(project)
