@@ -319,6 +319,123 @@ class ClaudeConventionValidatorTest {
     }
 
     @Test
+    void 'rejects query use case without read only transaction even when method is execute'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/GetOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface GetOrderUseCase {
+                    GetOrderResult execute(GetOrderQuery query);
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/GetOrderQuery.java', '''
+                package com.example.order.application.port.in;
+
+                public record GetOrderQuery(String orderId) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/GetOrderResult.java', '''
+                package com.example.order.application.port.in;
+
+                public record GetOrderResult(String orderId) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/GetOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.GetOrderQuery;
+                import com.example.order.application.port.in.GetOrderResult;
+                import com.example.order.application.port.in.GetOrderUseCase;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public final class GetOrderService implements GetOrderUseCase {
+
+                    @Override
+                    @Transactional
+                    public GetOrderResult execute(final GetOrderQuery query) {
+                        return new GetOrderResult(query.orderId());
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("query application service method 'execute' must declare @Transactional(readOnly = true)") }
+    }
+
+    @Test
+    void 'rejects side effect outbound port calls inside transaction'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface RegisterOrderUseCase {
+                    void register();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/out/OrderEventPublisherPort.java', '''
+                package com.example.order.application.port.out;
+
+                public interface OrderEventPublisherPort {
+                    void publish();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.out.OrderEventPublisherPort;
+                import lombok.RequiredArgsConstructor;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                @RequiredArgsConstructor
+                public final class RegisterOrderService implements RegisterOrderUseCase {
+
+                    private final OrderEventPublisherPort orderEventPublisherPort;
+
+                    @Override
+                    @Transactional
+                    public void register() {
+                        orderEventPublisherPort.publish();
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("transaction method 'register' must not call external side effects inside the transaction") }
+    }
+
+    @Test
+    void 'rejects invalid nested application port and inbound adapter packages'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/foo/BrokenOrderPort.java', '''
+                package com.example.order.application.port.foo;
+
+                public interface BrokenOrderPort {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/grpc/BrokenController.java', '''
+                package com.example.order.adapter.in.grpc;
+
+                public final class BrokenController {
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('order.application.port package must use in or out') }
+        assert violations.any { it.contains('order.adapter.in package must use bootstrap, event, messaging, scheduler, or web') }
+    }
+
+    @Test
     void 'rejects field injection without required args constructor'() {
         Project project = sampleProject()
         writeApplication(project)

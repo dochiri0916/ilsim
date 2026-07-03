@@ -32,7 +32,7 @@ class ArchUnitArchitectureValidator {
         String domainPackage = layerPackage(convention.domainPackageSegment)
         String applicationPackage = layerPackage(convention.applicationPackageSegment)
         String infrastructurePackage = layerPackage(convention.infrastructurePackageSegment)
-        String presentationPackage = layerPackage(convention.presentationPackageSegment)
+        String inboundAdapterPackage = layerPackage(inboundAdapterPackageSegment(convention))
         String applicationServicePackage = "..${convention.applicationPackageSegment}..service.."
         String applicationPortOutPackage = "..${convention.applicationPackageSegment}..port.out.."
 
@@ -40,7 +40,7 @@ class ArchUnitArchitectureValidator {
                 noClasses()
                         .that().resideInAPackage(domainPackage)
                         .should().dependOnClassesThat()
-                        .resideInAnyPackage(applicationPackage, infrastructurePackage, presentationPackage)
+                        .resideInAnyPackage(applicationPackage, infrastructurePackage, inboundAdapterPackage)
                         .because('domain must not depend on outer layers')
                         .allowEmptyShould(true),
                 noClasses()
@@ -57,14 +57,20 @@ class ArchUnitArchitectureValidator {
                 noClasses()
                         .that().resideInAPackage(applicationPackage)
                         .should().dependOnClassesThat()
-                        .resideInAnyPackage(infrastructurePackage, presentationPackage)
+                        .resideInAnyPackage(infrastructurePackage, inboundAdapterPackage)
                         .because('application must not depend on adapters')
                         .allowEmptyShould(true),
                 noClasses()
-                        .that().resideInAPackage(presentationPackage)
+                        .that().resideInAPackage(inboundAdapterPackage)
                         .should().dependOnClassesThat()
                         .resideInAnyPackage(infrastructurePackage)
-                        .because('adapter.in.web must use inbound ports instead of adapter.out directly')
+                        .because('adapter.in must use inbound ports instead of adapter.out directly')
+                        .allowEmptyShould(true),
+                noClasses()
+                        .that().resideInAPackage(infrastructurePackage)
+                        .should().dependOnClassesThat()
+                        .resideInAnyPackage(inboundAdapterPackage)
+                        .because('adapter.out must not depend on adapter.in')
                         .allowEmptyShould(true),
                 noClasses()
                         .that().haveSimpleNameEndingWith('Controller')
@@ -94,5 +100,12 @@ class ArchUnitArchitectureValidator {
 
     private static String layerPackage(String packageSegment) {
         return "..${packageSegment}.."
+    }
+
+    private static String inboundAdapterPackageSegment(HexagonalConventionExtension convention) {
+        if (convention.presentationPackageSegment?.startsWith('adapter.in.')) {
+            return 'adapter.in'
+        }
+        return convention.presentationPackageSegment
     }
 }

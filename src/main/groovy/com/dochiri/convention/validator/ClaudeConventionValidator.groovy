@@ -60,64 +60,12 @@ class ClaudeConventionValidator {
             'WebClientException',
             'WebClientResponseException'
     ] as Set
-    private static final Set<String> EXTERNAL_SIDE_EFFECT_TYPES = [
-            'FeignClient',
-            'HttpClient',
-            'JavaMailSender',
-            'KafkaTemplate',
-            'MessageChannel',
-            'RabbitTemplate',
-            'RestTemplate',
-            'S3Client',
-            'SnsClient',
-            'SqsClient',
-            'WebClient'
-    ] as Set
-    private static final Set<String> EXTERNAL_SIDE_EFFECT_NAMES = [
-            'feignClient',
-            'httpClient',
-            'javaMailSender',
-            'kafkaTemplate',
-            'mailSender',
-            'messageChannel',
-            'rabbitTemplate',
-            'restTemplate',
-            's3Client',
-            'snsClient',
-            'sqsClient',
-            'webClient'
-    ] as Set
     private static final Set<String> TEST_METHOD_ANNOTATIONS = [
             'Test',
             'ParameterizedTest',
             'RepeatedTest',
             'TestFactory',
             'TestTemplate'
-    ] as Set
-    private static final Set<String> CONTEXT_LAYER_SEGMENTS = [
-            'domain',
-            'application',
-            'adapter'
-    ] as Set
-    private static final Set<String> RESERVED_CONTEXT_NAMES = [
-            'common',
-            'config',
-            'infrastructure',
-            'shared'
-    ] as Set
-    private static final Set<String> DOMAIN_CHILD_SEGMENTS = [
-            'model',
-            'event',
-            'exception'
-    ] as Set
-    private static final Set<String> APPLICATION_CHILD_SEGMENTS = [
-            'port',
-            'exception',
-            'service'
-    ] as Set
-    private static final Set<String> ADAPTER_CHILD_SEGMENTS = [
-            'in',
-            'out'
     ] as Set
     private static final Set<String> RAW_SCALAR_TYPES = [
             'String',
@@ -163,8 +111,8 @@ class ClaudeConventionValidator {
         List<File> mainSourceFiles = SourceInspector.collectMainSourceFiles(project).findAll { File file ->
             file.name.endsWith('.java')
         }
-        Set<String> applicationRootPackages = collectApplicationRootPackages(mainSourceFiles)
         validateNoMessageBundleResources(project, violations)
+        violations.addAll(PackageTopologyConventionValidator.validate(project))
 
         mainSourceFiles.each { File file ->
             String source = file.getText(StandardCharsets.UTF_8.name())
@@ -183,8 +131,15 @@ class ClaudeConventionValidator {
 
             validateSingleResponsibility(project, file, source, packageName, type, convention, violations)
             validateTechnicalAnnotationPlacement(project, file, source, packageName, type, convention, violations)
+            violations.addAll(TransactionBoundaryConventionValidator.validateFile(
+                    project,
+                    file,
+                    source,
+                    packageName,
+                    type.name,
+                    convention
+            ))
             validateWebErrorTypePlacement(project, file, source, packageName, convention, violations)
-            validatePackageTopology(project, file, packageName, type, applicationRootPackages, violations)
             validateTypePackageConvention(project, file, packageName, type, convention, violations)
             validateSpringComponentRegistration(project, file, source, packageName, type, convention, violations)
             validateExceptionArchitecture(project, file, source, packageName, type, convention, violations)
@@ -223,19 +178,6 @@ class ClaudeConventionValidator {
         validateTestConventions(project, violations)
 
         return violations
-    }
-
-    private static Set<String> collectApplicationRootPackages(List<File> mainSourceFiles) {
-        mainSourceFiles.collect { File file ->
-            String source = file.getText(StandardCharsets.UTF_8.name())
-            TypeDeclaration type = TypeDeclaration.from(source)
-            if (type == null || !type.name.endsWith('Application')) {
-                return null
-            }
-            SourceInspector.extractPackageName(source)
-        }.findAll { String packageName ->
-            packageName != null && !packageName.isBlank()
-        }.toSet()
     }
 
     private static void validateCommonPackageUsage(
@@ -363,8 +305,6 @@ class ClaudeConventionValidator {
         boolean outboundAdapter = SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)
         boolean inboundWebAdapter = SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
         boolean globalError = isGlobalErrorPackage(packageName)
-        boolean applicationService = SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
-                && packageName.contains('.service')
 
         ['Entity', 'Table', 'Repository'].each { String annotation ->
             if (hasAnnotation(source, annotation) && !outboundAdapter) {
@@ -378,23 +318,6 @@ class ClaudeConventionValidator {
             }
         }
 
-        if (hasAnnotation(source, 'Transactional') && !applicationService) {
-            violations.add("${path} @Transactional is only allowed on concrete application services")
-        }
-        if (usesForbiddenTransactionControl(source)) {
-            violations.add("${path} must not use REQUIRES_NEW, NESTED, NOT_SUPPORTED, or TransactionTemplate")
-        }
-        if (applicationService && hasClassLevelAnnotation(source, type.name, 'Transactional')) {
-            violations.add("${path} @Transactional must be declared on public application service methods, not on the class")
-        }
-        if (applicationService) {
-            findNonPublicMethodNamesWithAnnotation(source, 'Transactional').each { String methodName ->
-                violations.add("${path} non-public method '${methodName}' must not declare @Transactional")
-            }
-            findPublicMethodNamesWithoutAnnotation(source, 'Transactional').each { String methodName ->
-                violations.add("${path} public application service method '${methodName}' must declare @Transactional")
-            }
-        }
     }
 
     private static void validateWebErrorTypePlacement(
@@ -413,99 +336,6 @@ class ClaudeConventionValidator {
 
         String path = project.relativePath(file)
         violations.add("${path} Spring Web error types are only allowed in adapter.in.web or global.error")
-    }
-
-    private static void validatePackageTopology(
-            Project project,
-            File file,
-            String packageName,
-            TypeDeclaration type,
-            Set<String> applicationRootPackages,
-            List<String> violations
-    ) {
-        if (packageName == null || packageName.isBlank()) {
-            return
-        }
-
-        String path = project.relativePath(file)
-        if (type.name.endsWith('Application') && applicationRootPackages.contains(packageName)) {
-            return
-        }
-
-        String rootPackage = findApplicationRootPackage(packageName, applicationRootPackages)
-        if (rootPackage == null) {
-            if (!applicationRootPackages.isEmpty()) {
-                violations.add("${path} package '${packageName}' must be under application root package '${applicationRootPackages.sort().join(', ')}'")
-            }
-            return
-        }
-
-        if (packageName == rootPackage) {
-            violations.add("${path} root package may contain only the application bootstrap class")
-            return
-        }
-
-        String relativePackage = packageName.substring(rootPackage.length() + 1)
-        List<String> segments = relativePackage.split('\\.').toList()
-        if (segments.isEmpty()) {
-            return
-        }
-
-        if (segments.first() == 'global') {
-            if (segments.size() < 2 || !['error', 'web'].contains(segments[1])) {
-                violations.add("${path} global package must be limited to global.error or global.web")
-            }
-            return
-        }
-
-        if (CONTEXT_LAYER_SEGMENTS.contains(segments.first())) {
-            violations.add("${path} package must be context-first: use {context}/${segments.first()}..., not ${segments.first()}/{context}...")
-            return
-        }
-
-        if (RESERVED_CONTEXT_NAMES.contains(segments.first())) {
-            violations.add("${path} package '${segments.first()}' is not a bounded context; use a real context name before domain, application, or adapter")
-            return
-        }
-
-        if (segments.size() < 2) {
-            violations.add("${path} bounded context package '${segments.first()}' must contain domain, application, or adapter")
-            return
-        }
-
-        String contextName = segments[0]
-        String layerName = segments[1]
-        if (!CONTEXT_LAYER_SEGMENTS.contains(layerName)) {
-            violations.add("${path} package must follow {context}/domain, {context}/application, or {context}/adapter structure")
-            return
-        }
-
-        if (segments.size() < 3) {
-            violations.add("${path} ${contextName}.${layerName} package must declare a valid child package")
-            return
-        }
-
-        validateLayerChildPackage(project, file, contextName, layerName, segments[2], violations)
-    }
-
-    private static void validateLayerChildPackage(
-            Project project,
-            File file,
-            String contextName,
-            String layerName,
-            String childName,
-            List<String> violations
-    ) {
-        String path = project.relativePath(file)
-        if (layerName == 'domain' && !DOMAIN_CHILD_SEGMENTS.contains(childName)) {
-            violations.add("${path} ${contextName}.domain package must use model, event, or exception")
-        }
-        if (layerName == 'application' && !APPLICATION_CHILD_SEGMENTS.contains(childName)) {
-            violations.add("${path} ${contextName}.application package must use port, exception, or service")
-        }
-        if (layerName == 'adapter' && !ADAPTER_CHILD_SEGMENTS.contains(childName)) {
-            violations.add("${path} ${contextName}.adapter package must use in or out")
-        }
     }
 
     private static void validateSpringComponentRegistration(
@@ -920,27 +750,6 @@ class ClaudeConventionValidator {
         if (packageName.contains('.service') && callsRepositoryWithRawCommandValue(source)) {
             violations.add("${path} application service must create a VO and pass normalized vo.value() to repository exists/find calls")
         }
-        if (packageName.contains('.service')) {
-            findQueryMethodsWithoutReadOnlyTransaction(source).each { String methodName ->
-                violations.add("${path} query application service method '${methodName}' must declare @Transactional(readOnly = true)")
-            }
-            findReadOnlyTransactionalMethodsCallingRepositoryMutation(source).each { String methodName ->
-                violations.add("${path} read-only transaction method '${methodName}' must not call repository mutation methods")
-            }
-            findReadOnlyTransactionalCommandMethods(source).each { String methodName ->
-                violations.add("${path} state-changing application service method '${methodName}' must not use readOnly = true")
-            }
-            findTransactionalSelfInvocations(source).each { String methodName ->
-                violations.add("${path} transactional method '${methodName}' must not be called through self-invocation")
-            }
-            findTransactionalMethodsCallingExternalSideEffects(source).each { String methodName ->
-                violations.add("${path} transaction method '${methodName}' must not call external side effects inside the transaction")
-            }
-            findTransactionalMethodsModifyingMultipleRepositories(source).each { RepositoryMutation mutation ->
-                violations.add("${path} application service method '${mutation.methodName}' must not modify multiple aggregate repositories in one transaction: ${mutation.repositoryNames.join(', ')}")
-            }
-        }
-
         if (type.name.endsWith('Exception')) {
             if (!(source =~ /\bextends\s+RuntimeException\b/).find()) {
                 violations.add("${path} application exception '${type.name}' must extend RuntimeException")
@@ -1651,36 +1460,6 @@ class ClaudeConventionValidator {
         return (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()
     }
 
-    private static boolean hasClassLevelAnnotation(String source, String typeName, String annotation) {
-        String searchableSource = stripCommentsAndStrings(source)
-        return (searchableSource =~ /(?ms)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b(?:\([^)]*\))?(?:\s*@\s*[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?)*\s*(?:public\s+)?(?:(?:final|abstract)\s+)?(?:class|record|interface|enum)\s+${typeName}\b/).find()
-    }
-
-    private static List<String> findPublicMethodNamesWithoutAnnotation(String source, String annotation) {
-        List<String> methodNames = []
-        def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)*)^\s*public\s+(?!class\b)(?!interface\b)(?!enum\b)(?!record\b)(?!static\b)(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.<>, ?\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{/
-        while (matcher.find()) {
-            String annotations = matcher.group(1)
-            String methodName = matcher.group(2)
-            if (!(annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()) {
-                methodNames.add(methodName)
-            }
-        }
-        return methodNames
-    }
-
-    private static List<String> findNonPublicMethodNamesWithAnnotation(String source, String annotation) {
-        List<String> methodNames = []
-        def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)+)^\s*(?!public\b)(?:private\s+|protected\s+)?(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.<>, ?\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{/
-        while (matcher.find()) {
-            String annotations = matcher.group(1)
-            if ((annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()) {
-                methodNames.add(matcher.group(2))
-            }
-        }
-        return methodNames
-    }
-
     private static int countImplementedInterfacesEndingWith(String source, String typeName, String suffix) {
         String searchableSource = stripCommentsAndStrings(source)
         def matcher = searchableSource =~ /(?ms)\bclass\s+${typeName}\s+implements\s+([^{]+)\{/
@@ -1741,15 +1520,6 @@ class ClaudeConventionValidator {
     private static boolean hasDependencyField(String source) {
         String searchableSource = stripCommentsAndStrings(source)
         return (searchableSource =~ /(?m)^\s*private\s+(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.]*(?:Port|Repository|RepositoryPort|UseCase|Client|Service|Mapper|Factory|Publisher|Producer|Consumer|Template|EntityManager|Clock)\b/).find()
-    }
-
-    private static String findApplicationRootPackage(String packageName, Set<String> applicationRootPackages) {
-        applicationRootPackages
-                .findAll { String rootPackage ->
-                    packageName == rootPackage || packageName.startsWith("${rootPackage}.")
-                }
-                .sort { String left, String right -> right.length() <=> left.length() }
-                .with { List<String> matches -> matches.isEmpty() ? null : matches.first() }
     }
 
     private static boolean hasAnyAnnotation(String source, List<String> annotations) {
@@ -1896,183 +1666,6 @@ class ClaudeConventionValidator {
 
       private static boolean callsRepositoryWithRawCommandValue(String source) {
           return (stripCommentsAndStrings(source) =~ /(?m)\.\s*(?:exists|find)[A-Za-z0-9_]*\s*\(\s*(?:command|cmd|query)\s*\.\s*[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)\s*\)/).find()
-      }
-
-      private static List<String> findQueryMethodsWithoutReadOnlyTransaction(String source) {
-          extractPublicMethodBodies(source)
-                  .findAll { MethodBody method ->
-                      isQueryMethodName(method.methodName)
-                              && hasTransactionalAnnotation(method.annotations)
-                              && !hasReadOnlyTransaction(method.annotations)
-                  }
-                  .collect { MethodBody method -> method.methodName }
-      }
-
-      private static List<String> findReadOnlyTransactionalMethodsCallingRepositoryMutation(String source) {
-          Set<String> repositoryFieldNames = extractRepositoryFieldNames(source)
-          if (repositoryFieldNames.isEmpty()) {
-              return []
-          }
-
-          extractPublicMethodBodies(source)
-                  .findAll { MethodBody method ->
-                      hasReadOnlyTransaction(method.annotations)
-                              && callsAnyRepositoryMutation(method.body, repositoryFieldNames)
-                  }
-                  .collect { MethodBody method -> method.methodName }
-      }
-
-      private static List<String> findReadOnlyTransactionalCommandMethods(String source) {
-          extractPublicMethodBodies(source)
-                  .findAll { MethodBody method ->
-                      hasReadOnlyTransaction(method.annotations)
-                              && isStateChangingMethodName(method.methodName)
-                  }
-                  .collect { MethodBody method -> method.methodName }
-      }
-
-      private static List<String> findTransactionalSelfInvocations(String source) {
-          Set<String> transactionalMethodNames = extractPublicMethodBodies(source)
-                  .findAll { MethodBody method -> hasTransactionalAnnotation(method.annotations) }
-                  .collect { MethodBody method -> method.methodName }
-                  .toSet()
-          if (transactionalMethodNames.isEmpty()) {
-              return []
-          }
-
-          Set<String> invokedMethodNames = []
-          extractPublicMethodBodies(source).each { MethodBody method ->
-              String searchableBody = stripCommentsAndStrings(method.body)
-              transactionalMethodNames.each { String transactionalMethodName ->
-                  if (callsSelfMethod(searchableBody, transactionalMethodName)) {
-                      invokedMethodNames.add(transactionalMethodName)
-                  }
-              }
-          }
-          return invokedMethodNames.sort()
-      }
-
-      private static List<String> findTransactionalMethodsCallingExternalSideEffects(String source) {
-          Set<String> sideEffectFieldNames = extractExternalSideEffectFieldNames(source)
-          extractPublicMethodBodies(source)
-                  .findAll { MethodBody method ->
-                      hasTransactionalAnnotation(method.annotations)
-                              && callsExternalSideEffect(method.body, sideEffectFieldNames)
-                  }
-                  .collect { MethodBody method -> method.methodName }
-      }
-
-      private static List<RepositoryMutation> findTransactionalMethodsModifyingMultipleRepositories(String source) {
-          Set<String> repositoryFieldNames = extractRepositoryFieldNames(source)
-          if (repositoryFieldNames.size() < 2) {
-              return []
-          }
-
-        List<RepositoryMutation> mutations = []
-        extractPublicMethodBodies(source).each { MethodBody method ->
-            if (hasTransactionalAnnotation(method.annotations) && !hasReadOnlyTransaction(method.annotations)) {
-                List<String> modifiedRepositoryNames = repositoryFieldNames.findAll { String repositoryName ->
-                    callsRepositoryMutation(method.body, repositoryName)
-                }.sort()
-                if (modifiedRepositoryNames.size() > 1) {
-                    mutations.add(new RepositoryMutation(method.methodName, modifiedRepositoryNames))
-                }
-            }
-        }
-        return mutations
-    }
-
-      private static List<MethodBody> extractPublicMethodBodies(String source) {
-          List<MethodBody> methods = []
-          def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)*)^\s*public\s+(?!class\b)(?!interface\b)(?!enum\b)(?!record\b)(?!static\b)(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.<>, ?\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{/
-          while (matcher.find()) {
-              int bodyStart = matcher.end() - 1
-              int bodyEnd = findMatchingBrace(source, bodyStart)
-              if (bodyEnd < 0) {
-                  continue
-              }
-              methods.add(new MethodBody(
-                      matcher.group(2),
-                      matcher.group(1),
-                      source.substring(bodyStart + 1, bodyEnd)
-              ))
-          }
-          return methods
-      }
-
-      private static Set<String> extractRepositoryFieldNames(String source) {
-          extractInstanceFieldDeclarations(source)
-                  .findAll { FieldDeclaration field ->
-                      field.type.endsWith('RepositoryPort')
-                              || field.type.endsWith('Repository')
-                              || field.name.endsWith('RepositoryPort')
-                              || field.name.endsWith('Repository')
-                  }
-                  .collect { FieldDeclaration field -> field.name }
-                  .toSet()
-      }
-
-      private static Set<String> extractExternalSideEffectFieldNames(String source) {
-          extractInstanceFieldDeclarations(source)
-                  .findAll { FieldDeclaration field ->
-                      EXTERNAL_SIDE_EFFECT_TYPES.contains(simplifyTypeName(field.type))
-                              || EXTERNAL_SIDE_EFFECT_NAMES.contains(field.name)
-                  }
-                  .collect { FieldDeclaration field -> field.name }
-                  .toSet()
-      }
-
-      private static boolean hasTransactionalAnnotation(String annotations) {
-          return (annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*Transactional\b/).find()
-      }
-
-      private static boolean hasReadOnlyTransaction(String annotations) {
-          return (annotations =~ /(?s)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*Transactional\s*\([^)]*readOnly\s*=\s*true/).find()
-      }
-
-      private static boolean callsRepositoryMutation(String body, String repositoryName) {
-          String searchableBody = stripCommentsAndStrings(body)
-          String quotedRepositoryName = Pattern.quote(repositoryName)
-          return (searchableBody =~ /(?m)\b${quotedRepositoryName}\s*\.\s*(?:save|delete|update|insert|persist|remove)[A-Za-z0-9_]*\s*\(/).find()
-      }
-
-      private static boolean callsAnyRepositoryMutation(String body, Set<String> repositoryFieldNames) {
-          repositoryFieldNames.any { String repositoryName ->
-              callsRepositoryMutation(body, repositoryName)
-          }
-      }
-
-      private static boolean callsSelfMethod(String searchableBody, String methodName) {
-          String quotedMethodName = Pattern.quote(methodName)
-          return (searchableBody =~ /(?m)\bthis\s*\.\s*${quotedMethodName}\s*\(/).find()
-                  || (searchableBody =~ /(?m)(?:^|[^A-Za-z0-9_.])${quotedMethodName}\s*\(/).find()
-      }
-
-      private static boolean callsExternalSideEffect(String body, Set<String> sideEffectFieldNames) {
-          String searchableBody = stripCommentsAndStrings(body)
-          if (sideEffectFieldNames.any { String fieldName ->
-              (searchableBody =~ /(?m)\b${Pattern.quote(fieldName)}\s*\./).find()
-          }) {
-              return true
-          }
-
-          return (searchableBody =~ /(?m)\b(?:Files\s*\.\s*(?:write|delete|copy|move)|new\s+(?:FileOutputStream|FileWriter))\b/).find()
-                  || (searchableBody =~ /(?m)\b(?:WebClient|RestTemplate|KafkaTemplate|RabbitTemplate|JavaMailSender)\b/).find()
-      }
-
-      private static boolean usesForbiddenTransactionControl(String source) {
-          String searchableSource = stripCommentsAndStrings(source)
-          return (searchableSource =~ /(?m)\bTransactionTemplate\b/).find()
-                  || (searchableSource =~ /(?m)\bPropagation\s*\.\s*(?:REQUIRES_NEW|NESTED|NOT_SUPPORTED)\b/).find()
-                  || (searchableSource =~ /(?m)\bpropagation\s*=\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)?(?:REQUIRES_NEW|NESTED|NOT_SUPPORTED)\b/).find()
-      }
-
-      private static boolean isQueryMethodName(String methodName) {
-          return methodName ==~ /^(?:get|list|find|search|count|exists|load|read).*/
-      }
-
-      private static boolean isStateChangingMethodName(String methodName) {
-          return methodName ==~ /^(?:add|approve|cancel|clear|complete|create|delete|handle|pay|place|register|reject|remove|save|ship|start|update|write).*/
       }
 
     private static boolean hasTestMethodAnnotation(String annotations) {
@@ -2472,28 +2065,6 @@ class ClaudeConventionValidator {
         private PhaseComment(int start, int end) {
             this.start = start
             this.end = end
-        }
-    }
-
-    private static class MethodBody {
-        final String methodName
-        final String annotations
-        final String body
-
-        private MethodBody(String methodName, String annotations, String body) {
-            this.methodName = methodName
-            this.annotations = annotations
-            this.body = body
-        }
-    }
-
-    private static class RepositoryMutation {
-        final String methodName
-        final List<String> repositoryNames
-
-        private RepositoryMutation(String methodName, List<String> repositoryNames) {
-            this.methodName = methodName
-            this.repositoryNames = repositoryNames
         }
     }
 

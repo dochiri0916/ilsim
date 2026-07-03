@@ -9,11 +9,12 @@ import java.nio.charset.StandardCharsets
 class HexagonalArchitectureValidator {
     static List<String> validate(Project project, HexagonalConventionExtension convention) {
         List<String> violations = []
+        String inboundAdapterPackageSegment = inboundAdapterPackageSegment(convention)
 
         SourceInspector.collectMainSourceFiles(project).each { File file ->
             String content = file.getText(StandardCharsets.UTF_8.name())
             String packageName = SourceInspector.extractPackageName(content)
-            String layer = detectLayer(packageName, convention)
+            String layer = detectLayer(packageName, convention, inboundAdapterPackageSegment)
             if (layer == null) {
                 return
             }
@@ -22,13 +23,21 @@ class HexagonalArchitectureValidator {
             imports.each { String imported ->
                 if (layer == 'domain' && (SourceInspector.isInLayer(imported, convention.applicationPackageSegment)
                         || SourceInspector.isInLayer(imported, convention.infrastructurePackageSegment)
-                        || SourceInspector.isInLayer(imported, convention.presentationPackageSegment))) {
+                        || SourceInspector.isInLayer(imported, inboundAdapterPackageSegment))) {
                     violations.add("${project.relativePath(file)} imports ${imported} (domain -> application/adapter forbidden)")
                 }
 
                 if (layer == 'application' && (SourceInspector.isInLayer(imported, convention.infrastructurePackageSegment)
-                        || SourceInspector.isInLayer(imported, convention.presentationPackageSegment))) {
+                        || SourceInspector.isInLayer(imported, inboundAdapterPackageSegment))) {
                     violations.add("${project.relativePath(file)} imports ${imported} (application -> adapter forbidden)")
+                }
+
+                if (layer == 'adapter.in' && SourceInspector.isInLayer(imported, convention.infrastructurePackageSegment)) {
+                    violations.add("${project.relativePath(file)} imports ${imported} (adapter.in -> adapter.out forbidden)")
+                }
+
+                if (layer == 'adapter.out' && SourceInspector.isInLayer(imported, inboundAdapterPackageSegment)) {
+                    violations.add("${project.relativePath(file)} imports ${imported} (adapter.out -> adapter.in forbidden)")
                 }
             }
         }
@@ -36,7 +45,11 @@ class HexagonalArchitectureValidator {
         return violations
     }
 
-    private static String detectLayer(String packageName, HexagonalConventionExtension convention) {
+    private static String detectLayer(
+            String packageName,
+            HexagonalConventionExtension convention,
+            String inboundAdapterPackageSegment
+    ) {
         if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
             return 'domain'
         }
@@ -46,9 +59,16 @@ class HexagonalArchitectureValidator {
         if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)) {
             return 'adapter.out'
         }
-        if (SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)) {
-            return 'adapter.in.web'
+        if (SourceInspector.isInLayer(packageName, inboundAdapterPackageSegment)) {
+            return 'adapter.in'
         }
         return null
+    }
+
+    private static String inboundAdapterPackageSegment(HexagonalConventionExtension convention) {
+        if (convention.presentationPackageSegment?.startsWith('adapter.in.')) {
+            return 'adapter.in'
+        }
+        return convention.presentationPackageSegment
     }
 }
