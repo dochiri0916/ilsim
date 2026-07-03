@@ -737,6 +737,177 @@ class ClaudeConventionValidatorTest {
     }
 
     @Test
+    void 'rejects non-namespaced API error code keys'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/member/application/exception/MemberErrorCode.java', '''
+                package com.example.member.application.exception;
+
+                public enum MemberErrorCode {
+                    DUPLICATE_EMAIL
+                }
+                ''')
+        writeJava(project, 'com/example/member/adapter/in/web/MemberErrorCodeMappingProvider.java', '''
+                package com.example.member.adapter.in.web;
+
+                import com.example.global.error.ApiExceptionMapper;
+                import com.example.global.error.ErrorCodeMappingProvider;
+                import com.example.member.application.exception.MemberErrorCode;
+                import java.util.Map;
+
+                public final class MemberErrorCodeMappingProvider implements ErrorCodeMappingProvider {
+
+                    public Map<String, ApiExceptionMapper.Mapping> errorCodeMappings() {
+                        return Map.of(MemberErrorCode.DUPLICATE_EMAIL.name(), null);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/member/adapter/in/web/MemberErrorMessageProvider.java', '''
+                package com.example.member.adapter.in.web;
+
+                import com.example.global.error.ApiErrorMessage;
+                import com.example.global.error.ApiErrorMessageProvider;
+                import com.example.member.application.exception.MemberErrorCode;
+                import java.util.Map;
+
+                public final class MemberErrorMessageProvider implements ApiErrorMessageProvider {
+
+                    public Map<String, ApiErrorMessage> errorMessages() {
+                        return Map.entry(MemberErrorCode.DUPLICATE_EMAIL.name(), new ApiErrorMessage("중복", "중복입니다."));
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('must use ApiErrorCode.from(errorCode), not Enum.name()') }
+    }
+
+    @Test
+    void 'rejects raw command value repository lookups before VO normalization'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/member/application/port/in/RegisterMemberCommand.java', '''
+                package com.example.member.application.port.in;
+
+                public record RegisterMemberCommand(String email) {
+                }
+                ''')
+        writeJava(project, 'com/example/member/application/port/in/RegisterMemberUseCase.java', '''
+                package com.example.member.application.port.in;
+
+                public interface RegisterMemberUseCase {
+                    void register(RegisterMemberCommand command);
+                }
+                ''')
+        writeJava(project, 'com/example/member/application/port/out/MemberRepositoryPort.java', '''
+                package com.example.member.application.port.out;
+
+                public interface MemberRepositoryPort {
+                    boolean existsByEmail(String email);
+                }
+                ''')
+        writeJava(project, 'com/example/member/application/service/RegisterMemberService.java', '''
+                package com.example.member.application.service;
+
+                import com.example.member.application.port.in.RegisterMemberCommand;
+                import com.example.member.application.port.in.RegisterMemberUseCase;
+                import com.example.member.application.port.out.MemberRepositoryPort;
+                import lombok.RequiredArgsConstructor;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                @RequiredArgsConstructor
+                public final class RegisterMemberService implements RegisterMemberUseCase {
+
+                    private final MemberRepositoryPort memberRepositoryPort;
+
+                    @Override
+                    @Transactional
+                    public void register(final RegisterMemberCommand command) {
+                        memberRepositoryPort.existsByEmail(command.email());
+                    }
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('must create a VO and pass normalized vo.value() to repository exists/find calls') }
+    }
+
+    @Test
+    void 'rejects path based public API exclusions and nullable authenticated member resolver'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/web/ApiWebConfig.java', '''
+                package com.example.global.web;
+
+                import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+                import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+                public final class ApiWebConfig implements WebMvcConfigurer {
+
+                    public void addInterceptors(final InterceptorRegistry registry) {
+                        registry.addInterceptor(null)
+                                .addPathPatterns("/api/**")
+                                .excludePathPatterns("/api/members/login");
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/global/web/AuthenticatedMemberArgumentResolver.java', '''
+                package com.example.global.web;
+
+                  import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+
+                  public final class AuthenticatedMemberArgumentResolver implements HandlerMethodArgumentResolver {
+
+                      public boolean supportsParameter(final Object parameter) {
+                          return parameter.hasParameterAnnotation(AuthenticatedMember.class);
+                      }
+
+                      public Object resolveArgument() {
+                          return null;
+                      }
+                  }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('must mark public APIs with @PublicApi') }
+        assert violations.any { it.contains('@AuthenticatedMember resolver must throw an authentication exception') }
+    }
+
+    @Test
+    void 'rejects wildcard imports'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/domain/model/Order.java', '''
+                package com.example.order.domain.model;
+
+                import java.util.*;
+                import static java.util.Objects.*;
+
+                public final class Order {
+                }
+                ''')
+        writeTestJava(project, 'com/example/order/OrderTest.java', '''
+                package com.example.order;
+
+                import java.time.*;
+
+                class OrderTest {
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("must not use wildcard import 'java.util.*'") }
+        assert violations.any { it.contains("must not use wildcard import 'java.util.Objects.*'") }
+        assert violations.any { it.contains("must not use wildcard import 'java.time.*'") }
+    }
+
+    @Test
     void 'rejects domain invariant exceptions without ErrorCode factories'() {
         Project project = sampleProject()
         writeApplication(project)

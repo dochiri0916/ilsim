@@ -143,6 +143,7 @@ class ClaudeConventionValidator {
             String source = file.getText(StandardCharsets.UTF_8.name())
             String packageName = SourceInspector.extractPackageName(source)
             validateCommonPackageUsage(project, file, source, packageName, violations)
+            validateNoWildcardImports(project, file, source, violations)
             validateNoElseUsage(project, file, source, violations)
             validateNoQualityToolSuppressUsage(project, file, source, violations)
             validateNoI18nOrValueInjection(project, file, source, violations)
@@ -160,6 +161,8 @@ class ClaudeConventionValidator {
             validateTypePackageConvention(project, file, packageName, type, convention, violations)
             validateSpringComponentRegistration(project, file, source, packageName, type, convention, violations)
             validateExceptionArchitecture(project, file, source, packageName, type, convention, violations)
+            validateErrorProviderCodeKeys(project, file, source, violations)
+            validateWebAuthenticationArchitecture(project, file, source, violations)
 
             if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
                 validateDomain(project, file, source, packageName, type, convention, violations)
@@ -222,6 +225,14 @@ class ClaudeConventionValidator {
         SourceInspector.extractImports(source).each { String imported ->
             if (SourceInspector.isInLayer(imported, 'common')) {
                 violations.add("${path} must not import common package '${imported}'")
+            }
+        }
+    }
+
+    private static void validateNoWildcardImports(Project project, File file, String source, List<String> violations) {
+        SourceInspector.extractImports(source).each { String imported ->
+            if (imported.endsWith('.*')) {
+                violations.add("${project.relativePath(file)} must not use wildcard import '${imported}'")
             }
         }
     }
@@ -550,6 +561,35 @@ class ClaudeConventionValidator {
         }
     }
 
+    private static void validateErrorProviderCodeKeys(
+            Project project,
+            File file,
+            String source,
+            List<String> violations
+    ) {
+        if (!implementsErrorCodeMappingProvider(source) && !implementsApiErrorMessageProvider(source)) {
+            return
+        }
+        if (usesEnumNameAsProviderMapKey(source)) {
+            violations.add("${project.relativePath(file)} error mapping/message provider must use ApiErrorCode.from(errorCode), not Enum.name(), for API code keys")
+        }
+    }
+
+    private static void validateWebAuthenticationArchitecture(
+            Project project,
+            File file,
+            String source,
+            List<String> violations
+    ) {
+        String path = project.relativePath(file)
+        if (usesApiExcludePathPatterns(source)) {
+            violations.add("${path} must mark public APIs with @PublicApi instead of hard-coded /api excludePathPatterns")
+        }
+        if (isAuthenticatedMemberArgumentResolver(source) && returnsNull(source)) {
+            violations.add("${path} @AuthenticatedMember resolver must throw an authentication exception instead of returning null")
+        }
+    }
+
     private static void validateTestConventions(Project project, List<String> violations) {
         File testJavaDir = project.file('src/test/java')
         if (!testJavaDir.exists()) {
@@ -560,6 +600,7 @@ class ClaudeConventionValidator {
             include '**/*.java'
         }.files.each { File file ->
             String source = file.getText(StandardCharsets.UTF_8.name())
+            validateNoWildcardImports(project, file, source, violations)
             validateJavaTestFile(project, file, source, violations)
         }
     }
@@ -839,6 +880,9 @@ class ClaudeConventionValidator {
 
         if (dependsOnSpringSecurity(source)) {
             violations.add("${path} application must depend on a password port, not Spring Security types")
+        }
+        if (packageName.contains('.service') && callsRepositoryWithRawCommandValue(source)) {
+            violations.add("${path} application service must create a VO and pass normalized vo.value() to repository exists/find calls")
         }
 
         if (type.name.endsWith('Exception')) {
@@ -1696,6 +1740,37 @@ class ClaudeConventionValidator {
 
     private static boolean implementsApiExceptionMapper(String source) {
         return (source =~ /(?m)\bimplements\s+[A-Za-z0-9_,\s<>]*ApiExceptionMapper\b/).find()
+    }
+
+    private static boolean implementsErrorCodeMappingProvider(String source) {
+        return (source =~ /(?m)\bimplements\s+[A-Za-z0-9_,\s<>]*ErrorCodeMappingProvider\b/).find()
+    }
+
+    private static boolean implementsApiErrorMessageProvider(String source) {
+        return (source =~ /(?m)\bimplements\s+[A-Za-z0-9_,\s<>]*ApiErrorMessageProvider\b/).find()
+    }
+
+    private static boolean usesEnumNameAsProviderMapKey(String source) {
+        String sourceWithoutComments = stripComments(source)
+        return (sourceWithoutComments =~ /(?s)\bMap\.(?:entry|of|ofEntries)\s*\([^;{}]*\.name\s*\(/).find()
+    }
+
+    private static boolean usesApiExcludePathPatterns(String source) {
+        return (source =~ /(?s)\.excludePathPatterns\s*\([^;]*"\/api\//).find()
+    }
+
+    private static boolean isAuthenticatedMemberArgumentResolver(String source) {
+        String searchableSource = stripCommentsAndStrings(source)
+        return (searchableSource =~ /\bAuthenticatedMember\b/).find()
+                && (searchableSource =~ /\bHandlerMethodArgumentResolver\b/).find()
+    }
+
+    private static boolean returnsNull(String source) {
+        return (stripCommentsAndStrings(source) =~ /(?m)\breturn\s+null\s*;/).find()
+    }
+
+    private static boolean callsRepositoryWithRawCommandValue(String source) {
+        return (stripCommentsAndStrings(source) =~ /(?m)\.\s*(?:exists|find)[A-Za-z0-9_]*\s*\(\s*(?:command|cmd|query)\s*\.\s*[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)\s*\)/).find()
     }
 
     private static boolean hasTestMethodAnnotation(String annotations) {

@@ -31,6 +31,7 @@
         <exclude name="CyclomaticComplexity"/>
         <exclude name="CognitiveComplexity"/>
         <exclude name="CouplingBetweenObjects"/>
+        <exclude name="ExcessiveImports"/>
         <exclude name="UseObjectForClearerAPI"/>
     </rule>
     <rule ref="category/java/errorprone.xml">
