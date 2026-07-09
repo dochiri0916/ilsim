@@ -1788,6 +1788,89 @@ class ClaudeConventionValidatorTest {
         assert violations.any { it.contains("test method 'assumptionSkipped' must not use JUnit assumptions") }
     }
 
+    @Test
+    void 'accepts default web adapter request response packages for non msa module'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/adapter/in/web/request/RegisterOrderRequest.java', '''
+                package com.example.order.adapter.in.web.request;
+
+                public record RegisterOrderRequest(String orderName) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/response/RegisterOrderResponse.java', '''
+                package com.example.order.adapter.in.web.response;
+
+                public record RegisterOrderResponse(String orderId) {
+                }
+                ''')
+
+        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains('MSA web adapter package must go through') }
+        assert !violations.any { it.contains('must live in adapter.in.web.request package') }
+        assert !violations.any { it.contains('must live in adapter.in.web.response package') }
+    }
+
+    @Test
+    void 'rejects web adapter packages without external internal boundary for msa module'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/adapter/in/web/OrderController.java', '''
+                package com.example.order.adapter.in.web;
+
+                public final class OrderController {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/request/RegisterOrderRequest.java', '''
+                package com.example.order.adapter.in.web.request;
+
+                public record RegisterOrderRequest(String orderName) {
+                }
+                ''')
+
+        HexagonalConventionExtension convention = new HexagonalConventionExtension()
+        convention.enforceMsaWebAdapterBoundary = true
+
+        List<String> violations = ClaudeConventionValidator.validate(project, convention)
+
+        assert violations.count { it.contains('MSA web adapter package must go through adapter.in.web.external or adapter.in.web.internal') } == 2
+        assert violations.any { it.contains('request DTO') && it.contains('adapter.in.web.request package') }
+    }
+
+    @Test
+    void 'accepts external and internal web adapter packages for msa module'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/adapter/in/web/external/OrderController.java', '''
+                package com.example.order.adapter.in.web.external;
+
+                public final class OrderController {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/external/request/RegisterOrderRequest.java', '''
+                package com.example.order.adapter.in.web.external.request;
+
+                public record RegisterOrderRequest(String orderName) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/internal/response/OrderSnapshotResponse.java', '''
+                package com.example.order.adapter.in.web.internal.response;
+
+                public record OrderSnapshotResponse(String orderId) {
+                }
+                ''')
+
+        HexagonalConventionExtension convention = new HexagonalConventionExtension()
+        convention.enforceMsaWebAdapterBoundary = true
+
+        List<String> violations = ClaudeConventionValidator.validate(project, convention)
+
+        assert !violations.any { it.contains('MSA web adapter package must go through') }
+        assert !violations.any { it.contains('must live in adapter.in.web.request package') }
+        assert !violations.any { it.contains('must live in adapter.in.web.response package') }
+    }
+
     private Project sampleProject() {
         File projectDir = new File(tempDir, UUID.randomUUID().toString())
         projectDir.mkdirs()

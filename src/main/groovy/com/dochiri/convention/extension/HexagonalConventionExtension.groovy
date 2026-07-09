@@ -29,6 +29,7 @@ class HexagonalConventionExtension {
     boolean enforceApiDtoLayerSeparation = true
     boolean enforceDomainRawScalarProhibition = true
     boolean enforceStrictClaudeConventions = true
+    boolean enforceMsaWebAdapterBoundary = false
     int mutationScoreMinimum = 80
     int testStrengthMinimum = 85
 }

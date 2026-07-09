@@ -155,7 +155,7 @@ class ClaudeConventionValidator {
             }
 
             if (SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)) {
-                validatePresentation(project, file, source, type, convention, violations)
+                validatePresentation(project, file, source, packageName, type, convention, violations)
             }
 
             if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)) {
@@ -677,11 +677,11 @@ class ClaudeConventionValidator {
             violations.add("${path} API DTO '${type.name}' must live in adapter.in.web package")
         }
         if (type.name.endsWith('Request') && SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
-                && !packageName.contains('.request')) {
+                && !isRequestPackage(packageName, convention)) {
             violations.add("${path} request DTO '${type.name}' must live in adapter.in.web.request package")
         }
         if (type.name.endsWith('Response') && SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
-                && !packageName.contains('.response')) {
+                && !isResponsePackage(packageName, convention)) {
             violations.add("${path} response DTO '${type.name}' must live in adapter.in.web.response package")
         }
         if ((type.name.endsWith('Request') || type.name.endsWith('Response'))
@@ -833,6 +833,7 @@ class ClaudeConventionValidator {
             Project project,
             File file,
             String source,
+            String packageName,
             TypeDeclaration type,
             HexagonalConventionExtension convention,
             List<String> violations
@@ -846,6 +847,9 @@ class ClaudeConventionValidator {
         if ((type.name.endsWith('Request') || type.name.endsWith('Response'))
                 && referencesInnerLayerPackage(source, convention)) {
             violations.add("${path} API DTO '${type.name}' must not expose domain/application types directly")
+        }
+        if (convention.enforceMsaWebAdapterBoundary && !isMsaWebAdapterPackage(packageName, convention)) {
+            violations.add("${path} MSA web adapter package must go through adapter.in.web.external or adapter.in.web.internal")
         }
     }
 
@@ -1965,6 +1969,29 @@ class ClaudeConventionValidator {
         return packageName == 'global.error'
                 || packageName.endsWith('.global.error')
                 || packageName.contains('.global.error.')
+    }
+
+    private static boolean isRequestPackage(String packageName, HexagonalConventionExtension convention) {
+        if (convention.enforceMsaWebAdapterBoundary) {
+            return packageName.contains('.adapter.in.web.external.request')
+                    || packageName.contains('.adapter.in.web.internal.request')
+        }
+        return packageName.contains('.request')
+    }
+
+    private static boolean isResponsePackage(String packageName, HexagonalConventionExtension convention) {
+        if (convention.enforceMsaWebAdapterBoundary) {
+            return packageName.contains('.adapter.in.web.external.response')
+                    || packageName.contains('.adapter.in.web.internal.response')
+        }
+        return packageName.contains('.response')
+    }
+
+    private static boolean isMsaWebAdapterPackage(String packageName, HexagonalConventionExtension convention) {
+        String webPackage = ".${convention.presentationPackageSegment}"
+        String externalPackage = "${webPackage}.external"
+        String internalPackage = "${webPackage}.internal"
+        return packageName.contains(externalPackage) || packageName.contains(internalPackage)
     }
 
     private static boolean hasEqualsAndHashCode(String source) {

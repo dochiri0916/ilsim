@@ -16,6 +16,7 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 - `validateChangedCodeCoverage` 태스크로 Git diff 기반 변경 코드 커버리지를 `check`에서 검증합니다.
 - PIT 플러그인이 적용된 프로젝트는 `validatePitMutationGate`로 Domain/Application 변이 테스트 기준을 검증할 수 있습니다.
 - `validateMigrationConventions` 태스크로 SQL migration의 `{target}_id` unique, 참조 컬럼 인덱스/FK, 기술 id 참조 금지를 검증합니다.
+- MSA 모듈에서는 `enforceMsaWebAdapterBoundary`로 외부 공개 API와 내부 서비스 API의 Web Adapter 패키지 경계를 검증할 수 있습니다.
 - 핵심 검증 태스크를 `enabled = false`로 끄거나, 품질 태스크를 `ignoreFailures = true`로 완화하거나, 컨벤션 enforcement 플래그를 `false`로 낮추면 `check`에서 실패합니다.
 
 ## 요구 사항
@@ -136,6 +137,55 @@ hexagonalConvention {
 컨벤션 위반은 검증을 끄지 말고 코드를 리팩터링해서 해결해야 합니다.
 
 테스트 코드에서 `@Disabled`나 JUnit Assumptions로 실패 테스트를 건너뛰는 것도 `validateClaudeConventions`에서 실패합니다.
+
+## MSA Web Adapter 경계 검증
+
+MSA 프로젝트나 MSA 모듈에서는 외부 공개 API와 서비스 간 내부 API를 명시적으로 분리할 수 있습니다.
+
+```groovy
+hexagonalConvention {
+    enforceMsaWebAdapterBoundary = true
+}
+```
+
+이 옵션을 켜면 `validateClaudeConventions`가 `adapter.in.web` 아래 패키지를 검사합니다.
+MSA 모듈에서는 반드시 `external` 또는 `internal` 경계를 거쳐야 합니다.
+
+```text
+{context}.adapter.in.web.external
+{context}.adapter.in.web.external.request
+{context}.adapter.in.web.external.response
+{context}.adapter.in.web.internal
+{context}.adapter.in.web.internal.request
+{context}.adapter.in.web.internal.response
+```
+
+MSA 모듈에서 허용되지 않는 예시는 다음과 같습니다.
+
+```text
+{context}.adapter.in.web
+{context}.adapter.in.web.request
+{context}.adapter.in.web.response
+```
+
+권장 경로 규칙은 다음과 같습니다.
+
+```text
+외부 공개 API: /api/**
+내부 서비스 API: /internal/**
+```
+
+API Gateway와 Kubernetes Ingress는 `/api/**`만 외부로 노출하고, `/internal/**`은 클러스터 내부 서비스 간 호출 전용으로 둡니다.
+Domain/Application 계층에는 `external`/`internal` 구분을 전파하지 않습니다.
+
+MSA가 아닌 단일 애플리케이션이나 MSA 경계가 없는 모듈은 이 옵션을 켜지 않습니다.
+기본값은 `false`이며, 이 경우 기존 패키지 구조를 사용합니다.
+
+```text
+{context}.adapter.in.web
+{context}.adapter.in.web.request
+{context}.adapter.in.web.response
+```
 
 변경된 Production 코드 커버리지는 `check`에서 자동으로 실행됩니다.
 기준 ref는 `origin/main`, `origin/master`, `main`, `master` 순서로 자동 탐색합니다.
