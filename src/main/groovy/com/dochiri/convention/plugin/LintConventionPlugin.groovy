@@ -1,9 +1,9 @@
 package com.dochiri.convention.plugin
 
 import com.dochiri.convention.extension.HexagonalConventionExtension
+import com.dochiri.convention.validator.ArchitectureConventionValidator
 import com.dochiri.convention.validator.ArchUnitArchitectureValidator
 import com.dochiri.convention.validator.ChangedCodeCoverageValidator
-import com.dochiri.convention.validator.ClaudeConventionValidator
 import com.dochiri.convention.validator.DomainStaticFactoryValidator
 import com.dochiri.convention.validator.EntityNamingConventionValidator
 import com.dochiri.convention.validator.HexagonalArchitectureValidator
@@ -42,6 +42,7 @@ class LintConventionPlugin implements Plugin<Project> {
             'validateHexagonalArchitecture',
             'validateEntityNamingConvention',
             'validateDomainStaticFactoryConvention',
+            'validateArchitectureConventions',
             'validateClaudeConventions',
             'validateMigrationConventions',
             'validateJavaVersionConvention'
@@ -49,11 +50,7 @@ class LintConventionPlugin implements Plugin<Project> {
     private static final List<String> REQUIRED_TRUE_CONVENTION_FLAGS = [
             'enforceDomainEntitySeparation',
             'enforceDomainStaticFactoryMethod',
-            'requireTableAnnotation',
-            'enforceTestConventions',
-            'enforceApiDtoLayerSeparation',
-            'enforceDomainRawScalarProhibition',
-            'enforceStrictClaudeConventions'
+            'requireTableAnnotation'
     ].asImmutable()
     private static final Map<String, BigDecimal> MINIMUM_COVERAGE_VALUES = [
             overallLineCoverageMinimum        : 0.85G,
@@ -64,6 +61,8 @@ class LintConventionPlugin implements Plugin<Project> {
             applicationBranchCoverageMinimum  : 0.85G,
             infrastructureLineCoverageMinimum : 0.80G,
             infrastructureBranchCoverageMinimum: 0.70G,
+            inboundAdapterLineCoverageMinimum : 0.80G,
+            inboundAdapterBranchCoverageMinimum: 0.70G,
             changedLineCoverageMinimum        : 0.90G,
             changedBranchCoverageMinimum      : 0.85G
     ].asImmutable()
@@ -214,11 +213,10 @@ class LintConventionPlugin implements Plugin<Project> {
                             .asFile
                     String resolvedBaseRef = resolveChangedCoverageBaseRef(project, changedCoverageBaseRef.orNull)
                     if (resolvedBaseRef == null) {
-                        project.logger.lifecycle(
-                                'Skipping changed code coverage: no base ref found. '
-                                        + 'Set -PchangedCoverageBaseRef=origin/main to enforce it.'
+                        throw new GradleException(
+                                'Changed code coverage requires a Git base ref. '
+                                        + 'Set -PchangedCoverageBaseRef=origin/main.'
                         )
-                        return
                     }
                     List<String> violations = ChangedCodeCoverageValidator.validate(
                             project,
@@ -400,20 +398,26 @@ class LintConventionPlugin implements Plugin<Project> {
             }
         }
 
-        def validateClaudeConventions = project.tasks.register('validateClaudeConventions') { task ->
+        def validateArchitectureConventions = project.tasks.register('validateArchitectureConventions') { task ->
             task.group = 'verification'
-            task.description = 'Validates CLAUDE.md driven architecture and DDD conventions.'
+            task.description = 'Validates AGENTS.md architecture, DDD, adapter, and test conventions.'
             task.inputs.files(project.fileTree(project.projectDir) {
                 include 'src/main/java/**/*.java'
                 include 'src/test/java/**/*.java'
                 include 'src/main/resources/**/messages*.properties'
             })
             task.doLast {
-                List<String> violations = ClaudeConventionValidator.validate(project, convention)
+                List<String> violations = ArchitectureConventionValidator.validate(project, convention)
                 if (!violations.isEmpty()) {
-                    throw new GradleException("CLAUDE.md convention violations:\n - ${violations.join('\n - ')}")
+                    throw new GradleException("Architecture convention violations:\n - ${violations.join('\n - ')}")
                 }
             }
+        }
+
+        def validateClaudeConventions = project.tasks.register('validateClaudeConventions') { task ->
+            task.group = 'verification'
+            task.description = 'Deprecated alias for validateArchitectureConventions.'
+            task.dependsOn(validateArchitectureConventions)
         }
 
         def validateMigrationConventions = project.tasks.register('validateMigrationConventions') { task ->
@@ -446,6 +450,7 @@ class LintConventionPlugin implements Plugin<Project> {
             task.dependsOn(validateHexagonalArchitecture)
             task.dependsOn(validateEntityNamingConvention)
             task.dependsOn(validateDomainStaticFactoryConvention)
+            task.dependsOn(validateArchitectureConventions)
             task.dependsOn(validateClaudeConventions)
             task.dependsOn(validateMigrationConventions)
             task.dependsOn(validateJavaVersionConvention)
@@ -531,7 +536,6 @@ class LintConventionPlugin implements Plugin<Project> {
         }.collect { String propertyName, String requiredValue ->
             "${propertyName}=${convention."${propertyName}"} != ${requiredValue}"
         }
-        List<String> conventionExceptions = findConventionExceptionUsage(convention)
         List<String> unsatisfiedOnlyIfTasks = onlyIfProtectedTaskNames.findAll { String taskName ->
             def task = project.tasks.findByName(taskName)
             task != null && task.enabled && !isOnlyIfSatisfied(task)
@@ -553,7 +557,6 @@ class LintConventionPlugin implements Plugin<Project> {
                 && relaxedCoverageMinimums.isEmpty()
                 && relaxedScoreMinimums.isEmpty()
                 && modifiedPackageSegments.isEmpty()
-                && conventionExceptions.isEmpty()
                 && unsatisfiedOnlyIfTasks.isEmpty()
                 && missingCheckDependencies.isEmpty()
                 && modifiedTestConfigurations.isEmpty()
@@ -590,9 +593,6 @@ class LintConventionPlugin implements Plugin<Project> {
         }
         if (!modifiedPackageSegments.isEmpty()) {
             violations.add("modified package segments: ${modifiedPackageSegments.join(', ')}")
-        }
-        if (!conventionExceptions.isEmpty()) {
-            violations.add("convention exception lists must be empty: ${conventionExceptions.join(', ')}")
         }
         if (!unsatisfiedOnlyIfTasks.isEmpty()) {
             violations.add("onlyIf-skipped tasks: ${unsatisfiedOnlyIfTasks.join(', ')}")
@@ -640,18 +640,6 @@ class LintConventionPlugin implements Plugin<Project> {
             return task.onlyIf.isSatisfiedBy(task)
         } catch (Exception ignored) {
             return true
-        }
-    }
-
-    private static List<String> findConventionExceptionUsage(HexagonalConventionExtension convention) {
-        [
-                'entitySingularNameExceptions',
-                'pluralTableNameExceptions',
-                'domainStaticFactoryExceptions'
-        ].findAll { String propertyName ->
-            convention.hasProperty(propertyName) && !convention."${propertyName}".isEmpty()
-        }.collect { String propertyName ->
-            "${propertyName}=${convention."${propertyName}"}"
         }
     }
 
@@ -1158,6 +1146,13 @@ class LintConventionPlugin implements Plugin<Project> {
         return ["*.${packageSegment}.*"]
     }
 
+    private static String inboundAdapterPackageSegment(HexagonalConventionExtension convention) {
+        if (convention.presentationPackageSegment?.startsWith('adapter.in.')) {
+            return 'adapter.in'
+        }
+        return convention.presentationPackageSegment
+    }
+
     private static void configureCoverageRules(
             JacocoCoverageVerification task,
             HexagonalConventionExtension convention
@@ -1184,6 +1179,12 @@ class LintConventionPlugin implements Plugin<Project> {
                 includes = layerClassPattern(convention.infrastructurePackageSegment)
                 coverageLimit(delegate, 'LINE', convention.infrastructureLineCoverageMinimum, 0.80)
                 coverageLimit(delegate, 'BRANCH', convention.infrastructureBranchCoverageMinimum, 0.70)
+            }
+            rules.rule {
+                element = 'CLASS'
+                includes = layerClassPattern(inboundAdapterPackageSegment(convention))
+                coverageLimit(delegate, 'LINE', convention.inboundAdapterLineCoverageMinimum, 0.80)
+                coverageLimit(delegate, 'BRANCH', convention.inboundAdapterBranchCoverageMinimum, 0.70)
             }
         }
     }

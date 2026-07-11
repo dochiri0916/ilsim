@@ -1,15 +1,36 @@
 package com.dochiri.convention.validator
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
+
 import com.dochiri.convention.extension.HexagonalConventionExtension
+import com.tngtech.archunit.base.DescribedPredicate
+import com.tngtech.archunit.core.domain.JavaClass
 import com.tngtech.archunit.core.domain.JavaClasses
 import com.tngtech.archunit.core.importer.ClassFileImporter
 import com.tngtech.archunit.lang.ArchRule
 import com.tngtech.archunit.lang.EvaluationResult
 import org.gradle.api.Project
 
-import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
-
 class ArchUnitArchitectureValidator {
+    private static final Set<String> ALLOWED_APPLICATION_SPRING_TYPES = [
+            'org.springframework.stereotype.Service',
+            'org.springframework.transaction.annotation.Transactional'
+    ] as Set
+    private static final Set<String> APPLICATION_TECHNICAL_PACKAGE_PREFIXES = [
+            'com.amazonaws.',
+            'com.querydsl.',
+            'feign.',
+            'jakarta.persistence.',
+            'java.sql.',
+            'javax.persistence.',
+            'okhttp3.',
+            'org.apache.http.',
+            'org.hibernate.',
+            'org.springframework.',
+            'retrofit2.',
+            'software.amazon.awssdk.'
+    ] as Set
+
     static List<String> validate(
             Project project,
             HexagonalConventionExtension convention,
@@ -61,6 +82,11 @@ class ArchUnitArchitectureValidator {
                         .because('application must not depend on adapters')
                         .allowEmptyShould(true),
                 noClasses()
+                        .that().resideInAPackage(applicationPackage)
+                        .should().dependOnClassesThat(forbiddenApplicationTechnicalType())
+                        .because('application must not depend on technical framework types except @Service and @Transactional')
+                        .allowEmptyShould(true),
+                noClasses()
                         .that().resideInAPackage(inboundAdapterPackage)
                         .should().dependOnClassesThat()
                         .resideInAnyPackage(infrastructurePackage)
@@ -83,6 +109,19 @@ class ArchUnitArchitectureValidator {
                         .because('controllers must depend on inbound UseCase ports only')
                         .allowEmptyShould(true)
         ]
+    }
+
+    private static DescribedPredicate<JavaClass> forbiddenApplicationTechnicalType() {
+        return new DescribedPredicate<JavaClass>('technical framework types not allowed in application') {
+            @Override
+            boolean test(JavaClass javaClass) {
+                String className = javaClass.name
+                if (ALLOWED_APPLICATION_SPRING_TYPES.contains(className)) {
+                    return false
+                }
+                return APPLICATION_TECHNICAL_PACKAGE_PREFIXES.any { String prefix -> className.startsWith(prefix) }
+            }
+        }
     }
 
     private static List<String> evaluateRules(JavaClasses importedClasses, List<ArchRule> rules) {

@@ -22,13 +22,13 @@ class SourceInspector {
     }
 
     static String extractPackageName(String source) {
-        def matcher = source =~ /(?m)^\s*package\s+([\w.]+)\s*;/
+        def matcher = source =~ /(?m)^\s*package\s+([\w.]+)\s*;?\s*$/
         return matcher.find() ? matcher.group(1) : ''
     }
 
     static List<String> extractImports(String source) {
         List<String> imports = []
-        def matcher = source =~ /(?m)^\s*import\s+(?:static\s+)?([\w.*]+)\s*;/
+        def matcher = source =~ /(?m)^\s*import\s+(?:static\s+)?([\w.*]+)\s*;?\s*$/
         while (matcher.find()) {
             imports.add(matcher.group(1))
         }

@@ -1,9 +1,9 @@
 package com.dochiri.convention.validator
 
+import com.dochiri.convention.extension.HexagonalConventionExtension
+import com.dochiri.convention.support.JavaSourceAstInspector
 import com.dochiri.convention.support.SourceInspector
 import org.gradle.api.Project
-
-import java.nio.charset.StandardCharsets
 
 class PackageTopologyConventionValidator {
     private static final Set<String> CONTEXT_LAYER_SEGMENTS = [
@@ -45,33 +45,69 @@ class PackageTopologyConventionValidator {
     ] as Set
 
     static List<String> validate(Project project) {
+        return validate(project, new HexagonalConventionExtension())
+    }
+
+    static List<String> validate(Project project, HexagonalConventionExtension convention) {
         List<File> mainSourceFiles = SourceInspector.collectMainSourceFiles(project).findAll { File file ->
             file.name.endsWith('.java')
         }
-        Set<String> applicationRootPackages = collectApplicationRootPackages(mainSourceFiles)
         List<String> violations = []
+        Map<String, JavaSourceAstInspector.Inspection> parsedInspections =
+                JavaSourceAstInspector.inspectAll(mainSourceFiles)
+        List<JavaSourceAstInspector.Inspection> inspections = parsedInspections.values().toList()
+        inspections.findAll { inspection -> !inspection.valid }.each { inspection ->
+            violations.add(
+                    "${project.relativePath(inspection.file)} could not be parsed as Java source: "
+                            + inspection.errors.join('; ')
+            )
+        }
+        List<JavaSourceAstInspector.Inspection> validInspections = inspections.findAll { inspection ->
+            inspection.valid
+        }
+        Set<String> applicationRootPackages = resolveApplicationRootPackages(validInspections, convention)
 
-        mainSourceFiles.each { File file ->
-            String source = file.getText(StandardCharsets.UTF_8.name())
-            validateFile(project, file, source, applicationRootPackages, violations)
+        if (!mainSourceFiles.isEmpty() && applicationRootPackages.isEmpty()) {
+            violations.add('application base package could not be determined; declare a *Application bootstrap class or configure hexagonalConvention.basePackage')
+            return violations
+        }
+
+        validInspections.each { inspection ->
+            validateFile(
+                    project,
+                    inspection.file,
+                    inspection.packageName,
+                    inspection.primaryType().simpleName,
+                    applicationRootPackages,
+                    violations
+            )
         }
         return violations
+    }
+
+    private static Set<String> resolveApplicationRootPackages(
+            List<JavaSourceAstInspector.Inspection> inspections,
+            HexagonalConventionExtension convention
+    ) {
+        if (convention.basePackage != null && !convention.basePackage.isBlank()) {
+            return [convention.basePackage.strip()] as Set
+        }
+        return collectApplicationRootPackages(inspections)
     }
 
     private static void validateFile(
             Project project,
             File file,
-            String source,
+            String packageName,
+            String typeName,
             Set<String> applicationRootPackages,
             List<String> violations
     ) {
-        String packageName = SourceInspector.extractPackageName(source)
         if (packageName == null || packageName.isBlank()) {
             return
         }
 
         String path = project.relativePath(file)
-        String typeName = extractTypeName(source)
         if (typeName != null && typeName.endsWith('Application') && applicationRootPackages.contains(packageName)) {
             return
         }
@@ -172,12 +208,13 @@ class PackageTopologyConventionValidator {
         }
     }
 
-    private static Set<String> collectApplicationRootPackages(List<File> mainSourceFiles) {
+    private static Set<String> collectApplicationRootPackages(
+            List<JavaSourceAstInspector.Inspection> inspections
+    ) {
         Set<String> rootPackages = []
-        mainSourceFiles.each { File file ->
-            String source = file.getText(StandardCharsets.UTF_8.name())
-            String packageName = SourceInspector.extractPackageName(source)
-            String typeName = extractTypeName(source)
+        inspections.each { inspection ->
+            String packageName = inspection.packageName
+            String typeName = inspection.primaryType().simpleName
             if (typeName != null && typeName.endsWith('Application') && !packageName.isBlank()) {
                 rootPackages.add(packageName)
             }
@@ -192,8 +229,4 @@ class PackageTopologyConventionValidator {
                 .find()
     }
 
-    private static String extractTypeName(String source) {
-        def matcher = source =~ /(?m)^\s*(?:public\s+)?(?:(?:final|abstract)\s+)?(?:class|record|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
-        return matcher.find() ? matcher.group(1) : null
-    }
 }

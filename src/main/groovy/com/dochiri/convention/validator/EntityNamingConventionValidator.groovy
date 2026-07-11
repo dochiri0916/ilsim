@@ -1,24 +1,31 @@
 package com.dochiri.convention.validator
 
 import com.dochiri.convention.extension.HexagonalConventionExtension
+import com.dochiri.convention.support.JavaSourceAstInspector
 import com.dochiri.convention.support.SourceInspector
 import org.gradle.api.Project
-
-import java.nio.charset.StandardCharsets
 
 class EntityNamingConventionValidator {
     static List<String> validate(Project project, HexagonalConventionExtension convention) {
         List<String> violations = []
-        Set<String> entityExceptions = new HashSet<>(convention.entitySingularNameExceptions ?: [])
-        Set<String> tableExceptions = new HashSet<>(convention.pluralTableNameExceptions ?: [])
-
-        SourceInspector.collectMainSourceFiles(project).findAll { file ->
+        List<File> javaFiles = SourceInspector.collectMainSourceFiles(project).findAll { File file ->
             file.name.endsWith('.java')
-        }.each { File file ->
-            String content = file.getText(StandardCharsets.UTF_8.name())
-            String packageName = SourceInspector.extractPackageName(content)
+        }
+
+        JavaSourceAstInspector.inspectAll(javaFiles).values().each { inspection ->
+            if (!inspection.valid) {
+                violations.add(
+                        "${project.relativePath(inspection.file)} could not be parsed as Java source: "
+                                + inspection.errors.join('; ')
+                )
+                return
+            }
+
+            File file = inspection.file
+            JavaSourceAstInspector.TypeModel type = inspection.primaryType()
+            String packageName = inspection.packageName
             boolean inDomainLayer = SourceInspector.isInLayer(packageName, convention.domainPackageSegment)
-            boolean entityClass = SourceInspector.isEntityClass(content)
+            boolean entityClass = type.annotation('Entity') != null
 
             if (convention.enforceDomainEntitySeparation && inDomainLayer && entityClass) {
                 violations.add("${project.relativePath(file)} uses @Entity in domain package (separate domain model from persistence entity)")
@@ -28,43 +35,29 @@ class EntityNamingConventionValidator {
                 return
             }
 
-            String className = SourceInspector.extractClassName(content)
-            if (className == null) {
-                violations.add("${project.relativePath(file)} has @Entity but class name was not parsed")
-                return
+            String className = type.simpleName
+
+            if (!className.endsWith('Entity')) {
+                violations.add("${project.relativePath(file)} JPA entity '${className}' must end with Entity")
             }
 
-            if (isLikelyPluralEntityName(className, entityExceptions)) {
-                violations.add("${project.relativePath(file)} entity '${className}' looks plural (entity name must be singular)")
-            }
-
-            String tableName = SourceInspector.extractTableName(content)
-            if (convention.requireTableAnnotation && tableName == null) {
+            JavaSourceAstInspector.AnnotationModel table = type.annotation('Table')
+            String tableName = table?.arguments?.get('name')
+            if (convention.requireTableAnnotation && !hasNonBlankTableName(tableName)) {
                 violations.add("${project.relativePath(file)} entity '${className}' must declare @Table(name = \"...\")")
                 return
-            }
-
-            if (tableName != null && !isLikelyPluralTableName(tableName, tableExceptions)) {
-                violations.add("${project.relativePath(file)} table '${tableName}' looks singular (table name must be plural)")
             }
         }
 
         return violations
     }
 
-    private static boolean isLikelyPluralEntityName(String className, Set<String> exceptions) {
-        if (exceptions.contains(className)) {
+    private static boolean hasNonBlankTableName(String tableName) {
+        if (tableName == null) {
             return false
         }
-        String normalized = className.toLowerCase(Locale.ROOT)
-        return normalized.endsWith('s') && !normalized.endsWith('ss')
+        String unquoted = tableName.strip().replaceAll(/^['\"]|['\"]$/, '')
+        return !unquoted.isBlank()
     }
 
-    private static boolean isLikelyPluralTableName(String tableName, Set<String> exceptions) {
-        if (exceptions.contains(tableName)) {
-            return true
-        }
-        String normalized = tableName.toLowerCase(Locale.ROOT)
-        return normalized.endsWith('s')
-    }
 }

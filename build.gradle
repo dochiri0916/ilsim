@@ -1,7 +1,23 @@
 plugins {
+    id 'codenarc'
     id 'groovy'
     id 'java-gradle-plugin'
+    id 'jacoco'
     id 'maven-publish'
+}
+
+codenarc {
+    configFile = file('config/codenarc/codenarc.xml')
+    maxPriority1Violations = 0
+    maxPriority2Violations = 0
+    maxPriority3Violations = 0
+}
+
+tasks.withType(CodeNarc).configureEach {
+    reports {
+        html.required = true
+        text.required = true
+    }
 }
 
 group = 'com.dochiri'
@@ -29,7 +45,7 @@ gradlePlugin {
             id = 'com.dochiri.lint-convention'
             implementationClass = 'com.dochiri.convention.plugin.LintConventionPlugin'
             displayName = 'Dochiri Lint Convention'
-            description = 'Convention plugin for Checkstyle, PMD, SpotBugs, ArchUnit, and CLAUDE.md conventions.'
+            description = 'Convention plugin for Checkstyle, PMD, SpotBugs, ArchUnit, and AGENTS.md architecture conventions.'
         }
     }
 }
@@ -48,4 +64,40 @@ tasks.withType(JavaCompile).configureEach {
 
 test {
     useJUnitPlatform()
+}
+
+jacoco {
+    toolVersion = '0.8.12'
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn test
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.85
+            }
+            limit {
+                counter = 'BRANCH'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
+}
+
+check {
+    dependsOn jacocoTestReport
+    dependsOn jacocoTestCoverageVerification
 }

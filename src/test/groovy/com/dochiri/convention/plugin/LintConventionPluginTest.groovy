@@ -1,15 +1,31 @@
 package com.dochiri.convention.plugin
 
+import static org.junit.jupiter.api.Assertions.assertThrows
+
 import com.dochiri.convention.extension.HexagonalConventionExtension
 import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.testfixtures.ProjectBuilder
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
-import static org.junit.jupiter.api.Assertions.assertThrows
-
 class LintConventionPluginTest {
+    @Test
+    @DisplayName('아키텍처 검증 태스크와 이전 이름 호환 태스크를 등록한다')
+    void 'plugin registers architecture convention task and legacy alias'() {
+        // given
+        Project project = sampleProject()
+
+        // when
+        def architectureTask = project.tasks.findByName('validateArchitectureConventions')
+        def legacyTask = project.tasks.findByName('validateClaudeConventions')
+
+        // then
+        assert architectureTask != null
+        assert legacyTask != null
+    }
+
     @Test
     void 'plugin configures lombok dependencies for constructor injection'() {
         Project project = sampleProject()
@@ -49,14 +65,14 @@ class LintConventionPluginTest {
     @Test
     void 'check fails when convention enforcement flag is relaxed'() {
         Project project = sampleProject()
-        project.extensions.getByType(HexagonalConventionExtension).enforceStrictClaudeConventions = false
+        project.extensions.getByType(HexagonalConventionExtension).enforceDomainEntitySeparation = false
 
         GradleException exception = assertThrows(GradleException) {
             executeCheckActions(project)
         }
 
         assert exception.message.contains('Build convention verification must not be disabled')
-        assert exception.message.contains('enforceStrictClaudeConventions')
+        assert exception.message.contains('enforceDomainEntitySeparation')
     }
 
     @Test
@@ -308,19 +324,6 @@ class LintConventionPluginTest {
     }
 
     @Test
-    void 'check fails when convention exception list is used'() {
-        Project project = sampleProject()
-        project.extensions.getByType(HexagonalConventionExtension).domainStaticFactoryExceptions = ['Order']
-
-        GradleException exception = assertThrows(GradleException) {
-            executeCheckActions(project)
-        }
-
-        assert exception.message.contains('Build convention verification must not be disabled')
-        assert exception.message.contains('domainStaticFactoryExceptions=[Order]')
-    }
-
-    @Test
     void 'check fails when coverage minimum is relaxed'() {
         Project project = sampleProject()
         project.extensions.getByType(HexagonalConventionExtension).domainLineCoverageMinimum = 0.10
@@ -331,6 +334,22 @@ class LintConventionPluginTest {
 
         assert exception.message.contains('Build convention verification must not be disabled')
         assert exception.message.contains('domainLineCoverageMinimum=0.10 < 0.95')
+    }
+
+    @Test
+    @DisplayName('Inbound Adapter 커버리지 기준 완화를 거부한다')
+    void 'check fails when inbound adapter coverage minimum is relaxed'() {
+        // given
+        Project project = sampleProject()
+        project.extensions.getByType(HexagonalConventionExtension).inboundAdapterLineCoverageMinimum = 0.10
+
+        // when
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        // then
+        assert exception.message.contains('inboundAdapterLineCoverageMinimum=0.10 < 0.80')
     }
 
     private static Project sampleProject() {

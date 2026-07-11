@@ -42,13 +42,18 @@ class ChangedCodeCoverageValidator {
         Map<String, Map<Integer, LineCoverage>> coverageByFile = parseCoverage(project, jacocoXmlReport)
         CoverageSummary summary = summarizeChangedCoverage(diffResult.changedLinesByFile, coverageByFile)
 
+        summary.missingCoverageFiles.each { String missingFile ->
+            violations.add("Changed production file is missing from JaCoCo XML: ${missingFile}")
+        }
+
         if (summary.executableLineCount == 0) {
             return violations
         }
 
         BigDecimal lineMinimum = minimum(convention.changedLineCoverageMinimum, BASE_CHANGED_LINE_COVERAGE)
         BigDecimal actualLineCoverage = ratio(summary.coveredLineCount, summary.executableLineCount)
-        if (actualLineCoverage < lineMinimum) {
+        boolean lineCoverageFailed = actualLineCoverage < lineMinimum
+        if (lineCoverageFailed) {
             violations.add(
                     "Changed production line coverage ${formatRatio(actualLineCoverage)} is below "
                             + "${formatRatio(lineMinimum)} (${summary.coveredLineCount}/${summary.executableLineCount})"
@@ -66,17 +71,44 @@ class ChangedCodeCoverageValidator {
             }
         }
 
-        summary.uncoveredLines.take(20).each { String uncovered ->
-            violations.add("Uncovered changed line: ${uncovered}")
-        }
-        if (summary.uncoveredLines.size() > 20) {
-            violations.add("${summary.uncoveredLines.size() - 20} more uncovered changed lines")
+        if (lineCoverageFailed) {
+            summary.uncoveredLines.take(20).each { String uncovered ->
+                violations.add("Uncovered changed line: ${uncovered}")
+            }
+            if (summary.uncoveredLines.size() > 20) {
+                violations.add("${summary.uncoveredLines.size() - 20} more uncovered changed lines")
+            }
         }
 
         return violations
     }
 
     private static DiffResult collectChangedLines(Project project, String baseRef) {
+        DiffResult committedDiff = collectDiffChangedLines(project, "${baseRef}...HEAD".toString())
+        if (!committedDiff.errorMessage.isBlank()) {
+            return committedDiff
+        }
+
+        DiffResult workingTreeDiff = collectDiffChangedLines(project, 'HEAD')
+        if (!workingTreeDiff.errorMessage.isBlank()) {
+            return workingTreeDiff
+        }
+
+        DiffResult untrackedFiles = collectUntrackedJavaLines(project)
+        if (!untrackedFiles.errorMessage.isBlank()) {
+            return untrackedFiles
+        }
+
+        Map<String, Set<Integer>> changedLines = [:].withDefault { new TreeSet<Integer>() }
+        [committedDiff, workingTreeDiff, untrackedFiles].each { DiffResult result ->
+            result.changedLinesByFile.each { String filePath, Set<Integer> lines ->
+                changedLines[filePath].addAll(lines)
+            }
+        }
+        return new DiffResult(changedLines.findAll { String path, Set<Integer> lines -> !lines.isEmpty() }, '')
+    }
+
+    private static DiffResult collectDiffChangedLines(Project project, String revision) {
         List<String> command = [
                 'git',
                 '-C',
@@ -85,7 +117,7 @@ class ChangedCodeCoverageValidator {
                 '--unified=0',
                 '--no-ext-diff',
                 '--diff-filter=ACMRT',
-                "${baseRef}...HEAD".toString(),
+                revision,
                 '--',
                 'src/main/java'
         ]
@@ -98,7 +130,7 @@ class ChangedCodeCoverageValidator {
 
         if (exitValue != 0) {
             String message = stderr.trim()
-            return new DiffResult([:], "Cannot calculate changed code coverage from '${baseRef}...HEAD': ${message}")
+            return new DiffResult([:], "Cannot calculate changed code coverage from '${revision}': ${message}")
         }
 
         Map<String, Set<Integer>> changedLinesByFile = [:].withDefault { new TreeSet<Integer>() }
@@ -124,6 +156,40 @@ class ChangedCodeCoverageValidator {
         return new DiffResult(changedLinesByFile.findAll { String path, Set<Integer> lines ->
             path.startsWith('src/main/java/') && !lines.isEmpty()
         }, '')
+    }
+
+    private static DiffResult collectUntrackedJavaLines(Project project) {
+        List<String> command = [
+                'git',
+                '-C',
+                project.projectDir.absolutePath,
+                'ls-files',
+                '--others',
+                '--exclude-standard',
+                '--',
+                'src/main/java'
+        ]
+        Process process = new ProcessBuilder(command)
+                .directory(project.projectDir)
+                .start()
+        String stdout = process.inputStream.getText('UTF-8')
+        String stderr = process.errorStream.getText('UTF-8')
+        int exitValue = process.waitFor()
+        if (exitValue != 0) {
+            return new DiffResult([:], "Cannot find untracked Java files: ${stderr.trim()}")
+        }
+
+        Map<String, Set<Integer>> changedLinesByFile = [:].withDefault { new TreeSet<Integer>() }
+        stdout.readLines().findAll { String path ->
+            path.startsWith('src/main/java/') && path.endsWith('.java')
+        }.each { String path ->
+            File file = project.file(path)
+            int lineCount = file.readLines('UTF-8').size()
+            if (lineCount > 0) {
+                changedLinesByFile[path].addAll(1..lineCount)
+            }
+        }
+        return new DiffResult(changedLinesByFile, '')
     }
 
     private static String extractNewFilePath(String diffLine) {
@@ -186,6 +252,7 @@ class ChangedCodeCoverageValidator {
         changedLinesByFile.each { String filePath, Set<Integer> changedLines ->
             Map<Integer, LineCoverage> fileCoverage = coverageByFile[filePath]
             if (fileCoverage == null) {
+                summary.missingCoverageFiles.add(filePath)
                 return
             }
             changedLines.each { Integer lineNumber ->
@@ -242,6 +309,7 @@ class ChangedCodeCoverageValidator {
         int branchCount
         int coveredBranchCount
         List<String> uncoveredLines = []
+        Set<String> missingCoverageFiles = new TreeSet<>()
     }
 
     private static final class LineCoverage {

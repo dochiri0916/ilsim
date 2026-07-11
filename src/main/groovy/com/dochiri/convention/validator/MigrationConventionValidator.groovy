@@ -8,11 +8,21 @@ import java.util.regex.Pattern
 class MigrationConventionValidator {
     static List<String> validate(Project project) {
         List<String> violations = []
-        collectSqlFiles(project).each { File file ->
-            String sql = normalizeSql(file.getText(StandardCharsets.UTF_8.name()))
-            validateCreateTableStatements(project, file, sql, violations)
-            validateReferenceIntegrity(project, file, sql, violations)
+        List<SqlSource> sqlSources = collectSqlFiles(project)
+                .sort { File left, File right -> project.relativePath(left) <=> project.relativePath(right) }
+                .collect { File file ->
+                    String rawSql = file.getText(StandardCharsets.UTF_8.name())
+                    new SqlSource(file, rawSql, normalizeSql(rawSql))
+                }
+        String cumulativeSql = sqlSources.collect { SqlSource source -> source.normalizedSql }.join(' ')
+        Set<String> externalReferences = sqlSources.collectMany { SqlSource source ->
+            extractExternalReferences(source.rawSql)
+        }.toSet()
+
+        sqlSources.each { SqlSource source ->
+            validateCreateTableStatements(project, source.file, source.normalizedSql, violations)
         }
+        validateReferenceIntegrity(project, sqlSources, cumulativeSql, externalReferences, violations)
         return violations
     }
 
@@ -56,25 +66,39 @@ class MigrationConventionValidator {
 
     private static void validateReferenceIntegrity(
             Project project,
-            File file,
-            String sql,
+            List<SqlSource> sqlSources,
+            String cumulativeSql,
+            Set<String> externalReferences,
             List<String> violations
     ) {
-        String path = project.relativePath(file)
-        List<IdentifierColumn> identifierColumns = extractIdentifierColumns(sql)
-        identifierColumns.findAll { IdentifierColumn column -> !column.unique }.each { IdentifierColumn column ->
-            if (!hasIndexForColumn(sql, column)) {
-                violations.add("${path} reference column '${column.name}' must have an index")
+        sqlSources.each { SqlSource source ->
+            String path = project.relativePath(source.file)
+            List<IdentifierColumn> identifierColumns = extractIdentifierColumns(source.normalizedSql)
+            identifierColumns.findAll { IdentifierColumn column -> !column.unique }.each { IdentifierColumn column ->
+                if (!hasIndexForColumn(cumulativeSql, column)) {
+                    violations.add("${path} reference column '${column.name}' must have an index")
+                }
+                String qualifiedColumn = "${column.table}.${column.name}"
+                if (!externalReferences.contains(qualifiedColumn)
+                        && !hasForeignKeyForColumn(cumulativeSql, column)) {
+                    violations.add("${path} reference column '${column.name}' must have an explicit foreign key")
+                }
             }
-            if (!hasForeignKeyForColumn(sql, column)) {
-                violations.add("${path} reference column '${column.name}' must have an explicit foreign key")
-            }
-        }
 
-        def technicalForeignKeyMatcher = sql =~ /(?is)\bforeign\s+key\s*\([^)]*\)\s*references\s+[a-zA-Z0-9_".]+\s*\(\s*id\s*\)/
-        if (technicalForeignKeyMatcher.find()) {
-            violations.add("${path} foreign keys must reference a domain identifier column, not DB technical id")
+            def technicalForeignKeyMatcher = source.normalizedSql =~ /(?is)\bforeign\s+key\s*\([^)]*\)\s*references\s+[a-zA-Z0-9_".]+\s*\(\s*id\s*\)/
+            if (technicalForeignKeyMatcher.find()) {
+                violations.add("${path} foreign keys must reference a domain identifier column, not DB technical id")
+            }
         }
+    }
+
+    private static Set<String> extractExternalReferences(String rawSql) {
+        Set<String> externalReferences = []
+        def matcher = rawSql =~ /(?im)^\s*--\s*build-convention:\s*external-reference\s+([a-zA-Z0-9_".]+\.[a-zA-Z0-9_"]+)\s*$/
+        while (matcher.find()) {
+            externalReferences.add(matcher.group(1).replace('"', '').toLowerCase(Locale.ROOT))
+        }
+        return externalReferences
     }
 
     private static String normalizeSql(String sql) {
@@ -176,6 +200,18 @@ class MigrationConventionValidator {
             this.length = length
             this.unique = unique
             this.primaryDomainIdentifier = primaryDomainIdentifier
+        }
+    }
+
+    private static class SqlSource {
+        final File file
+        final String rawSql
+        final String normalizedSql
+
+        private SqlSource(File file, String rawSql, String normalizedSql) {
+            this.file = file
+            this.rawSql = rawSql
+            this.normalizedSql = normalizedSql
         }
     }
 }

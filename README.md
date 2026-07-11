@@ -3,21 +3,29 @@
 AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`, `PMD`, `SpotBugs`와 커스텀 Validator, ArchUnit 검증을 묶은 Gradle 컨벤션 플러그인 프로젝트입니다.
 여기에는 실행 가능한 코드와 핵심 요약만 두고, 설계 배경과 선택 기준은 블로그 글로 분리했습니다.
 
+이 플러그인은 아키텍처 적합성의 자동 검증 가능한 필요조건을 확인합니다. Aggregate의 실제 불변식, Ubiquitous Language, Context Map, 객체의 응집도처럼 의미적 설계가 올바르다는 충분조건까지 보증하지는 않습니다.
+
 ## 실험 범위
 
 - `com.dochiri.lint-convention` 플러그인으로 정적 분석 도구를 `./gradlew check` 경로에 통합합니다.
 - 레이어 의존성 규칙(`domain -> application/adapter` 금지, `application -> adapter` 금지)을 Validator로 강제합니다.
-- 도메인/엔티티 분리, 엔티티 단수/테이블 복수 네이밍, 정적 팩토리 규칙을 자동 검증합니다.
-- `validateClaudeConventions` 태스크로 패키지/네이밍, Domain record, JPA Entity, Mapper, Controller 의존성, Spring 컴포넌트 등록 규칙을 검증합니다.
+- 도메인/엔티티 분리, JPA Entity 접미사와 `@Table` 명시, 정적 팩토리 규칙을 자동 검증합니다.
+- `validateArchitectureConventions` 태스크로 패키지/네이밍, Domain record, JPA Entity, Mapper, Controller 의존성, Spring 컴포넌트 등록 규칙을 검증합니다.
+- Application은 같은 Context의 Domain/Port와 `@Service`, `@Transactional`에만 의존하도록 source와 ArchUnit에서 검증합니다.
+- Application import는 JDK, 같은 Context의 Domain/Port/Application 예외, `@Service`, `@Transactional`, `@RequiredArgsConstructor`의 명시적 허용 목록으로 검증합니다. 같은 Context의 다른 Application Service 구현체와 임의 외부 SDK도 거부합니다.
+- Controller collaborator는 Inbound `*UseCase`, Application Service collaborator는 Outbound `*Port` 또는 같은 Context Domain `*Service`만 허용합니다.
+- Repository Port의 mutation 파라미터와 반환 타입에서 Aggregate Root를 추론하여 정확히 하나의 Root와 연결하고, 같은 Context의 다른 Aggregate Root 직접 참조를 거부합니다.
+- Java source는 JDK AST parser로 먼저 일괄 파싱하며 문법 오류를 fail-closed 처리합니다. package/import/type, superclass/interface, field와 record component annotation, constructor/method, Entity/Table 및 Transactional 선언과 줄바꿈된 fully-qualified 타입 참조를 AST로 판정합니다. FQCN 후보는 실제 Java 식별자 구간만 수집해 메서드 호출 체인을 타입 의존성으로 오인하지 않습니다. Java 테스트 annotation과 method도 AST로 찾고 `SourcePositions`로 원본 body를 추출해 phase 주석을 보존합니다. 메서드 body의 호출 패턴은 주석, 문자열, 문자 literal, Java text block의 brace를 안전하게 건너뛰는 공통 lexical scanner와 함께 분석합니다.
 - Java 테스트 메서드의 한국어 `@DisplayName`, `// given`, `// when`, `// then` 구조, assertion 없는 테스트와 no-exception/verify-only 테스트를 검증합니다.
 - 도메인 전용 품질 게이트(`checkstyleDomain`, `pmdDomain`, `spotbugsDomain`)를 별도로 실행할 수 있습니다.
 - `validateArchUnitArchitecture` 태스크로 컴파일된 클래스의 레이어 의존성을 ArchUnit으로 검증합니다.
 - `jacocoTestReport`, `jacocoTestCoverageVerification`을 `check`에 연결해 전체/계층별 커버리지를 검증합니다.
-- `validateChangedCodeCoverage` 태스크로 Git diff 기반 변경 코드 커버리지를 `check`에서 검증합니다.
+- `validateChangedCodeCoverage` 태스크로 commit, staged, working tree, untracked Java 변경의 커버리지를 `check`에서 검증합니다.
 - PIT 플러그인이 적용된 프로젝트는 `validatePitMutationGate`로 Domain/Application 변이 테스트 기준을 검증할 수 있습니다.
-- `validateMigrationConventions` 태스크로 SQL migration의 `{target}_id` unique, 참조 컬럼 인덱스/FK, 기술 id 참조 금지를 검증합니다.
+- `validateMigrationConventions` 태스크로 누적 SQL migration의 `{target}_id` unique, 참조 컬럼 인덱스/FK, 기술 id 참조 금지를 검증합니다.
 - MSA 모듈에서는 `enforceMsaWebAdapterBoundary`로 외부 공개 API와 내부 서비스 API의 Web Adapter 패키지 경계를 검증할 수 있습니다.
-- 핵심 검증 태스크를 `enabled = false`로 끄거나, 품질 태스크를 `ignoreFailures = true`로 완화하거나, 컨벤션 enforcement 플래그를 `false`로 낮추면 `check`에서 실패합니다.
+- 핵심 검증 태스크를 `enabled = false`로 끄거나, 품질 태스크를 `ignoreFailures = true`로 완화하거나, 필수 컨벤션 플래그를 `false`로 낮추면 `check`에서 실패합니다.
+- 이 플러그인 저장소 자체의 `check`도 CodeNarc와 JaCoCo 전체 line 85%/branch 80% 기준을 실행합니다.
 
 ## 요구 사항
 
@@ -74,11 +82,21 @@ plugins {
 }
 ```
 
+bootstrap class가 없는 라이브러리/하위 모듈은 base package를 명시합니다.
+
+```groovy
+hexagonalConvention {
+    basePackage = 'com.example.project'
+}
+```
+
 ## 실행 방법
 
 ```bash
 ./gradlew check
 ```
+
+플러그인 개발 저장소에서는 위 명령이 Groovy production/test source의 CodeNarc와 JaCoCo 85% line/80% branch 게이트도 함께 실행합니다. 대상 Java 프로젝트에 제공하는 계층별 커버리지 게이트와 별개로, Validator 구현 자체가 테스트되지 않은 채 배포되는 것을 막기 위한 self-check입니다.
 
 `check`에는 기본적으로 다음 검증이 포함됩니다.
 
@@ -88,7 +106,8 @@ plugins {
 - `validateArchUnitArchitecture`
 - `validateEntityNamingConvention`
 - `validateDomainStaticFactoryConvention`
-- `validateClaudeConventions`
+- `validateArchitectureConventions`
+- `validateClaudeConventions` (이전 이름 호환 alias)
 - `validateMigrationConventions`
 - `validateJavaVersionConvention`
 - `validateChangedCodeCoverage`
@@ -99,16 +118,16 @@ plugins {
 다음과 같은 설정은 컨벤션 위반을 숨기므로 허용하지 않습니다.
 
 ```bash
-./gradlew check -x validateClaudeConventions
+./gradlew check -x validateArchitectureConventions
 ./gradlew check -x test
 ```
 
 ```groovy
-tasks.named('validateClaudeConventions') {
+tasks.named('validateArchitectureConventions') {
     enabled = false
 }
 
-tasks.named('validateClaudeConventions') {
+tasks.named('validateArchitectureConventions') {
     onlyIf { false }
 }
 
@@ -125,10 +144,7 @@ tasks.named('checkstyleMain') {
 }
 
 hexagonalConvention {
-    enforceStrictClaudeConventions = false
-    enforceTestConventions = false
-    enforceApiDtoLayerSeparation = false
-    enforceDomainRawScalarProhibition = false
+    enforceDomainEntitySeparation = false
     domainLineCoverageMinimum = 0.10
 }
 ```
@@ -136,7 +152,7 @@ hexagonalConvention {
 위와 같은 설정이 있으면 `Build convention verification must not be disabled` 오류로 실패합니다.
 컨벤션 위반은 검증을 끄지 말고 코드를 리팩터링해서 해결해야 합니다.
 
-테스트 코드에서 `@Disabled`나 JUnit Assumptions로 실패 테스트를 건너뛰는 것도 `validateClaudeConventions`에서 실패합니다.
+테스트 코드에서 `@Disabled`나 JUnit Assumptions로 실패 테스트를 건너뛰는 것도 `validateArchitectureConventions`에서 실패합니다.
 
 ## MSA Web Adapter 경계 검증
 
@@ -148,7 +164,7 @@ hexagonalConvention {
 }
 ```
 
-이 옵션을 켜면 `validateClaudeConventions`가 `adapter.in.web` 아래 패키지를 검사합니다.
+이 옵션을 켜면 `validateArchitectureConventions`가 `adapter.in.web` 아래 패키지를 검사합니다.
 MSA 모듈에서는 반드시 `external` 또는 `internal` 경계를 거쳐야 합니다.
 
 ```text
@@ -189,11 +205,29 @@ MSA가 아닌 단일 애플리케이션이나 MSA 경계가 없는 모듈은 이
 
 변경된 Production 코드 커버리지는 `check`에서 자동으로 실행됩니다.
 기준 ref는 `origin/main`, `origin/master`, `main`, `master` 순서로 자동 탐색합니다.
+기준 ref를 찾지 못하거나 변경 파일이 JaCoCo XML에 없으면 검증에 실패합니다.
+로컬에서는 commit된 변경뿐 아니라 staged, working tree, untracked Java 파일도 함께 검사합니다.
 명시적으로 지정하려면 다음처럼 기준 브랜치를 넘깁니다.
 
 ```bash
 ./gradlew check -PchangedCoverageBaseRef=origin/main
 ```
+
+## 외부 서비스 식별자 migration
+
+같은 데이터베이스의 참조 컬럼은 index와 FK를 모두 요구합니다. 다른 서비스나 다른 데이터베이스의 식별자는 FK 대신 명시 metadata를 남기고 index만 요구합니다.
+
+```sql
+-- build-convention: external-reference deliveries.remote_member_id
+create table deliveries (
+    id bigint primary key,
+    delivery_id varchar(32) not null unique,
+    remote_member_id varchar(32) not null
+);
+create index idx_deliveries_remote_member_id on deliveries(remote_member_id);
+```
+
+서로 다른 migration 파일에 index와 FK가 나뉘어 있어도 파일명 순서의 누적 schema를 기준으로 검증합니다.
 
 ## 로컬에서 `check` 실행 강제
 
@@ -319,12 +353,14 @@ plugins {
 
 ## 커버리지 기준 조정
 
-기본값은 CLAUDE.md 기준을 따릅니다. 프로젝트에서 더 높은 기준을 지정할 수 있지만, 기본 기준보다 낮게 완화되지는 않습니다.
+기본값은 AGENTS.md 기준을 따릅니다. 프로젝트에서 더 높은 기준을 지정할 수 있지만, 기본 기준보다 낮게 완화되지는 않습니다.
 
 ```groovy
 hexagonalConvention {
     domainLineCoverageMinimum = 0.98
     domainBranchCoverageMinimum = 0.95
+    inboundAdapterLineCoverageMinimum = 0.85
+    inboundAdapterBranchCoverageMinimum = 0.75
     changedLineCoverageMinimum = 0.92
     changedBranchCoverageMinimum = 0.88
 }

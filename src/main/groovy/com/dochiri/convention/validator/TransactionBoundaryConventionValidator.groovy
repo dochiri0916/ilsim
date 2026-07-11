@@ -1,6 +1,7 @@
 package com.dochiri.convention.validator
 
 import com.dochiri.convention.extension.HexagonalConventionExtension
+import com.dochiri.convention.support.JavaSourceAstInspector
 import com.dochiri.convention.support.SourceInspector
 import org.gradle.api.Project
 
@@ -57,39 +58,41 @@ class TransactionBoundaryConventionValidator {
             String source,
             String packageName,
             String typeName,
-            HexagonalConventionExtension convention
+            HexagonalConventionExtension convention,
+            AggregateBoundaryConventionValidator.Analysis aggregateAnalysis,
+            JavaSourceAstInspector.TypeModel type
     ) {
         List<String> violations = []
         String path = project.relativePath(file)
         boolean applicationService = SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
                 && packageName.contains('.service')
 
-        if (hasAnnotation(source, 'Transactional') && !applicationService) {
+        if (hasTransactionalAnnotation(type) && !applicationService) {
             violations.add("${path} @Transactional is only allowed on concrete application services")
         }
-        if (usesForbiddenTransactionControl(source)) {
+        if (usesForbiddenTransactionControl(source, type)) {
             violations.add("${path} must not use REQUIRES_NEW, NESTED, NOT_SUPPORTED, or TransactionTemplate")
         }
         if (!applicationService) {
             return violations
         }
 
-        if (hasClassLevelAnnotation(source, typeName, 'Transactional')) {
+        if (type.annotation('Transactional') != null) {
             violations.add("${path} @Transactional must be declared on public application service methods, not on the class")
         }
-        findNonPublicMethodNamesWithAnnotation(source, 'Transactional').each { String methodName ->
+        findNonPublicMethodNamesWithAnnotation(type, 'Transactional').each { String methodName ->
             violations.add("${path} non-public method '${methodName}' must not declare @Transactional")
         }
-        findPublicMethodNamesWithoutAnnotation(source, 'Transactional').each { String methodName ->
+        List<MethodBody> publicMethods = extractPublicMethodBodies(type)
+        findPublicMethodNamesWithoutAnnotation(publicMethods, 'Transactional').each { String methodName ->
             violations.add("${path} public application service method '${methodName}' must declare @Transactional")
         }
 
-        List<MethodBody> publicMethods = extractPublicMethodBodies(source)
-        Set<String> useCaseNames = extractImplementedUseCaseNames(source, typeName)
+        Set<String> useCaseNames = extractImplementedUseCaseNames(type)
         findQueryMethodsWithoutReadOnlyTransaction(publicMethods, typeName, useCaseNames).each { String methodName ->
             violations.add("${path} query application service method '${methodName}' must declare @Transactional(readOnly = true)")
         }
-        findReadOnlyTransactionalMethodsCallingRepositoryMutation(source, publicMethods).each { String methodName ->
+        findReadOnlyTransactionalMethodsCallingRepositoryMutation(type, publicMethods).each { String methodName ->
             violations.add("${path} read-only transaction method '${methodName}' must not call repository mutation methods")
         }
         findReadOnlyTransactionalCommandMethods(publicMethods, typeName, useCaseNames).each { String methodName ->
@@ -98,10 +101,15 @@ class TransactionBoundaryConventionValidator {
         findTransactionalSelfInvocations(publicMethods).each { String methodName ->
             violations.add("${path} transactional method '${methodName}' must not be called through self-invocation")
         }
-        findTransactionalMethodsCallingExternalSideEffects(source, publicMethods).each { String methodName ->
+        findTransactionalMethodsCallingExternalSideEffects(type, publicMethods).each { String methodName ->
             violations.add("${path} transaction method '${methodName}' must not call external side effects inside the transaction")
         }
-        findTransactionalMethodsModifyingMultipleRepositories(source, publicMethods).each { RepositoryMutation mutation ->
+        findTransactionalMethodsModifyingMultipleRepositories(
+                file,
+                type,
+                publicMethods,
+                aggregateAnalysis
+        ).each { RepositoryMutation mutation ->
             violations.add("${path} application service method '${mutation.methodName}' must not modify multiple aggregate repositories in one transaction: ${mutation.repositoryNames.join(', ')}")
         }
         return violations
@@ -122,10 +130,10 @@ class TransactionBoundaryConventionValidator {
     }
 
     private static List<String> findReadOnlyTransactionalMethodsCallingRepositoryMutation(
-            String source,
+            JavaSourceAstInspector.TypeModel type,
             List<MethodBody> methods
     ) {
-        Set<String> repositoryFieldNames = extractRepositoryFieldNames(source)
+        Set<String> repositoryFieldNames = extractRepositoryFieldNames(type)
         if (repositoryFieldNames.isEmpty()) {
             return []
         }
@@ -173,10 +181,10 @@ class TransactionBoundaryConventionValidator {
     }
 
     private static List<String> findTransactionalMethodsCallingExternalSideEffects(
-            String source,
+            JavaSourceAstInspector.TypeModel type,
             List<MethodBody> methods
     ) {
-        Set<String> sideEffectFieldNames = extractExternalSideEffectFieldNames(source)
+        Set<String> sideEffectFieldNames = extractExternalSideEffectFieldNames(type)
         methods
                 .findAll { MethodBody method ->
                     hasTransactionalAnnotation(method.annotations)
@@ -186,26 +194,49 @@ class TransactionBoundaryConventionValidator {
     }
 
     private static List<RepositoryMutation> findTransactionalMethodsModifyingMultipleRepositories(
-            String source,
-            List<MethodBody> methods
+            File file,
+            JavaSourceAstInspector.TypeModel type,
+            List<MethodBody> methods,
+            AggregateBoundaryConventionValidator.Analysis aggregateAnalysis
     ) {
-        Set<String> repositoryFieldNames = extractRepositoryFieldNames(source)
-        if (repositoryFieldNames.size() < 2) {
+        List<FieldDeclaration> repositoryFields = extractRepositoryFields(type)
+        if (repositoryFields.size() < 2) {
             return []
         }
 
         List<RepositoryMutation> mutations = []
         methods.each { MethodBody method ->
             if (hasTransactionalAnnotation(method.annotations) && !hasReadOnlyTransaction(method.annotations)) {
-                List<String> modifiedRepositoryNames = repositoryFieldNames.findAll { String repositoryName ->
-                    callsRepositoryMutation(method.body, repositoryName)
-                }.sort()
-                if (modifiedRepositoryNames.size() > 1) {
-                    mutations.add(new RepositoryMutation(method.methodName, modifiedRepositoryNames))
+                List<FieldDeclaration> modifiedRepositories = repositoryFields.findAll { repositoryField ->
+                    callsRepositoryMutation(method.body, repositoryField.name)
+                }.sort { left, right -> left.name <=> right.name }
+                if (modifiedRepositories.size() > 1
+                        && modifiesDifferentAggregateRoots(file, modifiedRepositories, aggregateAnalysis)) {
+                    mutations.add(new RepositoryMutation(
+                            method.methodName,
+                            modifiedRepositories.collect { repositoryField -> repositoryField.name }
+                    ))
                 }
             }
         }
         return mutations
+    }
+
+    private static boolean modifiesDifferentAggregateRoots(
+            File file,
+            List<FieldDeclaration> repositoryFields,
+            AggregateBoundaryConventionValidator.Analysis aggregateAnalysis
+    ) {
+        if (aggregateAnalysis == null) {
+            return true
+        }
+        List<String> aggregateRoots = repositoryFields.collect { repositoryField ->
+            aggregateAnalysis.aggregateRootForRepository(file, repositoryField.type)
+        }
+        if (aggregateRoots.any { aggregateRoot -> aggregateRoot == null }) {
+            return true
+        }
+        return aggregateRoots.toSet().size() > 1
     }
 
     private static boolean isQueryOperation(MethodBody method, String typeName, Set<String> useCaseNames) {
@@ -230,90 +261,69 @@ class TransactionBoundaryConventionValidator {
         return name ==~ /^(?:add|approve|cancel|clear|complete|create|delete|handle|pay|place|register|reject|remove|save|ship|start|update|write).*/
     }
 
-    private static Set<String> extractImplementedUseCaseNames(String source, String typeName) {
-        String searchableSource = stripCommentsAndStrings(source)
-        def matcher = searchableSource =~ /(?ms)\bclass\s+${Pattern.quote(typeName)}\s+implements\s+([^{]+)\{/
-        if (!matcher.find()) {
-            return []
-        }
-        splitTopLevelComma(matcher.group(1))
-                .collect { String type -> simplifyTypeName(type) }
-                .findAll { String type -> type.endsWith('UseCase') }
+    private static Set<String> extractImplementedUseCaseNames(JavaSourceAstInspector.TypeModel type) {
+        return type.implementedTypes
+                .collect { String implementedType -> simplifyTypeName(implementedType) }
+                .findAll { String implementedType -> implementedType.endsWith('UseCase') }
                 .toSet()
     }
 
-    private static List<MethodBody> extractPublicMethodBodies(String source) {
-        List<MethodBody> methods = []
-        def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)*)^\s*public\s+(?!class\b)(?!interface\b)(?!enum\b)(?!record\b)(?!static\b)(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.<>, ?\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^;{}]*)\)\s*(?:throws\s+[^{]+)?\{/
-        while (matcher.find()) {
-            int bodyStart = matcher.end() - 1
-            int bodyEnd = findMatchingBrace(source, bodyStart)
-            if (bodyEnd < 0) {
-                continue
-            }
-            methods.add(new MethodBody(
-                    matcher.group(2),
-                    matcher.group(1),
-                    extractParameterTypes(matcher.group(3)),
-                    source.substring(bodyStart + 1, bodyEnd)
-            ))
-        }
-        return methods
-    }
-
-    private static List<String> extractParameterTypes(String parameters) {
-        String normalizedParameters = parameters.trim()
-        if (normalizedParameters.isEmpty()) {
-            return []
-        }
-        splitTopLevelComma(normalizedParameters).collect { String parameter ->
-            String normalized = parameter
-                    .replaceAll(/(?s)@\w+(?:\([^)]*\))?\s*/, '')
-                    .replaceAll(/\bfinal\s+/, '')
-                    .trim()
-            int lastSpace = normalized.lastIndexOf(' ')
-            lastSpace < 0 ? normalized : normalized.substring(0, lastSpace).trim()
-        }
-    }
-
-    private static List<String> findPublicMethodNamesWithoutAnnotation(String source, String annotation) {
-        List<String> methodNames = []
-        def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)*)^\s*public\s+(?!class\b)(?!interface\b)(?!enum\b)(?!record\b)(?!static\b)(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.<>, ?\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{/
-        while (matcher.find()) {
-            String annotations = matcher.group(1)
-            if (!(annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()) {
-                methodNames.add(matcher.group(2))
-            }
-        }
-        return methodNames
-    }
-
-    private static List<String> findNonPublicMethodNamesWithAnnotation(String source, String annotation) {
-        List<String> methodNames = []
-        def matcher = source =~ /(?ms)((?:^\s*@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)]*\))?\s*)+)^\s*(?!public\b)(?:private\s+|protected\s+)?(?:final\s+)?[A-Za-z_][A-Za-z0-9_$.<>, ?\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{/
-        while (matcher.find()) {
-            String annotations = matcher.group(1)
-            if ((annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()) {
-                methodNames.add(matcher.group(2))
-            }
-        }
-        return methodNames
-    }
-
-    private static Set<String> extractRepositoryFieldNames(String source) {
-        extractInstanceFieldDeclarations(source)
-                .findAll { FieldDeclaration field ->
-                    field.type.endsWith('RepositoryPort')
-                            || field.type.endsWith('Repository')
-                            || field.name.endsWith('RepositoryPort')
-                            || field.name.endsWith('Repository')
+    private static List<MethodBody> extractPublicMethodBodies(JavaSourceAstInspector.TypeModel type) {
+        return type.methods
+                .findAll { method ->
+                    !method.constructor
+                            && method.hasBody
+                            && method.modifiers.contains('PUBLIC')
+                            && !method.modifiers.contains('STATIC')
                 }
+                .collect { method ->
+                    new MethodBody(
+                            method.name,
+                            method.annotations,
+                            method.parameterTypes,
+                            method.body
+                    )
+        }
+    }
+
+    private static List<String> findPublicMethodNamesWithoutAnnotation(
+            List<MethodBody> methods,
+            String annotation
+    ) {
+        return methods.findAll { method ->
+            method.annotation(annotation) == null
+        }.collect { method -> method.methodName }
+    }
+
+    private static List<String> findNonPublicMethodNamesWithAnnotation(
+            JavaSourceAstInspector.TypeModel type,
+            String annotation
+    ) {
+        return type.methods.findAll { method ->
+            !method.constructor
+                    && method.hasBody
+                    && !method.modifiers.contains('PUBLIC')
+                    && method.annotation(annotation) != null
+        }.collect { method -> method.name }
+    }
+
+    private static Set<String> extractRepositoryFieldNames(JavaSourceAstInspector.TypeModel type) {
+        extractRepositoryFields(type)
                 .collect { FieldDeclaration field -> field.name }
                 .toSet()
     }
 
-    private static Set<String> extractExternalSideEffectFieldNames(String source) {
-        extractInstanceFieldDeclarations(source)
+    private static List<FieldDeclaration> extractRepositoryFields(JavaSourceAstInspector.TypeModel type) {
+        return extractInstanceFieldDeclarations(type).findAll { FieldDeclaration field ->
+            field.type.endsWith('RepositoryPort')
+                    || field.type.endsWith('Repository')
+                    || field.name.endsWith('RepositoryPort')
+                    || field.name.endsWith('Repository')
+        }
+    }
+
+    private static Set<String> extractExternalSideEffectFieldNames(JavaSourceAstInspector.TypeModel type) {
+        extractInstanceFieldDeclarations(type)
                 .findAll { FieldDeclaration field ->
                     EXTERNAL_SIDE_EFFECT_TYPES.contains(simplifyTypeName(field.type))
                             || EXTERNAL_SIDE_EFFECT_NAMES.contains(field.name)
@@ -329,20 +339,12 @@ class TransactionBoundaryConventionValidator {
                 || (simpleType.endsWith('Port') && field.name ==~ /.*(?:Publisher|Producer|Sender|Client|Gateway|Notifier|Notification|Mail|Email|Message|Webhook|ExternalApi).*/)
     }
 
-    private static List<FieldDeclaration> extractInstanceFieldDeclarations(String source) {
-        List<FieldDeclaration> fields = []
-        def matcher = source =~ /(?m)^\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:private|protected|public)\s+((?:static\s+|final\s+|transient\s+|volatile\s+)*)((?:[A-Za-z_][A-Za-z0-9_$.]*)(?:\s*<[^;=()]+>)?(?:\s*\[\])?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|;)/
-        while (matcher.find()) {
-            String modifiers = matcher.group(1)
-            if (modifiers.contains('static')) {
-                continue
-            }
-            fields.add(new FieldDeclaration(
-                    normalizeType(matcher.group(2)),
-                    matcher.group(3)
-            ))
+    private static List<FieldDeclaration> extractInstanceFieldDeclarations(
+            JavaSourceAstInspector.TypeModel type
+    ) {
+        return type.fields.findAll { field -> !field.staticField }.collect { field ->
+            new FieldDeclaration(field.type, field.name)
         }
-        return fields
     }
 
     private static boolean callsAnyRepositoryMutation(String body, Set<String> repositoryFieldNames) {
@@ -375,125 +377,54 @@ class TransactionBoundaryConventionValidator {
                 || (searchableBody =~ /(?m)\b(?:WebClient|RestTemplate|KafkaTemplate|RabbitTemplate|JavaMailSender|ApplicationEventPublisher)\b/).find()
     }
 
-    private static boolean hasAnnotation(String source, String annotation) {
-        String searchableSource = stripCommentsAndStrings(source)
-        return (searchableSource =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b/).find()
+    private static boolean hasTransactionalAnnotation(JavaSourceAstInspector.TypeModel type) {
+        return type.annotation('Transactional') != null || type.methods.any { method ->
+            method.annotation('Transactional') != null
+        }
     }
 
-    private static boolean hasClassLevelAnnotation(String source, String typeName, String annotation) {
-        return (source =~ /(?ms)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*${annotation}\b(?:\([^)]*\))?\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+)?(?:final\s+|abstract\s+)?(?:class|record)\s+${typeName}\b/).find()
+    private static boolean hasTransactionalAnnotation(
+            List<JavaSourceAstInspector.AnnotationModel> annotations
+    ) {
+        return annotations.any { annotation -> annotation.simpleName == 'Transactional' }
     }
 
-    private static boolean hasTransactionalAnnotation(String annotations) {
-        return (annotations =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*Transactional\b/).find()
+    private static boolean hasReadOnlyTransaction(
+            List<JavaSourceAstInspector.AnnotationModel> annotations
+    ) {
+        JavaSourceAstInspector.AnnotationModel transaction = annotations.find { annotation ->
+            annotation.simpleName == 'Transactional'
+        }
+        String readOnly = transaction?.arguments?.get('readOnly')
+        return readOnly != null && readOnly.replaceAll(/\s+/, '') == 'true'
     }
 
-    private static boolean hasReadOnlyTransaction(String annotations) {
-        return (annotations =~ /(?s)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*Transactional\s*\([^)]*readOnly\s*=\s*true/).find()
-    }
-
-    private static boolean usesForbiddenTransactionControl(String source) {
+    private static boolean usesForbiddenTransactionControl(
+            String source,
+            JavaSourceAstInspector.TypeModel type
+    ) {
         String searchableSource = stripCommentsAndStrings(source)
         return (searchableSource =~ /(?m)\bTransactionTemplate\b/).find()
-                || (searchableSource =~ /(?m)\bPropagation\s*\.\s*(?:REQUIRES_NEW|NESTED|NOT_SUPPORTED)\b/).find()
-                || (searchableSource =~ /(?m)\bpropagation\s*=\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)?(?:REQUIRES_NEW|NESTED|NOT_SUPPORTED)\b/).find()
+                || transactionalAnnotations(type).any { annotation ->
+                    String propagation = annotation.arguments.get('propagation')
+                    propagation != null && propagation.replaceAll(/\s+/, '') ==~
+                            /(?:[A-Za-z_][A-Za-z0-9_]*\.)?(?:REQUIRES_NEW|NESTED|NOT_SUPPORTED)/
+                }
     }
 
-    private static List<String> splitTopLevelComma(String value) {
-        List<String> parts = []
-        int depth = 0
-        int start = 0
-        for (int index = 0; index < value.length(); index++) {
-            char current = value.charAt(index)
-            if (current == '<' as char) {
-                depth++
-            } else if (current == '>' as char) {
-                depth--
-            } else if (current == ',' as char && depth == 0) {
-                parts.add(value.substring(start, index))
-                start = index + 1
-            }
+    private static List<JavaSourceAstInspector.AnnotationModel> transactionalAnnotations(
+            JavaSourceAstInspector.TypeModel type
+    ) {
+        List<JavaSourceAstInspector.AnnotationModel> annotations = []
+        annotations.addAll(type.annotations.findAll { annotation ->
+            annotation.simpleName == 'Transactional'
+        })
+        type.methods.each { method ->
+            annotations.addAll(method.annotations.findAll { annotation ->
+                annotation.simpleName == 'Transactional'
+            })
         }
-        parts.add(value.substring(start))
-        return parts
-    }
-
-    private static int findMatchingBrace(String source, int openBraceIndex) {
-        int depth = 0
-        boolean inString = false
-        boolean inChar = false
-        boolean inLineComment = false
-        boolean inBlockComment = false
-        boolean escaped = false
-
-        for (int index = openBraceIndex; index < source.length(); index++) {
-            char current = source.charAt(index)
-            char next = index + 1 < source.length() ? source.charAt(index + 1) : (char) 0
-
-            if (inLineComment) {
-                if (current == '\n' as char || current == '\r' as char) {
-                    inLineComment = false
-                }
-                continue
-            }
-            if (inBlockComment) {
-                if (current == '*' as char && next == '/' as char) {
-                    inBlockComment = false
-                    index++
-                }
-                continue
-            }
-            if (inString) {
-                if (!escaped && current == '"' as char) {
-                    inString = false
-                }
-                escaped = !escaped && current == '\\' as char
-                if (current != '\\' as char) {
-                    escaped = false
-                }
-                continue
-            }
-            if (inChar) {
-                if (!escaped && current == '\'' as char) {
-                    inChar = false
-                }
-                escaped = !escaped && current == '\\' as char
-                if (current != '\\' as char) {
-                    escaped = false
-                }
-                continue
-            }
-
-            if (current == '/' as char && next == '/' as char) {
-                inLineComment = true
-                index++
-                continue
-            }
-            if (current == '/' as char && next == '*' as char) {
-                inBlockComment = true
-                index++
-                continue
-            }
-            if (current == '"' as char) {
-                inString = true
-                escaped = false
-                continue
-            }
-            if (current == '\'' as char) {
-                inChar = true
-                escaped = false
-                continue
-            }
-            if (current == '{' as char) {
-                depth++
-            } else if (current == '}' as char) {
-                depth--
-                if (depth == 0) {
-                    return index
-                }
-            }
-        }
-        return -1
+        return annotations
     }
 
     private static String stripCommentsAndStrings(String source) {
@@ -511,10 +442,6 @@ class TransactionBoundaryConventionValidator {
         return simpleName.replaceAll(/\s+/, '')
     }
 
-    private static String normalizeType(String type) {
-        return type.replaceAll(/\s+/, ' ').trim()
-    }
-
     private static class FieldDeclaration {
         final String type
         final String name
@@ -527,15 +454,24 @@ class TransactionBoundaryConventionValidator {
 
     private static class MethodBody {
         final String methodName
-        final String annotations
+        final List<JavaSourceAstInspector.AnnotationModel> annotations
         final List<String> parameterTypes
         final String body
 
-        private MethodBody(String methodName, String annotations, List<String> parameterTypes, String body) {
+        private MethodBody(
+                String methodName,
+                List<JavaSourceAstInspector.AnnotationModel> annotations,
+                List<String> parameterTypes,
+                String body
+        ) {
             this.methodName = methodName
             this.annotations = annotations
             this.parameterTypes = parameterTypes
             this.body = body
+        }
+
+        JavaSourceAstInspector.AnnotationModel annotation(String simpleName) {
+            return annotations.find { annotation -> annotation.simpleName == simpleName }
         }
     }
 

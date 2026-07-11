@@ -3,10 +3,11 @@ package com.dochiri.convention.validator
 import com.dochiri.convention.extension.HexagonalConventionExtension
 import org.gradle.api.Project
 import org.gradle.testfixtures.ProjectBuilder
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
-class ClaudeConventionValidatorTest {
+class JavaSourceArchitectureValidatorTest {
 
     @TempDir
     File tempDir
@@ -58,7 +59,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('ContextConfig is not allowed') }
         assert violations.any { it.contains("application service 'RegisterOrderService' must declare @Service") }
@@ -102,7 +103,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains('ContextConfig is not allowed') }
         assert !violations.any { it.contains('must declare @Service') }
@@ -150,7 +151,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains('@Transactional must be declared on public application service methods') }
         assert !violations.any { it.contains('must declare @RequiredArgsConstructor') }
@@ -185,7 +186,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('@Transactional must be declared on public application service methods, not on the class') }
         assert violations.any { it.contains("public application service method 'register' must declare @Transactional") }
@@ -255,7 +256,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("query application service method 'getOrder' must declare @Transactional(readOnly = true)") }
         assert violations.any { it.contains("read-only transaction method 'updateOrder' must not call repository mutation methods") }
@@ -310,7 +311,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('must not use REQUIRES_NEW, NESTED, NOT_SUPPORTED, or TransactionTemplate') }
         assert violations.any { it.contains("non-public method 'persist' must not declare @Transactional") }
@@ -361,7 +362,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("query application service method 'execute' must declare @Transactional(readOnly = true)") }
     }
@@ -407,7 +408,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("transaction method 'register' must not call external side effects inside the transaction") }
     }
@@ -429,7 +430,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('order.application.port package must use in or out') }
         assert violations.any { it.contains('order.adapter.in package must use bootstrap, event, messaging, scheduler, or web') }
@@ -476,7 +477,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('must use final fields with @RequiredArgsConstructor instead of @Autowired injection') }
         assert violations.any { it.contains('dependencies must be private final fields') }
@@ -546,7 +547,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("application service 'OrderService' must implement exactly one UseCase for SRP") }
         assert violations.any { it.contains("adapter 'PaymentAdapter' must implement only one outbound Port for SRP") }
@@ -563,7 +564,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("type 'OrderManager' has an ambiguous responsibility name") }
     }
@@ -605,7 +606,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.count { it.contains('must not suppress PMD/Checkstyle/SpotBugs warnings') } == 2
     }
@@ -663,7 +664,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('package must follow {context}/domain, {context}/application, or {context}/adapter structure') }
         assert violations.any { it.contains('package must be context-first') }
@@ -741,7 +742,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains('package must follow {context}/domain') }
         assert !violations.any { it.contains('root package may contain only') }
@@ -776,13 +777,15 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains('with final dependencies must declare @RequiredArgsConstructor') }
     }
 
     @Test
-    void 'rejects else and requires early return'() {
+    @DisplayName('단순한 대칭 분기의 else를 허용한다')
+    void 'accepts else when it keeps a simple branch readable'() {
+        // given
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/global/error/FlowGuard.java', '''
@@ -800,9 +803,11 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains('must not use else; use guard clauses and early return') }
+        // then
+        assert !violations.any { it.contains('must not use else; use guard clauses and early return') }
     }
 
     @Test
@@ -828,7 +833,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains('must not use else; use guard clauses and early return') }
     }
@@ -864,7 +869,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains("domain event 'OrderPlaced'") }
         assert !violations.any { it.contains("domain model 'OrderPlaced' must live in domain.model package") }
@@ -901,7 +906,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("domain event 'OrderPlacedEvent' must use a past-tense name without Event suffix") }
     }
@@ -943,7 +948,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('must not expose DB/HTTP/SDK/Spring technical exception types') }
         assert violations.any { it.contains('GlobalExceptionHandler must delegate') }
@@ -973,7 +978,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('messages/messages.properties must not use MessageSource message bundle resources') }
         assert violations.any { it.contains('must not use MessageSource') }
@@ -1022,7 +1027,7 @@ class ClaudeConventionValidatorTest {
                   }
                   ''')
 
-          List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+          List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
           assert violations.any { it.contains('must use ApiErrorCode.from(errorCode), not Enum.name()') }
           assert violations.any { it.contains('must use ApiErrorCode.from(errorCode), not hard-coded string literals') }
@@ -1076,7 +1081,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
           assert violations.any { it.contains('must create a VO and pass normalized vo.value() to repository exists/find calls') }
       }
@@ -1150,9 +1155,12 @@ class ClaudeConventionValidatorTest {
                   }
                   ''')
 
-          List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+          List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-          assert violations.any { it.contains("must reference other aggregate 'Member' by identifier VO") }
+          assert violations.any {
+              it.contains("domain must not depend directly on another context model 'Member'")
+                      && it.contains('translate it into a context-owned type')
+          }
       }
 
       @Test
@@ -1206,7 +1214,7 @@ class ClaudeConventionValidatorTest {
                   }
                   ''')
 
-          List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+          List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
           assert violations.any { it.contains("application service method 'place' must not modify multiple aggregate repositories") }
       }
@@ -1247,7 +1255,7 @@ class ClaudeConventionValidatorTest {
                   }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('must mark public APIs with @PublicApi') }
         assert violations.any { it.contains('@AuthenticatedMember resolver must throw an authentication exception') }
@@ -1275,7 +1283,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("must not use wildcard import 'java.util.*'") }
         assert violations.any { it.contains("must not use wildcard import 'java.util.Objects.*'") }
@@ -1317,7 +1325,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("domain exception 'InvalidMemberIdException' must keep constructors private") }
         assert violations.any { it.contains("domain exception 'InvalidMemberIdException' must expose at least one static factory") }
@@ -1355,7 +1363,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("application exception 'EmptyCartException' must keep constructors private") }
         assert violations.any { it.contains("application exception 'EmptyCartException' must expose at least one static factory") }
@@ -1404,13 +1412,15 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("exception detail field 'email' must use a context-specific internal name") }
     }
 
     @Test
-    void 'rejects Spring Security dependency, generic DTOs, manual MVC extension wiring, and English exception messages'() {
+    @DisplayName('Application 기술 의존과 Web Adapter 책임 위반을 거부한다')
+    void 'rejects Spring Security dependency, generic DTOs, and manual MVC extension wiring'() {
+        // given
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/member/application/service/RegisterMemberService.java', '''
@@ -1458,13 +1468,15 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
+        // then
         assert violations.any { it.contains('application must depend on a password port') }
         assert violations.any { it.contains('web configuration must inject Interceptor/ArgumentResolver components') }
         assert violations.any { it.contains("API DTO 'MemberResponse' must be a record") }
         assert violations.any { it.contains("API DTO 'MemberResponse' must be responsibility-specific") }
-        assert violations.any { it.contains('exception message string literals must be written in Korean') }
+        assert !violations.any { it.contains('exception message string literals must be written in Korean') }
     }
 
     @Test
@@ -1540,7 +1552,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains("JPA entity 'MemberEntity' must declare private String memberId") }
         assert !violations.any { it.contains("JPA reference field 'orderId' must store identifier VO value as String") }
@@ -1589,7 +1601,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("test method 'missingDisplayName' must declare @DisplayName in Korean") }
         assert violations.any { it.contains("test method 'englishDisplayName' @DisplayName must be written in Korean") }
@@ -1624,7 +1636,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains('must declare @DisplayName in Korean') }
         assert !violations.any { it.contains('@DisplayName must be written in Korean') }
@@ -1659,7 +1671,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("// given section must contain code") }
         assert violations.any { it.contains("// when section must contain code") }
@@ -1693,7 +1705,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains("must include '// when'") }
         assert !violations.any { it.contains("must include '// then'") }
@@ -1779,7 +1791,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains("test method 'assertionless' must assert observable result") }
         assert violations.any { it.contains("test method 'noExceptionOnly' must not rely only on no-exception assertions") }
@@ -1805,7 +1817,7 @@ class ClaudeConventionValidatorTest {
                 }
                 ''')
 
-        List<String> violations = ClaudeConventionValidator.validate(project, new HexagonalConventionExtension())
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains('MSA web adapter package must go through') }
         assert !violations.any { it.contains('must live in adapter.in.web.request package') }
@@ -1832,7 +1844,7 @@ class ClaudeConventionValidatorTest {
         HexagonalConventionExtension convention = new HexagonalConventionExtension()
         convention.enforceMsaWebAdapterBoundary = true
 
-        List<String> violations = ClaudeConventionValidator.validate(project, convention)
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
 
         assert violations.count { it.contains('MSA web adapter package must go through adapter.in.web.external or adapter.in.web.internal') } == 2
         assert violations.any { it.contains('request DTO') && it.contains('adapter.in.web.request package') }
@@ -1864,7 +1876,7 @@ class ClaudeConventionValidatorTest {
         HexagonalConventionExtension convention = new HexagonalConventionExtension()
         convention.enforceMsaWebAdapterBoundary = true
 
-        List<String> violations = ClaudeConventionValidator.validate(project, convention)
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
 
         assert !violations.any { it.contains('MSA web adapter package must go through') }
         assert !violations.any { it.contains('must live in adapter.in.web.request package') }
