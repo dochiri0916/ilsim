@@ -356,7 +356,7 @@ class TransactionBoundaryConventionValidator {
     private static boolean callsRepositoryMutation(String body, String repositoryName) {
         String searchableBody = stripCommentsAndStrings(body)
         String quotedRepositoryName = Pattern.quote(repositoryName)
-        return (searchableBody =~ /(?m)\b${quotedRepositoryName}\s*\.\s*(?:save|delete|update|insert|persist|remove)[A-Za-z0-9_]*\s*\(/).find()
+        return (searchableBody =~ /(?m)\b${quotedRepositoryName}\s*\.\s*(?:create|delete|update|insert|persist|remove|save|upsert)[A-Za-z0-9_]*\s*\(/).find()
     }
 
     private static boolean callsSelfMethod(String searchableBody, String methodName) {

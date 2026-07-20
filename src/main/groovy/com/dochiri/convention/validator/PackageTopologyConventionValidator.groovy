@@ -172,8 +172,8 @@ class PackageTopologyConventionValidator {
             List<String> segments,
             List<String> violations
     ) {
-        if (segments.size() < 2 || !['error', 'web'].contains(segments[1])) {
-            violations.add("${project.relativePath(file)} global package must be limited to global.error or global.web")
+        if (segments.size() < 2 || !['exception', 'web'].contains(segments[1])) {
+            violations.add("${project.relativePath(file)} global package must be limited to global.exception or global.web")
         }
     }
 

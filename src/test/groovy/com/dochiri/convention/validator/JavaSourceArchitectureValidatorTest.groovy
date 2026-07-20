@@ -111,6 +111,35 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
+    void 'rejects repository port save and upsert operations'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/domain/model/Order.java', '''
+                package com.example.order.domain.model;
+
+                public final class Order {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/out/OrderRepositoryPort.java', '''
+                package com.example.order.application.port.out;
+
+                import com.example.order.domain.model.Order;
+
+                public interface OrderRepositoryPort {
+                    void save(Order order);
+                    void upsert(Order order);
+                    void create(Order order);
+                    void update(Order order);
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("repository port 'OrderRepositoryPort' must not declare save; use create or update") }
+        assert violations.any { it.contains("repository port 'OrderRepositoryPort' must not declare upsert; use create or update") }
+    }
+
+    @Test
     void 'accepts method level transaction and required args constructor injection'() {
         Project project = sampleProject()
         writeApplication(project)
@@ -724,8 +753,8 @@ class JavaSourceArchitectureValidatorTest {
                 public final class OrderController {
                 }
                 ''')
-        writeJava(project, 'com/example/global/error/GlobalExceptionHandler.java', '''
-                package com.example.global.error;
+        writeJava(project, 'com/example/global/exception/GlobalExceptionHandler.java', '''
+                package com.example.global.exception;
 
                 public final class GlobalExceptionHandler {
                 }
@@ -753,8 +782,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'does not treat plain global error exceptions as Spring components'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/global/error/AuthenticationRequiredException.java', '''
-                package com.example.global.error;
+        writeJava(project, 'com/example/global/exception/AuthenticationRequiredException.java', '''
+                package com.example.global.exception;
 
                 public final class AuthenticationRequiredException extends RuntimeException {
                     private static final long serialVersionUID = 1L;
@@ -769,8 +798,8 @@ class JavaSourceArchitectureValidatorTest {
                     }
                 }
                 ''')
-        writeJava(project, 'com/example/global/error/GlobalErrorCode.java', '''
-                package com.example.global.error;
+        writeJava(project, 'com/example/global/exception/GlobalErrorCode.java', '''
+                package com.example.global.exception;
 
                 public enum GlobalErrorCode {
                     AUTHENTICATION_REQUIRED
@@ -788,8 +817,8 @@ class JavaSourceArchitectureValidatorTest {
         // given
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/global/error/FlowGuard.java', '''
-                package com.example.global.error;
+        writeJava(project, 'com/example/global/exception/FlowGuard.java', '''
+                package com.example.global.exception;
 
                 public final class FlowGuard {
 
@@ -814,8 +843,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'accepts early return and ignores else in comments and strings'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/global/error/FlowGuard.java', '''
-                package com.example.global.error;
+        writeJava(project, 'com/example/global/exception/FlowGuard.java', '''
+                package com.example.global.exception;
 
                 public final class FlowGuard {
 
@@ -924,8 +953,8 @@ class JavaSourceArchitectureValidatorTest {
                     void request() throws IOException;
                 }
                 ''')
-        writeJava(project, 'com/example/global/error/GlobalExceptionHandler.java', '''
-                package com.example.global.error;
+        writeJava(project, 'com/example/global/exception/GlobalExceptionHandler.java', '''
+                package com.example.global.exception;
 
                 import com.example.order.domain.exception.InvalidOrderException;
 
@@ -951,20 +980,284 @@ class JavaSourceArchitectureValidatorTest {
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('must not expose DB/HTTP/SDK/Spring technical exception types') }
-        assert violations.any { it.contains('GlobalExceptionHandler must delegate') }
+        assert violations.any { it.contains('GlobalExceptionHandler must extend ResponseEntityExceptionHandler') }
+        assert violations.any { it.contains('GlobalExceptionHandler must handle BusinessException') }
         assert violations.any { it.contains('must not expose exception.getMessage()') }
-        assert violations.any { it.contains('must resolve user-facing ProblemDetail title/detail') }
+        assert violations.any { it.contains('must resolve ProblemDetail title/detail from ErrorCode or MessageSource') }
     }
 
     @Test
-    void 'rejects MessageSource bundles and Value injection'() {
+    void 'accepts global exception handler based on business exception code and detail'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/exception/ErrorKind.java', '''
+                package com.example.global.exception;
+
+                public enum ErrorKind {
+                    INVALID_INPUT
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/ErrorCode.java', '''
+                package com.example.global.exception;
+
+                public interface ErrorCode {
+                    String code();
+                    ErrorKind kind();
+                    String detail();
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/BusinessException.java', '''
+                package com.example.global.exception;
+
+                public abstract class BusinessException extends RuntimeException {
+                    public abstract ErrorCode errorCode();
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/GlobalExceptionHandler.java', '''
+                package com.example.global.exception;
+
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ProblemDetail;
+                import org.springframework.web.bind.annotation.ExceptionHandler;
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+                import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+
+                @RestControllerAdvice
+                public final class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+                    @ExceptionHandler(BusinessException.class)
+                    ProblemDetail handle(final BusinessException exception) {
+                        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                                HttpStatus.valueOf(exception.errorCode().kind().ordinal() + 400),
+                                exception.errorCode().detail()
+                        );
+                        problemDetail.setProperty("code", exception.errorCode().code());
+                        problemDetail.setProperty("extensions", exception.errorCode().code());
+                        return problemDetail;
+                    }
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains('Spring Web error types are only allowed') }
+        assert !violations.any { it.contains('must not expose exception.getMessage()') }
+        assert !violations.any { it.contains('must resolve ProblemDetail title/detail from ErrorCode or MessageSource') }
+        assert !violations.any { it.contains('GlobalExceptionHandler must extend ResponseEntityExceptionHandler') }
+        assert !violations.any { it.contains('GlobalExceptionHandler must declare @RestControllerAdvice') }
+        assert !violations.any { it.contains('GlobalExceptionHandler must handle BusinessException with @ExceptionHandler') }
+    }
+
+    @Test
+    void 'rejects global exception handler without advice and business exception problem detail handler'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/exception/GlobalExceptionHandler.java', '''
+                package com.example.global.exception;
+
+                import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+
+                public final class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('GlobalExceptionHandler must declare @RestControllerAdvice') }
+        assert violations.any { it.contains('GlobalExceptionHandler must handle BusinessException with @ExceptionHandler') }
+    }
+
+    @Test
+    void 'rejects controller that exposes application result directly'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/GetOrderResult.java', '''
+                package com.example.order.application.port.in;
+                public record GetOrderResult(String id) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/OrderController.java', '''
+                package com.example.order.adapter.in.web;
+
+                import com.example.order.application.port.in.GetOrderResult;
+
+                public final class OrderController {
+
+                    public GetOrderResult get() {
+                        return null;
+                    }
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('controller must not expose application types as response return values') }
+    }
+
+    @Test
+    void 'allows context error code details and shared exception base contracts'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/exception/BusinessException.java', '''
+                package com.example.global.exception;
+
+                public abstract class BusinessException extends RuntimeException {
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/DomainException.java', '''
+                package com.example.global.exception;
+
+                public abstract class DomainException extends BusinessException {
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/ApplicationException.java', '''
+                package com.example.global.exception;
+
+                public abstract class ApplicationException extends BusinessException {
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/ErrorKind.java', '''
+                package com.example.global.exception;
+
+                public enum ErrorKind {
+                    NOT_FOUND,
+                    CONFLICT
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/ErrorCode.java', '''
+                package com.example.global.exception;
+
+                public interface ErrorCode {
+                    String code();
+                    ErrorKind kind();
+                    String detail();
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/domain/exception/ProductDomainErrorCode.java', '''
+                package com.example.catalog.domain.exception;
+
+                import com.example.global.exception.ErrorCode;
+                import com.example.global.exception.ErrorKind;
+
+                public enum ProductDomainErrorCode implements ErrorCode {
+                    STOCK_INSUFFICIENT("STOCK_INSUFFICIENT", ErrorKind.CONFLICT, "재고가 부족합니다.");
+
+                    private final String code;
+                    private final ErrorKind kind;
+                    private final String detail;
+
+                    ProductDomainErrorCode(final String code, final ErrorKind kind, final String detail) {
+                        this.code = code;
+                        this.kind = kind;
+                        this.detail = detail;
+                    }
+
+                    @Override
+                    public String code() {
+                        return code;
+                    }
+
+                    @Override
+                    public ErrorKind kind() {
+                        return kind;
+                    }
+
+                    @Override
+                    public String detail() {
+                        return detail;
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/domain/exception/InsufficientStockException.java', '''
+                package com.example.catalog.domain.exception;
+
+                import com.example.global.exception.DomainException;
+
+                public final class InsufficientStockException extends DomainException {
+
+                    private static final long serialVersionUID = 1L;
+
+                    private InsufficientStockException() {
+                    }
+
+                    public static InsufficientStockException insufficient() {
+                        return new InsufficientStockException();
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/exception/OrderApplicationErrorCode.java', '''
+                package com.example.order.application.exception;
+
+                import com.example.global.exception.ErrorCode;
+                import com.example.global.exception.ErrorKind;
+
+                public enum OrderApplicationErrorCode implements ErrorCode {
+                    ORDER_NOT_FOUND;
+
+                    public String code() {
+                        return name();
+                    }
+
+                    public ErrorKind kind() {
+                        return ErrorKind.NOT_FOUND;
+                    }
+
+                    public String detail() {
+                        return "주문을 찾을 수 없습니다.";
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/exception/OrderNotFoundException.java', '''
+                package com.example.order.application.exception;
+
+                import com.example.global.exception.ApplicationException;
+
+                public final class OrderNotFoundException extends ApplicationException {
+
+                    private static final long serialVersionUID = 1L;
+
+                    private OrderNotFoundException(final OrderApplicationErrorCode errorCode) {
+                    }
+
+                    public static OrderNotFoundException notFound() {
+                        return new OrderNotFoundException(OrderApplicationErrorCode.ORDER_NOT_FOUND);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/exception/WebAwareApplicationErrorCode.java', '''
+                package com.example.order.application.exception;
+
+                import org.springframework.http.HttpStatus;
+
+                public enum WebAwareApplicationErrorCode {
+                    ORDER_NOT_FOUND;
+
+                    public HttpStatus status() {
+                        return HttpStatus.NOT_FOUND;
+                    }
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains("shared exception contract 'DomainException' must extend BusinessException") }
+        assert !violations.any { it.contains("shared exception contract 'ApplicationException' must extend BusinessException") }
+        assert !violations.any { it.contains("domain exception 'InsufficientStockException' must extend RuntimeException") }
+        assert !violations.any { it.contains("domain must not depend on global.exception 'com.example.global.exception.ErrorCode'") }
+        assert !violations.any { it.contains("application must not depend on adapter/global error layer 'com.example.global.exception.ErrorCode'") }
+        assert !violations.any { it.contains("application must not depend on adapter/global error layer 'com.example.global.exception.ApplicationException'") }
+        assert violations.any { it.contains("application must not depend on technical framework type 'org.springframework.http.HttpStatus'") }
+    }
+
+    @Test
+    void 'allows Spring MessageSource and rejects Value injection'() {
         Project project = sampleProject()
         writeApplication(project)
         writeResource(project, 'messages/messages.properties', '''
                 error.authentication.required=인증이 필요합니다.
                 ''')
-        writeJava(project, 'com/example/global/error/ApiProblemMessageResolver.java', '''
-                package com.example.global.error;
+        writeJava(project, 'com/example/global/exception/ApiProblemMessageResolver.java', '''
+                package com.example.global.exception;
 
                 import org.springframework.beans.factory.annotation.Value;
                 import org.springframework.context.MessageSource;
@@ -980,58 +1273,64 @@ class JavaSourceArchitectureValidatorTest {
 
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains('messages/messages.properties must not use MessageSource message bundle resources') }
-        assert violations.any { it.contains('must not use MessageSource') }
+        assert !violations.any { it.contains('messages/messages.properties must not use MessageSource message bundle resources') }
+        assert !violations.any { it.contains('must not use MessageSource') }
         assert violations.any { it.contains('must not use @Value') }
     }
 
     @Test
-    void 'rejects non-namespaced API error code keys'() {
+    void 'rejects framework dependencies from shared exception contracts'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/member/application/exception/MemberErrorCode.java', '''
-                package com.example.member.application.exception;
+        writeJava(project, 'com/example/global/exception/ErrorCode.java', '''
+                package com.example.global.exception;
 
-                public enum MemberErrorCode {
-                    DUPLICATE_EMAIL
+                import org.springframework.http.HttpStatus;
+
+                public interface ErrorCode {
+                    String code();
+                    HttpStatus status();
                 }
                 ''')
-        writeJava(project, 'com/example/member/adapter/in/web/MemberErrorCodeMappingProvider.java', '''
-                package com.example.member.adapter.in.web;
+        writeJava(project, 'com/example/global/exception/ErrorKind.java', '''
+                package com.example.global.exception;
 
-                import com.example.global.error.ApiExceptionMapper;
-                import com.example.global.error.ErrorCodeMappingProvider;
-                import com.example.member.application.exception.MemberErrorCode;
-                import java.util.Map;
+                import jakarta.persistence.Entity;
 
-                public final class MemberErrorCodeMappingProvider implements ErrorCodeMappingProvider {
-
-                    public Map<String, ApiExceptionMapper.Mapping> errorCodeMappings() {
-                        return Map.of(MemberErrorCode.DUPLICATE_EMAIL.name(), null);
-                    }
+                public enum ErrorKind {
+                    INVALID_INPUT
                 }
                 ''')
-        writeJava(project, 'com/example/member/adapter/in/web/MemberErrorMessageProvider.java', '''
-                package com.example.member.adapter.in.web;
+        writeJava(project, 'com/example/global/exception/BusinessException.java', '''
+                package com.example.global.exception;
 
-                import com.example.global.error.ApiErrorMessage;
-                import com.example.global.error.ApiErrorMessageProvider;
-                import com.example.member.application.exception.MemberErrorCode;
-                import java.util.Map;
+                import javax.persistence.PersistenceException;
 
-                  public final class MemberErrorMessageProvider implements ApiErrorMessageProvider {
+                public abstract class BusinessException extends RuntimeException {
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/DomainException.java', '''
+                package com.example.global.exception;
 
-                      public Map<String, ApiErrorMessage> errorMessages() {
-                          return Map.of("MEMBER.DUPLICATE_EMAIL", new ApiErrorMessage("중복", "중복입니다."));
-                      }
-                  }
-                  ''')
+                import com.querydsl.core.types.Predicate;
 
-          List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+                public abstract class DomainException extends RuntimeException {
+                }
+                ''')
+        writeJava(project, 'com/example/global/exception/ApplicationException.java', '''
+                package com.example.global.exception;
 
-          assert violations.any { it.contains('must use ApiErrorCode.from(errorCode), not Enum.name()') }
-          assert violations.any { it.contains('must use ApiErrorCode.from(errorCode), not hard-coded string literals') }
-      }
+                import lombok.Getter;
+
+                public abstract class ApplicationException extends RuntimeException {
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.count { it.contains('must remain framework-independent') } == 5
+        assert violations.count { it.contains('must extend BusinessException') } == 2
+    }
 
       @Test
       void 'rejects raw command value repository lookups before VO normalization'() {
@@ -1329,7 +1628,7 @@ class JavaSourceArchitectureValidatorTest {
 
         assert violations.any { it.contains("domain exception 'InvalidMemberIdException' must keep constructors private") }
         assert violations.any { it.contains("domain exception 'InvalidMemberIdException' must expose at least one static factory") }
-        assert violations.any { it.contains('domain invariants must not use requireNonNull') }
+        assert violations.any { it.contains('requireNonNull is only allowed for structural guards in a private aggregate constructor') }
         assert violations.any { it.contains('domain must raise exceptions through static factory methods') }
         assert violations.any { it.contains('domain must use ErrorCode-based exceptions') }
     }
@@ -1881,6 +2180,83 @@ class JavaSourceArchitectureValidatorTest {
         assert !violations.any { it.contains('MSA web adapter package must go through') }
         assert !violations.any { it.contains('must live in adapter.in.web.request package') }
         assert !violations.any { it.contains('must live in adapter.in.web.response package') }
+    }
+
+    @Test
+    void 'rejects multiple concrete exceptions in one Context layer by default'() {
+        Project project = sampleProject()
+        writeJava(project, 'com/example/product/domain/exception/ProductDomainException.java', '''
+                package com.example.product.domain.exception;
+
+                import com.example.global.exception.DomainException;
+
+                public final class ProductDomainException extends DomainException {
+                    private ProductDomainException() {
+                    }
+
+                    public static ProductDomainException invalidName() {
+                        return new ProductDomainException();
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/product/domain/exception/InvalidProductNameException.java', '''
+                package com.example.product.domain.exception;
+
+                import com.example.global.exception.DomainException;
+
+                public final class InvalidProductNameException extends DomainException {
+                    private InvalidProductNameException() {
+                    }
+
+                    public static InvalidProductNameException invalid() {
+                        return new InvalidProductNameException();
+                    }
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains('com.example.product:domain must declare one concrete domain exception') }
+    }
+
+    @Test
+    void 'allows multiple concrete exceptions when the Context layer is explicitly allowlisted'() {
+        Project project = sampleProject()
+        writeJava(project, 'com/example/product/domain/exception/ProductDomainException.java', '''
+                package com.example.product.domain.exception;
+
+                import com.example.global.exception.DomainException;
+
+                public final class ProductDomainException extends DomainException {
+                    private ProductDomainException() {
+                    }
+
+                    public static ProductDomainException invalidName() {
+                        return new ProductDomainException();
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/product/domain/exception/InvalidProductNameException.java', '''
+                package com.example.product.domain.exception;
+
+                import com.example.global.exception.DomainException;
+
+                public final class InvalidProductNameException extends DomainException {
+                    private InvalidProductNameException() {
+                    }
+
+                    public static InvalidProductNameException invalid() {
+                        return new InvalidProductNameException();
+                    }
+                }
+                ''')
+        HexagonalConventionExtension convention = new HexagonalConventionExtension(
+                exceptionTypeSplitAllowlist: ['com.example.product:domain'] as Set
+        )
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
+
+        assert !violations.any { it.contains('must declare one concrete domain exception') }
     }
 
     private Project sampleProject() {

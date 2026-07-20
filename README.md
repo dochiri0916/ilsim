@@ -17,15 +17,18 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 - 레이어 의존성 규칙(`domain -> application/adapter` 금지, `application -> adapter` 금지)을 Validator로 강제합니다.
 - 도메인/엔티티 분리, JPA Entity 접미사와 `@Table` 명시, 정적 팩토리 규칙을 자동 검증합니다.
 - `validateArchitectureConventions` 태스크로 패키지/네이밍, Domain record와 불변 `final class` Aggregate, JPA Entity, Mapper, Controller 의존성, Spring 컴포넌트 등록 규칙을 검증합니다.
+- 모든 architecture violation에는 안정적인 `[ARCH-...]` rule ID가 붙으며, 예외 계약과 Domain Aggregate 모델 규칙은 독립 Validator로 분리되어 있습니다.
 - Application은 같은 Context의 Domain/Port와 `@Service`, `@Transactional`에만 의존하도록 source와 ArchUnit에서 검증합니다.
 - Application import는 JDK, 같은 Context의 Domain/Port/Application 예외, 기술 독립적인 `global.exception` 공통 계약, `@Service`, `@Transactional`, `@RequiredArgsConstructor`의 명시적 허용 목록으로 검증합니다. 같은 Context의 다른 Application Service 구현체와 임의 외부 SDK도 거부합니다.
 - Controller collaborator는 Inbound `*UseCase`, Application Service collaborator는 Outbound `*Port` 또는 같은 Context Domain `*Service`만 허용합니다.
 - Repository Port의 mutation 파라미터와 반환 타입에서 Aggregate Root를 추론하여 정확히 하나의 Root와 연결하고, 같은 Context의 다른 Aggregate Root 직접 참조를 거부합니다.
+- 다른 Context의 Domain/Application 타입과 식별자 VO 직접 참조를 막고, 공유 계약은 명시한 Published Language 패키지만 허용합니다.
 - Repository Port의 생성과 변경은 `create`와 `update`로 분리하고, `save`·`upsert` 변경 계약은 거부합니다.
 - ID를 가진 불변 Aggregate는 private final 상태, private constructor, 정적 factory와 ID 동등성을 사용합니다. `create`는 신규 상태를 만들고 `restore`(또는 호환 이름 `reconstitute`)는 영속 상태 복원에 사용합니다.
 - Aggregate의 단순 ID/VO 집합은 private final 필드에 `List.copyOf`·`Set.copyOf`·`Map.copyOf`로 방어 복사해 직접 보관할 수 있습니다. raw scalar 원소, mutable 보관, 또는 독립적인 도메인 행위·불변식을 가진 컬렉션은 허용하지 않으며 후자는 First-class Collection으로 모델링합니다.
 - `requireNonNull`은 불변 Aggregate의 private constructor에서 이미 생성된 구성요소를 구조적으로 보호할 때만 허용합니다. Value Object와 공개 Domain 행위의 불변식 실패는 Domain Exception 정적 factory로 표현해야 합니다.
 - Domain/Application의 concrete 예외는 private 생성자와 의미 있는 static factory를 사용합니다. 공통 abstract `DomainException`·`ApplicationException` 기반 타입은 하위 예외를 위한 protected 생성자를 둘 수 있습니다.
+- Context·계층별 concrete 예외는 기본적으로 하나만 허용하며, 타입별 분기가 필요한 Context는 `exceptionTypeSplitAllowlist`로 명시적으로 허용합니다.
 - 공통 오류 처리는 `global.exception`에 둡니다. `ErrorCode`·`ErrorKind`·공통 예외 기반 타입은 Spring Web을 모르는 순수 계약으로 유지하고, `BusinessException`은 ErrorCode와 불변 extensions를 보관합니다.
 - `GlobalExceptionHandler`는 Spring의 `ResponseEntityExceptionHandler`를 상속하고 `BusinessException`을 `ProblemDetail`로 직접 변환합니다. 별도 Exception Mapper Registry는 다중 프로토콜·API 버전 같은 실제 요구가 생기기 전에는 만들지 않습니다.
 - extensions에는 비밀번호, 토큰, 원문 개인정보를 넣지 않습니다. API 응답에 복사할 값은 공개해도 안전한 진단 맥락으로 제한합니다.

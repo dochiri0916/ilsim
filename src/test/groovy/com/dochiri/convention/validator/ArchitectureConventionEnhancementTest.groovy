@@ -67,8 +67,8 @@ class ArchitectureConventionEnhancementTest {
     }
 
     @Test
-    @DisplayName('Application은 다른 Context Domain 객체 대신 식별자 VO만 참조한다')
-    void rejectsCrossContextDomainObjectAndAcceptsIdentifierValueObject() {
+    @DisplayName('Application은 다른 Context Domain 타입을 직접 참조하지 않는다')
+    void rejectsCrossContextDomainObjectAndIdentifierValueObject() {
         // given
         Project project = sampleProject('cross-context-application')
         writeApplication(project)
@@ -118,9 +118,40 @@ class ArchitectureConventionEnhancementTest {
         assert violations.any {
             it.contains("application must not depend on another context domain model 'com.example.sales.domain.model.Order'")
         }
-        assert !violations.any {
+        assert violations.any {
             it.contains("another context domain model 'com.example.sales.domain.model.OrderId'")
         }
+    }
+
+    @Test
+    @DisplayName('Published Language 패키지는 다른 Context의 공유 계약으로 명시적으로 허용한다')
+    void acceptsExplicitPublishedLanguagePackage() {
+        // given
+        Project project = sampleProject('published-language')
+        writeApplication(project)
+        writeJava(project, 'com/example/sales/domain/model/OrderId.java', '''
+                package com.example.sales.domain.model;
+                public record OrderId(String value) {
+                }
+                ''')
+        writeJava(project, 'com/example/review/application/port/out/ReviewOrderPort.java', '''
+                package com.example.review.application.port.out;
+
+                import com.example.sales.domain.model.OrderId;
+
+                public interface ReviewOrderPort {
+                    String find(OrderId orderId);
+                }
+                ''')
+        HexagonalConventionExtension convention = new HexagonalConventionExtension(
+                publishedLanguagePackagePrefixes: ['com.example.sales.domain.model'] as Set
+        )
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
+
+        // then
+        assert !violations.any { it.contains('another context domain model') }
     }
 
     @Test
@@ -235,8 +266,8 @@ class ArchitectureConventionEnhancementTest {
     }
 
     @Test
-    @DisplayName('사용자 노출 메시지는 한국어로 검증하고 내부 기술 메시지는 제한하지 않는다')
-    void validatesOnlyUserFacingMessageLanguage() {
+    @DisplayName('오류 메시지의 언어 선택은 아키텍처 검증에서 강제하지 않는다')
+    void doesNotEnforceErrorMessageLanguage() {
         // given
         Project project = sampleProject('message-language')
         writeApplication(project)
@@ -256,8 +287,8 @@ class ArchitectureConventionEnhancementTest {
         writeJava(project, 'com/example/member/adapter/in/web/MemberErrorMessageProvider.java', '''
                 package com.example.member.adapter.in.web;
 
-                import com.example.global.error.ApiErrorMessage;
-                import com.example.global.error.ApiErrorMessageProvider;
+                import com.example.global.exception.ApiErrorMessage;
+                import com.example.global.exception.ApiErrorMessageProvider;
                 import java.util.Map;
 
                 public final class MemberErrorMessageProvider implements ApiErrorMessageProvider {
@@ -282,7 +313,7 @@ class ArchitectureConventionEnhancementTest {
 
         // then
         assert !violations.any { it.contains('exception message string literals must be written in Korean') }
-        assert violations.any { it.contains('user-facing ApiErrorMessage title/detail must be written in Korean') }
+        assert !violations.any { it.contains('user-facing ApiErrorMessage title/detail must be written in Korean') }
     }
 
     @Test
@@ -1168,15 +1199,15 @@ class ArchitectureConventionEnhancementTest {
 
                 public final class FailureDescriptor {
                     private final com.example.global
-                        .error.ApiErrorCode errorCode;
+                        .exception.ApiErrorCode errorCode;
 
                     private FailureDescriptor(final com.example.global
-                            .error.ApiErrorCode errorCode) {
+                            .exception.ApiErrorCode errorCode) {
                         this.errorCode = errorCode;
                     }
 
                     public static FailureDescriptor from(final com.example.global
-                            .error.ApiErrorCode errorCode) {
+                            .exception.ApiErrorCode errorCode) {
                         return new FailureDescriptor(errorCode);
                     }
                 }
@@ -1190,7 +1221,7 @@ class ArchitectureConventionEnhancementTest {
 
         // then
         assert violations.any { it.contains("API DTO 'GetOrderResponse' must not expose domain/application types") }
-        assert violations.any { it.contains('domain must not depend on global.error') }
+        assert violations.any { it.contains('domain must not depend on global.exception') }
     }
 
     private Project sampleProject(String name) {

@@ -92,7 +92,7 @@ class JavaSourceArchitectureRuleMatrixTest {
         writeJava(project, 'com/example/order/application/service/AdapterAwareService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.global.error.ApiProblemDetailFactory;
+                import com.example.global.exception.ApiProblemDetailFactory;
                 import com.example.order.adapter.out.persistence.OrderEntity;
 
                 public final class AdapterAwareService {
@@ -127,12 +127,6 @@ class JavaSourceArchitectureRuleMatrixTest {
         // given
         Project project = sampleProject('web-rules')
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/service/MisplacedMapper.java', '''
-                package com.example.order.application.service;
-
-                public final class MisplacedMapper implements ApiExceptionMapper {
-                }
-                ''')
         writeJava(project, 'com/example/order/application/service/LegacyRequest.java', '''
                 package com.example.order.application.service;
 
@@ -180,8 +174,8 @@ class JavaSourceArchitectureRuleMatrixTest {
                     }
                 }
                 ''')
-        writeJava(project, 'com/example/global/error/GlobalExceptionHandler.java', '''
-                package com.example.global.error;
+        writeJava(project, 'com/example/global/exception/GlobalExceptionHandler.java', '''
+                package com.example.global.exception;
 
                 import com.example.order.application.exception.BrokenFlowException;
                 import com.example.order.domain.exception.InvalidOrderException;
@@ -216,7 +210,6 @@ class JavaSourceArchitectureRuleMatrixTest {
         List<String> violations = validate(project)
 
         // then
-        assertContains(violations, 'ApiExceptionMapper implementations must live in adapter.in.web or global.error')
         assertContains(violations, "API DTO 'LegacyRequest' must live in adapter.in.web package")
         assertContains(violations, "request DTO 'OrderRequest' must live in adapter.in.web.request package")
         assertContains(violations, "API DTO 'ApiRequest' must be a record")
@@ -225,10 +218,9 @@ class JavaSourceArchitectureRuleMatrixTest {
         assertContains(violations, 'controller must depend on inbound UseCase ports only')
         assertContains(violations, 'controller must not expose domain types as response return values')
         assertContains(violations, 'controller must not create or return ProblemDetail directly')
-        assertContains(violations, 'must not expose exception.getMessage() as ProblemDetail detail')
-        assertContains(violations, 'must resolve user-facing ProblemDetail title/detail through code-based message catalog')
-        assertContains(violations, 'GlobalExceptionHandler must delegate domain/application exception mapping')
-        assertContains(violations, 'Spring Web error types are only allowed in adapter.in.web or global.error')
+        assertContains(violations, 'GlobalExceptionHandler must extend ResponseEntityExceptionHandler')
+        assertContains(violations, 'GlobalExceptionHandler must handle BusinessException without importing context exceptions')
+        assertContains(violations, 'Spring Web error types are only allowed in adapter.in.web or global.exception')
     }
 
     @Test
@@ -240,7 +232,7 @@ class JavaSourceArchitectureRuleMatrixTest {
         writeJava(project, 'com/example/order/domain/model/MutableOrder.java', '''
                 package com.example.order.domain.model;
 
-                import com.example.global.error.ApiErrorCode;
+                import com.example.global.exception.ApiErrorCode;
                 import java.util.List;
                 import java.util.Objects;
                 import jakarta.persistence.Entity;
@@ -370,9 +362,9 @@ class JavaSourceArchitectureRuleMatrixTest {
         // then
         assertContains(violations, "domain class 'MutableOrder' must be a record or final aggregate root")
         assertContains(violations, 'domain must not use Spring/JPA/QueryDSL/Lombok annotations')
-        assertContains(violations, 'domain invariants must not use requireNonNull')
+        assertContains(violations, 'requireNonNull is only allowed for structural guards in a private aggregate constructor')
         assertContains(violations, 'domain must use domain-specific exceptions instead of JDK basic exceptions')
-        assertContains(violations, 'domain must not depend on global.error')
+        assertContains(violations, 'domain must not depend on global.exception')
         assertContains(violations, 'domain must not declare DB technical id fields')
         assertContains(violations, "domain field 'values' must use a first-class collection")
         assertContains(violations, "domain field 'name' must use a Value Object")
@@ -394,8 +386,7 @@ class JavaSourceArchitectureRuleMatrixTest {
         assertContains(violations, "first-class collection record 'StringList' must defensively copy its collection")
         assertContains(violations, "first-class collection record 'StringList' must reject null elements")
         assertContains(violations, "identifier VO 'CustomerId' must expose a generate factory")
-        assertContains(violations, 'domain entity record with identifier VO must override equals and hashCode using id')
-        assertContains(violations, "domain entity record with identifier VO must expose a static factory returning 'Order'")
+        assertContains(violations, "domain aggregate 'Order' must be a final class, not a record")
     }
 
     @Test

@@ -78,6 +78,25 @@ Domain/Application의 concrete 예외는 다음 규칙을 따른다.
 - 예외 타입, ErrorCode, 필요한 Value Object와 실패 상태로 오류를 표현한다.
 - DB, HTTP, SDK, Spring 기술 예외를 생성자·필드·반환 타입으로 노출하지 않는다.
 
+### Context별 예외 통합
+
+같은 Context 안에서 호출자가 concrete 예외 타입으로 복구·분기할 요구가 없다면, 오류별 예외 클래스를 만들지 않고 Context별 예외 하나로 통합한다. 예를 들어 `ProductDomainException` 또는 `ProductApplicationException`이 해당 Context의 모든 Domain/Application 오류를 표현할 수 있다.
+
+- 통합 예외는 `private` constructor와 의미가 분명한 static factory만 공개한다.
+- factory 이름은 `required()`처럼 일반적인 이름 대신 `productNameRequired()`, `invalidProductId(productId)`, `insufficientStock(currentStock, requestedQuantity)`처럼 실패 대상과 조건을 드러낸다.
+- 각 factory는 대응하는 ErrorCode와 API에 공개해도 안전한 실패 맥락 extensions를 설정한다.
+- 타입 자체로 복구·분기해야 하는 실제 요구가 생길 때만 별도 concrete 예외 타입을 추가한다.
+
+`com.dochiri.lint-convention`은 기본적으로 Context·계층별 concrete 예외를 하나만 허용한다. 예외 타입 분기가 필요한 Context는 Gradle 설정에서 `"{basePackage}.{context}:domain"` 또는 `"{basePackage}.{context}:application"`을 allowlist에 명시한다.
+
+```groovy
+hexagonalConvention {
+    exceptionTypeSplitAllowlist = [
+            'com.example.payment:domain'
+    ] as Set
+}
+```
+
 ## GlobalExceptionHandler
 
 `global.exception.GlobalExceptionHandler`는 `ResponseEntityExceptionHandler`를 상속하고 `@RestControllerAdvice`를 선언한다.
@@ -110,6 +129,7 @@ public final class GlobalExceptionHandler
 - `instance`를 임의로 만들지 않는다. 설정하지 않으면 Spring이 현재 요청 경로를 사용한다.
 - 안정적인 오류 식별자는 `code` property로 추가한다.
 - 안전한 extensions는 `ProblemDetail.setProperty`로 추가한다.
+- Handler는 `ErrorCode.kind()`, `code()`, `detail()`을 사용해 status, code, detail과 properties를 구성한다.
 - 예외의 `getMessage()`를 그대로 `ProblemDetail.detail`로 노출하지 않는다. `ErrorCode.detail()` 또는 Web 계층의 `MessageSource` 결과를 사용한다.
 - Context의 concrete Domain/Application 예외를 직접 import하지 않고 공통 `BusinessException`을 처리한다.
 - 예상하지 못한 예외는 내부에 stack trace를 기록하고 일반적인 500 응답으로 변환한다.

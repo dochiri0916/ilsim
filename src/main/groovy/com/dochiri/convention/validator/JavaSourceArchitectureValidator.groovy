@@ -115,6 +115,13 @@ class JavaSourceArchitectureValidator {
             'org.springframework.stereotype.Service',
             'org.springframework.transaction.annotation.Transactional'
     ] as Set
+    private static final Set<String> SHARED_EXCEPTION_CONTRACT_TYPES = [
+            'ApplicationException',
+            'BusinessException',
+            'DomainException',
+            'ErrorCode',
+            'ErrorKind'
+    ] as Set
     private static final Set<String> APPLICATION_TECHNICAL_PACKAGE_PREFIXES = [
             'com.amazonaws.',
             'com.querydsl.',
@@ -138,8 +145,13 @@ class JavaSourceArchitectureValidator {
         AggregateBoundaryConventionValidator.Analysis aggregateAnalysis =
                 AggregateBoundaryConventionValidator.analyze(project, convention)
         violations.addAll(aggregateAnalysis.violations)
-        validateNoMessageBundleResources(project, violations)
         violations.addAll(PackageTopologyConventionValidator.validate(project, convention))
+        violations.addAll(ExceptionContractConventionValidator.validate(
+                project,
+                mainSourceFiles,
+                aggregateAnalysis,
+                convention
+        ))
 
         mainSourceFiles.each { File file ->
             JavaSourceAstInspector.Inspection inspection = aggregateAnalysis.inspectionFor(file)
@@ -152,7 +164,7 @@ class JavaSourceArchitectureValidator {
             validateCommonPackageUsage(project, file, source, packageName, violations)
             validateNoWildcardImports(project, file, source, violations)
             validateNoQualityToolSuppressUsage(project, file, source, violations)
-            validateNoI18nOrValueInjection(project, file, source, violations)
+            validateNoValueInjection(project, file, source, violations)
 
             JavaSourceAstInspector.TypeModel astType = inspection.primaryType()
             TypeDeclaration type = TypeDeclaration.from(astType)
@@ -173,11 +185,11 @@ class JavaSourceArchitectureValidator {
             validateTypePackageConvention(project, file, packageName, type, convention, violations)
             validateSpringComponentRegistration(project, file, source, packageName, type, convention, violations)
             validateExceptionArchitecture(project, file, source, packageName, type, convention, violations)
-            validateErrorProviderCodeKeys(project, file, source, type, violations)
             validateWebAuthenticationArchitecture(project, file, source, violations)
 
             if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
                 validateDomain(project, file, source, packageName, type, convention, violations)
+                violations.addAll(DomainModelConventionValidator.validate(project, file, source, astType))
             }
 
             if (SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)) {
@@ -207,7 +219,7 @@ class JavaSourceArchitectureValidator {
         }
         validateTestConventions(project, violations)
 
-        return violations
+        return ConventionRuleCatalog.withRuleIds(violations)
     }
 
     private static String appendMissingAstImports(
@@ -257,19 +269,6 @@ class JavaSourceArchitectureValidator {
         return path.replace(File.separatorChar, '/' as char).split('/').contains(segment)
     }
 
-    private static void validateNoMessageBundleResources(Project project, List<String> violations) {
-        File resourcesDir = project.file('src/main/resources')
-        if (!resourcesDir.exists()) {
-            return
-        }
-
-        project.fileTree(resourcesDir) {
-            include '**/messages*.properties'
-        }.files.each { File file ->
-            violations.add("${project.relativePath(file)} must not use MessageSource message bundle resources; use code-based ApiErrorMessageProvider catalog")
-        }
-    }
-
     private static void validateNoQualityToolSuppressUsage(
             Project project,
             File file,
@@ -281,7 +280,7 @@ class JavaSourceArchitectureValidator {
         }
     }
 
-    private static void validateNoI18nOrValueInjection(
+    private static void validateNoValueInjection(
             Project project,
             File file,
             String source,
@@ -289,9 +288,6 @@ class JavaSourceArchitectureValidator {
     ) {
         String searchableSource = stripCommentsAndStrings(source)
         String path = project.relativePath(file)
-        if (importsOrUsesType(source, searchableSource, 'org.springframework.context.MessageSource', 'MessageSource')) {
-            violations.add("${path} must not use MessageSource; use code-based ApiErrorMessageProvider catalog")
-        }
         if ((searchableSource =~ /(?m)@\s*(?:org\.springframework\.beans\.factory\.annotation\.)?Value\b/).find()) {
             violations.add("${path} must not use @Value; bind configuration with record @ConfigurationProperties")
         }
@@ -343,7 +339,7 @@ class JavaSourceArchitectureValidator {
         String path = project.relativePath(file)
         boolean outboundAdapter = SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)
         boolean inboundWebAdapter = SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
-        boolean globalError = isGlobalErrorPackage(packageName)
+        boolean globalException = isGlobalExceptionPackage(packageName)
 
         ['Entity', 'Table', 'Repository'].each { String annotation ->
             if (type.hasAnnotation(annotation) && !outboundAdapter) {
@@ -352,8 +348,8 @@ class JavaSourceArchitectureValidator {
         }
 
         ['RestController', 'Controller', 'RestControllerAdvice', 'ControllerAdvice'].each { String annotation ->
-            if (type.hasAnnotation(annotation) && !inboundWebAdapter && !globalError) {
-                violations.add("${path} @${annotation} is only allowed in adapter.in.web or global.error")
+            if (type.hasAnnotation(annotation) && !inboundWebAdapter && !globalException) {
+                violations.add("${path} @${annotation} is only allowed in adapter.in.web or global.exception")
             }
         }
 
@@ -368,13 +364,13 @@ class JavaSourceArchitectureValidator {
             List<String> violations
     ) {
         boolean allowedWebErrorPackage = SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
-                || isGlobalErrorPackage(packageName)
+                || isGlobalExceptionPackage(packageName)
         if (allowedWebErrorPackage || !usesAnyType(source, WEB_ERROR_TYPES)) {
             return
         }
 
         String path = project.relativePath(file)
-        violations.add("${path} Spring Web error types are only allowed in adapter.in.web or global.error")
+        violations.add("${path} Spring Web error types are only allowed in adapter.in.web or global.exception")
     }
 
     private static void validateSpringComponentRegistration(
@@ -438,52 +434,79 @@ class JavaSourceArchitectureValidator {
         boolean domain = SourceInspector.isInLayer(packageName, convention.domainPackageSegment)
         boolean application = SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
         boolean outboundPort = application && packageName.contains('.port.out')
-        boolean globalError = isGlobalErrorPackage(packageName)
+        boolean globalException = isGlobalExceptionPackage(packageName)
         boolean webAdapter = SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
 
         if ((domain || application || outboundPort) && exposesTechnicalException(source)) {
             violations.add("${path} domain/application/outbound port must not expose DB/HTTP/SDK/Spring technical exception types")
         }
 
-        if ((globalError || webAdapter) && exposesExceptionMessageAsProblemDetail(source)) {
+        if ((globalException || webAdapter) && exposesExceptionMessageAsProblemDetail(source)) {
             violations.add("${path} must not expose exception.getMessage() as ProblemDetail detail")
         }
 
-        if ((globalError || webAdapter) && hardCodesProblemDetailTitleOrDetail(source)) {
-            violations.add("${path} must resolve user-facing ProblemDetail title/detail through code-based message catalog")
+        if ((globalException || webAdapter) && hardCodesProblemDetailTitleOrDetail(source)) {
+            violations.add("${path} must resolve ProblemDetail title/detail from ErrorCode or MessageSource")
         }
 
-        if (globalError && type.name == 'GlobalExceptionHandler'
-                && importsDomainOrApplicationException(source, convention)) {
-            violations.add("${path} GlobalExceptionHandler must delegate domain/application exception mapping to ApiExceptionMapper")
+        if (globalException && SHARED_EXCEPTION_CONTRACT_TYPES.contains(type.name)
+                && hasFrameworkDependency(source)) {
+            violations.add("${path} shared exception contract '${type.name}' must remain framework-independent")
+        }
+        if (globalException && ['DomainException', 'ApplicationException'].contains(type.name)
+                && !type.extendsType('BusinessException')) {
+            violations.add("${path} shared exception contract '${type.name}' must extend BusinessException")
         }
 
-        if (type.implementsTypeEndingWith('ApiExceptionMapper') && !globalError && !webAdapter) {
-            violations.add("${path} ApiExceptionMapper implementations must live in adapter.in.web or global.error")
+        if (globalException && type.name == 'GlobalExceptionHandler') {
+            if (!type.extendsType('ResponseEntityExceptionHandler')) {
+                violations.add("${path} GlobalExceptionHandler must extend ResponseEntityExceptionHandler")
+            }
+            if (!type.hasAnnotation('RestControllerAdvice')) {
+                violations.add("${path} GlobalExceptionHandler must declare @RestControllerAdvice")
+            }
+            if (!hasBusinessExceptionProblemDetailHandler(type)) {
+                violations.add("${path} GlobalExceptionHandler must handle BusinessException with @ExceptionHandler and return ProblemDetail")
+            }
+            if (!hasErrorCodeProblemDetailMapping(type)) {
+                violations.add("${path} GlobalExceptionHandler must map ErrorCode kind, code, and detail to ProblemDetail")
+            }
+            if (importsDomainOrApplicationException(source, convention)) {
+                violations.add("${path} GlobalExceptionHandler must handle BusinessException without importing context exceptions")
+            }
         }
     }
 
-    private static void validateErrorProviderCodeKeys(
-            Project project,
-            File file,
-            String source,
-            TypeDeclaration type,
-            List<String> violations
-    ) {
-        boolean messageProvider = type.implementsTypeEndingWith('ApiErrorMessageProvider')
-        if (!type.implementsTypeEndingWith('ErrorCodeMappingProvider') && !messageProvider) {
-            return
+    private static boolean hasBusinessExceptionProblemDetailHandler(TypeDeclaration type) {
+        return type.astType.methods.any { method ->
+            !method.constructor
+                    && method.annotation('ExceptionHandler') != null
+                    && simplifyTypeName(method.returnType) == 'ProblemDetail'
+                    && method.parameterTypes.any { parameterType ->
+                        simplifyTypeName(parameterType) == 'BusinessException'
+                    }
         }
-          if (usesEnumNameAsProviderMapKey(source)) {
-              violations.add("${project.relativePath(file)} error mapping/message provider must use ApiErrorCode.from(errorCode), not Enum.name(), for API code keys")
-          }
-          if (usesStringLiteralAsProviderMapKey(source)) {
-              violations.add("${project.relativePath(file)} error mapping/message provider must use ApiErrorCode.from(errorCode), not hard-coded string literals, for API code keys")
-          }
-          if (messageProvider && hasNonKoreanUserFacingApiErrorMessage(source)) {
-              violations.add("${project.relativePath(file)} user-facing ApiErrorMessage title/detail must be written in Korean")
-          }
-      }
+    }
+
+    private static boolean hasErrorCodeProblemDetailMapping(TypeDeclaration type) {
+        JavaSourceAstInspector.MethodModel handler = type.astType.methods.find { method ->
+            !method.constructor
+                    && method.annotation('ExceptionHandler') != null
+                    && simplifyTypeName(method.returnType) == 'ProblemDetail'
+                    && method.parameterTypes.any { parameterType ->
+                        simplifyTypeName(parameterType) == 'BusinessException'
+                    }
+        }
+        if (handler == null || handler.body == null) {
+            return false
+        }
+        String body = stripCommentsAndStrings(handler.body)
+        boolean mapsKind = (body =~ /\berrorCode\s*\(\s*\)\s*\.\s*kind\s*\(\s*\)/).find()
+        boolean mapsCode = (body =~ /\berrorCode\s*\(\s*\)\s*\.\s*code\s*\(\s*\)/).find()
+        boolean mapsDetail = (body =~ /\berrorCode\s*\(\s*\)\s*\.\s*detail\s*\(\s*\)/).find()
+        boolean addsProperties = (body =~ /\bsetProperty\s*\(|\bsetProperties\s*\(/).find()
+        return mapsKind && mapsCode && mapsDetail && addsProperties
+    }
 
     private static void validateWebAuthenticationArchitecture(
             Project project,
@@ -724,11 +747,11 @@ class JavaSourceArchitectureValidator {
             }
         }
 
-        boolean globalError = isGlobalErrorPackage(packageName)
+        boolean globalException = isGlobalExceptionPackage(packageName)
         if ((type.name.endsWith('Request') || type.name.endsWith('Response'))
                 && !SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
                 && !packageName.contains('.adapter.in.web')
-                && !globalError) {
+                && !globalException) {
             violations.add("${path} API DTO '${type.name}' must live in adapter.in.web package")
         }
         if (type.name.endsWith('Request') && SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
@@ -741,7 +764,7 @@ class JavaSourceArchitectureValidator {
         }
         if ((type.name.endsWith('Request') || type.name.endsWith('Response'))
                 && SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)
-                && !globalError) {
+                && !globalException) {
             if (type.kind != 'record') {
                 violations.add("${path} API DTO '${type.name}' must be a record")
             }
@@ -799,7 +822,7 @@ class JavaSourceArchitectureValidator {
     ) {
         String path = project.relativePath(file)
 
-        validateApplicationDependencies(path, source, packageName, type, violations)
+        validateApplicationDependencies(path, source, packageName, type, convention, violations)
         if (packageName.contains('.service')) {
             validateApplicationServiceCollaborators(path, source, type, violations)
         }
@@ -810,7 +833,7 @@ class JavaSourceArchitectureValidator {
             violations.add("${path} application service must create a VO and pass normalized vo.value() to repository exists/find calls")
         }
         if (type.name.endsWith('Exception')) {
-            if (!type.extendsType('RuntimeException')) {
+            if (!extendsApplicationExceptionBase(type)) {
                 violations.add("${path} application exception '${type.name}' must extend RuntimeException")
             }
             if (!hasSerialVersionUid(type)) {
@@ -836,6 +859,9 @@ class JavaSourceArchitectureValidator {
         if ((type.name.endsWith('Port') || type.name.endsWith('RepositoryPort'))
                 && !packageName.contains('.port.out')) {
             violations.add("${path} outbound port '${type.name}' must live in application..port.out package")
+        }
+        if (packageName.contains('.port.out') && type.name.endsWith('RepositoryPort')) {
+            validateRepositoryMutationContract(path, type, violations)
         }
         if (type.name.endsWith('Service') && !packageName.contains('.service')) {
             violations.add("${path} application service '${type.name}' must live in application..service package")
@@ -880,13 +906,28 @@ class JavaSourceArchitectureValidator {
             String source,
             String packageName,
             TypeDeclaration type,
+            HexagonalConventionExtension convention,
             List<String> violations
     ) {
         String currentContext = boundedContextName(packageName)
         Set<String> dependencies = new LinkedHashSet<>(SourceInspector.extractImports(source))
         dependencies.addAll(type.astType.qualifiedTypeReferences)
         dependencies.each { dependency ->
-            validateApplicationDependencyReference(path, dependency, currentContext, violations)
+            validateApplicationDependencyReference(path, dependency, currentContext, convention, violations)
+        }
+    }
+
+    private static void validateRepositoryMutationContract(
+            String path,
+            TypeDeclaration type,
+            List<String> violations
+    ) {
+        type.astType.methods.findAll { method ->
+            !method.constructor && (method.name ==~ /(?:save|upsert)[A-Za-z0-9_]*/)
+        }.each { method ->
+            violations.add(
+                    "${path} repository port '${type.name}' must not declare ${method.name}; use create or update"
+            )
         }
     }
 
@@ -894,6 +935,7 @@ class JavaSourceArchitectureValidator {
             String path,
             String dependency,
             String currentContext,
+            HexagonalConventionExtension convention,
             List<String> violations
     ) {
         if (isForbiddenApplicationTechnicalImport(dependency)) {
@@ -908,7 +950,8 @@ class JavaSourceArchitectureValidator {
                 && (dependency.contains('.domain.model.') || dependency.contains('.application.'))
         if (crossContextDependency) {
             String typeName = dependency.substring(dependency.lastIndexOf('.') + 1)
-            if (dependency.contains('.domain.model.') && !isIdentifierVoType(typeName)) {
+            if (dependency.contains('.domain.model.')
+                    && !isPublishedLanguageType(dependency, convention)) {
                 violations.add("${path} application must not depend on another context domain model '${dependency}'; use an integration Port or identifier Value Object")
             }
             if (dependency.contains('.application.')) {
@@ -917,7 +960,14 @@ class JavaSourceArchitectureValidator {
             return
         }
 
-        if (dependency.contains('.adapter.') || isGlobalErrorPackage(dependency)) {
+        if (dependency.contains('.adapter.')) {
+            violations.add("${path} application must not depend on adapter/global error layer '${dependency}'")
+            return
+        }
+        if (isGlobalExceptionPackage(dependency)) {
+            if (isSharedExceptionContract(dependency)) {
+                return
+            }
             violations.add("${path} application must not depend on adapter/global error layer '${dependency}'")
             return
         }
@@ -1048,12 +1098,20 @@ class JavaSourceArchitectureValidator {
     ) {
         String path = project.relativePath(file)
 
+        typeDependencies(source, type)
+                .findAll { String dependency ->
+                    isGlobalExceptionPackage(dependency) && !isSharedExceptionContract(dependency)
+                }
+                .each { String dependency ->
+                    violations.add("${path} domain must not depend on global.exception '${dependency}'")
+                }
+
         if (type.kind == 'enum') {
             return
         }
 
         if (type.name.endsWith('Exception')) {
-            if (!type.extendsType('RuntimeException')) {
+            if (!extendsDomainExceptionBase(type)) {
                 violations.add("${path} domain exception '${type.name}' must extend RuntimeException")
             }
             if (!hasSerialVersionUid(type)) {
@@ -1080,8 +1138,8 @@ class JavaSourceArchitectureValidator {
         if (throwsJdkBasicException(source)) {
             violations.add("${path} domain must use domain-specific exceptions instead of JDK basic exceptions")
         }
-        if (usesRequireNonNull(source)) {
-            violations.add("${path} domain invariants must not use requireNonNull; throw a domain-specific exception factory instead")
+        if (usesRequireNonNullOutsidePrivateAggregateConstructor(type)) {
+            violations.add("${path} requireNonNull is only allowed for structural guards in a private aggregate constructor")
         }
         if (throwsDirectExceptionConstruction(source)) {
             violations.add("${path} domain must raise exceptions through static factory methods, not direct constructors")
@@ -1089,12 +1147,6 @@ class JavaSourceArchitectureValidator {
         if (constructsExceptionWithStringLiteral(source)) {
             violations.add("${path} domain must use ErrorCode-based exceptions, not string message constructors")
         }
-
-        typeDependencies(source, type)
-                .findAll { String dependency -> isGlobalErrorPackage(dependency) }
-                .each { String dependency ->
-                    violations.add("${path} domain must not depend on global.error '${dependency}'")
-                }
 
         if (type.fields.any { field ->
             field.name.toLowerCase(Locale.ROOT).endsWith('id')
@@ -1111,7 +1163,7 @@ class JavaSourceArchitectureValidator {
 
           extractFieldDeclarations(type).each { FieldDeclaration field ->
             if (isRawCollectionType(field.type)) {
-                violations.add("${path} domain field '${field.name}' must use a first-class collection record instead of '${field.type}'")
+                validateDirectDomainCollection(path, source, type, field, violations)
             }
             if (isRawScalarType(field.type)) {
                 violations.add("${path} domain field '${field.name}' must use a Value Object instead of raw scalar '${field.type}'")
@@ -1119,10 +1171,106 @@ class JavaSourceArchitectureValidator {
             if (isPublicIdName(field.name)) {
                 violations.add("${path} domain reference field '${field.name}' must use '{Target}Id' naming, not 'publicId' or '*PublicId'")
             }
-            if (looksLikeIdReference(field.name) && field.name != 'id' && !isIdentifierVoType(field.type)) {
+            if (looksLikeIdReference(field.name)
+                    && field.name != 'id'
+                    && !isRawCollectionType(field.type)
+                    && !isIdentifierVoType(field.type)) {
                 violations.add("${path} domain reference field '${field.name}' must use an identifier Value Object type")
             }
         }
+
+    }
+
+    private static void validateDirectDomainCollection(
+            String path,
+            String source,
+            TypeDeclaration type,
+            FieldDeclaration field,
+            List<String> violations
+    ) {
+        if (normalizeType(field.type).endsWith('[]')) {
+            violations.add("${path} domain collection field '${field.name}' must use List, Set, Map, or a first-class collection record instead of an array")
+            return
+        }
+        if (!isAggregateRootClass(type)) {
+            violations.add("${path} domain field '${field.name}' must use a first-class collection record instead of '${field.type}'")
+            return
+        }
+        if (!isPrivateFinalInstanceField(type, field.name)) {
+            violations.add("${path} domain collection field '${field.name}' must be private final")
+        }
+        if (!hasAllowedDirectCollectionElement(field.type)) {
+            violations.add("${path} domain collection field '${field.name}' must contain domain Value Objects or enums, not raw scalar values")
+        }
+        String collectionKind = rawCollectionKind(field.type)
+        if (!(source =~ /(?s)\b${Pattern.quote(field.name)}\s*=\s*${collectionKind}\.copyOf\s*\([^;]*\)/).find()) {
+            violations.add("${path} domain collection field '${field.name}' must defensively copy with ${collectionKind}.copyOf")
+        }
+    }
+
+    private static boolean isAggregateRootClass(TypeDeclaration type) {
+        return type.kind == 'class' && type.finalType && hasIdentifierField(type)
+    }
+
+    private static boolean hasIdentifierField(TypeDeclaration type) {
+        return extractInstanceFieldDeclarations(type).any { field ->
+            field.name == 'id' && isIdentifierVoType(field.type)
+        }
+    }
+
+    private static boolean isPrivateFinalInstanceField(TypeDeclaration type, String fieldName) {
+        JavaSourceAstInspector.FieldModel field = type.astType.fields.find { candidate -> candidate.name == fieldName }
+        return field != null && !field.staticField && field.finalField && field.modifiers.contains('PRIVATE')
+    }
+
+
+    private static boolean hasAllowedDirectCollectionElement(String type) {
+        List<String> elementTypes = collectionElementTypes(type)
+        return !elementTypes.isEmpty() && elementTypes.every { elementType ->
+            !isRawScalarType(elementType) && !normalizeType(elementType).endsWith('[]')
+        }
+    }
+
+    private static boolean looksLikeDomainEnum(String type) {
+        return simplifyTypeName(type).endsWith('Status') || simplifyTypeName(type).endsWith('Type')
+    }
+
+    private static List<String> collectionElementTypes(String type) {
+        def matcher = normalizeType(type) =~ /<(.*)>/
+        if (!matcher.find()) {
+            return []
+        }
+        return splitTopLevelGenericTypes(matcher.group(1))
+    }
+
+    private static String rawCollectionKind(String type) {
+        String normalizedType = normalizeType(type)
+        int genericStart = normalizedType.indexOf('<')
+        return genericStart < 0 ? normalizedType : normalizedType.substring(0, genericStart)
+    }
+
+    private static List<String> splitTopLevelGenericTypes(String typeArguments) {
+        List<String> types = []
+        int depth = 0
+        int segmentStart = 0
+        typeArguments.eachWithIndex { character, index ->
+            if (character == '<') {
+                depth++
+            } else if (character == '>') {
+                depth--
+            } else if (character == ',' && depth == 0) {
+                String type = typeArguments.substring(segmentStart, index).trim()
+                if (!type.isEmpty()) {
+                    types.add(type)
+                }
+                segmentStart = index + 1
+            }
+        }
+        String lastType = typeArguments.substring(segmentStart).trim()
+        if (!lastType.isEmpty()) {
+            types.add(lastType)
+        }
+        return types
     }
 
       private static void validateDomainRecord(
@@ -1174,12 +1322,9 @@ class JavaSourceArchitectureValidator {
         RecordComponent entityId = components.find { component ->
             component.name == 'id' && isIdentifierVoType(component.type)
         }
-        if (entityId != null && !hasEqualsAndHashCode(type)) {
-            violations.add("${path} domain entity record with identifier VO must override equals and hashCode using id")
+        if (entityId != null) {
+            violations.add("${path} domain aggregate '${type.name}' must be a final class, not a record")
         }
-          if (entityId != null && !hasDomainStaticFactoryReturning(type)) {
-              violations.add("${path} domain entity record with identifier VO must expose a static factory returning '${type.name}'")
-          }
           if (components.size() == 1
                 && isRawCollectionType(components.first().type)
                 && !(source =~ /\b(?:List|Set|Map)\.copyOf\s*\(/).find()) {
@@ -1220,14 +1365,26 @@ class JavaSourceArchitectureValidator {
               }
 
               String referencedTypeName = dependency.substring(dependency.lastIndexOf('.') + 1)
-              if (isIdentifierVoType(referencedTypeName)) {
+              if (isPublishedLanguageType(dependency, convention)) {
                   return
               }
               if (!memberTypeNames.contains(referencedTypeName)) {
                   return
               }
 
-              violations.add("${project.relativePath(file)} domain must not depend directly on another context model '${referencedTypeName}'; translate it into a context-owned type, or use an identifier VO for an identifiable reference")
+              violations.add("${project.relativePath(file)} domain must not depend directly on another context model '${referencedTypeName}'; translate it into a context-owned type or Published Language contract")
+          }
+      }
+
+      private static boolean isPublishedLanguageType(
+              String dependency,
+              HexagonalConventionExtension convention
+      ) {
+          if (!convention.enforceCrossContextIdentifierIsolation) {
+              return isIdentifierVoType(dependency.substring(dependency.lastIndexOf('.') + 1))
+          }
+          return convention.publishedLanguagePackagePrefixes.any { String prefix ->
+              dependency == prefix || dependency.startsWith("${prefix}.")
           }
       }
 
@@ -1445,6 +1602,9 @@ class JavaSourceArchitectureValidator {
         if (controllerReturnsLayerType(source, type, convention.domainPackageSegment)) {
             violations.add("${path} controller must not expose domain types as response return values")
         }
+        if (controllerReturnsLayerType(source, type, convention.applicationPackageSegment)) {
+            violations.add("${path} controller must not expose application types as response return values")
+        }
         if (controllerCreatesProblemDetail(source, type)) {
             violations.add("${path} controller must not create or return ProblemDetail directly")
         }
@@ -1491,6 +1651,14 @@ class JavaSourceArchitectureValidator {
         validateExceptionDetailFieldNames(path, layer, type, violations)
     }
 
+    private static boolean extendsDomainExceptionBase(TypeDeclaration type) {
+        return type.extendsType('RuntimeException') || type.extendsType('DomainException')
+    }
+
+    private static boolean extendsApplicationExceptionBase(TypeDeclaration type) {
+        return type.extendsType('RuntimeException') || type.extendsType('ApplicationException')
+    }
+
     private static void validateExceptionDetailFieldNames(
             String path,
             String layer,
@@ -1510,8 +1678,19 @@ class JavaSourceArchitectureValidator {
                 }
     }
 
-    private static boolean usesRequireNonNull(String source) {
-        return (source =~ /(?m)\b(?:Objects\s*\.\s*)?requireNonNull\s*\(/).find()
+    private static boolean usesRequireNonNullOutsidePrivateAggregateConstructor(TypeDeclaration type) {
+        List<JavaSourceAstInspector.MethodModel> methodsUsingRequireNonNull = type.astType.methods.findAll { method ->
+            (method.body =~ /\b(?:Objects\s*\.\s*)?requireNonNull\s*\(/).find()
+        }
+        if (methodsUsingRequireNonNull.isEmpty()) {
+            return false
+        }
+        return methodsUsingRequireNonNull.any { method ->
+            !(type.kind == 'class'
+                    && type.finalType
+                    && method.constructor
+                    && method.modifiers.contains('PRIVATE'))
+        }
     }
 
     private static boolean hasQualityToolSuppressWarnings(String source) {
@@ -1694,7 +1873,7 @@ class JavaSourceArchitectureValidator {
     }
 
     private static boolean hasDomainStaticFactoryReturning(TypeDeclaration type) {
-        Set<String> factoryNames = ['create', 'from', 'of', 'reconstitute', 'pending', 'generate'] as Set
+        Set<String> factoryNames = ['create', 'from', 'of', 'restore', 'reconstitute', 'pending', 'generate'] as Set
         return type.astType.methods.any { method ->
             !method.constructor
                     && factoryNames.contains(method.name)
@@ -1787,34 +1966,15 @@ class JavaSourceArchitectureValidator {
         }
     }
 
-    private static boolean hasNonKoreanUserFacingApiErrorMessage(String source) {
-        String sourceWithoutComments = stripComments(source)
-        def matcher = sourceWithoutComments =~ /(?s)\b(?:message|ApiErrorMessage)\s*\(([^;{}]*?)\)/
-        while (matcher.find()) {
-            List<String> literals = []
-            def literalMatcher = matcher.group(1) =~ /"((?:\\.|[^"\\])*)"/
-            while (literalMatcher.find()) {
-                literals.add(literalMatcher.group(1))
-            }
-            if (literals.size() >= 2) {
-                List<String> userFacingMessages = literals.takeRight(2)
-                if (userFacingMessages.any { String message -> !containsKorean(message) }) {
-                    return true
-                }
-            }
+    private static boolean hasFrameworkDependency(String source) {
+        return SourceInspector.extractImports(source).any { String imported ->
+            imported.startsWith('org.springframework.')
+                    || imported.startsWith('jakarta.persistence.')
+                    || imported.startsWith('javax.persistence.')
+                    || imported.startsWith('com.querydsl.')
+                    || imported.startsWith('lombok.')
         }
-        return false
     }
-
-      private static boolean usesEnumNameAsProviderMapKey(String source) {
-          String sourceWithoutComments = stripComments(source)
-          return (sourceWithoutComments =~ /(?s)\bMap\.(?:entry|of|ofEntries)\s*\([^;{}]*\.name\s*\(/).find()
-      }
-
-      private static boolean usesStringLiteralAsProviderMapKey(String source) {
-          String sourceWithoutComments = stripComments(source)
-          return (sourceWithoutComments =~ /(?s)\bMap\.(?:entry|of|ofEntries)\s*\(\s*"[^"]+"\s*,/).find()
-      }
 
     private static boolean usesApiExcludePathPatterns(String source) {
         return (source =~ /(?s)\.excludePathPatterns\s*\([^;]*"\/api\//).find()
@@ -2004,19 +2164,6 @@ class JavaSourceArchitectureValidator {
         return value.substring(0, 1).toUpperCase(Locale.ROOT) + value.substring(1)
     }
 
-    private static boolean importsOrUsesType(
-            String source,
-            String searchableSource,
-            String qualifiedName,
-            String simpleName
-    ) {
-        boolean imported = SourceInspector.extractImports(source).any { String imported ->
-            imported == qualifiedName
-                    || (imported.endsWith('.*') && qualifiedName.startsWith(imported.substring(0, imported.length() - 1)))
-        }
-        return imported || (searchableSource =~ /(?m)\b${Pattern.quote(simpleName)}\b/).find()
-    }
-
     private static boolean usesAnyType(String source, Set<String> typeNames) {
         String searchableSource = stripCommentsAndStrings(source)
         return typeNames.any { String typeName ->
@@ -2039,10 +2186,18 @@ class JavaSourceArchitectureValidator {
                 .replaceAll(/(?m)\/\/.*$/, ' ')
     }
 
-    private static boolean isGlobalErrorPackage(String packageName) {
-        return packageName == 'global.error'
-                || packageName.endsWith('.global.error')
-                || packageName.contains('.global.error.')
+    private static boolean isGlobalExceptionPackage(String packageName) {
+        return packageName == 'global.exception'
+                || packageName.endsWith('.global.exception')
+                || packageName.contains('.global.exception.')
+    }
+
+    private static boolean isSharedExceptionContract(String typeName) {
+        if (!isGlobalExceptionPackage(typeName)) {
+            return false
+        }
+        String simpleTypeName = typeName.substring(typeName.lastIndexOf('.') + 1)
+        return SHARED_EXCEPTION_CONTRACT_TYPES.contains(simpleTypeName)
     }
 
     private static boolean isRequestPackage(String packageName, HexagonalConventionExtension convention) {
@@ -2066,22 +2221,6 @@ class JavaSourceArchitectureValidator {
         String externalPackage = "${webPackage}.external"
         String internalPackage = "${webPackage}.internal"
         return packageName.contains(externalPackage) || packageName.contains(internalPackage)
-    }
-
-    private static boolean hasEqualsAndHashCode(TypeDeclaration type) {
-        boolean hasEquals = type.astType.methods.any { method ->
-            method.name == 'equals'
-                    && method.modifiers.contains('PUBLIC')
-                    && method.parameterTypes.size() == 1
-                    && simplifyTypeName(method.returnType) == 'boolean'
-        }
-        boolean hasHashCode = type.astType.methods.any { method ->
-            method.name == 'hashCode'
-                    && method.modifiers.contains('PUBLIC')
-                    && method.parameterTypes.isEmpty()
-                    && simplifyTypeName(method.returnType) == 'int'
-        }
-        return hasEquals && hasHashCode
     }
 
     private static boolean isRawCollectionType(String type) {

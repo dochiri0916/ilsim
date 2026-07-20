@@ -9,6 +9,10 @@ class HexagonalConventionExtension {
 
     boolean enforceDomainEntitySeparation = true
     boolean enforceDomainStaticFactoryMethod = true
+    boolean enforceContextExceptionConsolidation = true
+    Set<String> exceptionTypeSplitAllowlist = [] as Set
+    boolean enforceCrossContextIdentifierIsolation = true
+    Set<String> publishedLanguagePackagePrefixes = [] as Set
     boolean requireTableAnnotation = true
 
     BigDecimal overallLineCoverageMinimum = 0.85

@@ -96,7 +96,7 @@ class PackageTopologyConventionValidatorTest {
         writeType(project, 'com/example/order/adapter/persistence/Persistence.java', 'com.example.order.adapter.persistence', 'Persistence')
         writeType(project, 'com/example/order/adapter/in/InboundRoot.java', 'com.example.order.adapter.in', 'InboundRoot')
         writeType(project, 'com/example/order/adapter/in/grpc/Grpc.java', 'com.example.order.adapter.in.grpc', 'Grpc')
-        writeType(project, 'com/example/global/error/ApiError.java', 'com.example.global.error', 'ApiError')
+        writeType(project, 'com/example/global/exception/ApiError.java', 'com.example.global.exception', 'ApiError')
 
         // when
         List<String> violations = PackageTopologyConventionValidator.validate(
@@ -107,7 +107,7 @@ class PackageTopologyConventionValidatorTest {
         // then
         assert violations.any { it.contains("must be under application root package 'com.example'") }
         assert violations.any { it.contains('root package may contain only the application bootstrap class') }
-        assert violations.any { it.contains('global package must be limited to global.error or global.web') }
+        assert violations.any { it.contains('global package must be limited to global.exception or global.web') }
         assert violations.any { it.contains('package must be context-first') }
         assert violations.any { it.contains("package 'common' is not a bounded context") }
         assert violations.any { it.contains("bounded context package 'order' must contain") }

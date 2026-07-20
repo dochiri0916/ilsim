@@ -13,7 +13,7 @@ Domain <- Application <- Adapter
 - Domain은 Spring, JPA, Lombok, Application, Adapter를 모른다. `global.exception`에서는 기술 독립적인 `ErrorCode`, `ErrorKind`, `DomainException`, `BusinessException` 계약만 사용할 수 있다.
 - Application은 같은 Context의 Domain과 자신이 소유한 Port를 사용한다. `global.exception`에서는 기술 독립적인 `ErrorCode`, `ErrorKind`, `ApplicationException`, `BusinessException` 계약만 사용할 수 있다.
 - Adapter는 Application Port와 Domain을 사용해 외부 기술을 연결한다.
-- `{context}`는 Bounded Context이며 Aggregate와 같은 뜻으로 사용하지 않는다. 다른 Context의 모델·Application 타입·식별자 VO를 직접 import하지 않는다. 통합 Port 경계에서 현재 Context가 소유한 VO로 번역한다. 공유 식별자 계약이 필요하면 소유권과 버전이 명시된 Published Language module에서만 공유한다.
+- `{context}`는 Bounded Context이며 Aggregate와 같은 뜻으로 사용하지 않는다. 다른 Context의 모델·Application 타입·식별자 VO를 직접 import하지 않는다. 통합 Port 경계에서 현재 Context가 소유한 VO로 번역한다. 공유 식별자 계약이 필요하면 소유권과 버전이 명시된 Published Language module만 `publishedLanguagePackagePrefixes`로 명시해 허용한다.
 
 ## 패키지
 

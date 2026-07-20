@@ -10,7 +10,7 @@ import java.util.regex.Pattern
 class AggregateBoundaryConventionValidator {
     private static final Pattern TYPE_TOKEN = Pattern.compile('[A-Za-z_$][A-Za-z0-9_$]*')
     private static final Pattern AGGREGATE_MUTATION_METHOD = Pattern.compile(
-            '(?:save|delete|update|insert|persist|remove)[A-Za-z0-9_]*'
+            '(?:create|delete|update|insert|persist|remove|save|upsert)[A-Za-z0-9_]*'
     )
 
     static Analysis analyze(Project project, HexagonalConventionExtension convention) {
