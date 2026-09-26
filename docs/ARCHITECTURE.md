@@ -2,7 +2,7 @@
 
 ## 목적
 
-이 문서는 `com.dochiri.lint-convention`을 사용하는 Java 21+/Spring Boot/JPA 프로젝트의 구조 기준이다. 이 프로젝트는 strict Clean Architecture가 아니라 Application의 Spring stereotype·transaction annotation과 compile-time Lombok을 명시적으로 허용하는 실용적 hexagonal/clean architecture를 따른다.
+이 문서는 `io.github.dochiri0916.build-convention`을 사용하는 Java 21+/Spring Boot/JPA 프로젝트의 구조 기준이다. 이 프로젝트는 strict Clean Architecture가 아니라 Application의 Spring stereotype·transaction annotation과 compile-time Lombok을 명시적으로 허용하는 실용적 hexagonal/clean architecture를 따른다.
 
 ## 의존성 방향
 
