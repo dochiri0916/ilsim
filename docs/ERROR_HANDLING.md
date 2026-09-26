@@ -87,7 +87,7 @@ Domain/Application의 concrete 예외는 다음 규칙을 따른다.
 - 각 factory는 대응하는 ErrorCode와 API에 공개해도 안전한 실패 맥락 extensions를 설정한다.
 - 타입 자체로 복구·분기해야 하는 실제 요구가 생길 때만 별도 concrete 예외 타입을 추가한다.
 
-`com.dochiri.lint-convention`은 기본적으로 Context·계층별 concrete 예외를 하나만 허용한다. 예외 타입 분기가 필요한 Context는 Gradle 설정에서 `"{basePackage}.{context}:domain"` 또는 `"{basePackage}.{context}:application"`을 allowlist에 명시한다.
+`io.github.dochiri0916.build-convention`은 기본적으로 Context·계층별 concrete 예외를 하나만 허용한다. 예외 타입 분기가 필요한 Context는 Gradle 설정에서 `"{basePackage}.{context}:domain"` 또는 `"{basePackage}.{context}:application"`을 allowlist에 명시한다.
 
 ```groovy
 hexagonalConvention {

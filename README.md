@@ -11,9 +11,9 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 - [Error Handling Convention](docs/ERROR_HANDLING.md)
 - [Testing Convention](docs/TESTING.md)
 
-## 실험 범위
+## 주요 기능
 
-- `com.dochiri.lint-convention` 플러그인으로 정적 분석 도구를 `./gradlew check` 경로에 통합합니다.
+- `io.github.dochiri0916.build-convention` 플러그인으로 정적 분석 도구를 `./gradlew check` 경로에 통합합니다.
 - 레이어 의존성 규칙(`domain -> application/adapter` 금지, `application -> adapter` 금지)을 Validator로 강제합니다.
 - 도메인/엔티티 분리, JPA Entity 접미사와 `@Table` 명시, 정적 팩토리 규칙을 자동 검증합니다.
 - `validateArchitectureConventions` 태스크로 패키지/네이밍, Domain record와 불변 `final class` Aggregate, JPA Entity, Mapper, Controller 의존성, Spring 컴포넌트 등록 규칙을 검증합니다.
@@ -55,25 +55,53 @@ AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`
 
 `./gradlew check`를 실행하면 `codenarcMain`, `codenarcTest`가 이 설정을 사용해 `build-convention` 내부의 Groovy 코드를 검사합니다.
 
-## 로컬 Maven 배포
+## 설치
 
-이 프로젝트를 로컬 Maven 저장소에 먼저 배포합니다.
+Gradle Plugin Portal에 공개된 버전은 사용하는 프로젝트의 `build.gradle`에서 바로 적용합니다.
+별도의 저장소 clone이나 `mavenLocal()` 설정은 필요하지 않습니다.
 
-```bash
-cd /Users/seongbin/programming/utility/build-convention
-./gradlew publishToMavenLocal
+```groovy
+plugins {
+    id 'java'
+    id 'io.github.dochiri0916.build-convention' version '1.0.0'
+}
 ```
 
-현재 플러그인 좌표는 다음과 같습니다.
+플러그인 좌표는 다음과 같습니다.
 
 ```text
-id      = com.dochiri.lint-convention
+id      = io.github.dochiri0916.build-convention
 version = 1.0.0
 ```
 
-## 사용 프로젝트 설정
+Spring Boot 프로젝트라면 기존 플러그인과 함께 적용하면 됩니다.
 
-사용할 프로젝트의 `settings.gradle`에 `mavenLocal()`을 추가합니다.
+```groovy
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.0'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'io.github.dochiri0916.build-convention' version '1.0.0'
+}
+```
+
+bootstrap class가 없는 라이브러리/하위 모듈은 base package를 명시합니다.
+
+```groovy
+hexagonalConvention {
+    basePackage = 'com.example.project'
+}
+```
+
+## Plugin Portal 승인 전 또는 로컬 개발
+
+Plugin Portal 최초 심사 전이거나 플러그인 자체를 개발하면서 테스트할 때는 로컬 Maven 저장소를 사용할 수 있습니다.
+
+```bash
+./gradlew publishToMavenLocal
+```
+
+사용 프로젝트의 `settings.gradle`에 `mavenLocal()`을 추가합니다.
 
 ```groovy
 pluginManagement {
@@ -85,33 +113,53 @@ pluginManagement {
 }
 ```
 
-사용할 프로젝트의 `build.gradle`에 플러그인을 적용합니다.
+그다음 일반 사용과 동일하게 버전을 지정합니다.
 
 ```groovy
 plugins {
     id 'java'
-    id 'com.dochiri.lint-convention' version '1.0.0'
+    id 'io.github.dochiri0916.build-convention' version '1.0.0'
 }
 ```
 
-Spring Boot 프로젝트라면 기존 플러그인과 함께 적용하면 됩니다.
+플러그인 소스를 수정하면서 즉시 검증하고 싶다면 composite build를 사용할 수 있습니다.
+
+```groovy
+pluginManagement {
+    includeBuild('../build-convention')
+
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+```
+
+이 경우 `build.gradle`에서는 버전을 생략합니다.
 
 ```groovy
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.5.0'
-    id 'io.spring.dependency-management' version '1.1.7'
-    id 'com.dochiri.lint-convention' version '1.0.0'
+    id 'io.github.dochiri0916.build-convention'
 }
 ```
 
-bootstrap class가 없는 라이브러리/하위 모듈은 base package를 명시합니다.
+## Plugin Portal 배포
 
-```groovy
-hexagonalConvention {
-    basePackage = 'com.example.project'
-}
+배포 전 전체 검증과 publication 설정 검증을 실행합니다.
+
+```bash
+./gradlew clean check
+./gradlew publishPlugins --validate-only
 ```
+
+실제 배포는 다음 명령으로 수행합니다.
+
+```bash
+./gradlew publishPlugins
+```
+
+배포 credential은 저장소에 커밋하지 않고 사용자 전역 Gradle 설정이나 CI Secret으로 관리합니다.
 
 ## 실행 방법
 
@@ -276,8 +324,8 @@ if [ ! -x ./gradlew ]; then
   exit 1
 fi
 
-if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "com.dochiri.lint-convention"; then
-  echo "ERROR: com.dochiri.lint-convention plugin is not applied"
+if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "io.github.dochiri0916.build-convention"; then
+  echo "ERROR: io.github.dochiri0916.build-convention plugin is not applied"
   exit 1
 fi
 
@@ -302,8 +350,8 @@ cat > .git/hooks/pre-push <<'EOF'
 #!/bin/sh
 set -eu
 
-if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "com.dochiri.lint-convention"; then
-  echo "ERROR: com.dochiri.lint-convention plugin is not applied"
+if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "io.github.dochiri0916.build-convention"; then
+  echo "ERROR: io.github.dochiri0916.build-convention plugin is not applied"
   exit 1
 fi
 
@@ -344,39 +392,17 @@ jobs:
 
       - name: Verify build convention plugin
         run: |
-          if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "com.dochiri.lint-convention"; then
-            echo "com.dochiri.lint-convention plugin is not applied"
+          if ! find . \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | xargs grep -q "io.github.dochiri0916.build-convention"; then
+            echo "io.github.dochiri0916.build-convention plugin is not applied"
             exit 1
           fi
 
       - run: ./gradlew check -PchangedCoverageBaseRef=origin/main
 ```
 
-개발 중 로컬 배포 없이 바로 연결하고 싶다면 사용 프로젝트의 `settings.gradle`에서 composite build를 사용할 수 있습니다.
-
-```groovy
-pluginManagement {
-    includeBuild('/Users/seongbin/programming/utility/build-convention')
-
-    repositories {
-        gradlePluginPortal()
-        mavenCentral()
-    }
-}
-```
-
-이 경우 `build.gradle`에서는 버전을 생략합니다.
-
-```groovy
-plugins {
-    id 'java'
-    id 'com.dochiri.lint-convention'
-}
-```
-
 ## 커버리지 기준 조정
 
-기본값은 AGENTS.md 기준을 따릅니다. 프로젝트에서 더 높은 기준을 지정할 수 있지만, 기본 기준보다 낮게 완화되지는 않습니다.
+기본값은 플러그인에 정의된 기준을 따릅니다. 프로젝트에서 더 높은 기준을 지정할 수 있지만, 기본 기준보다 낮게 완화되지는 않습니다.
 
 ```groovy
 hexagonalConvention {
