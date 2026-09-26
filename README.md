@@ -1,5 +1,20 @@
 # Build Convention
 
+## Risk Gate / CI Integration
+
+`./gradlew check` 실행 시 대상 프로젝트의 `build/reports/build-convention/report.json`에 JSON 보고서를 생성합니다. 검증이 실패해도 가능한 경우 실패 상태를 기록하며, 기존 빌드 실패 동작은 유지됩니다. 보고서는 `./gradlew generateBuildConventionReport`로 다시 생성할 수 있습니다.
+
+```json
+{
+  "schemaVersion": "1.0",
+  "pluginVersion": "1.0.1",
+  "status": "PASS",
+  "checks": { "architecture": "PASS", "archUnit": "PASS", "migration": "PASS" },
+  "coverage": { "line": 0.94, "branch": 0.89 },
+  "mutation": { "enabled": false, "score": null }
+}
+```
+
 AI 코드 생성 환경에서 컨벤션 편차를 줄이기 위해, `Checkstyle`, `PMD`, `SpotBugs`와 커스텀 Validator, ArchUnit 검증을 묶은 Gradle 컨벤션 플러그인 프로젝트입니다.
 여기에는 실행 가능한 코드와 핵심 요약만 두고, 설계 배경과 선택 기준은 블로그 글로 분리했습니다.
 

@@ -186,6 +186,7 @@ class LintConventionPlugin implements Plugin<Project> {
 
             def jacocoTestReport = project.tasks.named('jacocoTestReport', JacocoReport) { JacocoReport task ->
                 task.dependsOn(project.tasks.named('test'))
+                task.classDirectories.setFrom(SpringBootCoverageClasses.filtered(project, mainSourceSet.get()))
                 task.reports { reports ->
                     reports.xml.required = true
                     reports.html.required = true
@@ -197,6 +198,7 @@ class LintConventionPlugin implements Plugin<Project> {
                     project.tasks.named('jacocoTestCoverageVerification', JacocoCoverageVerification) {
                         JacocoCoverageVerification task ->
                             task.dependsOn(project.tasks.named('test'))
+                            task.classDirectories.setFrom(SpringBootCoverageClasses.filtered(project, mainSourceSet.get()))
                     }
 
             def changedCoverageBaseRef = project.providers.gradleProperty('changedCoverageBaseRef')
@@ -463,6 +465,32 @@ class LintConventionPlugin implements Plugin<Project> {
             def checkTask = project.tasks.findByName('check')
             if (checkTask != null && graph.hasTask(checkTask)) {
                 validateRequiredCheckTasks(project, convention)
+            }
+        }
+
+        def generateReport = project.tasks.register('generateBuildConventionReport') { task ->
+            task.group = 'verification'
+            task.description = 'Writes the machine-readable Build Convention report.'
+            task.doLast { BuildConventionReport.write(project) }
+        }
+        project.tasks.named('check') { task -> task.finalizedBy(generateReport) }
+        project.afterEvaluate {
+            Set<String> reportTasks = (
+                    REQUIRED_CHECK_TASK_NAMES + [
+                            'validateHexagonalArchitecture', 'validateEntityNamingConvention',
+                            'validateDomainStaticFactoryConvention', 'validatePitMutationGate',
+                            'jacocoTestReport', 'test', 'compileJava', 'compileTestJava', 'pitest'
+                    ] + project.tasks.withType(Checkstyle).collect { it.name }
+                            + project.tasks.withType(Pmd).collect { it.name }
+                            + project.tasks.withType(SpotBugsTask).collect { it.name }
+            ).toSet()
+            reportTasks.each { String name ->
+                if (project.tasks.findByName(name) != null) {
+                    def finalizer = project.tasks.register("writeBuildConventionReportAfter${name.capitalize()}") { task ->
+                        task.doLast { BuildConventionReport.write(project) }
+                    }
+                    project.tasks.named(name) { task -> task.finalizedBy(finalizer) }
+                }
             }
         }
     }
@@ -785,7 +813,8 @@ class LintConventionPlugin implements Plugin<Project> {
             return []
         }
 
-        Set<File> expectedClassDirs = existingFiles(mainSourceSet.output.classesDirs.files)
+        Set<File> expectedCoverageClasses = SpringBootCoverageClasses.filtered(project, mainSourceSet)
+                .files.findAll { File file -> file.isFile() && file.name.endsWith('.class') }.toSet()
         Set<File> expectedExecutionDataFiles = expectedJacocoExecutionDataFiles(project)
 
         List<String> violations = []
@@ -795,8 +824,9 @@ class LintConventionPlugin implements Plugin<Project> {
                 return
             }
 
-            if (!expectedClassDirs.isEmpty()) {
-                List<File> missingClassFiles = missingCoverageClassFiles(project, expectedClassDirs, task)
+            if (!expectedCoverageClasses.isEmpty()) {
+                List<File> missingClassFiles = missingExpectedFiles(
+                        expectedCoverageClasses, classFilesInFileCollection(task.classDirectories))
                 if (!missingClassFiles.isEmpty()) {
                     violations.add(
                             "${taskName}.classDirectories narrowed coverage output, "
@@ -977,15 +1007,6 @@ class LintConventionPlugin implements Plugin<Project> {
         expectedFiles
                 .findAll { File file -> file != null && !actualPaths.contains(canonicalPath(file)) }
                 .sort { File left, File right -> canonicalPath(left) <=> canonicalPath(right) }
-    }
-
-    private static List<File> missingCoverageClassFiles(Project project, Collection<File> expectedClassDirs, def task) {
-        Set<File> expectedClassFiles = classFilesInDirs(project, expectedClassDirs)
-        if (expectedClassFiles.isEmpty()) {
-            return []
-        }
-        Set<File> actualClassFiles = classFilesInFileCollection(task.classDirectories)
-        missingExpectedFiles(expectedClassFiles, actualClassFiles)
     }
 
     private static Set<File> classFilesInDirs(Project project, Collection<File> dirs) {
