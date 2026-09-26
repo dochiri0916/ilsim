@@ -9,6 +9,7 @@ import org.gradle.testfixtures.ProjectBuilder
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import javax.tools.ToolProvider
 
 class LintConventionPluginTest {
     @Test
@@ -255,9 +256,8 @@ class LintConventionPluginTest {
     @Test
     void 'check fails when jacoco class dirs are narrowed'() {
         Project project = sampleProject()
-        File compiledClass = new File(project.projectDir, 'build/classes/java/main/com/example/Sample.class')
-        compiledClass.parentFile.mkdirs()
-        compiledClass.text = 'compiled'
+        compileClasses(project, ['com/example/Sample.java':
+                'package com.example; public class Sample {}'])
         project.tasks.named('jacocoTestCoverageVerification').get().classDirectories.setFrom(project.files())
 
         GradleException exception = assertThrows(GradleException) {
@@ -267,6 +267,50 @@ class LintConventionPluginTest {
         assert exception.message.contains('Build convention verification must not be disabled')
         assert exception.message.contains('modified coverage inputs')
         assert exception.message.contains('jacocoTestCoverageVerification.classDirectories')
+    }
+
+    @Test
+    void 'check permits annotated boot entry point but rejects other omitted classes'() {
+        Project project = sampleProject()
+        compileClasses(project, [
+                'org/springframework/boot/autoconfigure/SpringBootApplication.java': '''
+                        package org.springframework.boot.autoconfigure;
+                        public @interface SpringBootApplication {}
+                        ''',
+                'com/example/BootApplication.java': '''
+                        package com.example;
+                        @org.springframework.boot.autoconfigure.SpringBootApplication
+                        public class BootApplication { public static void main(String[] args) {} }
+                        ''',
+                'com/example/PaymentService.java': '''
+                        package com.example;
+                        public class PaymentService { public int value() { return 7; } }
+                        '''])
+
+        executeCheckActions(project)
+        Set<String> included = project.tasks.named('jacocoTestReport').get()
+                .classDirectories.asFileTree.files*.name as Set
+        assert !included.contains('BootApplication.class')
+        assert included.contains('PaymentService.class')
+
+        project.tasks.named('jacocoTestReport').get().classDirectories.setFrom(project.fileTree(
+                new File(project.projectDir, 'build/classes/java/main')) {
+                    exclude '**/BootApplication.class', '**/PaymentService.class'
+                })
+        GradleException exception = assertThrows(GradleException) { executeCheckActions(project) }
+        assert exception.message.contains('PaymentService.class')
+        assert !exception.message.contains('missing build/classes/java/main/com/example/BootApplication.class')
+    }
+
+    @Test
+    void 'check rejects name based application exclusion without annotation'() {
+        Project project = sampleProject()
+        compileClasses(project, ['com/example/SampleApplication.java':
+                'package com.example; public class SampleApplication {}'])
+        project.tasks.named('jacocoTestReport').get().classDirectories.setFrom(project.files())
+
+        GradleException exception = assertThrows(GradleException) { executeCheckActions(project) }
+        assert exception.message.contains('SampleApplication.class')
     }
 
     @Test
@@ -370,6 +414,19 @@ class LintConventionPluginTest {
         File file = new File(project.projectDir, "src/main/java/${path}")
         file.parentFile.mkdirs()
         file.text = source.stripIndent().trim() + System.lineSeparator()
+    }
+
+    private static void compileClasses(Project project, Map<String, String> sources) {
+        List<String> paths = sources.collect { String path, String source ->
+            File file = new File(project.projectDir, "src/main/java/${path}")
+            file.parentFile.mkdirs()
+            file.text = source.stripIndent().trim()
+            file.absolutePath
+        }
+        File output = new File(project.projectDir, 'build/classes/java/main')
+        output.mkdirs()
+        assert ToolProvider.systemJavaCompiler.run(null, null, null,
+                *(['-d', output.absolutePath] + paths)) == 0
     }
 
     private static void executeCheckActions(Project project) {
