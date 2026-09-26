@@ -3,7 +3,7 @@ plugins {
     id 'groovy'
     id 'java-gradle-plugin'
     id 'jacoco'
-    id 'maven-publish'
+    id 'com.gradle.plugin-publish' version '2.2.1'
 }
 
 codenarc {
@@ -20,7 +20,7 @@ tasks.withType(CodeNarc).configureEach {
     }
 }
 
-group = 'com.dochiri'
+group = 'io.github.dochiri0916'
 version = '1.0.0'
 
 repositories {
@@ -40,12 +40,17 @@ dependencies {
 }
 
 gradlePlugin {
+    website = 'https://github.com/dochiri0916/build-convention'
+    vcsUrl = 'https://github.com/dochiri0916/build-convention.git'
+
     plugins {
         lintConvention {
-            id = 'com.dochiri.lint-convention'
-            implementationClass = 'com.dochiri.convention.plugin.LintConventionPlugin'
-            displayName = 'Dochiri Lint Convention'
-            description = 'Convention plugin for Checkstyle, PMD, SpotBugs, ArchUnit, and AGENTS.md architecture conventions.'
+            id = 'io.github.dochiri0916.build-convention'
+            implementationClass = 'io.github.dochiri0916.buildconvention.plugin.LintConventionPlugin'
+
+            displayName = 'Build Convention'
+            description = 'Java/Spring architecture, testing, static analysis, and quality convention plugin.'
+            tags.set(['java', 'spring', 'architecture', 'testing', 'quality'])
         }
     }
 }
@@ -72,6 +77,7 @@ jacoco {
 
 jacocoTestReport {
     dependsOn test
+
     reports {
         xml.required = true
         html.required = true
@@ -81,6 +87,7 @@ jacocoTestReport {
 
 jacocoTestCoverageVerification {
     dependsOn test
+
     violationRules {
         rule {
             limit {
@@ -88,6 +95,7 @@ jacocoTestCoverageVerification {
                 value = 'COVEREDRATIO'
                 minimum = 0.85
             }
+
             limit {
                 counter = 'BRANCH'
                 value = 'COVEREDRATIO'
