@@ -97,6 +97,18 @@ class JavaSourceArchitectureValidator {
             'Character',
             'java.lang.Character'
     ] as Set
+    private static final Set<String> JDK_VALUE_TYPES = [
+            'BigDecimal', 'java.math.BigDecimal',
+            'BigInteger', 'java.math.BigInteger',
+            'UUID', 'java.util.UUID',
+            'Instant', 'java.time.Instant',
+            'LocalDate', 'java.time.LocalDate',
+            'LocalDateTime', 'java.time.LocalDateTime',
+            'LocalTime', 'java.time.LocalTime',
+            'OffsetDateTime', 'java.time.OffsetDateTime',
+            'ZonedDateTime', 'java.time.ZonedDateTime',
+            'Duration', 'java.time.Duration'
+    ] as Set
     private static final Set<String> GENERIC_API_DTO_NAMES = [
             'ApiRequest',
             'ApiResponse',
@@ -148,60 +160,65 @@ class JavaSourceArchitectureValidator {
             validateNoQualityToolSuppressUsage(project, file, source, violations)
             validateNoValueInjection(project, file, source, violations)
 
-            JavaSourceAstInspector.TypeModel astType = inspection.primaryType()
-            TypeDeclaration type = TypeDeclaration.from(astType)
+            JavaSourceAstInspector.TypeModel primaryAstType = inspection.primaryType()
+            inspection.types.each { JavaSourceAstInspector.TypeModel astType ->
+                TypeDeclaration type = TypeDeclaration.from(astType)
 
-            validateSingleResponsibility(project, file, source, packageName, type, convention, violations)
-            validateTechnicalAnnotationPlacement(project, file, source, packageName, type, convention, violations)
-            violations.addAll(TransactionBoundaryConventionValidator.validateFile(
-                    project,
-                    file,
-                    source,
-                    packageName,
-                    type.name,
-                    convention,
-                    aggregateAnalysis,
-                    astType
-            ))
-            validateWebErrorTypePlacement(project, file, source, packageName, convention, violations)
-            validateTypePackageConvention(project, file, packageName, type, convention, violations)
-            validateSpringComponentRegistration(project, file, source, packageName, type, convention, violations)
-            validateExceptionArchitecture(project, file, source, packageName, type, convention, violations)
-            validateWebAuthenticationArchitecture(project, file, source, violations)
+                validateSingleResponsibility(project, file, source, packageName, type, convention, violations)
+                validateTechnicalAnnotationPlacement(project, file, source, packageName, type, convention, violations)
+                if (astType.is(primaryAstType)) {
+                    violations.addAll(TransactionBoundaryConventionValidator.validateFile(
+                            project,
+                            file,
+                            source,
+                            packageName,
+                            type.name,
+                            convention,
+                            aggregateAnalysis,
+                            astType
+                    ))
+                }
+                validateWebErrorTypePlacement(project, file, source, packageName, convention, violations)
+                validateTypePackageConvention(project, file, packageName, type, convention, violations)
+                validateSpringComponentRegistration(project, file, source, packageName, type, convention, violations)
+                validateExceptionArchitecture(project, file, source, packageName, type, convention, violations)
+                validateWebAuthenticationArchitecture(project, file, source, violations)
+                validateGlobalDependencies(project, file, source, packageName, type, violations)
 
-            if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
-                validateDomain(project, file, source, packageName, type, convention, violations)
-                violations.addAll(DomainModelConventionValidator.validate(project, file, source, astType))
-            }
+                if (SourceInspector.isInLayer(packageName, convention.domainPackageSegment)) {
+                    validateDomain(project, file, source, packageName, type, convention, violations)
+                    violations.addAll(DomainModelConventionValidator.validate(project, file, packageName, astType))
+                }
 
-            if (SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)) {
-                validateApplication(project, file, source, packageName, type, convention, violations)
-            }
+                if (SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)) {
+                    validateApplication(project, file, source, packageName, type, convention, violations)
+                }
 
-            if (SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)) {
-                validatePresentation(project, file, source, packageName, type, convention, violations)
-            }
+                if (SourceInspector.isInLayer(packageName, convention.presentationPackageSegment)) {
+                    validatePresentation(project, file, source, packageName, type, convention, violations)
+                }
 
-            if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)) {
-                validateInfrastructure(project, file, source, packageName, type, violations)
-            }
+                if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)) {
+                    validateInfrastructure(project, file, source, packageName, type, violations)
+                }
 
-            if (type.hasAnnotation('Entity')) {
-                validateJpaEntity(project, file, source, packageName, type, convention, violations)
-            }
+                if (type.hasAnnotation('Entity')) {
+                    validateJpaEntity(project, file, source, packageName, type, convention, violations)
+                }
 
-            if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)
-                    && type.name.endsWith('Mapper')) {
-                validateMapper(project, file, source, type, violations)
-            }
+                if (SourceInspector.isInLayer(packageName, convention.infrastructurePackageSegment)
+                        && type.name.endsWith('Mapper')) {
+                    validateMapper(project, file, source, type, violations)
+                }
 
-            if (type.name.endsWith('Controller') || type.hasAnnotation('RestController')) {
-                validateController(project, file, source, type, convention, violations)
+                if (type.name.endsWith('Controller') || type.hasAnnotation('RestController')) {
+                    validateController(project, file, source, type, convention, violations)
+                }
             }
         }
         validateTestConventions(project, violations)
 
-        return ConventionRuleCatalog.withRuleIds(violations)
+        return ConventionRuleCatalog.withRuleIds(violations.unique(false))
     }
 
     private static String appendMissingAstImports(
@@ -726,6 +743,18 @@ class JavaSourceArchitectureValidator {
                     || packageName.contains('.adapter.in.web')
             if (!webAdapter) {
                 violations.add("${path} controller '${type.name}' must live in adapter.in.web package")
+            } else if (isWebAdapterSubPackage(packageName)) {
+                violations.add("${path} controller '${type.name}' must live directly in adapter.in.web package, not in request or response")
+            }
+        }
+        if (packageName.contains('.adapter.in.web') && !type.name.endsWith('Controller')
+                && !isGlobalExceptionPackage(packageName)) {
+            if (isRequestPackage(packageName, convention) && !type.name.endsWith('Request')) {
+                violations.add("${path} adapter.in.web.request type '${type.name}' must end with Request")
+            } else if (isResponsePackage(packageName, convention) && !type.name.endsWith('Response')) {
+                violations.add("${path} adapter.in.web.response type '${type.name}' must end with Response")
+            } else if (!isWebAdapterSubPackage(packageName)) {
+                violations.add("${path} adapter.in.web package may contain only Controller types; place '${type.name}' in request or response")
             }
         }
 
@@ -774,8 +803,10 @@ class JavaSourceArchitectureValidator {
                 }
             } else if (packageName.contains('.exception')) {
                 violations.add("${path} domain exception support '${type.name}' must end with Exception or ErrorCode")
-            } else if (!packageName.contains('.model')) {
-                violations.add("${path} domain model '${type.name}' must live in domain.model package")
+            } else if (!packageName.contains('.model') && !packageName.contains('.vo')) {
+                violations.add("${path} domain model '${type.name}' must live in domain.model or domain.vo package")
+            } else if (packageName.contains('.vo') && !['record', 'enum'].contains(type.kind)) {
+                violations.add("${path} domain value object '${type.name}' in domain.vo package must be a record or enum")
             }
         }
 
@@ -791,6 +822,34 @@ class JavaSourceArchitectureValidator {
                 violations.add("${path} application exception support '${type.name}' must end with Exception or ErrorCode")
             }
         }
+    }
+
+    private static void validateGlobalDependencies(
+            Project project,
+            File file,
+            String source,
+            String packageName,
+            TypeDeclaration type,
+            List<String> violations
+    ) {
+        List<String> segments = packageName.split('\\.').toList()
+        int globalIndex = segments.indexOf('global')
+        if (globalIndex < 0) {
+            return
+        }
+
+        String basePrefix = segments.take(globalIndex).join('.')
+        String projectPrefix = basePrefix.isEmpty() ? '' : "${basePrefix}."
+        String globalPrefix = "${projectPrefix}global."
+        typeDependencies(source, type)
+                .findAll { String dependency ->
+                    dependency.startsWith(projectPrefix)
+                            && !dependency.startsWith(globalPrefix)
+                            && boundedContextName(dependency) != null
+                }
+                .each { String dependency ->
+                    violations.add("${project.relativePath(file)} global package must not depend on bounded context package '${dependency}'")
+                }
     }
 
     private static void validateApplication(
@@ -837,6 +896,17 @@ class JavaSourceArchitectureValidator {
         if ((type.name.endsWith('Command') || type.name.endsWith('Query') || type.name.endsWith('Result'))
                 && !packageName.contains('.port.in')) {
             violations.add("${path} application DTO '${type.name}' must live in application..port.in package")
+        }
+        if (packageName.contains('.port.in')) {
+            String expectedInboundPackage = inboundPortPackageFor(type.name)
+            if (expectedInboundPackage != null && !packageName.endsWith(".port.in.${expectedInboundPackage}")) {
+                violations.add("${path} inbound port type '${type.name}' must live in application..port.in.${expectedInboundPackage} package")
+            }
+            ['usecase': 'UseCase', 'command': 'Command', 'query': 'Query', 'result': 'Result'].each { String child, String suffix ->
+                if (packageName.endsWith(".port.in.${child}") && !type.name.endsWith(suffix)) {
+                    violations.add("${path} application..port.in.${child} type '${type.name}' must end with ${suffix}")
+                }
+            }
         }
         if ((type.name.endsWith('Port') || type.name.endsWith('RepositoryPort'))
                 && !packageName.contains('.port.out')) {
@@ -929,10 +999,10 @@ class JavaSourceArchitectureValidator {
         boolean crossContextDependency = currentContext != null
                 && referencedContext != null
                 && currentContext != referencedContext
-                && (dependency.contains('.domain.model.') || dependency.contains('.application.'))
+                && (isDomainModelType(dependency) || dependency.contains('.application.'))
         if (crossContextDependency) {
             String typeName = dependency.substring(dependency.lastIndexOf('.') + 1)
-            if (dependency.contains('.domain.model.')
+            if (isDomainModelType(dependency)
                     && !isPublishedLanguageType(dependency, convention)) {
                 violations.add("${path} application must not depend on another context domain model '${dependency}'; use an integration Port or identifier Value Object")
             }
@@ -976,7 +1046,7 @@ class JavaSourceArchitectureValidator {
         }
 
         String simpleTypeName = imported.substring(imported.lastIndexOf('.') + 1)
-        return imported.contains('.domain.model.') && isIdentifierVoType(simpleTypeName)
+        return isDomainModelType(imported) && isIdentifierVoType(simpleTypeName)
     }
 
     private static void validateApplicationServiceCollaborators(
@@ -995,8 +1065,8 @@ class JavaSourceArchitectureValidator {
             String importedType = importsBySimpleName.get(simpleType)
             boolean outboundPort = simpleType.endsWith('Port')
             boolean domainService = simpleType.endsWith('Service')
-                    && ((importedType != null && importedType.contains('.domain.model.'))
-                    || field.type.contains('.domain.model.'))
+                    && ((importedType != null && isDomainModelType(importedType))
+                    || isDomainModelType(field.type))
             !outboundPort && !domainService
         }.each { field ->
             violations.add(
@@ -1149,6 +1219,8 @@ class JavaSourceArchitectureValidator {
             }
             if (isRawScalarType(field.type)) {
                 violations.add("${path} domain field '${field.name}' must use a Value Object instead of raw scalar '${field.type}'")
+            } else if (type.kind == 'class' && isJdkValueType(field.type)) {
+                violations.add("${path} domain aggregate field '${field.name}' must use a Value Object instead of JDK value type '${field.type}'")
             }
             if (isPublicIdName(field.name)) {
                 violations.add("${path} domain reference field '${field.name}' must use '{Target}Id' naming, not 'publicId' or '*PublicId'")
@@ -1337,7 +1409,7 @@ class JavaSourceArchitectureValidator {
           Set<String> dependencies = new LinkedHashSet<>(SourceInspector.extractImports(source))
           dependencies.addAll(type.astType.qualifiedTypeReferences)
           dependencies.each { String dependency ->
-              if (!dependency.contains(".${convention.domainPackageSegment}.model.")) {
+              if (!isDomainModelType(dependency, convention.domainPackageSegment)) {
                   return
               }
 
@@ -1954,6 +2026,10 @@ class JavaSourceArchitectureValidator {
                     || imported.startsWith('jakarta.persistence.')
                     || imported.startsWith('javax.persistence.')
                     || imported.startsWith('com.querydsl.')
+                    || imported.startsWith('com.fasterxml.jackson.')
+                    || imported.startsWith('jakarta.servlet.')
+                    || imported.startsWith('jakarta.validation.')
+                    || imported.startsWith('org.hibernate.')
                     || imported.startsWith('lombok.')
         }
     }
@@ -2182,6 +2258,26 @@ class JavaSourceArchitectureValidator {
         return SHARED_EXCEPTION_CONTRACT_TYPES.contains(simpleTypeName)
     }
 
+    private static String inboundPortPackageFor(String typeName) {
+        if (typeName.endsWith('UseCase')) {
+            return 'usecase'
+        }
+        if (typeName.endsWith('Command')) {
+            return 'command'
+        }
+        if (typeName.endsWith('Query')) {
+            return 'query'
+        }
+        if (typeName.endsWith('Result')) {
+            return 'result'
+        }
+        return null
+    }
+
+    private static boolean isWebAdapterSubPackage(String packageName) {
+        return packageName.endsWith('.request') || packageName.endsWith('.response')
+    }
+
     private static boolean isRequestPackage(String packageName, HexagonalConventionExtension convention) {
         if (convention.enforceMsaWebAdapterBoundary) {
             return packageName.contains('.adapter.in.web.external.request')
@@ -2228,6 +2324,15 @@ class JavaSourceArchitectureValidator {
 
     private static boolean isPublicIdName(String name) {
         return name == 'publicId' || name.endsWith('PublicId')
+    }
+
+    private static boolean isJdkValueType(String type) {
+        return JDK_VALUE_TYPES.contains(normalizeType(type))
+    }
+
+    private static boolean isDomainModelType(String dependency, String domainSegment = 'domain') {
+        return dependency != null
+                && (dependency.contains(".${domainSegment}.model.") || dependency.contains(".${domainSegment}.vo."))
     }
 
     private static boolean isIdentifierVoType(String type) {

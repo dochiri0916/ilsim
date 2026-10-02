@@ -10,12 +10,21 @@ final class DomainModelConventionValidator {
     private DomainModelConventionValidator() {
     }
 
-    static List<String> validate(Project project, File file, String source, JavaSourceAstInspector.TypeModel type) {
-        if (type.kind != 'CLASS' || !type.modifiers.contains('FINAL') || !hasIdentifierField(type)) {
+    static List<String> validate(
+            Project project,
+            File file,
+            String packageName,
+            JavaSourceAstInspector.TypeModel type
+    ) {
+        if (!isAggregate(packageName, type)) {
             return []
         }
         String path = project.relativePath(file)
         List<String> violations = []
+        if (!hasIdentifierField(type)) {
+            violations.add("${path} domain aggregate must declare identifier field 'id' of an identifier VO type")
+            return violations
+        }
         if (!hasPrivateFinalState(type)) {
             violations.add("${path} domain aggregate state must use private final fields")
         }
@@ -31,6 +40,13 @@ final class DomainModelConventionValidator {
             violations.add("${path} domain aggregate state changes must return a new aggregate instead of mutating this")
         }
         return violations
+    }
+
+    private static boolean isAggregate(String packageName, JavaSourceAstInspector.TypeModel type) {
+        type.kind == 'CLASS'
+                && (packageName.endsWith('.domain.model') || packageName.contains('.domain.model.'))
+                && !type.simpleName.endsWith('Exception')
+                && type.fields.any { field -> !field.staticField }
     }
 
     private static boolean hasIdentifierField(JavaSourceAstInspector.TypeModel type) {

@@ -85,10 +85,12 @@ class AggregateBoundaryConventionValidator {
     ) {
         Map<String, TypeEntry> domainTypes = new LinkedHashMap<>()
         inspections.findAll { inspection ->
-            inspection.valid && SourceInspector.isInLayer(
-                    inspection.packageName,
-                    "${convention.domainPackageSegment}.model"
-            )
+            inspection.valid && ['model', 'vo'].any { String child ->
+                SourceInspector.isInLayer(
+                        inspection.packageName,
+                        "${convention.domainPackageSegment}.${child}"
+                )
+            }
         }.each { inspection ->
             inspection.types.each { type ->
                 domainTypes.put(type.qualifiedName, new TypeEntry(inspection, type))

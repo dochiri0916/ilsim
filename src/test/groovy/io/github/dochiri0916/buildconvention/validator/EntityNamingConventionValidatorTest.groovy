@@ -40,6 +40,38 @@ class EntityNamingConventionValidatorTest {
     }
 
     @Test
+    @DisplayName('같은 파일의 보조 top-level Entity 타입도 이름 규칙으로 검증한다')
+    void validatesSecondaryTopLevelEntityInSameFile() {
+        // given
+        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
+        writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
+                package com.example.order.adapter.out.persistence;
+
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Table;
+
+                @Entity
+                @Table(name = "orders")
+                public class OrderEntity {
+                }
+
+                @Entity
+                @Table(name = "hidden")
+                class HiddenRecord {
+                }
+                ''')
+
+        // when
+        List<String> violations = EntityNamingConventionValidator.validate(
+                project,
+                new HexagonalConventionExtension()
+        )
+
+        // then
+        assert violations.any { it.contains("JPA entity 'HiddenRecord' must end with Entity") }
+    }
+
+    @Test
     @DisplayName('Domain Entity와 Table annotation 누락을 함께 거부한다')
     void rejectsDomainEntityWithoutTableAnnotation() {
         // given

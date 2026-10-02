@@ -14,12 +14,14 @@ class PackageTopologyConventionValidator {
     private static final Set<String> RESERVED_CONTEXT_NAMES = [
             'common',
             'config',
+            'configuration',
             'global',
             'infrastructure',
             'shared'
     ] as Set
     private static final Set<String> DOMAIN_CHILD_SEGMENTS = [
             'model',
+            'vo',
             'event',
             'exception'
     ] as Set
@@ -31,6 +33,16 @@ class PackageTopologyConventionValidator {
     private static final Set<String> APPLICATION_PORT_CHILD_SEGMENTS = [
             'in',
             'out'
+    ] as Set
+    private static final Set<String> APPLICATION_PORT_IN_CHILD_SEGMENTS = [
+            'usecase',
+            'command',
+            'query',
+            'result'
+    ] as Set
+    private static final Set<String> WEB_ADAPTER_CHILD_SEGMENTS = [
+            'request',
+            'response'
     ] as Set
     private static final Set<String> ADAPTER_CHILD_SEGMENTS = [
             'in',
@@ -72,6 +84,16 @@ class PackageTopologyConventionValidator {
             return violations
         }
 
+        applicationRootPackages.sort().each { String rootPackage ->
+            String layerSegment = rootPackage.tokenize('.').find { String segment ->
+                CONTEXT_LAYER_SEGMENTS.contains(segment)
+            }
+            if (layerSegment != null) {
+                violations.add("application root package '${rootPackage}' must not contain layer segment '${layerSegment}'; "
+                        + 'layer detection would be ambiguous')
+            }
+        }
+
         validInspections.each { inspection ->
             validateFile(
                     project,
@@ -79,6 +101,7 @@ class PackageTopologyConventionValidator {
                     inspection.packageName,
                     inspection.primaryType().simpleName,
                     applicationRootPackages,
+                    convention,
                     violations
             )
         }
@@ -101,6 +124,7 @@ class PackageTopologyConventionValidator {
             String packageName,
             String typeName,
             Set<String> applicationRootPackages,
+            HexagonalConventionExtension convention,
             List<String> violations
     ) {
         if (packageName == null || packageName.isBlank()) {
@@ -163,7 +187,7 @@ class PackageTopologyConventionValidator {
             return
         }
 
-        validateLayerChildPackage(project, file, contextName, layerName, segments, violations)
+        validateLayerChildPackage(project, file, contextName, layerName, segments, convention, violations)
     }
 
     private static void validateGlobalPackage(
@@ -172,9 +196,19 @@ class PackageTopologyConventionValidator {
             List<String> segments,
             List<String> violations
     ) {
-        if (segments.size() < 2 || !['exception', 'web'].contains(segments[1])) {
-            violations.add("${project.relativePath(file)} global package must be limited to global.exception or global.web")
+        if (!isAllowedGlobalPackage(segments)) {
+            violations.add("${project.relativePath(file)} global package must be limited to global.exception, global.web, global.persistence, or global.configuration.properties")
         }
+    }
+
+    private static boolean isAllowedGlobalPackage(List<String> segments) {
+        if (segments.size() < 2) {
+            return false
+        }
+        if (['exception', 'web', 'persistence'].contains(segments[1])) {
+            return true
+        }
+        return segments[1] == 'configuration' && segments.size() >= 3 && segments[2] == 'properties'
     }
 
     private static void validateLayerChildPackage(
@@ -183,12 +217,13 @@ class PackageTopologyConventionValidator {
             String contextName,
             String layerName,
             List<String> segments,
+            HexagonalConventionExtension convention,
             List<String> violations
     ) {
         String path = project.relativePath(file)
         String childName = segments[2]
         if (layerName == 'domain' && !DOMAIN_CHILD_SEGMENTS.contains(childName)) {
-            violations.add("${path} ${contextName}.domain package must use model, event, or exception")
+            violations.add("${path} ${contextName}.domain package must use model, vo, event, or exception")
         }
         if (layerName == 'application' && !APPLICATION_CHILD_SEGMENTS.contains(childName)) {
             violations.add("${path} ${contextName}.application package must use port, exception, or service")
@@ -198,13 +233,37 @@ class PackageTopologyConventionValidator {
                 violations.add("${path} ${contextName}.application.port package must use in or out")
             }
         }
+        if (layerName == 'application' && childName == 'port' && segments.size() >= 4 && segments[3] == 'in') {
+            if (segments.size() < 5 || !APPLICATION_PORT_IN_CHILD_SEGMENTS.contains(segments[4])) {
+                violations.add("${path} ${contextName}.application.port.in package must use usecase, command, query, or result")
+            }
+        }
         if (layerName == 'adapter' && !ADAPTER_CHILD_SEGMENTS.contains(childName)) {
             violations.add("${path} ${contextName}.adapter package must use in or out")
         }
         if (layerName == 'adapter' && childName == 'in') {
             if (segments.size() < 4 || !ADAPTER_IN_CHILD_SEGMENTS.contains(segments[3])) {
                 violations.add("${path} ${contextName}.adapter.in package must use bootstrap, event, messaging, scheduler, or web")
+            } else if (segments[3] == 'web') {
+                validateWebAdapterChildPackage(path, contextName, segments, convention, violations)
             }
+        }
+    }
+
+    private static void validateWebAdapterChildPackage(
+            String path,
+            String contextName,
+            List<String> segments,
+            HexagonalConventionExtension convention,
+            List<String> violations
+    ) {
+        List<String> children = segments.drop(4)
+        if (convention.enforceMsaWebAdapterBoundary && !children.isEmpty()
+                && ['external', 'internal'].contains(children.first())) {
+            children = children.drop(1)
+        }
+        if (!children.isEmpty() && (children.size() > 1 || !WEB_ADAPTER_CHILD_SEGMENTS.contains(children.first()))) {
+            violations.add("${path} ${contextName}.adapter.in.web package must use request or response")
         }
     }
 
