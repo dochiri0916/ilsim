@@ -1,6 +1,7 @@
 package io.github.dochiri0916.buildconvention.plugin
 
 import io.github.dochiri0916.buildconvention.extension.HexagonalConventionExtension
+import io.github.dochiri0916.buildconvention.support.SourceInspector
 import io.github.dochiri0916.buildconvention.validator.ArchitectureConventionValidator
 import io.github.dochiri0916.buildconvention.validator.ArchUnitArchitectureValidator
 import io.github.dochiri0916.buildconvention.validator.ChangedCodeCoverageValidator
@@ -45,8 +46,24 @@ class LintConventionPlugin implements Plugin<Project> {
             'validateArchitectureConventions',
             'validateClaudeConventions',
             'validateMigrationConventions',
-            'validateJavaVersionConvention'
+            'validateJavaVersionConvention',
+            'validatePitMutationGate'
     ].asImmutable()
+    // Convention tasks registered with exactly one action; extra or missing actions mean the task was tampered with.
+    private static final Map<String, Integer> EXPECTED_ACTION_COUNTS = [
+            validateArchUnitArchitecture      : 1,
+            validateChangedCodeCoverage       : 1,
+            validateHexagonalArchitecture     : 1,
+            validateEntityNamingConvention    : 1,
+            validateDomainStaticFactoryConvention: 1,
+            validateArchitectureConventions   : 1,
+            validateMigrationConventions      : 1,
+            validateJavaVersionConvention     : 1,
+            validateClaudeConventions         : 0,
+            validatePitMutationGate           : 0
+    ].asImmutable()
+    private static final Set<String> ALLOWED_PIT_MUTATORS = ['DEFAULTS', 'STRONGER', 'ALL'].asImmutable()
+    private static final Set<String> TRANSITIVE_CHECK_TASK_NAMES = ['pitest'].asImmutable()
     private static final List<String> REQUIRED_TRUE_CONVENTION_FLAGS = [
             'enforceDomainEntitySeparation',
             'enforceDomainStaticFactoryMethod',
@@ -238,6 +255,7 @@ class LintConventionPlugin implements Plugin<Project> {
             def validatePitMutationGate = project.tasks.register('validatePitMutationGate') { task ->
                 task.group = 'verification'
                 task.description = 'Runs the PIT mutation gate.'
+                task.dependsOn(project.tasks.named('pitest'))
             }
 
             project.tasks.withType(Test).configureEach { Test task ->
@@ -252,7 +270,7 @@ class LintConventionPlugin implements Plugin<Project> {
                 task.dependsOn(prepareLintConfig)
                 task.configFile = checkstyleDomainConfig.get().asFile
                 task.classpath = project.files()
-                task.source = project.fileTree(project.file('src/main/java')) {
+                task.source = mainSourceSet.get().allJava.matching {
                     include "**/${convention.domainPackageSegment}/**/*.java"
                 }
                 task.reports { reports ->
@@ -270,7 +288,7 @@ class LintConventionPlugin implements Plugin<Project> {
                 task.ignoreFailures = false
                 task.consoleOutput = true
                 task.classpath = mainSourceSet.get().compileClasspath
-                task.source = project.fileTree(project.file('src/main/java')) {
+                task.source = mainSourceSet.get().allJava.matching {
                     include "**/${convention.domainPackageSegment}/**/*.java"
                 }
                 task.reports { reports ->
@@ -320,17 +338,18 @@ class LintConventionPlugin implements Plugin<Project> {
                 task.dependsOn(jacocoTestReport)
                 task.dependsOn(jacocoTestCoverageVerification)
                 task.dependsOn(validateChangedCodeCoverage)
+                task.dependsOn(validatePitMutationGate)
             }
 
             project.afterEvaluate {
                 String domainSegment = convention.domainPackageSegment
                 checkstyleDomain.configure { Checkstyle task ->
-                    task.source = project.fileTree(project.file('src/main/java')) {
+                    task.source = mainSourceSet.get().allJava.matching {
                         include "**/${domainSegment}/**/*.java"
                     }
                 }
                 pmdDomain.configure { Pmd task ->
-                    task.source = project.fileTree(project.file('src/main/java')) {
+                    task.source = mainSourceSet.get().allJava.matching {
                         include "**/${domainSegment}/**/*.java"
                     }
                 }
@@ -338,22 +357,13 @@ class LintConventionPlugin implements Plugin<Project> {
                     configureCoverageRules(task, convention)
                 }
                 configurePitMutationGate(project, convention)
-                validatePitMutationGate.configure { task ->
-                    task.dependsOn(project.tasks.named('pitest'))
-                }
-                project.tasks.named('check') { task ->
-                    task.dependsOn(validatePitMutationGate)
-                }
             }
         }
 
         def validateHexagonalArchitecture = project.tasks.register('validateHexagonalArchitecture') { task ->
             task.group = 'verification'
             task.description = 'Validates hexagonal architecture dependency direction.'
-            task.inputs.files(project.fileTree(project.projectDir) {
-                include 'src/main/java/**/*.java'
-                include 'src/main/groovy/**/*.groovy'
-            })
+            task.inputs.files(project.provider { SourceInspector.collectMainSourceFiles(project) })
             task.doLast {
                 List<String> violations = HexagonalArchitectureValidator.validate(project, convention)
                 if (!violations.isEmpty()) {
@@ -365,9 +375,7 @@ class LintConventionPlugin implements Plugin<Project> {
         def validateEntityNamingConvention = project.tasks.register('validateEntityNamingConvention') { task ->
             task.group = 'verification'
             task.description = 'Validates domain/entity separation and naming convention: entity singular, table plural.'
-            task.inputs.files(project.fileTree(project.projectDir) {
-                include 'src/main/java/**/*.java'
-            })
+            task.inputs.files(project.provider { SourceInspector.collectMainSourceFiles(project) })
             task.doLast {
                 List<String> violations = EntityNamingConventionValidator.validate(project, convention)
                 if (!violations.isEmpty()) {
@@ -379,9 +387,7 @@ class LintConventionPlugin implements Plugin<Project> {
         def validateDomainStaticFactoryConvention = project.tasks.register('validateDomainStaticFactoryConvention') { task ->
             task.group = 'verification'
             task.description = 'Validates static factory convention for domain classes.'
-            task.inputs.files(project.fileTree(project.projectDir) {
-                include 'src/main/java/**/*.java'
-            })
+            task.inputs.files(project.provider { SourceInspector.collectMainSourceFiles(project) })
             task.doLast {
                 List<String> violations = DomainStaticFactoryValidator.validate(project, convention)
                 if (!violations.isEmpty()) {
@@ -393,9 +399,10 @@ class LintConventionPlugin implements Plugin<Project> {
         def validateArchitectureConventions = project.tasks.register('validateArchitectureConventions') { task ->
             task.group = 'verification'
             task.description = 'Validates AGENTS.md architecture, DDD, adapter, and test conventions.'
+            task.inputs.files(project.provider {
+                SourceInspector.collectMainSourceFiles(project) + SourceInspector.collectTestJavaFiles(project)
+            })
             task.inputs.files(project.fileTree(project.projectDir) {
-                include 'src/main/java/**/*.java'
-                include 'src/test/java/**/*.java'
                 include 'src/main/resources/**/messages*.properties'
             })
             task.doLast {
@@ -489,7 +496,7 @@ class LintConventionPlugin implements Plugin<Project> {
         Set<String> qualityTaskNames = project.tasks.matching { task ->
             task instanceof Checkstyle || task instanceof Pmd || task instanceof SpotBugsTask
         }.collect { task -> task.name }.toSet()
-        Set<String> protectedTaskNames = (REQUIRED_CHECK_TASK_NAMES + qualityTaskNames + [
+        Set<String> protectedTaskNames = (REQUIRED_CHECK_TASK_NAMES + TRANSITIVE_CHECK_TASK_NAMES + qualityTaskNames + [
                 'check',
                 'test',
                 'jacocoTestReport',
@@ -558,7 +565,8 @@ class LintConventionPlugin implements Plugin<Project> {
             def task = project.tasks.findByName(taskName)
             task != null && task.enabled && !isOnlyIfSatisfied(task)
         }.sort()
-        List<String> missingCheckDependencies = findMissingCheckDependencies(project, protectedTaskNames - ['check'])
+        List<String> missingCheckDependencies = findMissingCheckDependencies(
+                project, protectedTaskNames - ['check'] - TRANSITIVE_CHECK_TASK_NAMES)
         List<String> modifiedTestConfigurations = findModifiedTestConfigurations(project)
         List<String> emptySourceTasks = findEmptySourceTasks(project, convention)
         List<String> missingQualitySourceFiles = findMissingQualitySourceFiles(project, convention)
@@ -566,8 +574,14 @@ class LintConventionPlugin implements Plugin<Project> {
         List<String> modifiedCoverageInputs = findModifiedCoverageInputs(project)
         List<String> modifiedBytecodeAnalysisInputs = findModifiedBytecodeAnalysisInputs(project)
         List<String> modifiedQualityConfigurations = findModifiedQualityConfigurations(project)
+        List<String> tamperedTaskActions = findTamperedTaskActions(project)
+        List<String> modifiedCoverageRules = findModifiedCoverageRules(project)
+        List<String> modifiedMutationConfigurations = findModifiedMutationConfigurations(project, convention)
 
         if (excludedTasks.isEmpty()
+                && tamperedTaskActions.isEmpty()
+                && modifiedCoverageRules.isEmpty()
+                && modifiedMutationConfigurations.isEmpty()
                 && disabledTasks.isEmpty()
                 && disabledQualityTasks.isEmpty()
                 && ignoredFailureTasks.isEmpty()
@@ -640,6 +654,16 @@ class LintConventionPlugin implements Plugin<Project> {
             violations.add("modified quality rule configurations: ${modifiedQualityConfigurations.join(', ')}")
         }
 
+        if (!tamperedTaskActions.isEmpty()) {
+            violations.add("modified convention task actions: ${tamperedTaskActions.join(', ')}")
+        }
+        if (!modifiedCoverageRules.isEmpty()) {
+            violations.add("modified coverage rules: ${modifiedCoverageRules.join(', ')}")
+        }
+        if (!modifiedMutationConfigurations.isEmpty()) {
+            violations.add("modified mutation configuration: ${modifiedMutationConfigurations.join(', ')}")
+        }
+
         throw new GradleException(
                 'Build convention verification must not be disabled. '
                         + "${violations.join('; ')}. "
@@ -647,9 +671,95 @@ class LintConventionPlugin implements Plugin<Project> {
         )
     }
 
+    private static List<String> findTamperedTaskActions(Project project) {
+        EXPECTED_ACTION_COUNTS.findAll { String taskName, Integer expected ->
+            def task = project.tasks.findByName(taskName)
+            task != null && task.actions.size() != expected
+        }.collect { String taskName, Integer expected ->
+            "${taskName}.actions=${project.tasks.findByName(taskName).actions.size()} != ${expected}"
+        }.sort()
+    }
+
+    private static List<String> findModifiedCoverageRules(Project project) {
+        def task = project.tasks.findByName('jacocoTestCoverageVerification')
+        if (task == null || !project.state.executed) {
+            return []
+        }
+        List<String> violations = []
+        if (!task.violationRules.failOnViolation) {
+            violations.add('jacocoTestCoverageVerification.violationRules.failOnViolation=false')
+        }
+        if (task.violationRules.rules.any { rule -> !rule.enabled }) {
+            violations.add('jacocoTestCoverageVerification.violationRules.rule.enabled=false')
+        }
+        return violations
+    }
+
+    private static Object providerValue(def property) {
+        if (property != null && property.respondsTo('getOrNull')) {
+            return property.getOrNull()
+        }
+        return property
+    }
+
+    private static List<String> findModifiedMutationConfigurations(Project project, HexagonalConventionExtension convention) {
+        def pitest = project.extensions.findByName('pitest')
+        if (pitest == null || !project.state.executed) {
+            return []
+        }
+        List<String> violations = []
+        ['excludedClasses', 'excludedMethods', 'excludedTestClasses', 'avoidCallsTo'].each { String name ->
+            def value = providerValue(pitest."${name}")
+            if (value != null && !value.isEmpty()) {
+                violations.add("pitest.${name}=${value}")
+            }
+        }
+        def mutators = providerValue(pitest.mutators)
+        if (mutators != null && !mutators.isEmpty() && !ALLOWED_PIT_MUTATORS.containsAll(mutators)) {
+            violations.add("pitest.mutators=${mutators}")
+        }
+        Set<String> expectedTargets = pitTargetClasses(convention).toSet()
+        def targets = providerValue(pitest.targetClasses)
+        if (targets == null || targets.toSet() != expectedTargets) {
+            violations.add("pitest.targetClasses=${targets}")
+        }
+        Integer mutationThreshold = providerValue(pitest.mutationThreshold) as Integer
+        if (mutationThreshold == null || mutationThreshold < minimumInt(convention.mutationScoreMinimum, 80)) {
+            violations.add("pitest.mutationThreshold=${mutationThreshold}")
+        }
+        Integer strengthThreshold = providerValue(pitest.testStrengthThreshold) as Integer
+        if (strengthThreshold == null || strengthThreshold < minimumInt(convention.testStrengthMinimum, 85)) {
+            violations.add("pitest.testStrengthThreshold=${strengthThreshold}")
+        }
+        return violations.sort()
+    }
+
+    private static List<String> pitTargetClasses(HexagonalConventionExtension convention) {
+        return [
+                "*.${convention.domainPackageSegment}.*".toString(),
+                "*.${convention.applicationPackageSegment}.*".toString()
+        ]
+    }
+
     private static boolean isTaskExcluded(Project project, String taskName) {
-        project.gradle.startParameter.excludedTaskNames.any { String excludedTaskName ->
+        boolean excludedByName = project.gradle.startParameter.excludedTaskNames.any { String excludedTaskName ->
             excludedTaskName == taskName || excludedTaskName.endsWith(":${taskName}")
+        }
+        return excludedByName || isMissingFromTaskGraph(project, taskName)
+    }
+
+    /** Catches -x abbreviations (camel case, prefixes) that the raw excluded name list cannot match. */
+    private static boolean isMissingFromTaskGraph(Project project, String taskName) {
+        def task = project.tasks.findByName(taskName)
+        if (task == null) {
+            return false
+        }
+        try {
+            def graph = project.gradle.taskGraph
+            def checkTask = project.tasks.findByName('check')
+            return checkTask != null && graph.hasTask(checkTask) && !graph.hasTask(task)
+        } catch (IllegalStateException ignored) {
+            return false
         }
     }
 
@@ -701,10 +811,10 @@ class LintConventionPlugin implements Plugin<Project> {
     }
 
     private static List<String> findEmptySourceTasks(Project project, HexagonalConventionExtension convention) {
-        List<File> mainJavaFiles = javaFiles(project, 'src/main/java')
-        List<File> testJavaFiles = javaFiles(project, 'src/test/java')
+        List<File> mainJavaFiles = sourceSetJavaFiles(project, 'main')
+        List<File> testJavaFiles = sourceSetJavaFiles(project, 'test')
         List<File> domainJavaFiles = mainJavaFiles.findAll { File file ->
-            hasPathSegment(file, convention.domainPackageSegment)
+            hasPathSegment(project, file, convention.domainPackageSegment)
         }
 
         List<String> emptySourceTasks = []
@@ -731,10 +841,10 @@ class LintConventionPlugin implements Plugin<Project> {
             Project project,
             HexagonalConventionExtension convention
     ) {
-        List<File> mainJavaFiles = javaFiles(project, 'src/main/java')
-        List<File> testJavaFiles = javaFiles(project, 'src/test/java')
+        List<File> mainJavaFiles = sourceSetJavaFiles(project, 'main')
+        List<File> testJavaFiles = sourceSetJavaFiles(project, 'test')
         List<File> domainJavaFiles = mainJavaFiles.findAll { File file ->
-            hasPathSegment(file, convention.domainPackageSegment)
+            hasPathSegment(project, file, convention.domainPackageSegment)
         }
 
         Map<String, List<File>> expectedSourceFiles = [
@@ -774,7 +884,7 @@ class LintConventionPlugin implements Plugin<Project> {
     }
 
     private static List<String> findEmptyCoverageTasks(Project project) {
-        if (javaFiles(project, 'src/main/java').isEmpty()) {
+        if (sourceSetJavaFiles(project, 'main').isEmpty()) {
             return []
         }
 
@@ -1036,18 +1146,23 @@ class LintConventionPlugin implements Plugin<Project> {
         return "${visiblePaths}, ... +${relativePaths.size() - limit} more"
     }
 
-    private static List<File> javaFiles(Project project, String relativePath) {
-        File directory = project.file(relativePath)
-        if (!directory.exists()) {
-            return []
-        }
-        project.fileTree(directory) {
-            include '**/*.java'
-        }.files.findAll { File file -> file.isFile() }.toList()
+    private static List<File> sourceSetJavaFiles(Project project, String sourceSetName) {
+        SourceInspector.sourceDirs(project, sourceSetName, "src/${sourceSetName}/java".toString())
+                .collectMany { File directory ->
+                    project.fileTree(directory) { include '**/*.java' }.files.findAll { File file -> file.isFile() }
+                }
+                .toSet()
+                .toList()
     }
 
-    private static boolean hasPathSegment(File file, String segment) {
-        file.path.split(/[\\\/]/).contains(segment)
+    private static boolean hasPathSegment(Project project, File file, String segment) {
+        // Segment names are matched below the source root so the checkout location cannot affect classification.
+        String relative = SourceInspector.sourceDirs(project, 'main', 'src/main/java', 'src/main/groovy')
+                .collect { File dir -> dir.toPath() }
+                .findAll { java.nio.file.Path dir -> file.toPath().startsWith(dir) }
+                .collect { java.nio.file.Path dir -> dir.relativize(file.toPath()).toString() }
+                .find() ?: project.relativePath(file)
+        relative.split(/[\\\/]/).contains(segment)
     }
 
     private static void configureJava21Convention(Project project) {
@@ -1169,6 +1284,7 @@ class LintConventionPlugin implements Plugin<Project> {
             HexagonalConventionExtension convention
     ) {
         task.violationRules { rules ->
+            rules.failOnViolation = true
             rules.rule {
                 coverageLimit(delegate, 'LINE', convention.overallLineCoverageMinimum, 0.85)
                 coverageLimit(delegate, 'BRANCH', convention.overallBranchCoverageMinimum, 0.80)
@@ -1225,10 +1341,7 @@ class LintConventionPlugin implements Plugin<Project> {
         if (pitestExtension == null) {
             return
         }
-        pitestExtension.targetClasses = [
-                "*.${convention.domainPackageSegment}.*".toString(),
-                "*.${convention.applicationPackageSegment}.*".toString()
-        ]
+        pitestExtension.targetClasses = pitTargetClasses(convention)
         pitestExtension.targetTests = ['*Test', '*Tests']
         pitestExtension.junit5PluginVersion = '1.2.1'
         pitestExtension.failWhenNoMutations = false

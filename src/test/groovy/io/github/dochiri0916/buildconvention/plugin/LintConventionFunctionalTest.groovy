@@ -165,6 +165,88 @@ class LintConventionFunctionalTest {
         assert report.checks.architecture == 'FAIL'
     }
 
+
+    @Test
+    void rejectsExcludingPitestOrMutationGate() {
+        writeReportFixture()
+
+        ['pitest', 'validatePitMutationGate'].each { String taskName ->
+            BuildResult result = runner('check', '-PchangedCoverageBaseRef=HEAD', '-x', taskName).buildAndFail()
+            assert result.output.contains('Build convention verification must not be disabled')
+            assert result.output.contains(taskName)
+        }
+    }
+
+    @Test
+    void rejectsDisablingPitestTask() {
+        writeReportFixture()
+        new File(tempDir, 'build.gradle') << "\ntasks.named('pitest') { enabled = false }\n"
+
+        BuildResult result = runner('check', '-PchangedCoverageBaseRef=HEAD').buildAndFail()
+
+        assert result.output.contains('disabled tasks')
+        assert result.output.contains('pitest')
+    }
+
+    @Test
+    void rejectsAbbreviatedTaskExclusion() {
+        writeReportFixture()
+
+        ['validateHexagonalArch', 'vHA'].each { String abbreviation ->
+            BuildResult result = runner('check', '-PchangedCoverageBaseRef=HEAD', '-x', abbreviation).buildAndFail()
+            assert result.output.contains('Build convention verification must not be disabled')
+            assert result.output.contains('validateHexagonalArchitecture')
+        }
+    }
+
+    @Test
+    void validatesSourcesInCustomSourceDirectories() {
+        writeReportFixture()
+        new File(tempDir, 'build.gradle') << "\nsourceSets.main.java.srcDir 'src/gen/java'\n"
+        File generated = new File(tempDir, 'src/gen/java/com/example/common/Hidden.java')
+        generated.parentFile.mkdirs()
+        generated.text = 'package com.example.common;\npublic final class Hidden {}\n'
+
+        BuildResult result = runner('validateArchitectureConventions').buildAndFail()
+
+        assert result.output.contains('common package is not allowed')
+    }
+
+
+    @Test
+    void rejectsTamperingWithConventionTasksAndGateConfiguration() {
+        Map<String, String> bypasses = [
+                'modified convention task actions'   : "tasks.named('validateHexagonalArchitecture') { actions.clear() }",
+                'modified coverage rules'            : "afterEvaluate { tasks.named('jacocoTestCoverageVerification') { violationRules.failOnViolation = false } }",
+                'modified mutation configuration'    : "afterEvaluate { pitest { excludedClasses = ['**'] } }"
+        ]
+        bypasses.each { String expected, String script ->
+            tempDir.listFiles().each { it.deleteDir() }
+            writeReportFixture()
+            new File(tempDir, 'build.gradle') << "\n${script}\n"
+
+            BuildResult result = runner('check', '-PchangedCoverageBaseRef=HEAD').buildAndFail()
+
+            assert result.output.contains(expected)
+        }
+    }
+
+    @Test
+    void rejectsApplicationIoAndSuppressionComments() {
+        writeReportFixture()
+        writeJava('com/example/GreetingApplication.java', '''
+                package com.example;
+
+                public class GreetingApplication {
+                    public int value() { return 42; } // NOPMD
+                }
+                ''')
+
+        BuildResult result = runner('validateArchitectureConventions').buildAndFail()
+
+        assert result.output.contains('must not suppress PMD/Checkstyle/SpotBugs warnings')
+    }
+
     private void writeReportFixture() {
         writeBuildFiles()
         new File(tempDir, 'build.gradle') << '''
