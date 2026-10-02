@@ -28,7 +28,6 @@ class HexagonalConventionExtension {
     BigDecimal changedLineCoverageMinimum = 0.90
     BigDecimal changedBranchCoverageMinimum = 0.85
 
-    boolean enforcePitOnCheck = false
     boolean enforceMsaWebAdapterBoundary = false
     int mutationScoreMinimum = 80
     int testStrengthMinimum = 85
