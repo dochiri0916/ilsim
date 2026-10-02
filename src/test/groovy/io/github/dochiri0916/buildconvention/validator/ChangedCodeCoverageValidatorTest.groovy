@@ -254,6 +254,64 @@ class ChangedCodeCoverageValidatorTest {
         assert violations.any { it == '5 more uncovered changed lines' }
     }
 
+    @Test
+    @DisplayName('커밋된 변경 뒤에 작업 트리에서 줄이 밀려도 작업 트리 기준 줄 번호로 검사한다')
+    void usesWorkingTreeLineNumbersAfterCommittedChanges() {
+        // given
+        Project project = gitProject('shifted-lines')
+        writeJava(project, sampleSource('1'))
+        commitAll(project.projectDir, 'baseline')
+        runGit(project.projectDir, 'branch', 'base')
+        writeJava(project, sampleSource('2'))
+        commitAll(project.projectDir, 'change')
+        writeJava(project, '// header\n' + sampleSource('2'))
+        File report = writeCoverageReport(project, 'Sample.java', 6, false)
+
+        // when
+        List<String> violations = ChangedCodeCoverageValidator.validate(
+                project, new HexagonalConventionExtension(), report, 'base')
+
+        // then
+        assert violations.any { it.contains('Uncovered changed line: src/main/java/com/example/Sample.java:6') }
+    }
+
+    @Test
+    @DisplayName('추가 srcDir의 신규 Java 파일도 변경 코드 커버리지에 포함한다')
+    void validatesChangedFilesInCustomSourceDirectory() {
+        // given
+        Project project = gitProject('custom-source-dir')
+        project.pluginManager.apply('java')
+        project.sourceSets.main.java.srcDir('src/gen/java')
+        runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
+        File generated = new File(project.projectDir, 'src/gen/java/com/example/Sample.java')
+        generated.parentFile.mkdirs()
+        generated.text = sampleSource('1')
+        File report = writeCoverageReport(project, 'Sample.java', 5, false)
+
+        // when
+        List<String> violations = ChangedCodeCoverageValidator.validate(
+                project, new HexagonalConventionExtension(), report, 'HEAD')
+
+        // then
+        assert violations.any { it.contains('Uncovered changed line: src/gen/java/com/example/Sample.java:5') }
+    }
+
+    @Test
+    @DisplayName('merge base를 찾을 수 없으면 실패한다')
+    void rejectsUnknownBaseRef() {
+        // given
+        Project project = gitProject('unknown-base')
+        runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
+        File report = writeCoverageReport(project, 'Sample.java', 5, true)
+
+        // when
+        List<String> violations = ChangedCodeCoverageValidator.validate(
+                project, new HexagonalConventionExtension(), report, 'no-such-ref')
+
+        // then
+        assert violations.any { it.contains('no merge base found') }
+    }
+
     private Project gitProject(String name) {
         File projectDir = new File(tempDir, name)
         projectDir.mkdirs()
