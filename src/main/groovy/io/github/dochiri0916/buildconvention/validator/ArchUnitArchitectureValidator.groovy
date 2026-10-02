@@ -3,6 +3,7 @@ package io.github.dochiri0916.buildconvention.validator
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 
 import io.github.dochiri0916.buildconvention.extension.HexagonalConventionExtension
+import io.github.dochiri0916.buildconvention.support.TechnicalDependencyCatalog
 import com.tngtech.archunit.base.DescribedPredicate
 import com.tngtech.archunit.core.domain.JavaClass
 import com.tngtech.archunit.core.domain.JavaClasses
@@ -12,25 +13,6 @@ import com.tngtech.archunit.lang.EvaluationResult
 import org.gradle.api.Project
 
 class ArchUnitArchitectureValidator {
-    private static final Set<String> ALLOWED_APPLICATION_SPRING_TYPES = [
-            'org.springframework.stereotype.Service',
-            'org.springframework.transaction.annotation.Transactional'
-    ] as Set
-    private static final Set<String> APPLICATION_TECHNICAL_PACKAGE_PREFIXES = [
-            'com.amazonaws.',
-            'com.querydsl.',
-            'feign.',
-            'jakarta.persistence.',
-            'java.sql.',
-            'javax.persistence.',
-            'okhttp3.',
-            'org.apache.http.',
-            'org.hibernate.',
-            'org.springframework.',
-            'retrofit2.',
-            'software.amazon.awssdk.'
-    ] as Set
-
     static List<String> validate(
             Project project,
             HexagonalConventionExtension convention,
@@ -67,12 +49,7 @@ class ArchUnitArchitectureValidator {
                 noClasses()
                         .that().resideInAPackage(domainPackage)
                         .should().dependOnClassesThat()
-                        .resideInAnyPackage(
-                                'org.springframework..',
-                                'jakarta.persistence..',
-                                'javax.persistence..',
-                                'com.querydsl..'
-                        )
+                        .resideInAnyPackage(TechnicalDependencyCatalog.DOMAIN_FORBIDDEN_ARCHUNIT_PACKAGES as String[])
                         .because('domain must stay framework independent')
                         .allowEmptyShould(true),
                 noClasses()
@@ -115,11 +92,7 @@ class ArchUnitArchitectureValidator {
         return new DescribedPredicate<JavaClass>('technical framework types not allowed in application') {
             @Override
             boolean test(JavaClass javaClass) {
-                String className = javaClass.name
-                if (ALLOWED_APPLICATION_SPRING_TYPES.contains(className)) {
-                    return false
-                }
-                return APPLICATION_TECHNICAL_PACKAGE_PREFIXES.any { String prefix -> className.startsWith(prefix) }
+                return TechnicalDependencyCatalog.isForbiddenInApplication(javaClass.name)
             }
         }
     }

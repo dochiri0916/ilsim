@@ -65,6 +65,55 @@ class ArchUnitArchitectureValidatorTest {
     }
 
     @Test
+    @DisplayName('컴파일된 Application과 Domain의 Jackson 의존을 거부한다')
+    void rejectsCompiledJacksonDependencyInApplicationAndDomain() {
+        // given
+        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
+        File jacksonSource = writeSource('com/fasterxml/jackson/databind/ObjectMapper.java', '''
+                package com.fasterxml.jackson.databind;
+
+                public class ObjectMapper {
+                }
+                ''')
+        File applicationSource = writeSource('com/example/order/application/service/OrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.fasterxml.jackson.databind.ObjectMapper;
+
+                public final class OrderService {
+                    private final ObjectMapper mapper = new ObjectMapper();
+                }
+                ''')
+        File domainSource = writeSource('com/example/order/domain/model/Order.java', '''
+                package com.example.order.domain.model;
+
+                import com.fasterxml.jackson.databind.ObjectMapper;
+
+                public final class Order {
+                    private final ObjectMapper mapper = new ObjectMapper();
+                }
+                ''')
+        File classDir = new File(tempDir, 'classes')
+        classDir.mkdirs()
+        int compilationResult = ToolProvider.systemJavaCompiler.run(
+                null, null, null, '-d', classDir.absolutePath,
+                jacksonSource.absolutePath, applicationSource.absolutePath, domainSource.absolutePath
+        )
+        assert compilationResult == 0
+
+        // when
+        List<String> violations = ArchUnitArchitectureValidator.validate(
+                project,
+                new HexagonalConventionExtension(),
+                [classDir]
+        )
+
+        // then
+        assert violations.any { it.contains('application must not depend on technical framework types') }
+        assert violations.any { it.contains('domain must stay framework independent') }
+    }
+
+    @Test
     @DisplayName('컴파일된 Application Port의 Spring Data 타입 의존을 거부한다')
     void rejectsCompiledApplicationDependencyOnTechnicalFramework() {
         // given
