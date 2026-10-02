@@ -20,26 +20,31 @@ Domain <- Application <- Adapter
 ```text
 com.example.project/
 ├── global/
+│   ├── configuration/properties/
 │   ├── exception/
+│   ├── persistence/
 │   └── web/
 └── {context}/
     ├── domain/
     │   ├── model/
+    │   ├── vo/
     │   ├── event/
     │   └── exception/
     ├── application/
-    │   ├── port/in/
+    │   ├── port/in/{usecase,command,query,result}/
     │   ├── port/out/
     │   ├── exception/
     │   └── service/
     └── adapter/
-        ├── in/web/
+        ├── in/web/            # Controller, request/, response/
         └── out/persistence/
 ```
 
-`global.exception`에는 프로젝트 공통 예외 계약과 `GlobalExceptionHandler`를 둔다. 공통 예외 계약은 Spring Web 타입을 사용하지 않고, `GlobalExceptionHandler`만 `ProblemDetail`과 `HttpStatus`를 사용한다. `global.web`에는 인증·OpenAPI·MVC 설정을 둔다. `common` 패키지는 사용하지 않는다.
+`global.exception`에는 프로젝트 공통 예외 계약과 `GlobalExceptionHandler`를 둔다. 공통 예외 계약은 Spring Web 타입을 사용하지 않고, `GlobalExceptionHandler`만 `ProblemDetail`과 `HttpStatus`를 사용한다. `global.web`에는 인증·OpenAPI·MVC 설정을, `global.persistence`에는 JPA 공통 설정(auditing, 공통 base entity 등)을, `global.configuration.properties`에는 `@ConfigurationProperties` 타입을 둔다. `global`은 어떤 `{context}` 패키지도 import하지 않는다. `global`에는 Domain·Application·Adapter 계층을 두지 않으며 `global.configuration` 직하위에는 타입을 두지 않는다. `common` 패키지는 사용하지 않는다.
 
 ## Domain
+
+- `domain.model`에는 Entity·Aggregate·Domain Service를, `domain.vo`에는 Value Object와 First-class Collection(`record` 또는 `enum`)을 둔다. Aggregate의 모든 상태 필드는 `private final`이며 Value Object·enum·First-class Collection 타입을 사용한다(원시 타입과 `LocalDateTime`·`BigDecimal`·`UUID` 같은 JDK 값 타입 직접 사용 금지). Value Object는 `new`로 생성하지 않고 `public static of(...)` 팩토리로 생성한다. 두 패키지는 Context 간 의존 규칙에서 동일하게 Domain model로 취급한다.
 
 - Entity와 Aggregate Root는 불변 `final class`다. 상태는 `private final` 필드에 두고 값을 받는 constructor는 `private`으로 둔다.
 - Value Object와 First-class Collection은 `record`다.

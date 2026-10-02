@@ -15,20 +15,23 @@ Dependencies point inward. Domain contains business rules and does not depend on
 ```text
 com.example.project/
 ├── global/
+│   ├── configuration/properties/     # shared @ConfigurationProperties
 │   ├── exception/             # shared, technology-independent error contracts
+│   ├── persistence/           # shared persistence configuration (JPA auditing, base entities)
 │   └── web/                   # shared web and MVC configuration
 └── {context}/                 # one bounded context
     ├── domain/
     │   ├── model/
+    │   ├── vo/                # Value Objects and First-class Collections
     │   ├── event/
     │   └── exception/
     ├── application/
-    │   ├── port/in/           # use cases and their commands, queries, results
+    │   ├── port/in/           # usecase/, command/, query/, result/
     │   ├── port/out/          # ports required by the use cases
     │   ├── service/
     │   └── exception/
     └── adapter/
-        ├── in/web/            # controllers and HTTP request/response DTOs
+        ├── in/web/            # Controller, request/, response/
         └── out/persistence/   # repository adapters, JPA entities, and mappers
 ```
 
@@ -70,12 +73,12 @@ The controller calls an inbound `*UseCase`; it does not depend on an Application
 
 ## What the plugin checks
 
-- **Layer and context boundaries:** dependency direction, package placement, allowed imports, and references between bounded contexts.
+- **Layer and context boundaries:** dependency direction, package placement, allowed imports, and references between bounded contexts, and a ban on `global` depending on any bounded context.
 - **Application and web adapters:** use case and port collaborators, service transactions, controller dependencies, Spring component registration, and mapper responsibilities.
 - **Domain models and persistence:** immutable aggregate and Value Object patterns, factory methods, identifier rules, domain/entity separation, JPA entity naming and table declarations, and repository port contracts.
 - **Error handling:** exception structure, shared error contracts, and separation of HTTP/Spring types from Domain, Application, and outbound ports.
 - **Code quality:** Checkstyle, PMD, and SpotBugs, including dedicated quality tasks for Domain code.
-- **Tests and coverage:** Korean `@DisplayName`, given/when/then test structure, and observable assertions. The plugin also checks overall and changed-code coverage. Mutation thresholds are checked when PIT is configured.
+- **Tests and coverage:** Korean `@DisplayName`, given/when/then test structure, and observable assertions. The plugin also checks overall and changed-code coverage. The plugin applies PIT itself and `check` enforces mutation score 80 / test strength 85 on domain and application classes.
 - **Database migrations:** identifier uniqueness, indexes and foreign keys on reference columns, and prohibited technical ID references.
 - **Validation integrity:** attempts to disable required validation tasks, exclude their source, or ignore quality tool failures.
 
