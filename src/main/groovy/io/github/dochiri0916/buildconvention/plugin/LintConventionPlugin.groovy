@@ -50,6 +50,8 @@ class LintConventionPlugin implements Plugin<Project> {
     private static final List<String> REQUIRED_TRUE_CONVENTION_FLAGS = [
             'enforceDomainEntitySeparation',
             'enforceDomainStaticFactoryMethod',
+            'enforceContextExceptionConsolidation',
+            'enforceCrossContextIdentifierIsolation',
             'requireTableAnnotation'
     ].asImmutable()
     private static final Map<String, BigDecimal> MINIMUM_COVERAGE_VALUES = [

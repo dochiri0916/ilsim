@@ -77,6 +77,20 @@ class LintConventionPluginTest {
     }
 
     @Test
+    void 'check fails when exception consolidation or cross-context isolation flag is relaxed'() {
+        ['enforceContextExceptionConsolidation', 'enforceCrossContextIdentifierIsolation'].each { String flagName ->
+            Project project = sampleProject()
+            project.extensions.getByType(HexagonalConventionExtension)."${flagName}" = false
+
+            GradleException exception = assertThrows(GradleException) {
+                executeCheckActions(project)
+            }
+
+            assert exception.message.contains(flagName)
+        }
+    }
+
+    @Test
     void 'check fails when required task is excluded with dash x'() {
         Project project = sampleProject()
         project.gradle.startParameter.setExcludedTaskNames(['validateClaudeConventions'])
