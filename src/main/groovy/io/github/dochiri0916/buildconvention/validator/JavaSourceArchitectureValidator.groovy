@@ -523,14 +523,10 @@ class JavaSourceArchitectureValidator {
     }
 
     private static void validateTestConventions(Project project, List<String> violations) {
-        File testJavaDir = project.file('src/test/java')
-        if (!testJavaDir.exists()) {
+        List<File> testFiles = SourceInspector.collectTestJavaFiles(project)
+        if (testFiles.isEmpty()) {
             return
         }
-
-        List<File> testFiles = project.fileTree(testJavaDir) {
-            include '**/*.java'
-        }.files.toList()
         JavaSourceAstInspector.inspectAll(testFiles).values().each { inspection ->
             File file = inspection.file
             if (!inspection.valid) {
@@ -1681,7 +1677,7 @@ class JavaSourceArchitectureValidator {
     }
 
     private static boolean throwsJdkBasicException(String source) {
-        return (source =~ /(?m)\bthrow\s+new\s+(?:IllegalArgumentException|IllegalStateException|NullPointerException)\b/).find()
+        return (source =~ /(?m)\bthrow\s+new\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*(?:IllegalArgumentException|IllegalStateException|NullPointerException|UnsupportedOperationException|IndexOutOfBoundsException|ArithmeticException|NumberFormatException|ClassCastException|AssertionError)\b/).find()
     }
 
     private static void validateExceptionFactoryPolicy(
@@ -1748,12 +1744,13 @@ class JavaSourceArchitectureValidator {
     }
 
     private static boolean hasQualityToolSuppressWarnings(String source) {
-        return (source =~ /(?s)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)?SuppressWarnings\s*\([^)]*(?:PMD|pmd|Checkstyle|checkstyle|SpotBugs|spotbugs|FindBugs|findbugs)[^)]*\)/).find()
+        return (source =~ /(?i)\/[\/*][^\n]*(?:\bNOPMD\b|CHECKSTYLE\s*:\s*(?:OFF|SUPPRESS))/).find()
+                || (source =~ /(?s)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)?SuppressWarnings\s*\([^)]*(?:PMD|pmd|Checkstyle|checkstyle|SpotBugs|spotbugs|FindBugs|findbugs)[^)]*\)/).find()
                 || (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_.]*\.)?SuppressFBWarnings\b/).find()
     }
 
     private static boolean throwsDirectExceptionConstruction(String source) {
-        def matcher = source =~ /(?m)\bthrow\s+new\s+([A-Za-z_][A-Za-z0-9_]*Exception)\s*\(/
+        def matcher = source =~ /(?m)\bthrow\s+new\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*Exception)\s*\(/
         while (matcher.find()) {
             if (!(matcher.group(1) in ['IllegalArgumentException', 'IllegalStateException', 'NullPointerException'])) {
                 return true
@@ -1763,7 +1760,7 @@ class JavaSourceArchitectureValidator {
     }
 
     private static boolean constructsExceptionWithStringLiteral(String source) {
-        return (source =~ /(?m)\bnew\s+[A-Za-z_][A-Za-z0-9_]*Exception\s*\(\s*"/).find()
+        return (source =~ /(?m)\bnew\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*Exception\s*\(\s*"/).find()
     }
 
     private static boolean constructsSameExceptionWithStringLiteral(String source, String typeName) {
