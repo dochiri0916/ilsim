@@ -28,17 +28,18 @@ final class ExceptionContractConventionValidator {
             if (layer == null) {
                 return
             }
-            JavaSourceAstInspector.TypeModel type = inspection.primaryType()
-            String base = layer == 'domain' ? 'DomainException' : 'ApplicationException'
-            if (type.kind != 'CLASS'
-                    || type.modifiers.contains('ABSTRACT')
-                    || !type.simpleName.endsWith('Exception')
-                    || simplify(type.superType) != base) {
-                return
+            inspection.types.each { JavaSourceAstInspector.TypeModel type ->
+                String base = layer == 'domain' ? 'DomainException' : 'ApplicationException'
+                if (type.kind != 'CLASS'
+                        || type.modifiers.contains('ABSTRACT')
+                        || !type.simpleName.endsWith('Exception')
+                        || simplify(type.superType) != base) {
+                    return
+                }
+                String marker = ".${layer}.exception"
+                String context = inspection.packageName.substring(0, inspection.packageName.lastIndexOf(marker))
+                typesByContextAndLayer["${context}:${layer}"].add(type.simpleName)
             }
-            String marker = ".${layer}.exception"
-            String context = inspection.packageName.substring(0, inspection.packageName.lastIndexOf(marker))
-            typesByContextAndLayer["${context}:${layer}"].add(type.simpleName)
         }
         List<String> violations = []
         typesByContextAndLayer.each { String key, List<String> names ->

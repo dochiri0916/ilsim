@@ -67,6 +67,9 @@ class DomainStaticFactoryValidatorTest {
         writeJava(project, 'com/example/order/domain/model/Order.java', '''
                 package com.example.order.domain.model;
                 public record Order() {
+                    public static Order of() {
+                        return new Order();
+                    }
                 }
                 ''')
         writeJava(project, 'com/example/order/domain/model/OrderStatus.java', '''
@@ -102,6 +105,93 @@ class DomainStaticFactoryValidatorTest {
 
         // then
         assert violations.isEmpty()
+    }
+
+    @Test
+    @DisplayName('Value Object record는 of 팩토리를 선언해야 한다')
+    void rejectsValueObjectWithoutOfFactory() {
+        // given
+        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
+        writeJava(project, 'com/example/order/domain/vo/Money.java', '''
+                package com.example.order.domain.vo;
+                public record Money(long amount) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/vo/Quantity.java', '''
+                package com.example.order.domain.vo;
+                public record Quantity(int value) {
+                    public static Quantity of(int value) {
+                        return new Quantity(value);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/event/OrderPlaced.java', '''
+                package com.example.order.domain.event;
+                public record OrderPlaced(long orderId) {
+                }
+                ''')
+
+        // when
+        List<String> violations = DomainStaticFactoryValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert violations.any { it.contains("value object 'Money' must declare a public static 'of' factory method") }
+        assert !violations.any { it.contains("'Quantity'") }
+        assert !violations.any { it.contains("'OrderPlaced'") }
+    }
+
+    @Test
+    @DisplayName('Value Object를 new로 생성하면 거부하고 of 사용은 허용한다')
+    void rejectsValueObjectInstantiationWithNew() {
+        // given
+        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
+        writeJava(project, 'com/example/order/domain/vo/Money.java', '''
+                package com.example.order.domain.vo;
+                public record Money(long amount) {
+                    public static Money of(long amount) {
+                        return new Money(amount);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/out/persistence/OrderMapper.java', '''
+                package com.example.order.adapter.out.persistence;
+
+                import com.example.order.domain.vo.Money;
+
+                public final class OrderMapper {
+                    Money bad() {
+                        return new Money(1L);
+                    }
+
+                    Money qualified() {
+                        return new com.example.order.domain.vo.Money(2L);
+                    }
+
+                    Money good() {
+                        return Money.of(3L); // new Money(4L)
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/out/persistence/OtherMapper.java', '''
+                package com.example.order.adapter.out.persistence;
+
+                public final class OtherMapper {
+                    record Money(long value) {
+                    }
+
+                    Object local() {
+                        return new Money(1L);
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = DomainStaticFactoryValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert violations.count { it.contains('OrderMapper.java') && it.contains("'Money' must be created with Money.of") } == 1
+        assert !violations.any { it.contains('OtherMapper.java') }
+        assert !violations.any { it.contains('Money.java') }
     }
 
     @Test

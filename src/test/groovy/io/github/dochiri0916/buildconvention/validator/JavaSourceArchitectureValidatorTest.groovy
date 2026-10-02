@@ -779,6 +779,176 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
+    void 'requires inbound port types and web adapter types in their dedicated packages'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/port/in/PlaceOrderUseCase.java', '''
+                package com.example.order.application.port.in;
+
+                public interface PlaceOrderUseCase {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/command/PlaceOrderQuery.java', '''
+                package com.example.order.application.port.in.command;
+
+                public record PlaceOrderQuery() {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/usecase/PlaceOrderCommand.java', '''
+                package com.example.order.application.port.in.usecase;
+
+                public record PlaceOrderCommand() {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/usecase/CancelOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
+
+                public interface CancelOrderUseCase {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/request/OrderController.java', '''
+                package com.example.order.adapter.in.web.request;
+
+                public final class OrderController {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/OrderMapper.java', '''
+                package com.example.order.adapter.in.web;
+
+                public final class OrderMapper {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/request/PlaceOrderHelper.java', '''
+                package com.example.order.adapter.in.web.request;
+
+                public final class PlaceOrderHelper {
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("inbound port type 'PlaceOrderUseCase' must live in application..port.in.usecase package") }
+        assert violations.any { it.contains("inbound port type 'PlaceOrderQuery' must live in application..port.in.query package") }
+        assert violations.any { it.contains("port.in.command type 'PlaceOrderQuery' must end with Command") }
+        assert violations.any { it.contains("inbound port type 'PlaceOrderCommand' must live in application..port.in.command package") }
+        assert !violations.any { it.contains("'CancelOrderUseCase'") }
+        assert violations.any { it.contains("controller 'OrderController' must live directly in adapter.in.web package") }
+        assert violations.any { it.contains("adapter.in.web package may contain only Controller types; place 'OrderMapper'") }
+        assert violations.any { it.contains("adapter.in.web.request type 'PlaceOrderHelper' must end with Request") }
+    }
+
+    @Test
+    void 'rejects JDK value types as aggregate fields'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/domain/model/Order.java', '''
+                package com.example.order.domain.model;
+
+                import java.time.LocalDateTime;
+
+                public final class Order {
+                    private final OrderId id;
+                    private final LocalDateTime placedAt;
+
+                    private Order(final OrderId id, final LocalDateTime placedAt) {
+                        this.id = id;
+                        this.placedAt = placedAt;
+                    }
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("domain aggregate field 'placedAt' must use a Value Object instead of JDK value type 'LocalDateTime'") }
+    }
+
+    @Test
+    void 'rejects non record domain vo types and accepts record value objects'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/domain/vo/Money.java', '''
+                package com.example.order.domain.vo;
+
+                public record Money(long amount) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/vo/Quantity.java', '''
+                package com.example.order.domain.vo;
+
+                public final class Quantity {
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("domain value object 'Quantity' in domain.vo package must be a record or enum") }
+        assert !violations.any { it.contains("'Money'") && it.contains('domain.vo') }
+        assert !violations.any { it.contains('Money.java') && it.contains('package') }
+    }
+
+    @Test
+    void 'rejects application dependency on another context domain vo'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/application/service/PlaceOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.member.domain.vo.Nickname;
+
+                public final class PlaceOrderService {
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("application must not depend on another context domain model 'com.example.member.domain.vo.Nickname'") }
+    }
+
+    @Test
+    void 'rejects global package depending on bounded context packages'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/persistence/AuditingConfig.java', '''
+                package com.example.global.persistence;
+
+                import com.example.order.domain.model.Order;
+                import com.example.order.adapter.out.persistence.OrderEntity;
+
+                public final class AuditingConfig {
+                    private final Order order = null;
+                    private final com.example.order.application.service.OrderService service = null;
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert violations.any { it.contains("global package must not depend on bounded context package 'com.example.order.domain.model.Order'") }
+        assert violations.any { it.contains("global package must not depend on bounded context package 'com.example.order.adapter.out.persistence.OrderEntity'") }
+        assert violations.any { it.contains("global package must not depend on bounded context package 'com.example.order.application.service.OrderService'") }
+    }
+
+    @Test
+    void 'allows global package depending on global and framework packages'() {
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/persistence/AuditingConfig.java', '''
+                package com.example.global.persistence;
+
+                import com.example.global.exception.ErrorCode;
+                import org.springframework.context.annotation.Configuration;
+                import org.example.domain.model.External;
+
+                @Configuration
+                public final class AuditingConfig {
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        assert !violations.any { it.contains('global package must not depend on bounded context package') }
+    }
+
+    @Test
     void 'does not treat plain global error exceptions as Spring components'() {
         Project project = sampleProject()
         writeApplication(project)

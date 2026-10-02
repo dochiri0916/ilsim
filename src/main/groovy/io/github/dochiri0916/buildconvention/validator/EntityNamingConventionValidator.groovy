@@ -22,30 +22,31 @@ class EntityNamingConventionValidator {
             }
 
             File file = inspection.file
-            JavaSourceAstInspector.TypeModel type = inspection.primaryType()
             String packageName = inspection.packageName
             boolean inDomainLayer = SourceInspector.isInLayer(packageName, convention.domainPackageSegment)
-            boolean entityClass = type.annotation('Entity') != null
+            inspection.types.each { JavaSourceAstInspector.TypeModel type ->
+                boolean entityClass = type.annotation('Entity') != null
 
-            if (convention.enforceDomainEntitySeparation && inDomainLayer && entityClass) {
-                violations.add("${project.relativePath(file)} uses @Entity in domain package (separate domain model from persistence entity)")
-            }
+                if (convention.enforceDomainEntitySeparation && inDomainLayer && entityClass) {
+                    violations.add("${project.relativePath(file)} uses @Entity in domain package (separate domain model from persistence entity)")
+                }
 
-            if (!entityClass) {
-                return
-            }
+                if (!entityClass) {
+                    return
+                }
 
-            String className = type.simpleName
+                String className = type.simpleName
 
-            if (!className.endsWith('Entity')) {
-                violations.add("${project.relativePath(file)} JPA entity '${className}' must end with Entity")
-            }
+                if (!className.endsWith('Entity')) {
+                    violations.add("${project.relativePath(file)} JPA entity '${className}' must end with Entity")
+                }
 
-            JavaSourceAstInspector.AnnotationModel table = type.annotation('Table')
-            String tableName = table?.arguments?.get('name')
-            if (convention.requireTableAnnotation && !hasNonBlankTableName(tableName)) {
-                violations.add("${project.relativePath(file)} entity '${className}' must declare @Table(name = \"...\")")
-                return
+                JavaSourceAstInspector.AnnotationModel table = type.annotation('Table')
+                String tableName = table?.arguments?.get('name')
+                if (convention.requireTableAnnotation && !hasNonBlankTableName(tableName)) {
+                    violations.add("${project.relativePath(file)} entity '${className}' must declare @Table(name = \"...\")")
+                    return
+                }
             }
         }
 

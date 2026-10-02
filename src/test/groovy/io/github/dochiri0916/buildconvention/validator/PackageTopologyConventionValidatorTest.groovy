@@ -57,6 +57,27 @@ class PackageTopologyConventionValidatorTest {
     }
 
     @Test
+    @DisplayName('base package에 레이어 이름이 있으면 레이어 판별이 모호하므로 거부한다')
+    void rejectsRootPackageContainingLayerSegment() {
+        // given
+        Project project = sampleProject('ambiguous-root')
+        writeJava(project, 'com/domain/order/domain/model/Order.java', '''
+                package com.domain.order.domain.model;
+
+                public record Order() {
+                }
+                ''')
+        HexagonalConventionExtension convention = new HexagonalConventionExtension()
+        convention.basePackage = 'com.domain'
+
+        // when
+        List<String> violations = PackageTopologyConventionValidator.validate(project, convention)
+
+        // then
+        assert violations.any { it.contains("must not contain layer segment 'domain'") }
+    }
+
+    @Test
     @DisplayName('빈 source 프로젝트는 package root 없이 허용한다')
     void acceptsProjectWithoutMainJavaSources() {
         // given
@@ -87,6 +108,7 @@ class PackageTopologyConventionValidatorTest {
         writeType(project, 'com/example/order/Root.java', 'com.example.order', 'Root')
         writeType(project, 'com/example/order/feature/Feature.java', 'com.example.order.feature', 'Feature')
         writeType(project, 'com/example/order/domain/DomainRoot.java', 'com.example.order.domain', 'DomainRoot')
+        writeType(project, 'com/example/order/domain/vo/Money.java', 'com.example.order.domain.vo', 'Money')
         writeType(project, 'com/example/order/domain/value/Amount.java', 'com.example.order.domain.value', 'Amount')
         writeType(project, 'com/example/order/application/ApplicationRoot.java', 'com.example.order.application', 'ApplicationRoot')
         writeType(project, 'com/example/order/application/usecase/Place.java', 'com.example.order.application.usecase', 'Place')
@@ -95,8 +117,24 @@ class PackageTopologyConventionValidatorTest {
         writeType(project, 'com/example/order/adapter/AdapterRoot.java', 'com.example.order.adapter', 'AdapterRoot')
         writeType(project, 'com/example/order/adapter/persistence/Persistence.java', 'com.example.order.adapter.persistence', 'Persistence')
         writeType(project, 'com/example/order/adapter/in/InboundRoot.java', 'com.example.order.adapter.in', 'InboundRoot')
+        writeType(project, 'com/example/order/application/port/in/PortInRoot.java', 'com.example.order.application.port.in', 'PortInRoot')
+        writeType(project, 'com/example/order/application/port/in/dto/InDto.java', 'com.example.order.application.port.in.dto', 'InDto')
+        writeType(project, 'com/example/order/application/port/in/usecase/PlaceUseCase.java', 'com.example.order.application.port.in.usecase', 'PlaceUseCase')
+        writeType(project, 'com/example/order/application/port/in/command/PlaceCommand.java', 'com.example.order.application.port.in.command', 'PlaceCommand')
+        writeType(project, 'com/example/order/application/port/in/query/FindQuery.java', 'com.example.order.application.port.in.query', 'FindQuery')
+        writeType(project, 'com/example/order/application/port/in/result/PlaceResult.java', 'com.example.order.application.port.in.result', 'PlaceResult')
+        writeType(project, 'com/example/order/adapter/in/web/mapper/WebMapper.java', 'com.example.order.adapter.in.web.mapper', 'WebMapper')
+        writeType(project, 'com/example/order/adapter/in/web/request/deep/DeepRequest.java', 'com.example.order.adapter.in.web.request.deep', 'DeepRequest')
+        writeType(project, 'com/example/order/adapter/in/web/OrderController.java', 'com.example.order.adapter.in.web', 'OrderController')
+        writeType(project, 'com/example/order/adapter/in/web/request/PlaceRequest.java', 'com.example.order.adapter.in.web.request', 'PlaceRequest')
+        writeType(project, 'com/example/order/adapter/in/web/response/PlaceResponse.java', 'com.example.order.adapter.in.web.response', 'PlaceResponse')
         writeType(project, 'com/example/order/adapter/in/grpc/Grpc.java', 'com.example.order.adapter.in.grpc', 'Grpc')
+        writeType(project, 'com/example/global/configuration/AppConfig.java', 'com.example.global.configuration', 'AppConfig')
+        writeType(project, 'com/example/global/configuration/jpa/JpaConfig.java', 'com.example.global.configuration.jpa', 'JpaConfig')
         writeType(project, 'com/example/global/exception/ApiError.java', 'com.example.global.exception', 'ApiError')
+        writeType(project, 'com/example/global/persistence/JpaAuditingConfig.java', 'com.example.global.persistence', 'JpaAuditingConfig')
+        writeType(project, 'com/example/global/persistence/auditing/BaseEntity.java', 'com.example.global.persistence.auditing', 'BaseEntity')
+        writeType(project, 'com/example/global/configuration/properties/AppProperties.java', 'com.example.global.configuration.properties', 'AppProperties')
 
         // when
         List<String> violations = PackageTopologyConventionValidator.validate(
@@ -107,20 +145,33 @@ class PackageTopologyConventionValidatorTest {
         // then
         assert violations.any { it.contains("must be under application root package 'com.example'") }
         assert violations.any { it.contains('root package may contain only the application bootstrap class') }
-        assert violations.any { it.contains('global package must be limited to global.exception or global.web') }
+        assert violations.any { it.contains('global package must be limited to global.exception, global.web, global.persistence, or global.configuration.properties') }
         assert violations.any { it.contains('package must be context-first') }
         assert violations.any { it.contains("package 'common' is not a bounded context") }
         assert violations.any { it.contains("bounded context package 'order' must contain") }
         assert violations.any { it.contains('package must follow {context}/domain') }
         assert violations.any { it.contains('order.domain package must declare a valid child package') }
-        assert violations.any { it.contains('order.domain package must use model, event, or exception') }
+        assert violations.any { it.contains('order.domain package must use model, vo, event, or exception') }
         assert violations.any { it.contains('order.application package must declare a valid child package') }
         assert violations.any { it.contains('order.application package must use port, exception, or service') }
         assert violations.any { it.contains('order.application.port package must use in or out') }
         assert violations.any { it.contains('order.adapter package must declare a valid child package') }
         assert violations.any { it.contains('order.adapter package must use in or out') }
         assert violations.any { it.contains('order.adapter.in package must use bootstrap, event, messaging, scheduler, or web') }
+        assert violations.any { it.contains('AppConfig.java') && it.contains('global package must be limited') }
+        assert violations.any { it.contains('JpaConfig.java') && it.contains('global package must be limited') }
+        assert violations.any { it.contains('PortInRoot.java') && it.contains('port.in package must use usecase, command, query, or result') }
+        assert violations.any { it.contains('InDto.java') && it.contains('port.in package must use usecase, command, query, or result') }
+        assert violations.any { it.contains('WebMapper.java') && it.contains('adapter.in.web package must use request or response') }
+        assert violations.any { it.contains('DeepRequest.java') && it.contains('adapter.in.web package must use request or response') }
+        ['PlaceUseCase', 'PlaceCommand', 'FindQuery', 'PlaceResult', 'OrderController', 'PlaceRequest', 'PlaceResponse'].each { String name ->
+            assert !violations.any { it.contains("${name}.java") }
+        }
+        assert !violations.any { it.contains('Money.java') }
         assert !violations.any { it.contains('ApiError.java') }
+        assert !violations.any { it.contains('JpaAuditingConfig.java') }
+        assert !violations.any { it.contains('BaseEntity.java') }
+        assert !violations.any { it.contains('AppProperties.java') }
     }
 
     @Test
@@ -148,7 +199,7 @@ class PackageTopologyConventionValidatorTest {
         )
 
         // then
-        assert violations.any { it.contains('order.domain package must use model, event, or exception') }
+        assert violations.any { it.contains('order.domain package must use model, vo, event, or exception') }
     }
 
     @Test

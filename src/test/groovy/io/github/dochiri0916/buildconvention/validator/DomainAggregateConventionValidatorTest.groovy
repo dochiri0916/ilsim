@@ -270,6 +270,81 @@ class DomainAggregateConventionValidatorTest {
     }
 
     @Test
+    @DisplayName('식별자 필드명이 id가 아닌 Aggregate도 검증 대상에서 제외하지 않는다')
+    void rejectsAggregateWithoutIdFieldInsteadOfSkippingValidation() {
+        // given
+        Project project = sampleProject('no-id-field')
+        writeProductSupportTypes(project)
+        writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
+                package com.example.catalog.domain.model;
+
+                public final class Product {
+                    private final ProductId productId;
+                    private ProductName name;
+
+                    private Product(final ProductId productId) {
+                        this.productId = productId;
+                    }
+
+                    public static Product create() {
+                        return new Product(ProductId.generate());
+                    }
+                }
+        ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert violations.any { violation -> violation.contains("must declare identifier field 'id'") }
+    }
+
+    @Test
+    @DisplayName('같은 파일의 보조 top-level 타입도 도메인 규칙으로 검증한다')
+    void validatesSecondaryTopLevelTypeInSameFile() {
+        // given
+        Project project = sampleProject('secondary-type')
+        writeProductSupportTypes(project)
+        writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
+                package com.example.catalog.domain.model;
+
+                import java.util.Objects;
+
+                public final class Product {
+                    private final ProductId id;
+
+                    private Product(final ProductId id) {
+                        this.id = id;
+                    }
+
+                    public static Product create() {
+                        return new Product(ProductId.generate());
+                    }
+
+                    @Override
+                    public boolean equals(final Object other) {
+                        return other instanceof Product product && id.equals(product.id);
+                    }
+
+                    @Override
+                    public int hashCode() {
+                        return id.hashCode();
+                    }
+                }
+
+                class Loose {
+                    public String name;
+                }
+        ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert violations.any { violation -> violation.contains("'Loose'") || violation.contains('Loose') }
+    }
+
+    @Test
     @DisplayName('비공개 equals는 Aggregate의 ID 동등성 구현으로 인정하지 않는다')
     void rejectsAggregateWithNonPublicEquals() {
         // given
