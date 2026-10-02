@@ -373,8 +373,8 @@ class TransactionBoundaryConventionValidator {
             return true
         }
 
-        return (searchableBody =~ /(?m)\b(?:Files\s*\.\s*(?:write|delete|copy|move)|new\s+(?:FileOutputStream|FileWriter))\b/).find()
-                || (searchableBody =~ /(?m)\b(?:WebClient|RestTemplate|KafkaTemplate|RabbitTemplate|JavaMailSender|ApplicationEventPublisher)\b/).find()
+        return (searchableBody =~ /(?m)\b(?:Files\s*\.\s*(?:write|delete|copy|move|create|newOutputStream|newBufferedWriter)\w*|new\s+(?:FileOutputStream|FileWriter))\b/).find()
+                || (searchableBody =~ /(?m)\b(?:HttpClient|WebClient|RestTemplate|KafkaTemplate|RabbitTemplate|JavaMailSender|ApplicationEventPublisher)\b/).find()
     }
 
     private static boolean hasTransactionalAnnotation(JavaSourceAstInspector.TypeModel type) {
