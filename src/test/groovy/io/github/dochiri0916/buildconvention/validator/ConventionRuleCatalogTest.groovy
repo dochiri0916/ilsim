@@ -24,4 +24,18 @@ class ConventionRuleCatalogTest {
         assert identified[2] == '[ARCH-GENERAL] unclassified convention failure'
         assert ConventionRuleCatalog.ruleId('ProblemDetail handler must return ErrorCode detail') == 'ARCH-EXCEPTION-CONTRACT'
     }
+
+    @Test
+    @DisplayName('파일 경로의 디렉터리와 파일명은 rule 분류에 영향을 주지 않는다')
+    void ignoresLeadingFilePathWhenClassifying() {
+        // given
+        String path = 'src/main/java/com/x/order/application/exception/LatestOrderException.java'
+
+        // when
+        String id = ConventionRuleCatalog.ruleId("${path} domain aggregate state must use private final fields")
+
+        // then
+        assert id == 'ARCH-DOMAIN-AGGREGATE'
+        assert ConventionRuleCatalog.ruleId('latest contest failure') == 'ARCH-GENERAL'
+    }
 }
