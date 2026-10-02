@@ -30,7 +30,7 @@
 
 ## 필수 검증
 
-Architecture violation은 메시지 앞의 안정적인 `[ARCH-...]` rule ID로 분류한다. 메시지 문구는 개선될 수 있으므로 테스트와 CI 리포트는 가능하면 rule ID를 기준으로 집계한다.
+Architecture violation은 메시지 앞의 안정적인 `[ARCH-...]` rule ID로 분류한다. 메시지 문구는 개선될 수 있으므로 테스트와 CI 리포트는 가능하면 rule ID를 기준으로 집계한다. 메시지 템플릿별 rule ID는 `RuleIdContractTest`와 `rule-id-contract.txt`로 고정되어, 문구 변경으로 ID가 바뀌면 테스트가 실패한다.
 
 Production, 테스트, build 설정, migration을 변경한 경우 완료 전에 실행한다.
 
