@@ -16,7 +16,7 @@ Domain <- Application <- Adapter
 
 - Domain은 Spring, JPA, Lombok, Application, Adapter를 모른다. `global.exception`에서는 기술 독립적인 ErrorCode와 공통 예외 계약만 사용한다.
 - Application은 같은 Context의 Domain과 자신이 소유한 Port를 사용한다. `global.exception`에서는 기술 독립적인 ErrorCode와 공통 예외 계약만 사용할 수 있다.
-- Application은 실용적 예외로 Spring의 stereotype·transaction annotation과 compile-time Lombok을 사용할 수 있다. 따라서 이 구조는 strict Clean Architecture가 아니라 실용적 hexagonal/clean architecture다.
+- Application은 실용적 예외로 Spring의 stereotype·transaction annotation과 compile-time Lombok을 사용할 수 있다. 따라서 이 구조는 strict Clean Architecture가 아니라 실용적 hexagonal/clean architecture다. 그 외 Jackson, Servlet, Kafka, Redis, JDBC/ORM 드라이버 같은 기술 타입은 Application과 Domain에서 사용할 수 없다.
 - Controller는 Inbound `UseCase`만 호출하고, Application Service는 Outbound `Port` 또는 무상태 Domain Service만 주입받는다.
 - `{context}`는 Bounded Context이며 Aggregate와 같은 뜻으로 사용하지 않는다. 다른 Context의 모델·Application 타입·식별자 VO를 직접 import하지 않는다. 통합 Port 경계에서 현재 Context 소유 VO로 번역한다. 공유 식별자 계약이 필요하면 소유권과 버전이 명시된 Published Language module에서만 공유한다.
 - `common` 패키지를 만들지 않는다.
@@ -26,19 +26,24 @@ Domain <- Application <- Adapter
 ```
 com.example.project/
 ├── global/
+│   ├── configuration/properties/
 │   ├── exception/
+│   ├── persistence/
 │   └── web/
 └── {context}/
-    ├── domain/{model,event,exception}/
-    ├── application/{port/in,port/out,exception,service}/
-    └── adapter/{in/web,out/persistence}/
+    ├── domain/{model,vo,event,exception}/
+    ├── application/{port/in/{usecase,command,query,result},port/out,exception,service}/
+    └── adapter/{in/web/{request,response},out/persistence}/
 ```
 
-`global.exception`에는 `ErrorCode`, `ErrorKind`, `BusinessException`, `DomainException`, `ApplicationException`, `GlobalExceptionHandler`를 둔다. 공통 계약 타입은 Spring과 HTTP 타입을 모르며, `GlobalExceptionHandler`만 Spring Web 타입을 사용한다. `global.web`에는 인증과 MVC 설정을 둔다.
+`global.exception`에는 `ErrorCode`, `ErrorKind`, `BusinessException`, `DomainException`, `ApplicationException`, `GlobalExceptionHandler`를 둔다. 공통 계약 타입은 Spring과 HTTP 타입을 모르며, `GlobalExceptionHandler`만 Spring Web 타입을 사용한다. `global.web`에는 인증과 MVC 설정을, `global.persistence`에는 JPA 공통 설정을, `global.configuration.properties`에는 `@ConfigurationProperties` 타입을 둔다. `global`은 어떤 `{context}` 패키지도 import하지 않는다.
 
 ## Domain
 
+- Aggregate는 `final class`이며 모든 필드는 `private final` Value Object·enum·First-class Collection이다. Value Object(record)는 `public static of(...)`로만 생성하고 `new`로 생성하지 않는다.
+
 - Entity와 Aggregate Root는 불변 `final class`다. Value Object와 First-class Collection은 `record`다.
+- `domain.model`의 상태를 가진 class는 `id` 필드(`{Domain}Id` Value Object)를 반드시 선언한다.
 - 식별자는 `{Domain}Id` Value Object로 표현하며 DB 기술 키 `Long id`를 Domain에 두지 않는다.
 - 신규 Aggregate는 `create`, 영속 상태 복원은 `restore`를 사용한다.
 - 상태 변경은 새 Aggregate를 반환한다. ID 기반 `equals`와 `hashCode`를 구현한다.
