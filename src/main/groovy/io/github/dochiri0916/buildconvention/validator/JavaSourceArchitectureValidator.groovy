@@ -3,6 +3,7 @@ package io.github.dochiri0916.buildconvention.validator
 import io.github.dochiri0916.buildconvention.extension.HexagonalConventionExtension
 import io.github.dochiri0916.buildconvention.support.JavaSourceAstInspector
 import io.github.dochiri0916.buildconvention.support.SourceInspector
+import io.github.dochiri0916.buildconvention.support.TechnicalDependencyCatalog
 import org.gradle.api.Project
 
 import java.nio.charset.StandardCharsets
@@ -106,10 +107,6 @@ class JavaSourceArchitectureValidator {
             'DefaultRequest',
             'DefaultResponse'
     ] as Set
-    private static final Set<String> ALLOWED_APPLICATION_SPRING_TYPES = [
-            'org.springframework.stereotype.Service',
-            'org.springframework.transaction.annotation.Transactional'
-    ] as Set
     private static final Set<String> ALLOWED_APPLICATION_EXTERNAL_TYPES = [
             'lombok.RequiredArgsConstructor',
             'org.springframework.stereotype.Service',
@@ -122,21 +119,6 @@ class JavaSourceArchitectureValidator {
             'ErrorCode',
             'ErrorKind'
     ] as Set
-    private static final Set<String> APPLICATION_TECHNICAL_PACKAGE_PREFIXES = [
-            'com.amazonaws.',
-            'com.querydsl.',
-            'feign.',
-            'jakarta.persistence.',
-            'java.sql.',
-            'javax.persistence.',
-            'okhttp3.',
-            'org.apache.http.',
-            'org.hibernate.',
-            'org.springframework.',
-            'retrofit2.',
-            'software.amazon.awssdk.'
-    ] as Set
-
     static List<String> validate(Project project, HexagonalConventionExtension convention) {
         List<String> violations = []
         List<File> mainSourceFiles = SourceInspector.collectMainSourceFiles(project).findAll { File file ->
@@ -1024,10 +1006,10 @@ class JavaSourceArchitectureValidator {
     }
 
     private static boolean isForbiddenApplicationTechnicalImport(String imported) {
-        if (ALLOWED_APPLICATION_SPRING_TYPES.contains(imported)) {
+        if (TechnicalDependencyCatalog.ALLOWED_APPLICATION_SPRING_TYPES.contains(imported)) {
             return false
         }
-        return APPLICATION_TECHNICAL_PACKAGE_PREFIXES.any { String prefix -> imported.startsWith(prefix) }
+        return TechnicalDependencyCatalog.APPLICATION_TECHNICAL_PACKAGE_PREFIXES.any { String prefix -> imported.startsWith(prefix) }
     }
 
     private static void validatePresentation(
