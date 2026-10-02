@@ -1,24 +1,47 @@
 package io.github.dochiri0916.buildconvention.support
 
 import org.gradle.api.Project
+import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.SourceSetContainer
 
 class SourceInspector {
     static List<File> collectMainSourceFiles(Project project) {
-        List<File> files = []
-        File javaDir = project.file('src/main/java')
-        if (javaDir.exists()) {
-            files.addAll(project.fileTree(javaDir) {
+        Set<File> files = new LinkedHashSet<>()
+        sourceDirs(project, 'main', 'src/main/java', 'src/main/groovy').each { File dir ->
+            files.addAll(project.fileTree(dir) {
                 include '**/*.java'
-            }.files)
-        }
-
-        File groovyDir = project.file('src/main/groovy')
-        if (groovyDir.exists()) {
-            files.addAll(project.fileTree(groovyDir) {
                 include '**/*.groovy'
             }.files)
         }
-        return files
+        return files.toList()
+    }
+
+    static List<File> collectTestJavaFiles(Project project) {
+        Set<File> files = new LinkedHashSet<>()
+        Set<File> dirs = new LinkedHashSet<>()
+        dirs.addAll(sourceDirs(project, null, 'src/test/java'))
+        dirs.each { File dir ->
+            files.addAll(project.fileTree(dir) { include '**/*.java' }.files)
+        }
+        return files.toList()
+    }
+
+    /**
+     * Source directories of the real source sets so custom srcDir entries cannot hide code from validation.
+     * With a null sourceSetName, every source set except main is returned.
+     */
+    static Set<File> sourceDirs(Project project, String sourceSetName, String... defaults) {
+        Set<File> dirs = new LinkedHashSet<>()
+        defaults.each { String path -> dirs.add(project.file(path)) }
+        SourceSetContainer sourceSets = project.extensions.findByType(SourceSetContainer)
+        sourceSets?.each { SourceSet sourceSet ->
+            boolean selected = sourceSetName == null ? sourceSet.name != 'main' : sourceSet.name == sourceSetName
+            if (selected) {
+                dirs.addAll(sourceSet.allJava.srcDirs)
+                dirs.addAll(sourceSet.allSource.srcDirs.findAll { File dir -> dir.name == 'groovy' })
+            }
+        }
+        return dirs.findAll { File dir -> dir.exists() }.toSet()
     }
 
     static String extractPackageName(String source) {

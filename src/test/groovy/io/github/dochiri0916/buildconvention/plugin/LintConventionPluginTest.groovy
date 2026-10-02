@@ -410,6 +410,81 @@ class LintConventionPluginTest {
         assert exception.message.contains('inboundAdapterLineCoverageMinimum=0.10 < 0.80')
     }
 
+    @Test
+    void 'check fails when convention task actions are removed or added'() {
+        ['validateHexagonalArchitecture': { task -> task.actions.clear() },
+         'validateArchitectureConventions': { task -> task.doFirst { } },
+         'validatePitMutationGate': { task -> task.doLast { } }].each { String name, Closure tamper ->
+            Project project = sampleProject()
+            tamper(project.tasks.named(name).get())
+
+            GradleException exception = assertThrows(GradleException) {
+                executeCheckActions(project)
+            }
+
+            assert exception.message.contains('modified convention task actions')
+            assert exception.message.contains(name)
+        }
+    }
+
+    @Test
+    void 'check classifies domain sources relative to the source root'() {
+        File parent = File.createTempDir('domain', '')
+        File projectDir = new File(parent, 'domain')
+        projectDir.mkdirs()
+        Project project = ProjectBuilder.builder().withProjectDir(projectDir).build()
+        project.pluginManager.apply('java')
+        project.pluginManager.apply(LintConventionPlugin)
+        writeJava(project, 'com/example/order/application/service/Plain.java', '''
+                package com.example.order.application.service;
+
+                public final class Plain {
+                }
+                ''')
+
+        executeCheckActions(project)
+    }
+
+    @Test
+    void 'check fails when coverage rules or mutation configuration are weakened after evaluation'() {
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/application/service/Plain.java', '''
+                package com.example.order.application.service;
+
+                public final class Plain {
+                }
+                ''')
+        ((org.gradle.api.internal.project.ProjectInternal) project).evaluate()
+        def verification = project.tasks.named('jacocoTestCoverageVerification').get()
+        verification.violationRules.failOnViolation = false
+        verification.violationRules.rules.each { rule -> rule.enabled = false }
+        def pitest = project.extensions.getByName('pitest')
+        pitest.excludedClasses.set(['**'])
+        pitest.excludedMethods.set(['pay'])
+        pitest.mutators.set(['VOID_METHOD_CALLS'])
+        pitest.targetClasses.set(['com.other.*'])
+        pitest.mutationThreshold.set(1)
+        pitest.testStrengthThreshold.set(1)
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('failOnViolation=false')
+        assert exception.message.contains('violationRules.rule.enabled=false')
+        ['excludedClasses', 'excludedMethods', 'mutators', 'targetClasses', 'mutationThreshold', 'testStrengthThreshold']
+                .each { String name -> assert exception.message.contains("pitest.${name}") }
+    }
+
+    @Test
+    void 'check accepts the default coverage rules and mutation configuration after evaluation'() {
+        Project project = sampleProject()
+        ((org.gradle.api.internal.project.ProjectInternal) project).evaluate()
+        project.extensions.getByName('pitest').mutators.set(['STRONGER'])
+
+        executeCheckActions(project)
+    }
+
     private static Project sampleProject() {
         File projectDir = File.createTempDir('lint-convention-plugin-test', '')
         Project project = ProjectBuilder.builder().withProjectDir(projectDir).build()
