@@ -34,9 +34,9 @@ class BuildConventionReportTest {
         assert report.status == 'PASS'
         assert report.checks.architecture == 'PASS'
         assert report.checks.coverageReport == 'PASS'
-        assert report.checks.mutationGate == 'NOT_APPLIED'
+        assert report.checks.mutationGate == 'SKIPPED'
         assert report.coverage == [line: 0.75, branch: 0.5]
-        assert report.mutation == [enabled: false, score: null]
+        assert report.mutation == [enabled: true, score: null]
 
         project.tasks.getByName('validateArchitectureConventions').state.outcome = new RuntimeException('violation')
         BuildConventionReport.write(project)

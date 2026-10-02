@@ -91,6 +91,7 @@ class LintConventionPlugin implements Plugin<Project> {
         project.pluginManager.apply('pmd')
         project.pluginManager.apply('com.github.spotbugs')
         project.pluginManager.apply('jacoco')
+        project.pluginManager.apply('info.solidsoft.pitest')
 
         def checkstyleConfig = project.layout.buildDirectory.file('lint-convention/checkstyle/checkstyle.xml')
         def checkstyleDomainConfig = project.layout.buildDirectory.file('lint-convention/checkstyle/checkstyle-domain.xml')
@@ -236,14 +237,7 @@ class LintConventionPlugin implements Plugin<Project> {
 
             def validatePitMutationGate = project.tasks.register('validatePitMutationGate') { task ->
                 task.group = 'verification'
-                task.description = 'Runs the PIT mutation gate when the info.solidsoft.pitest plugin is applied.'
-                task.doLast {
-                    if (!project.plugins.hasPlugin('info.solidsoft.pitest')) {
-                        throw new GradleException(
-                                'PIT mutation gate requires applying the info.solidsoft.pitest plugin in the target project.'
-                        )
-                    }
-                }
+                task.description = 'Runs the PIT mutation gate.'
             }
 
             project.tasks.withType(Test).configureEach { Test task ->
@@ -343,18 +337,12 @@ class LintConventionPlugin implements Plugin<Project> {
                 jacocoTestCoverageVerification.configure { JacocoCoverageVerification task ->
                     configureCoverageRules(task, convention)
                 }
-                if (project.plugins.hasPlugin('info.solidsoft.pitest')) {
-                    configurePitMutationGate(project, convention)
-                    validatePitMutationGate.configure { task ->
-                        task.dependsOn(project.tasks.named('pitest'))
-                    }
-                    project.tasks.named('check') { task ->
-                        task.dependsOn(validatePitMutationGate)
-                    }
-                } else if (convention.enforcePitOnCheck) {
-                    project.tasks.named('check') { task ->
-                        task.dependsOn(validatePitMutationGate)
-                    }
+                configurePitMutationGate(project, convention)
+                validatePitMutationGate.configure { task ->
+                    task.dependsOn(project.tasks.named('pitest'))
+                }
+                project.tasks.named('check') { task ->
+                    task.dependsOn(validatePitMutationGate)
                 }
             }
         }
@@ -1242,6 +1230,8 @@ class LintConventionPlugin implements Plugin<Project> {
                 "*.${convention.applicationPackageSegment}.*".toString()
         ]
         pitestExtension.targetTests = ['*Test', '*Tests']
+        pitestExtension.junit5PluginVersion = '1.2.1'
+        pitestExtension.failWhenNoMutations = false
         pitestExtension.mutationThreshold = minimumInt(convention.mutationScoreMinimum, 80)
         pitestExtension.testStrengthThreshold = minimumInt(convention.testStrengthMinimum, 85)
         pitestExtension.outputFormats = ['XML', 'HTML']

@@ -28,8 +28,8 @@ class LintConventionFunctionalTest {
         assert report.pluginVersion == '1.0.1'
         assert report.status == 'PASS'
         assert report.checks.architecture == 'PASS'
-        assert report.checks.mutationGate == 'NOT_APPLIED'
-        assert report.mutation == [enabled: false, score: null]
+        assert report.checks.mutationGate == 'PASS'
+        assert report.mutation.enabled == true
         assert report.coverage.line == 1
         assert report.coverage.branch == null
     }
