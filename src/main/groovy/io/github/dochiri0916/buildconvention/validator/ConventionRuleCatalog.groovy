@@ -26,13 +26,19 @@ final class ConventionRuleCatalog {
                 [id: 'ARCH-WEB-ADAPTER', pattern: 'controller|API DTO|Spring Web|web adapter'],
                 [id: 'ARCH-PERSISTENCE-ADAPTER', pattern: 'JPA|persistence|Entity|Mapper'],
                 [id: 'ARCH-TRANSACTION-BOUNDARY', pattern: 'transaction|Transactional|I/O|side effect'],
-                [id: 'ARCH-TEST-CONVENTION', pattern: 'test|given|when|then|assert'],
+                [id: 'ARCH-TEST-CONVENTION', pattern: '\\b(?:test|tests|given|when|then|assert)\\b'],
                 [id: 'ARCH-QUALITY-GATE', pattern: 'coverage|mutation|lint|quality|suppress'],
                 [id: 'ARCH-NAMING', pattern: 'name|naming|must end|must be named']
         ]
+        String description = withoutLeadingPath(violation)
         Map<String, String> matched = rules.find { entry ->
-            (violation =~ /(?i)${entry.pattern}/).find()
+            (description =~ /(?i)${entry.pattern}/).find()
         }
         return matched?.id ?: 'ARCH-GENERAL'
+    }
+
+    /** Violation messages start with a source path; its directory and file names must not drive classification. */
+    private static String withoutLeadingPath(String violation) {
+        violation.replaceFirst(/^\S*\.(?:java|groovy|kt|sql|xml|gradle)\b\S*\s*/, '')
     }
 }
