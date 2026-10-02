@@ -1,6 +1,7 @@
 package io.github.dochiri0916.buildconvention.validator
 
 import io.github.dochiri0916.buildconvention.extension.HexagonalConventionExtension
+import io.github.dochiri0916.buildconvention.support.SourceInspector
 import org.gradle.api.Project
 import org.w3c.dom.Document
 import org.w3c.dom.Element
@@ -84,14 +85,15 @@ class ChangedCodeCoverageValidator {
     }
 
     private static DiffResult collectChangedLines(Project project, String baseRef) {
-        DiffResult committedDiff = collectDiffChangedLines(project, "${baseRef}...HEAD".toString())
-        if (!committedDiff.errorMessage.isBlank()) {
-            return committedDiff
+        // One diff against the merge base keeps every line number in working-tree coordinates,
+        // which is what the JaCoCo report was generated from.
+        String mergeBase = resolveMergeBase(project, baseRef)
+        if (mergeBase == null) {
+            return new DiffResult([:], "Cannot calculate changed code coverage from '${baseRef}...HEAD': no merge base found")
         }
-
-        DiffResult workingTreeDiff = collectDiffChangedLines(project, 'HEAD')
-        if (!workingTreeDiff.errorMessage.isBlank()) {
-            return workingTreeDiff
+        DiffResult diff = collectDiffChangedLines(project, mergeBase)
+        if (!diff.errorMessage.isBlank()) {
+            return diff
         }
 
         DiffResult untrackedFiles = collectUntrackedJavaLines(project)
@@ -100,12 +102,33 @@ class ChangedCodeCoverageValidator {
         }
 
         Map<String, Set<Integer>> changedLines = [:].withDefault { new TreeSet<Integer>() }
-        [committedDiff, workingTreeDiff, untrackedFiles].each { DiffResult result ->
+        [diff, untrackedFiles].each { DiffResult result ->
             result.changedLinesByFile.each { String filePath, Set<Integer> lines ->
                 changedLines[filePath].addAll(lines)
             }
         }
         return new DiffResult(changedLines.findAll { String path, Set<Integer> lines -> !lines.isEmpty() }, '')
+    }
+
+    private static String resolveMergeBase(Project project, String baseRef) {
+        Process process = new ProcessBuilder(['git', '-C', project.projectDir.absolutePath, 'merge-base', baseRef, 'HEAD'])
+                .directory(project.projectDir)
+                .start()
+        String stdout = process.inputStream.getText('UTF-8').trim()
+        process.errorStream.getText('UTF-8')
+        return process.waitFor() == 0 && !stdout.isEmpty() ? stdout : null
+    }
+
+    private static List<String> sourceRoots(Project project) {
+        SourceInspector.sourceDirs(project, 'main', 'src/main/java')
+                .findAll { File dir -> !dir.name.equals('groovy') }
+                .collect { File dir -> project.projectDir.toPath().relativize(dir.toPath()).toString().replace(File.separatorChar, '/' as char) }
+                .findAll { String path -> !path.startsWith('..') }
+                .toSet().sort()
+    }
+
+    private static boolean isInSourceRoot(Project project, String path) {
+        sourceRoots(project).any { String root -> path.startsWith("${root}/") }
     }
 
     private static DiffResult collectDiffChangedLines(Project project, String revision) {
@@ -118,9 +141,8 @@ class ChangedCodeCoverageValidator {
                 '--no-ext-diff',
                 '--diff-filter=ACMRT',
                 revision,
-                '--',
-                'src/main/java'
-        ]
+                '--'
+        ] + sourceRoots(project)
         Process process = new ProcessBuilder(command)
                 .directory(project.projectDir)
                 .start()
@@ -154,7 +176,7 @@ class ChangedCodeCoverageValidator {
         }
 
         return new DiffResult(changedLinesByFile.findAll { String path, Set<Integer> lines ->
-            path.startsWith('src/main/java/') && !lines.isEmpty()
+            isInSourceRoot(project, path) && !lines.isEmpty()
         }, '')
     }
 
@@ -166,9 +188,8 @@ class ChangedCodeCoverageValidator {
                 'ls-files',
                 '--others',
                 '--exclude-standard',
-                '--',
-                'src/main/java'
-        ]
+                '--'
+        ] + sourceRoots(project)
         Process process = new ProcessBuilder(command)
                 .directory(project.projectDir)
                 .start()
@@ -181,7 +202,7 @@ class ChangedCodeCoverageValidator {
 
         Map<String, Set<Integer>> changedLinesByFile = [:].withDefault { new TreeSet<Integer>() }
         stdout.readLines().findAll { String path ->
-            path.startsWith('src/main/java/') && path.endsWith('.java')
+            isInSourceRoot(project, path) && path.endsWith('.java')
         }.each { String path ->
             File file = project.file(path)
             int lineCount = file.readLines('UTF-8').size()
@@ -210,6 +231,7 @@ class ChangedCodeCoverageValidator {
 
         Document document = factory.newDocumentBuilder().parse(jacocoXmlReport)
         Map<String, Map<Integer, LineCoverage>> coverageByFile = [:]
+        List<String> roots = sourceRoots(project)
         NodeList packages = document.getElementsByTagName('package')
         for (int packageIndex = 0; packageIndex < packages.length; packageIndex++) {
             Element packageElement = packages.item(packageIndex) as Element
@@ -219,8 +241,9 @@ class ChangedCodeCoverageValidator {
                 Node child = children.item(childIndex)
                 if (child.nodeType == Node.ELEMENT_NODE && child.nodeName == 'sourcefile') {
                     Element sourceFile = child as Element
-                    String relativePath = "src/main/java/${packagePath}/${sourceFile.getAttribute('name')}"
-                    coverageByFile[relativePath] = parseSourceFileCoverage(sourceFile)
+                    String sourceName = "${packagePath}/${sourceFile.getAttribute('name')}"
+                    String root = roots.find { String candidate -> project.file("${candidate}/${sourceName}").exists() } ?: (roots.isEmpty() ? 'src/main/java' : roots.first())
+                    coverageByFile["${root}/${sourceName}".toString()] = parseSourceFileCoverage(sourceFile)
                 }
             }
         }
