@@ -670,6 +670,17 @@ echo artifact > build/libs/service.jar
         self.assertNotIn('com.acme.App', detail)
         self.assertIn('org.springframework.security', detail)
 
+    def test_test_writer_sees_the_approved_production_files(self):
+        self.agent_input()
+        self.run_stage('baseline')
+        with patch.object(controller.agent, 'run', return_value=self.generated()) as run, \
+                patch.object(controller.Controller, '_write', side_effect=self.writer):
+            self.run_stage('generate-tests')
+        task = json.loads(run.call_args[0][2].rsplit('\n', 1)[1])
+        scope = controller.regression.read_json(self.project/'scope.json')['files']
+        self.assertEqual([path for path in scope if path.startswith('src/main/')], task['approvedProductionFiles'])
+        self.assertTrue(task['approvedProductionFiles'])
+
     def test_test_writing_rejects_production_change_before_writer(self):
         self.run_stage('baseline')
         with patch.object(controller.Controller, '_write') as write:
