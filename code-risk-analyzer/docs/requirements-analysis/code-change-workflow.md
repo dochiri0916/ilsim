@@ -15,6 +15,7 @@
 | local-service | 성공한 verification, MYSQL fixture adapter | 최종 JAR를 별도 JVM으로 기동하고 HTTP·독립 MySQL 조회·종료 검증. 실패·중단·소스 변경 시 과거 서비스/검토 수락 제거 |
 | review | 성공한 verification | 최종 실행에 연결된 assertion·요구사항·소스·실행 해시 검토, 별도 서비스 검증 결과 확인. 미해결 위험과 실패는 완료 차단 |
 | complete | 성공한 review | 현재 소스·문서·환경·JUnit·JAR·scan·검토 파일을 다시 확인하고 요구사항/assertion 근거 재검토 |
+| pull-request | COMPLETED 세션 | 검토 파일을 다시 확인하고 완료 근거로 `pull-request.md` 본문 작성. `submit: true`는 plan의 `PULL_REQUEST` 승인, 커밋·푸시된 feature 브랜치, 검증 소스 일치를 확인한 뒤 `gh pr create --draft`만 호출 |
 
 test-writing 성공은 **파일 작성** 성공이다. 예상한 원인의 테스트 실패나 assertion의 의미를 자동 증명하지 않는다. 테스트를 직접 설계하고 필요한 구현 전 실행을 별도로 기록한다. 도메인·MySQL 테스트 수준과 영향 범위도 plan의 명시적 매핑이며 자동 추론하지 않는다.
 
@@ -68,7 +69,12 @@ python3 scripts/code_change_workflow.py review \
   --open-evidence /absolute/open-evidence.json
 python3 scripts/code_change_workflow.py complete \
   --config /absolute/config.json --state /absolute/project/build/change-001/state.json
+python3 scripts/code_change_workflow.py pull-request \
+  --config /absolute/config.json --state /absolute/project/build/change-001/state.json \
+  --pull-request /absolute/pull-request.json
 ```
+
+`pull-request.json`은 `{"title": "...", "base": "main", "submit": false}` 형식이다. `submit`을 생략하거나 `false`로 두면 본문 초안만 만들고 외부 호출을 하지 않는다. 실행기는 커밋·푸시를 하지 않으며 PR은 항상 draft로 연다. 본문은 모델 호출 없이 세션 근거에서 결정적으로 생성한다.
 
 일반 프로젝트에는 fixture 정책을 전달하지 않는다. fixture만 별도 승인한 정확한 예외 목록을 `review --fixture-policy`로 전달한다. production 위험은 일반 프로젝트에서 계속 차단한다. fixture의 승인된 결함을 재현해 COMPLETED가 되더라도 `targetRiskStatus=UNRESOLVED`를 유지한다.
 

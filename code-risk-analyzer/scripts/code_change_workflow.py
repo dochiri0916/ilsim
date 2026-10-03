@@ -221,6 +221,7 @@ class Controller:
                 'repair': {'IMPLEMENTATION', 'VERIFIED'},
                 'review': {'VERIFIED', 'REVIEWED'}, 'complete': {'REVIEWED'},
                 'local-service': {'VERIFIED', 'REVIEWED', 'COMPLETED'},
+                'pull-request': {'COMPLETED'},
             }
             if generation and self.state['phase'] == 'STALE' and self.state.get('generationStage') == stage:
                 allowed[stage].add('STALE')
@@ -241,6 +242,8 @@ class Controller:
                 return self._local_service(kwargs['container'])
             if stage == 'review':
                 return self._review(**kwargs)
+            if stage == 'pull-request':
+                return self._pull_request(kwargs.get('pull_request'))
             return self._complete()
 
     def _baseline(self):
@@ -875,13 +878,103 @@ class Controller:
         return result
 
 
+    def _command(self, args):
+        completed = subprocess.run(args, cwd=self.project, capture_output=True, text=True, timeout=120)
+        if completed.returncode:
+            raise ValueError('Command failed: ' + ' '.join(args[:3]))
+        return completed.stdout
+
+    def _pull_request(self, options):
+        import re
+        if not isinstance(options, dict) or not set(options) <= {'title', 'base', 'submit'}:
+            raise ValueError('Pull request options must be title, base and submit')
+        title, base, submit = options.get('title'), options.get('base', 'main'), options.get('submit', False)
+        if not isinstance(title, str) or not title.strip() or len(title) > 120 or '\n' in title or '\r' in title:
+            raise ValueError('Single-line pull request title required')
+        if not isinstance(base, str) or not re.fullmatch(r'[A-Za-z0-9._][A-Za-z0-9._/-]{0,199}', base):
+            raise ValueError('Invalid base branch')
+        if type(submit) is not bool:
+            raise ValueError('Explicit boolean submit required')
+        if submit and 'PULL_REQUEST' not in self.plan['approvedActions']:
+            raise ValueError('Submitting requires PULL_REQUEST in approved plan actions')
+        completion = self.state.get('completion')
+        if not completion or completion.get('status') != 'COMPLETED':
+            raise ValueError('Completed session required')
+        for name, sha in self.state['reviewed'].items():
+            if regression.digest(self.directory/name) != sha:
+                self._invalidate('Review inputs or acceptance changed', 'ARTIFACTS')
+                raise ValueError('Review artifact changed')
+        body_path = self.directory/'pull-request.md'
+        body_path.write_text(self._pull_request_body(completion))
+        record = {'title': title, 'base': base, 'bodySha256': regression.digest(body_path),
+                  'completionSha256': evidence.fingerprint(completion), 'status': 'DRAFTED'}
+        if submit:
+            # Only the committed, pushed tree that matches the verified sources may be proposed.
+            if self._command(['git', 'status', '--porcelain', '--untracked-files=all', '--', '.']).strip():
+                raise ValueError('Commit the verified sources before submitting')
+            head = self._command(['git', 'rev-parse', 'HEAD']).strip()
+            if self._command(['git', 'rev-parse', '@{upstream}']).strip() != head:
+                raise ValueError('Push the verified commit before submitting')
+            branch = self._command(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).strip()
+            if branch in ('HEAD', base):
+                raise ValueError('Submit from a feature branch')
+            if regression.source_hashes(self.project) != self.state['sources']:
+                self._invalidate('Sources changed before pull request', 'SOURCES')
+                raise ValueError('Source drift before pull request')
+            url = self._command(['gh', 'pr', 'create', '--draft', '--base', base, '--head', branch,
+                                 '--title', title, '--body-file', str(body_path)]).strip().splitlines()[-1]
+            if not re.fullmatch(r'https://\S+/pull/\d+', url):
+                raise ValueError('Unexpected pull request response')
+            record.update(status='SUBMITTED', url=url, head=head, branch=branch)
+        regression.save(self.directory/'pull-request.json', record)
+        self.state['pullRequest'] = record
+        self._record('COMPLETED', 'PULL_REQUEST_' + record['status'])
+        return record
+
+    def _pull_request_body(self, completion):
+        after = regression.read_json(self.directory/'after.json')
+        result = regression.read_json(self.directory/'regression.json')
+        inputs = regression.read_json(self.directory/'review-inputs.json')
+        tests = after.get('tests', {})
+        passed = sorted(test for test, state in tests.items() if state == 'PASSED')
+        lines = ['## 요약', '', '- 요구사항 문서: ' + ', '.join('`%s`' % d for d in self.config['documents']),
+                 '- 승인된 변경 범위: ' + ', '.join('`%s`' % f for f in self.scope['files']), '',
+                 '## 검증 결과', '',
+                 '- 회귀 비교: %s, 테스트 %d개 중 %d개 PASSED' % (result['status'], len(tests), len(passed))]
+        lines += ['  - `%s`' % test for test in passed[:50]]
+        if len(passed) > 50:
+            lines.append('  - 외 %d개' % (len(passed) - 50))
+        for change in result.get('protectedChanges', []):
+            lines.append('- 보호 파일 변경: `%s` (%s)' % (change['path'], '해시 기반 검토 완료' if change['reviewed'] else '검토 필요'))
+        lines.append('- 정적 위험: ' + completion.get('targetRiskStatus', 'NOT_ASSESSED'))
+        if self.quality:
+            receipt = regression.read_json(self.directory/'quality.json')
+            for target, counters in receipt.get('coverage', {}).items():
+                score = receipt.get('mutation', {}).get(target, {}).get('score')
+                lines.append('- 품질 게이트 `%s`: LINE %.0f%%, BRANCH %.0f%%, 변이 점수 %s' % (
+                    target, counters['LINE']['ratio']*100, counters['BRANCH']['ratio']*100,
+                    'N/A' if score is None else '%.0f%%' % (score*100)))
+        else:
+            lines.append('- 품질 게이트: 미적용')
+        service = inputs.get('service') or {}
+        scenarios = service.get('scenarios', {})
+        lines.append('- 별도 서비스 실행: %s (%s)' % (service.get('status', 'NOT_PERFORMED'),
+                     ', '.join('%s=%s' % item for item in sorted(scenarios.items())) or '시나리오 없음'))
+        lines.append('- 근거 검토: ' + completion.get('evidenceReviewStatus', 'NOT_PERFORMED'))
+        lines += ['', '## 한계', '', '- ' + completion.get('meaning', '')]
+        lines += ['- ' + item for item in result.get('limitations', [])]
+        lines += ['', '_`code_change_workflow.py pull-request`가 완료된 세션의 근거로 생성했다. snapshot `%s`_'
+                  % evidence.fingerprint(after)[:12], '']
+        return '\n'.join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('stage', choices=('baseline', 'test-writing', 'implementation', 'generate-tests', 'generate-implementation',
-                                         'verification', 'repair', 'local-service', 'review', 'complete'))
+                                         'verification', 'repair', 'local-service', 'review', 'complete', 'pull-request'))
     parser.add_argument('--config', required=True)
     parser.add_argument('--state', required=True)
-    for name in ('changes', 'approvals', 'bundle', 'service', 'open-evidence', 'fixture-policy'):
+    for name in ('changes', 'approvals', 'bundle', 'service', 'open-evidence', 'fixture-policy', 'pull-request'):
         parser.add_argument('--' + name)
     parser.add_argument('--container')
     args = parser.parse_args()
@@ -889,8 +982,10 @@ def main():
         supplied = {key: value for key, value in vars(args).items() if key not in ('stage', 'config', 'state') and value is not None}
         allowed = {'baseline': set(), 'test-writing': {'changes'}, 'implementation': {'changes'},
                    'generate-tests': set(), 'generate-implementation': set(),
-                   'verification': {'approvals'}, 'repair': {'approvals'}, 'local-service': {'container'}, 'review': {'bundle', 'service', 'open_evidence', 'fixture_policy'}, 'complete': set()}[args.stage]
-        required = {'test-writing': {'changes'}, 'implementation': {'changes'}, 'local-service': {'container'}, 'review': {'bundle', 'open_evidence'}}.get(args.stage, set())
+                   'verification': {'approvals'}, 'repair': {'approvals'}, 'local-service': {'container'}, 'review': {'bundle', 'service', 'open_evidence', 'fixture_policy'}, 'complete': set(),
+                   'pull-request': {'pull_request'}}[args.stage]
+        required = {'test-writing': {'changes'}, 'implementation': {'changes'}, 'local-service': {'container'}, 'review': {'bundle', 'open_evidence'},
+                    'pull-request': {'pull_request'}}.get(args.stage, set())
         if not set(supplied) <= allowed or not required <= set(supplied):
             raise ValueError('Missing or inappropriate stage options')
         config = regression.read_json(args.config)
@@ -904,7 +999,7 @@ def main():
                 policy['project'] = str((Path(args.fixture_policy).resolve().parent/policy['project']).resolve())
         result = runner.execute(args.stage, **data)
         print(json.dumps({'status': result['status'], 'state': str(runner.state_path)}))
-        return 0 if result['status'] in ('PASSED', 'COMPLETED') else 1 if result['status'] == 'FAILED' else 3
+        return 0 if result['status'] in ('PASSED', 'COMPLETED', 'DRAFTED', 'SUBMITTED') else 1 if result['status'] == 'FAILED' else 3
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
         print('CODE_CHANGE stage rejected or failed; inspect session phase and approved evidence')
         return 2
