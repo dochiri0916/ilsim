@@ -8,6 +8,7 @@ Expensive models and the max reasoning effort are refused for every route a sess
 Run inside any Gradle project with no options and nothing configured there: a code change gets a new session under
 <project>/build/ask, a low-tier model drafts the requirements, plan and scope for approval, and `ask --yes` runs it.
 Models and routing come from config/ask in this checkout unless ~/.config/code-risk holds an override.
+A new request first fast-forwards this checkout and rebuilds what changed (self_update.py); --no-update skips that.
 """
 import argparse
 import importlib.util
@@ -757,7 +758,33 @@ def zero_config(text, project, allowed, judge, call):
     return dict(value, zeroConfig=True)
 
 
-def main(argv=None, call=None):
+# Requests that go on with the current session: new tool code in the middle could make its recorded hashes stale.
+SESSION_BOUND = ('CONTINUE', 'VERIFY', 'PULL_REQUEST')
+
+
+def updates_now(args):
+    """Update only before a request that does not continue a session; continuing keeps the version that started it."""
+    if args.no_update or args.yes or args.request is None or args.state:
+        return False
+    try:
+        return classify(args.request)[0] not in SESSION_BOUND
+    except ValueError:
+        return True
+
+
+def self_update(argv):
+    """Pull and rebuild; after new commits, run the same command again on the new code."""
+    try:
+        pulled = _module('self_update').update()
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'업데이트 건너뜀: {error}', file=sys.stderr)
+        return
+    if pulled:
+        sys.stdout.flush()
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *argv])
+
+
+def main(argv=None, call=None, update=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('request', nargs='?', help='자연어 요청 (생략하고 --yes만 주면 현재 세션을 이어서 실행)')
     parser.add_argument('--config')
@@ -766,6 +793,7 @@ def main(argv=None, call=None):
     parser.add_argument('--yes', action='store_true', help='계획을 확인했으니 코드 변경 단계를 실행')
     parser.add_argument('--allowed-models', help='허용할 모델 이름 목록(쉼표 구분)')
     parser.add_argument('--no-jev', action='store_true', help='TYPESAFE_API_KEY가 있어도 JEV 없이 키워드로만 판단')
+    parser.add_argument('--no-update', action='store_true', help='이 도구의 자동 업데이트(git pull·재빌드)를 하지 않음')
     for name in ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request'):
         parser.add_argument('--' + name)
     args = parser.parse_args(argv)
@@ -775,6 +803,8 @@ def main(argv=None, call=None):
     allowed = args.allowed_models.split(',') if args.allowed_models else None
     if args.request is None and not args.yes:
         parser.error('요청 문장을 적거나, 확인한 계획을 실행하려면 --yes만 주세요')
+    if update is not None and updates_now(args):
+        update(sys.argv[1:] if argv is None else argv)
     try:
         try:
             # Loaded even with --no-jev: a config that asks for JEV capability still needs it in workflow subprocesses.
@@ -805,4 +835,4 @@ def main(argv=None, call=None):
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(main(update=self_update))
