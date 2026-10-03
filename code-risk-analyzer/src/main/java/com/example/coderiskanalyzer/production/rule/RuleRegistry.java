@@ -15,6 +15,8 @@ public class RuleRegistry {
             Map.entry("SEC-003", new Descriptor("Path traversal", "Untrusted input reaches a filesystem operation without proven containment.")),
             Map.entry("SEC-004", new Descriptor("SSRF", "Untrusted input controls an outbound request target.")),
             Map.entry("SEC-005", new Descriptor("Hardcoded secret", "A credential-like value is embedded in source code.")),
+            Map.entry("SEC-006", new Descriptor("Missing object-level authorization", "A request handler loads a resource by client-supplied identifier without visible caller identity or access rule.")),
+            Map.entry("SEC-007", new Descriptor("Tenant isolation not visible", "Data access on a tenant-scoped entity does not visibly restrict rows to a tenant.")),
             Map.entry("CON-001", new Descriptor("Check-then-act race", "A check and later mutation can race across concurrent executions.")),
             Map.entry("CON-002", new Descriptor("Lost update risk", "A value is modified from previously read state without visible concurrency protection.")),
             Map.entry("CON-003", new Descriptor("Shared mutable singleton state", "Concurrent entry points mutate state stored on a singleton bean.")),
