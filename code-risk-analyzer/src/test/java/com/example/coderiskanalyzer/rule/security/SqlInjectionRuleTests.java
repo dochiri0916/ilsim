@@ -1,0 +1,66 @@
+package com.example.coderiskanalyzer.rule.security;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import com.example.coderiskanalyzer.production.analysis.AnalysisContext;
+import com.example.coderiskanalyzer.production.analysis.dataflow.DataFlowAnalyzer;
+import com.example.coderiskanalyzer.production.model.ProgramModelBuilder;
+import com.example.coderiskanalyzer.production.parser.JavaSourceParser;
+import com.example.coderiskanalyzer.production.finding.Finding;
+import com.example.coderiskanalyzer.production.rule.security.SqlInjectionRule;
+import com.example.coderiskanalyzer.production.source.SourceFile;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class SqlInjectionRuleTests {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void reportsTaintedConcatenatedSql() throws Exception {
+        assertThat(analyze("@RequestParam String name) { String sql = \"select * from users where name='\" + name; "
+                + "jdbcTemplate.query(sql, mapper); }"))
+                .singleElement().satisfies(finding -> {
+                    assertThat(finding.ruleId()).isEqualTo("SEC-001");
+                    assertThat(finding.severity().name()).isEqualTo("CRITICAL");
+                });
+    }
+
+    @Test
+    void ignoresPreparedStatementPlaceholderAndUntrustedUnrelatedValue() throws Exception {
+        assertThat(analyze("@RequestParam String name) { jdbcTemplate.query(\"select * from users where name = ?\", mapper, name); }"))
+                .isEmpty();
+        assertThat(analyze("String name) { jdbcTemplate.query(\"select * from users\", mapper); }"))
+                .isEmpty();
+    }
+
+    @Test
+    void ignoresNumericTypedInputs() throws Exception {
+        assertThat(analyze("@PathVariable Long id) { jdbcTemplate.query(\"select * from t where id=\" + id, mapper); }"))
+                .isEmpty();
+        assertThat(analyze("@RequestParam String raw) { long id = Long.parseLong(raw); "
+                + "jdbcTemplate.query(\"select * from t where id=\" + id, mapper); }")).isEmpty();
+    }
+
+    @Test
+    void treatsServletParameterAsAnHttpTaintSource() throws Exception {
+        assertThat(analyze("HttpServletRequest request) { jdbcTemplate.query("
+                + "\"select * from users where name='\" + request.getParameter(\"name\"), mapper); }"))
+                .singleElement().satisfies(finding -> assertThat(finding.ruleId()).isEqualTo("SEC-001"));
+    }
+
+    private List<Finding> analyze(String method) throws Exception {
+        Path root = tempDir.resolve("src/main/java");
+        Files.createDirectories(root);
+        Path file = root.resolve("Controller.java");
+        Files.writeString(file, "class Controller { void users(" + method + " }");
+        var sources = new JavaSourceParser().parse(List.of(new SourceFile(root, file)));
+        var context = new AnalysisContext(new ProgramModelBuilder().build(sources), sources);
+        return new SqlInjectionRule(new DataFlowAnalyzer()).analyze(context);
+    }
+}
