@@ -476,7 +476,8 @@ def stop_reason(directory, since):
         return lines + ['빠진 내용을 요청 문장에 넣어 새로 요청하세요']
     if capability.get('status') not in (None, 'COMPLETED'):
         kind = capability.get('failureKind', '')
-        return ['이유: ' + CAPABILITY_REASONS.get(kind, f"JEV 판단 실패 ({kind}: {capability.get('reason', '')})")]
+        detail = f" ({capability['detail']})" if capability.get('detail') else ''
+        return ['이유: ' + CAPABILITY_REASONS.get(kind, f"JEV 판단 실패 ({kind}: {capability.get('reason', '')})") + detail]
     if record.get('failureKind'):
         return [f"이유: {record['failureKind']} {record.get('reason', '')}".rstrip()]
     return []
@@ -539,13 +540,16 @@ def _command(stage, value, options):
 DEFAULT_ROUTING = SCRIPTS.parent/'config'/'ask'
 ROUTING_FILES = {'registry': 'models.json', 'policy': 'routing-policy.json'}
 DRAFT_TIER = 'TIER_2'
+GENERATION_TIMEOUT = 1200
 CONTINUE = ('CONTINUE', '요청 없이 --yes: 현재 세션 이어서 실행')
 
 
 def default_routing(environ=os.environ):
     """config/ask in this checkout, each file replaceable from ~/.config/code-risk (or CODE_RISK_CONFIG_HOME)."""
     home = Path(environ.get('CODE_RISK_CONFIG_HOME') or '~/.config/code-risk').expanduser()
-    return {key: str((home/name if (home/name).is_file() else DEFAULT_ROUTING/name).resolve()) for key, name in ROUTING_FILES.items()}
+    files = {key: str((home/name if (home/name).is_file() else DEFAULT_ROUTING/name).resolve()) for key, name in ROUTING_FILES.items()}
+    # Test writing for a whole feature on the top tier takes longer than the 300-second workflow default.
+    return dict(files, timeoutSeconds=GENERATION_TIMEOUT)
 
 
 def find_project(start):

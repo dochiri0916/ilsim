@@ -264,8 +264,10 @@ def judge(config, state, decode):
             raise ValueError('Response too large')
         value = decode(raw.decode('utf-8'))
         answers = validate_response(value, version)
-    except (ValueError, TypeError, KeyError, UnicodeError):
-        return dict(result, failureKind='INVALID_OUTPUT', reason='Jev returned an invalid capability judgment')
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        # The check that failed, so an intermittent rejection can be told from a too-strict validator.
+        return dict(result, failureKind='INVALID_OUTPUT', reason='Jev returned an invalid capability judgment',
+                    detail=f'{type(error).__name__}: {error}'[:300])
     result.update(modelSnapshot=value['model'], answers=answers,
                   usage={name: value['usage'][name] for name in ('input_tokens', 'output_tokens')})
     if any(answer.get('choice') == 'UNKNOWN' for answer in answers.values()):
