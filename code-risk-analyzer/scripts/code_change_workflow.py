@@ -367,14 +367,18 @@ class Controller:
                         'files), constructors or factories, method signatures, accessors, exception types and messages. Follow '
                         'the repository rules and existing code, choose conventional names, and use them consistently. This is '
                         'not ambiguity; return NEEDS_REVIEW only when a business rule or observable outcome (input rules, '
-                        'status codes, results) is undecided by the requirements. Use only production types whose files are in '
-                        'the approved files or already exist (implementation may create nothing else), and only the JDK and '
+                        'status codes, results) is undecided by the requirements. allowedFiles are the test files you write; use only '
+                        'production types whose files are listed in approvedProductionFiles or already exist (implementation may '
+                        'create nothing else), and only the JDK and '
                         'dependencies the build already declares.' if stage == 'test-writing' else
                         'Implement the minimum change satisfying the accepted tests and requirements. Do not change any test. '
                         'Production types must match exactly the packages, signatures, exception types and messages the tests use. '
                         'Return empty requirementTestMap and expectedFailures; empty changes are allowed if no fix is needed.')
         task = {'stage': stage, 'requirements': requirements, 'allowedFiles': allowed,
                 'contextFiles': context, 'acceptedTests': accepted}
+        if stage == 'test-writing':
+            # Tests define the production types implementation will create, so the writer must see those files.
+            task['approvedProductionFiles'] = [path for path in self.scope['files'] if path.startswith('src/main/')]
         if self.repair_active:
             task['failureHistory'] = [item['classification'] for item in self.state['repair']['history']]
         prompt = ('Return JSON conforming to the supplied output schema. Propose complete file contents only; do not edit files or run tools. '
