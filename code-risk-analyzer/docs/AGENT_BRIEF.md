@@ -21,8 +21,10 @@ ask "결제 코드 위험 분석해줘"    # 분석 + 컨벤션 검사, 코드 �
 - 초안: `scripts/ask_draft.py`가 TIER_2 모델 한 번(형식 오류·스키마 거부 시 fallback 모델로 한 번 더)으로 요청과 프로젝트 파일을 읽어 요구사항을 쓰고, 스크립트가 스키마에 맞는 requirements·plan·scope·request.md를 만든 뒤 분석기 `requirements` 검증을 통과해야 저장한다. 회귀 기준은 기존 테스트 전체다(리포트 이름 기준: `@DisplayName` 문구 또는 메서드 이름; 테스트가 하나도 없으면 거부). 정해야 할 것이 있으면 질문만 보여주고 멈춘다.
 - 모델·정책 기본값: [`config/ask/`](../config/ask/). `~/.config/code-risk/models.json`·`routing-policy.json`(또는 `CODE_RISK_CONFIG_HOME`)이 있으면 그 파일만 대신 쓴다.
 - 컨벤션(기본 켬, 문장에 "컨벤션 없이"·"코드 스타일 검사 빼고"가 있으면 끔): 켜면 초안 단계에서 `scripts/convention_check.py`가 Gradle init script로 build-convention을 붙여 `check --continue`를 실행하고(build.gradle 수정 없음, 이미 적용된 프로젝트는 그대로) 기존 위반 파일을 보여준다. `ask --yes`는 baseline 전에 `scripts/convention_fix.py`로 그 파일만 고치고 기존 테스트가 통과해야 유지한다(실패하면 원복하고 수정안과 실패 내용을 `cleanup-rejected-<n>.json`에 남긴 뒤 실패 내용을 넣어 한 번 더 시도, 원본은 세션의 `cleanup-original/`). 구현 후 검증 전에 모든 검사를 돌려, 실패하면 범위 안 기능 코드(`src/main`) 위반만 같은 모델로 고쳐 워크플로우 `implementation` 단계로 쓰고 다시 검사한다(최대 2번). 수락된 생성 테스트와 기존 테스트는 고치지 않고 남은 위반으로 보여준다. 전부 통과해야 verification으로 넘어간다(Git이 없으면 변경 코드 커버리지만 참고). 테스트·컴파일이 실패해도 그와 무관한 기능 코드 위반은 먼저 고친 뒤 verification이 원인을 보고하게 두고(JUnit 결과가 없으면 ask가 javac 오류 줄을 보여 줌), 통과하면 한 번 더 검사한다. 검사가 리포트 전에 멈추면 실패로 보고, build-convention을 찾지 못할 때만 건너뛴다. 끄면 기존 스타일을 따르고 검사하지 않는다. 초안은 build-convention의 `docs/AGENTS_GUIDANCE.md`와 `docs/templates` 파일 트리를, 생성 단계는 여기에 종류별 틀 코드까지 세션의 `conventions.md` 문서로 받는다(`scripts/convention_templates.py`). `ask --yes`는 기존 위반 정리 전에 프로젝트에 없는 `global` 공통 클래스와 그 테스트를 틀에서 `@SpringBootApplication` 패키지로 복사하고(의존성이 없거나 같은 이름 클래스가 있으면 건너뜀), `application.properties`에 `spring.aop.proxy-target-class=false` 등을 더하며, 회귀 계획의 기존 테스트 목록을 갱신한다.
+- 검증 on/off: 대상 프로젝트 `.code-risk.yml`의 `validators.architecture.enabled`·`validators.convention.enabled`로 build-convention의 아키텍처(`architecture`·`archUnit`, `ARCH-*`)와 나머지 검사를 따로 끈다. 꺼진 검사도 실행은 되지만 리포트에 사유와 함께 `skipped`로 남고 실패·수정 대상이 아니다. 둘 다 끄면 Gradle을 돌리지 않는다. `architecture` 미설정은 `convention`을 따르고, 요청 문장의 켬·끔이 설정보다 우선한다. 명시적으로 `true`인데 build-convention을 찾지 못하면 건너뛰지 않고 실패한다. 세션 시작 뒤 설정이 바뀌면 `--yes`·이어서·검증을 거부한다(새 요청 필요).
 - 작업 판단: `TYPESAFE_API_KEY`가 있으면 JEV가 요청 문장만 보고 작업을 고르고, 키워드 규칙과 결과가 같아야 진행한다. 둘이 다르거나 JEV 신뢰도가 0.8 미만이거나 UNKNOWN이면 실행하지 않고 다시 묻는다. JEV 호출이 실패하면 읽기 전용 작업(분석·상태·비용·규칙·변이)만 키워드로 진행하고, 코드 변경·검증·PR·이어서는 거부한다(재시도하거나 `--no-jev`). 키가 없거나 `--no-jev`면 키워드만 쓴다(토큰 0). 코드를 바꾸는 단계는 `--yes`를 붙여야 실행한다.
 - 작업 종류: 변경 / 분석 / 상태 / 이어서 / 검증 / PR / 비용 / 규칙 / 변이.
+- 자동 업데이트: 새 요청 전에 `scripts/self_update.py`가 이 checkout을 최대 10분에 한 번 fetch해 fast-forward pull하고(커밋 안 한 수정·갈라진 이력이면 건너뜀), 소스가 바뀐 쪽만 `bootJar`·`publishToMavenLocal`로 다시 빌드한 뒤 같은 명령을 새 코드로 다시 실행한다. `--yes`·이어서·검증·PR 요청과 `--no-update`·`ASK_NO_UPDATE=1`이면 하지 않는다. 다른 PC 설치는 [WORK_PC_INSTALL.md](guides/WORK_PC_INSTALL.md).
 - 단계: 세션 `phase`에서 다음 사람 확인 지점(verification → review → pull-request)까지만 실행한다. 검증 실패 시 `repair` 설정이 있으면 repair를 한 번 실행한다.
 - 모델: `routing`에 Tier·capability가 없으면 새 세션 설정을 `<session>/ask-config.json`에 저장하고 이후 재사용한다. JEV 키가 있으면 `capability: {}`로 단계마다 JEV가 요구사항·코드 범위를 보고 Tier를 정한다(해당 내용이 TypeSafe로 전송된다). 키가 없으면 고위험 단어(결제·재고·동시성·트랜잭션·보안 등)가 있을 때 TIER_3, 아니면 TIER_2이며 TIER_4는 고르지 않는다.
 - 금지: 도달 가능한 모든 경로(fallback 포함)에 이름에 `astra`·`fable`·`opus`가 든 모델이나 `max` effort가 있으면 실행 전에 거부한다. `--allowed-models a,b`로 허용 목록을 더 좁힐 수 있다.
@@ -44,6 +46,7 @@ ask "결제 코드 위험 분석해줘"    # 분석 + 컨벤션 검사, 코드 �
 | `CRA requirements <input.json>` | 요구사항 산출물 검증 |
 | `CRA mutation <project>` | PIT 변이 검증 |
 | `CRA rules [ID]` | 규칙 목록·설명 |
+| `CRA validators <project>` | `.code-risk.yml`의 `validators` 설정을 검증해 JSON으로 출력(null: 미설정) |
 
 규칙: `SEC-001~007`(SQL·Command·Path·SSRF·비밀값·객체 권한·Tenant), `CON-001~004`, `IDEM-001~004`, `TX-001~005`, `REL-001`.
 

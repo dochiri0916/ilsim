@@ -19,6 +19,7 @@ ask --yes                     # 실행
 ```
 
 자세한 동작은 [Agent 요약](code-risk-analyzer/docs/AGENT_BRIEF.md)의 "가장 쉬운 사용"을 본다.
+회사 PC처럼 개인 GitHub 계정이 없는 곳에는 [다른 PC에 설치](code-risk-analyzer/docs/guides/WORK_PC_INSTALL.md)를 본다 (읽기 전용 Deploy key, 이후 `ask`가 알아서 pull·재빌드).
 폰에서 상태 보기·요청·승인은 [폰에서 ask 쓰기](code-risk-analyzer/remote/README.md)를 본다 (텔레그램 봇, 실행은 PC에서만).
 
 ## 검증

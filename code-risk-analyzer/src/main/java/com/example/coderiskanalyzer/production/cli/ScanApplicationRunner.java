@@ -6,6 +6,8 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import com.example.coderiskanalyzer.mutation.MutationCommand;
+import com.example.coderiskanalyzer.production.config.AnalyzerConfigException;
+import com.example.coderiskanalyzer.production.config.AnalyzerConfigLoader;
 
 /** Bridges bootRun/jar arguments to the same scan command used by Spring Shell. */
 @Component
@@ -16,20 +18,22 @@ public class ScanApplicationRunner implements ApplicationRunner {
     private final CliExitCode exitCode;
     private final RulesCommand rulesCommand;
     private final MutationCommand mutationCommand;
+    private final AnalyzerConfigLoader configLoader;
 
     public ScanApplicationRunner(ScanCommand scanCommand, CliExitCode exitCode, RulesCommand rulesCommand,
-                                 MutationCommand mutationCommand) {
+                                 MutationCommand mutationCommand, AnalyzerConfigLoader configLoader) {
         this.scanCommand = scanCommand;
         this.exitCode = exitCode;
         this.rulesCommand = rulesCommand;
         this.mutationCommand = mutationCommand;
+        this.configLoader = configLoader;
     }
 
     @Override
     public void run(ApplicationArguments arguments) {
         String[] args = arguments.getSourceArgs();
         if (args.length == 0) {
-            System.out.println("Usage: requirements <input.json> [options] | prompt <input.json> [--rules file] | prompt --change <text> --files <a,b> | route --change <text> --files <a,b> | scan <project-path> [options] | mutation <project-path> [--files-file file] (executes target build/tests) | rules [rule-id]");
+            System.out.println("Usage: requirements <input.json> [options] | prompt <input.json> [--rules file] | prompt --change <text> --files <a,b> | route --change <text> --files <a,b> | scan <project-path> [options] | mutation <project-path> [--files-file file] (executes target build/tests) | rules [rule-id] | validators <project-path>");
             exitCode.set(2);
             return;
         }
@@ -66,6 +70,10 @@ public class ScanApplicationRunner implements ApplicationRunner {
             String output = rulesCommand.rules(ruleId);
             System.out.println(output);
             if (output.startsWith("Error:")) exitCode.set(2);
+            return;
+        }
+        if (args[0].equals("validators")) {
+            runValidators(args);
             return;
         }
         if (args[0].equals("mutation")) {
@@ -115,6 +123,29 @@ public class ScanApplicationRunner implements ApplicationRunner {
         response.diagnostics().forEach(diagnostic -> System.err.println("%s %s: %s".formatted(
                 diagnostic.severity(), diagnostic.code(), diagnostic.message())));
         exitCode.set(response.exitCode());
+    }
+
+    /** Prints the validated validators setting of .code-risk.yml as JSON (null: not configured). */
+    private void runValidators(String[] args) {
+        if (args.length != 2 || args[1].startsWith("--")) {
+            System.out.println("Error: validators requires exactly one target project path");
+            exitCode.set(2);
+            return;
+        }
+        java.nio.file.Path project = java.nio.file.Path.of(args[1]).toAbsolutePath().normalize();
+        if (!java.nio.file.Files.isDirectory(project)) {
+            System.out.println("Error: project path is not a directory");
+            exitCode.set(2);
+            return;
+        }
+        try {
+            var validators = configLoader.load(project).validators();
+            System.out.println("{\"architecture\":%s,\"convention\":%s}".formatted(validators.architecture(),
+                    validators.convention()));
+        } catch (AnalyzerConfigException exception) {
+            System.out.println("Error: " + exception.getMessage());
+            exitCode.set(2);
+        }
     }
 
     private String option(String[] args, String name, String defaultValue) {

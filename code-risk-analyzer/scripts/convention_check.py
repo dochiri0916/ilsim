@@ -3,6 +3,9 @@
 A generated Gradle init script puts the plugin (published to mavenLocal by install.sh) on the build classpath and
 applies it to every Java project that does not apply it already. `check --continue` then writes the plugin's
 report, which is saved into the session with the violations Gradle printed. Any failing check fails the run.
+
+`validators` in the project's .code-risk.yml (read and validated by the analyzer jar) can switch off the architecture
+checks or the other convention checks; those still run, but are recorded as skipped with the reason and do not fail.
 """
 import argparse
 import importlib.util
@@ -73,11 +76,58 @@ def _templates():
 CHECKSTYLE = re.compile(r'\[ant:checkstyle\] \[(?:ERROR|WARN)\] (.+?):(\d+)(?::\d+)?: (.+)')
 LISTED = re.compile(r'\s+- \[([A-Z][A-Z0-9-]*)\] (\S+) (.+)')
 NO_BASE = 'changedCodeCoverage'
+# Report groups and listed rule IDs of the architecture validator; every other check is a convention check.
+ARCHITECTURE = ('architecture', 'archUnit')
+GROUPS = {'architecture': '아키텍처', 'convention': '컨벤션'}
+CONFIG = '.code-risk.yml'
+JAR = SCRIPTS.parent/'build'/'libs'/'code-risk-analyzer-0.0.1-SNAPSHOT.jar'
 COMPILE = ['./gradlew', 'testClasses']
 
 
 class Unavailable(ValueError):
     """build-convention itself could not be loaded (not installed), as opposed to a check that failed."""
+
+
+def settings(project, jar=JAR, process=subprocess.run):
+    """validators of .code-risk.yml: {'architecture': bool or None, 'convention': bool or None} (None: not set)."""
+    if not (Path(project)/CONFIG).is_file():
+        return {name: None for name in GROUPS}
+    if not Path(jar).is_file():
+        raise ValueError(f'{CONFIG}의 validators 설정을 읽으려면 분석기 jar가 필요합니다 (install.sh로 빌드)')
+    result = process(['java', '-jar', str(jar), 'validators', str(project)], stdout=subprocess.PIPE,
+                     stderr=subprocess.DEVNULL, text=True, timeout=120)
+    lines = [line for line in (result.stdout or '').splitlines() if line.strip()]
+    if result.returncode or not lines:
+        reason = next((line for line in lines if line.startswith('Error:')), '')
+        raise ValueError(f'{CONFIG}을 읽지 못했습니다' + (f' ({reason[6:].strip()})' if reason else ''))
+    value = json.loads(lines[-1])
+    if set(value) != set(GROUPS) or any(item not in (True, False, None) for item in value.values()):
+        raise ValueError('분석기의 validators 응답 형식이 올바르지 않습니다')
+    return value
+
+
+def selection(configured, requested=None):
+    """Which groups run, why the others do not, and which were switched on explicitly (they may not be skipped).
+
+    requested is the request sentence's own choice (True/False/None). A sentence that says no conventions turns both
+    groups off; one that asks for them turns conventions on. Unset architecture follows convention.
+    """
+    if requested is False:
+        return {'enabled': [], 'off': {name: '요청 문장에서 끔' for name in GROUPS}, 'required': []}
+    convention = True if requested else configured['convention'] if configured['convention'] is not None else True
+    architecture = configured['architecture'] if configured['architecture'] is not None else convention
+    off = {}
+    if not convention:
+        off['convention'] = f'{CONFIG} validators.convention.enabled: false'
+    if not architecture:
+        off['architecture'] = (f'{CONFIG} validators.architecture.enabled: false' if configured['architecture'] is False
+                               else f'{CONFIG} validators.convention.enabled: false (architecture 미설정)')
+    return {'enabled': [name for name in GROUPS if name not in off], 'off': off,
+            'required': [name for name in GROUPS if name not in off and (configured[name] or requested and name == 'convention')]}
+
+
+def group(check):
+    return 'architecture' if check in ARCHITECTURE else 'convention'
 
 
 def violations(project, output):
@@ -97,8 +147,11 @@ def violations(project, output):
     return list(unique.values())
 
 
-def run(project, output, base_ref=None, process=subprocess.run):
-    """Run check once, copy the plugin report to `output` with the printed violations; returns the report."""
+def run(project, output, base_ref=None, process=subprocess.run, off=None):
+    """Run check once, copy the plugin report to `output` with the printed violations; returns the report.
+
+    off maps a switched-off group to its reason: its checks are recorded as skipped and its violations left out.
+    """
     project, output = Path(project).resolve(), Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     script = output.with_suffix('.init.gradle')
@@ -123,14 +176,19 @@ def run(project, output, base_ref=None, process=subprocess.run):
     value = json.loads(report.read_text(encoding='utf-8'))
     if not isinstance(value, dict) or value.get('status') not in ('PASS', 'FAIL') or not isinstance(value.get('checks'), dict):
         raise ValueError('컨벤션 검증 리포트 형식이 올바르지 않습니다')
-    value['violations'] = violations(project, '\n'.join(lines))
+    off = off or {}
+    value['skipped'] = {name: off[group(name)] for name in value['checks'] if group(name) in off}
+    value['violations'] = [item for item in violations(project, '\n'.join(lines))
+                           if ('architecture' if item.get('rule', '').startswith('ARCH-') else 'convention') not in off]
     value['baseRef'] = base_ref
     output.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
     return value
 
 
 def failing(report):
-    return sorted(name for name, status in report['checks'].items() if status == 'FAIL')
+    """Failing checks of the groups that are switched on."""
+    skipped = report.get('skipped') or {}
+    return sorted(name for name, status in report['checks'].items() if status == 'FAIL' and name not in skipped)
 
 
 def blocking(report):
@@ -149,6 +207,11 @@ def summary(report, before=None):
         existing = [name for name in names if name in failing(before)]
         if existing:
             lines.append('그중 변경 전부터 실패하던 검사: ' + label(existing))
+    reasons = {}
+    for name, reason in (report.get('skipped') or {}).items():
+        reasons.setdefault(reason, []).append(name)
+    for reason, names in reasons.items():
+        lines.append(f'설정으로 건너뜀(SKIP): {label(names)} - {reason}')
     if NO_BASE in failing(report) and not report.get('baseRef'):
         lines.append('Git 저장소가 아니어서 변경 코드 커버리지는 확인하지 못했습니다')
     for item in report.get('violations', [])[:10]:
@@ -166,10 +229,19 @@ def main(argv=None):
     parser.add_argument('--before', help='변경 전 리포트; 실패 중 원래부터 실패하던 검사를 알려준다')
     args = parser.parse_args(argv)
     try:
-        report = run(args.project, args.output, args.base_ref)
+        chosen = selection(settings(args.project))
+    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+        print(f'컨벤션 검증 거부: {error}')
+        return 1
+    if not chosen['enabled']:
+        print('컨벤션 검증: 설정으로 건너뜀(SKIP) - ' + '; '.join(sorted(set(chosen['off'].values()))))
+        return 0
+    try:
+        report = run(args.project, args.output, args.base_ref, **({'off': chosen['off']} if chosen['off'] else {}))
     except (Unavailable, OSError) as error:
         print(f'컨벤션 검증 불가: {error}')
-        return 2
+        # Switched on explicitly in .code-risk.yml: not being able to run it is a failure, never a skip.
+        return 1 if chosen['required'] else 2
     except (ValueError, subprocess.TimeoutExpired) as error:
         # The plugin ran and stopped the build: that is a failed convention check, never a skipped one.
         print(f'컨벤션 검증 실패: {error}')

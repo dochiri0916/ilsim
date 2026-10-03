@@ -4,7 +4,7 @@
 
 ## 결론
 
-현재 `code-risk-analyzer`는 **정적 분석, 테스트 적정성, JEV Capability, 로컬 Agent 생성과 제한된 구현 수정·검증**을 제공한다. 구조화된 요구사항을 받은 CODE_CHANGE 세션에서 테스트·구현 생성, 실패 분류, 테스트 보존, JaCoCo/PIT 완료 게이트를 연결했다. 자연어 요구사항의 완전한 자동 정규화, 개발 모델의 평가·승격과 PR 자동 제출은 구현되어 있지 않다.
+현재 `code-risk-analyzer`는 **정적 분석, 테스트 적정성, JEV Capability, 로컬 Agent 생성과 제한된 구현 수정·검증**을 제공한다. 구조화된 요구사항을 받은 CODE_CHANGE 세션에서 테스트·구현 생성, 실패 분류, 테스트 보존, JaCoCo/PIT 완료 게이트를 연결했다. PR은 COMPLETED 세션에서 plan의 `PULL_REQUEST` 승인과 커밋·푸시가 확인된 경우에만 draft로 제출한다. 자연어 요구사항의 완전한 자동 정규화, 개발 모델의 평가·승격과 승인 없는 PR 자동 제출은 구현되어 있지 않다.
 
 **1단계의 요구사항 해석은 별도 skill 등에서 수행할 외부 절차로, 정적 분석 도구의 구현·검증 평가에서 제외한다.** 구조화 입력 검증·mode 제한, 명시적 코드 연결과 선택적 JEV 검토는 실행 경로를 제공한다. 승인된 파일 교체, Gradle 검증, 로컬 Codex·Claude 생성과 제한된 production 수정 반복을 지원한다. 문서 해석의 완전성이나 모든 업무의 자동 완수를 보장하지 않는다. 단계별 작업량이 다르므로 이를 단순 구현률 백분율로 환산하지 않는다.
 
@@ -29,7 +29,7 @@
 | 확인 불가 | 소스와 문서만으로 실행 결과 또는 과거 작업 순서를 확정할 수 없음 |
 | 평가 제외 | 외부 절차의 책임으로 지정되어 이 도구의 구현 평가 대상이 아님 |
 
-`REVIEW.md`에 연결된 `README.md`는 현재 작업 디렉터리에 없다. 설명을 확인할 수 없는 부분은 실행 코드를 기준으로 판정했다. 현재 디렉터리는 Git 저장소로 인식되지 않아 커밋 이력으로 테스트 선행 여부나 PR 제출 이력을 검증할 수 없다.
+최초 검토 당시에는 `README.md`와 Git 이력이 없어 실행 코드를 기준으로 판정했다. 현재는 [문서 목차](../README.md)와 `ai-orchestration` 저장소의 Git 이력이 있으나, 과거 작업의 테스트 선행 여부는 이력만으로 확정하지 않는다.
 
 ## 단계별 요약
 
@@ -40,6 +40,13 @@
 - 일반 서비스 adapter: fixture 외 프로젝트도 `serviceAdapter`로 검증된 JAR를 기동하고 선언한 네 시나리오 명령을 실행한다.
 - 위험 규칙: 객체 단위 권한 `SEC-006`, Tenant 격리 `SEC-007`을 추가했다(REVIEW·LOW confidence).
 - 성공 작업당 비용: CLI 호출별 토큰·시간을 기록하고 `cost_report.py`로 COMPLETED 세션당 토큰·비용을 집계한다.
+
+### 2026-10-03 남은 과제 보강
+
+- 선택형 아키텍처·컨벤션 검증: `.code-risk.yml`의 `validators`를 분석기가 검증하고(`validators` 명령), `ask`·`convention_check.py`가 build-convention의 아키텍처 검사와 나머지 검사를 따로 끈다. 꺼진 검사는 사유와 함께 SKIP으로 남고 실패·수정 대상이 아니다. 명시적으로 켰는데 실행할 수 없으면 실패이며, 세션 중 설정이 바뀌면 이어서 실행을 거부한다.
+- 클래스패스: JAR glob 패턴과 클래스 디렉터리를 지원한다. 디렉터리는 바이트코드만 임시 JAR로 묶어 읽는다.
+- 도구 배포: `ask`가 새 요청마다 이 checkout을 fast-forward하고 바뀐 프로젝트만 다시 빌드한다. `ask-remote`도 자기 코드가 바뀌면 명령 사이에 다시 시작한다. 다른 PC 설치는 [WORK_PC_INSTALL](../guides/WORK_PC_INSTALL.md).
+- 생성 테스트의 라이브러리 API 오용 거부(`library_misuse`)와 자주 틀리는 컨벤션 규칙 안내에 테스트를 추가했다.
 
 ### Capability Tier 기반 모델 라우팅 추가 (2026-10-03)
 
@@ -415,7 +422,7 @@ JSON/SARIF, baseline, suppression과 종료 코드 정책은 CI에서 활용할 
 - `repair`는 수락한 테스트·빌드 계약을 고정하고 승인된 production 파일만 수정한다. 수정 반복, JEV/CLI 호출, 전체 시간과 명시적 fallback을 제한하며 세션 재개가 예산을 초기화하지 않는다. 검증·생성 이력은 해시 보호 사본으로 남긴다. 별도 서비스·review·complete 단계는 계속 필요하다.
 - `qualityGates`를 켜면 최종 전체 테스트 실행의 JaCoCo와 새 PIT 실행을 목표 클래스별로 검사한다. 소스·테스트·정책·JAR/JUnit snapshot·XML/exec·mutation 응답·main/test 바이트코드가 같아야 review/complete를 통과한다. 누락·변조·살아남은/미커버 변이·미완료 실행을 통과시키지 않는다. `repair`에는 명시적 품질 설정이 필수다. 기존 수동 경로의 계약과 public API는 유지한다.
 
-소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 개발 모델의 Golden Benchmark·Shadow·Canary·승격과 일반 서비스 adapter, 선택형 아키텍처·컨벤션 검증은 다음 구현 범위다.
+소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 개발 모델의 Golden Benchmark·Shadow·Canary·승격은 다음 구현 범위다. 일반 서비스 adapter(`serviceAdapter`)와 선택형 아키텍처·컨벤션 검증(아래 2026-10-03 후속 보강)은 이후 구현했다.
 
 ### 최종 실제 연결 검증
 
