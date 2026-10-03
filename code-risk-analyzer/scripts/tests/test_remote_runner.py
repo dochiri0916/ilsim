@@ -122,7 +122,86 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual([], self.commands)
 
 
+class TelegramTests(unittest.TestCase):
+    def setUp(self):
+        self.updates, self.sent, self.calls = [], [], []
+
+    def call(self, method, **payload):
+        self.calls.append((method, payload))
+        if method == 'sendMessage':
+            self.sent.append((payload['chat_id'], payload['text']))
+            return {}
+        start = payload.get('offset', 0)
+        if start == -1:
+            return self.updates[-1:]
+        return [update for update in self.updates if update['update_id'] >= start]
+
+    def message(self, text, chat=42):
+        self.updates.append({'update_id': len(self.updates) + 1, 'message': {'chat': {'id': chat}, 'text': text}})
+
+    def status(self, awaiting=False, last=None, busy=None):
+        return {'project': 'demo', 'busy': busy, 'last': last,
+                'session': {'name': 's1', 'phase': None, 'awaitingApproval': awaiting}}
+
+    def test_only_the_owner_chat_becomes_requests_and_old_messages_are_skipped(self):
+        # given
+        self.message('어제 보낸 요청')
+        link = remote.TelegramLink(self.call, '42')
+        link.skip_old()
+        self.message('회원 탈퇴 추가해줘')
+        self.message('남이 보낸 요청', chat=7)
+        # when
+        commands = link(self.status())
+        # then
+        self.assertEqual([{'type': 'request', 'text': '회원 탈퇴 추가해줘'}], commands)
+        self.assertEqual([], link(self.status()))
+
+    def test_approve_only_when_the_session_waits(self):
+        link = remote.TelegramLink(self.call, '42')
+        self.message('승인')
+        self.assertEqual([], link(self.status(awaiting=False)))
+        self.assertIn('승인할 작업이 없습니다', self.sent[-1][1])
+        self.message('/approve')
+        self.assertEqual([{'type': 'approve', 'session': 's1'}], link(self.status(awaiting=True)))
+
+    def test_status_and_results_are_sent_to_the_chat(self):
+        link = remote.TelegramLink(self.call, '42')
+        self.message('상태')
+        link(self.status(awaiting=True))
+        self.assertIn('승인을 기다립니다', self.sent[-1][1])
+        link(self.status(busy='요청: x'))
+        self.assertEqual(('42', '시작했습니다: 요청: x'), self.sent[-1])
+        link(self.status(last={'command': '요청: x', 'exitCode': 0, 'summary': 'y' * 9000}))
+        self.assertIn('요청: x: 완료', self.sent[-1][1])
+        self.assertLessEqual(len(self.sent[-1][1]), remote.TELEGRAM_LIMIT)
+
+    def test_runner_drives_a_telegram_request(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = Path(folder).resolve()
+            link = remote.TelegramLink(self.call, '42', poll=0)
+            self.message('추가해줘')
+            runs = []
+
+            def run(command, **options):
+                runs.append(command)
+                self.assertNotIn('TELEGRAM_BOT_TOKEN', options['env'])
+                return subprocess.CompletedProcess(command, 0, '초안')
+            remote.Runner(project, link, run).step()
+        self.assertEqual('추가해줘', runs[0][-1])
+        self.assertIn('요청: 추가해줘: 완료', self.sent[-1][1])
+
+
 class SettingTests(unittest.TestCase):
+    def test_telegram_settings_are_optional_and_checked(self):
+        with tempfile.TemporaryDirectory() as folder:
+            secrets = Path(folder)/'secrets'
+            secrets.write_text('TELEGRAM_BOT_TOKEN=123:abc\nTELEGRAM_CHAT_ID=42\n')
+            self.assertEqual(('123:abc', '42'), remote.telegram_settings({'CODE_RISK_SECRETS': str(secrets)}))
+            self.assertIsNone(remote.telegram_settings({'CODE_RISK_SECRETS': str(Path(folder)/'none')}))
+            with self.assertRaises(ValueError):
+                remote.telegram_settings({'CODE_RISK_SECRETS': folder, 'TELEGRAM_BOT_TOKEN': 't',
+                                          'TELEGRAM_CHAT_ID': '42; rm'})
+
     def test_settings_come_from_env_or_secrets_file(self):
         with tempfile.TemporaryDirectory() as folder:
             secrets = Path(folder)/'secrets'
