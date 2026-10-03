@@ -1,4 +1,6 @@
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
+import io
 import json
 import re
 from pathlib import Path
@@ -386,6 +388,130 @@ class SetupTests(unittest.TestCase):
         self.assertEqual('plans/p.json', config['plan'])
 
 
+class ZeroConfigTests(unittest.TestCase):
+    """A start.spring.io-shaped project with nothing added: ask finds it, drafts the inputs and keeps the session."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.project = Path(temp.name).resolve()/'demo'
+        tests = self.project/'src/test/java/com/example/demo'
+        tests.mkdir(parents=True)
+        (self.project/'gradlew').write_text('')
+        (self.project/'settings.gradle').write_text("rootProject.name = 'demo'")
+        (tests/'DemoApplicationTests.java').write_text(
+            'package com.example.demo;\nclass DemoApplicationTests {\n\t@Test\n\tvoid contextLoads() {\n\t}\n}\n')
+        self.calls = []
+        draft_spec = importlib.util.spec_from_file_location('test_ask_draft', Path(__file__).resolve().parent/'test_ask_draft.py')
+        self.samples = importlib.util.module_from_spec(draft_spec)
+        draft_spec.loader.exec_module(self.samples)
+
+    def call(self, config, workspace, prompt, schema, validate):
+        self.calls.append(config)
+        return {'status': 'COMPLETED', 'output': validate(self.samples.sample()), 'usage': {}}
+
+    def start(self, text='회원 가입 기능 추가해줘'):
+        with redirect_stdout(io.StringIO()) as output:
+            value = ask.start_change(text, self.project, ask.decide(text, None), None, None, self.call, lambda path, jar: None)
+        return value, output.getvalue()
+
+    def test_project_is_found_from_any_folder_inside_it(self):
+        self.assertEqual(self.project, ask.find_project(self.project/'src/test/java'))
+        with self.assertRaises(ValueError):
+            ask.find_project(self.project.parent)
+
+    def test_user_config_replaces_only_the_files_it_has(self):
+        home = self.project.parent/'home'
+        home.mkdir()
+        (home/'routing-policy.json').write_text('{}')
+        routing = ask.default_routing({'CODE_RISK_CONFIG_HOME': str(home)})
+        self.assertEqual(str(home/'routing-policy.json'), routing['policy'])
+        self.assertEqual(str(ask.DEFAULT_ROUTING/'models.json'), routing['registry'])
+
+    def test_draft_uses_the_cheap_tier_and_refuses_forbidden_models(self):
+        configs = ask.draft_models(ask.default_routing({}))
+        self.assertEqual(['gpt-6-luna', 'gpt-6.1-sol'], [config['model'] for config in configs])
+        registry = json.loads((ask.DEFAULT_ROUTING/'models.json').read_text())
+        registry['models']['general']['model'] = 'claude-opus-5-5'
+        path = self.project.parent/'models.json'
+        path.write_text(json.dumps(registry))
+        with self.assertRaisesRegex(ValueError, '금지된 고비용 모델'):
+            ask.draft_models(dict(ask.default_routing({}), registry=str(path)))
+
+    def test_change_request_drafts_a_new_session_and_waits_for_approval(self):
+        # when
+        value, output = self.start()
+        # then
+        session = Path(value['state']).parent
+        self.assertEqual(self.project/'build'/'ask', session.parent)
+        self.assertEqual(session.name, (self.project/'build/ask/current').read_text())
+        self.assertEqual(value['config'], json.loads((session/'ask-config.json').read_text()))
+        self.assertEqual(['baseline', 'generate-tests', 'generate-implementation', 'verification'], value['stages'])
+        self.assertEqual({'project': str(self.project), 'session': str(session)}, value['convention'])
+        self.assertEqual(['build/ask/' + session.name + '/request.md', 'build/ask/' + session.name + '/conventions.md'],
+                         value['config']['documents'])
+        self.assertIn('REQ-1 이메일로 회원 가입 (시나리오 2개)', output)
+        self.assertEqual(1, len(self.calls))
+        self.assertFalse((session/'state.json').exists())
+
+    def test_yes_alone_continues_the_current_session_with_its_saved_config(self):
+        # given
+        started, _ = self.start()
+        # when
+        value = ask.zero_config(None, self.project, None, None, self.call)
+        # then
+        self.assertEqual('CONTINUE', value['intent'])
+        self.assertEqual('session', value['configSource'])
+        self.assertEqual(started['config'], value['config'])
+        self.assertEqual(started['stages'], value['stages'])
+
+    def test_convention_is_measured_before_baseline_and_gates_after_verification(self):
+        # given
+        value, _ = self.start()
+        commands = []
+
+        def run(command):
+            commands.append(command)
+            return 1 if command[1].endswith('convention_check.py') and '--before' in command else 0
+        # when
+        with redirect_stdout(io.StringIO()):
+            code = ask.execute(value, True, run)
+        # then
+        self.assertEqual(1, code)
+        names = [Path(command[1]).name if command[1].endswith('.py') and 'convention' in command[1] else command[2] for command in commands]
+        self.assertEqual(['convention_check.py', 'baseline', 'generate-tests', 'generate-implementation', 'verification',
+                          'convention_check.py'], names)
+        session = Path(value['state']).parent
+        self.assertEqual(str(session/'convention-before.json'), commands[-1][commands[-1].index('--before') + 1])
+
+    def test_convention_that_cannot_run_never_blocks_the_verified_change(self):
+        value, _ = self.start()
+        run = lambda command: 2 if command[1].endswith('convention_check.py') else 0
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(0, ask.execute(value, True, run))
+        self.assertIn('건너뜁니다', output.getvalue())
+
+    def test_analysis_also_checks_conventions_and_runs_every_check(self):
+        # given
+        value = ask.zero_config('결제 코드 위험 분석해줘', self.project, None, None, self.call)
+        calls = []
+        # when
+        with redirect_stdout(io.StringIO()):
+            code = ask.execute(value, False, lambda command: calls.append(command) or (1 if len(calls) == 1 else 0))
+        # then
+        self.assertEqual(['scan', str(self.project)], value['commands'][0][3:])
+        self.assertTrue(value['commands'][1][1].endswith('convention_check.py'))
+        self.assertEqual((2, 1), (len(calls), code))
+
+    def test_follow_up_without_a_session_explains_what_to_do_first(self):
+        with self.assertRaisesRegex(ValueError, '진행 중인 작업이 없습니다'):
+            ask.zero_config('검증 다시 해줘', self.project, None, None, self.call)
+
+    def test_request_is_required_unless_continuing(self):
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            ask.main(['--project', str(self.project)])
+
+
 class ExampleSettingsTests(unittest.TestCase):
     def test_example_settings_are_valid_and_free_of_forbidden_models(self):
         router_spec = importlib.util.spec_from_file_location('model_router', Path(__file__).resolve().parents[1]/'model_router.py')
@@ -393,8 +519,9 @@ class ExampleSettingsTests(unittest.TestCase):
         router_spec.loader.exec_module(router)
         base = Path(__file__).resolve().parents[2]/'docs'/'examples'/'ask'
         config = ask.resolve_paths(json.loads((base/'config.json').read_text()), base)
-        registry = router.validate_registry(json.loads((base/'models.json').read_text()))
-        router.validate_policy(json.loads((base/'routing-policy.json').read_text()), registry)
+        self.assertEqual(ask.default_routing({'CODE_RISK_CONFIG_HOME': str(base)}), config['routing'])
+        registry = router.validate_registry(json.loads(Path(config['routing']['registry']).read_text()))
+        router.validate_policy(json.loads(Path(config['routing']['policy']).read_text()), registry)
         self.assertTrue(router.settings(dict(config['routing'], capability={})))
         self.assertTrue(ask.models(dict(config, routing=dict(config['routing'], capability={}))))
 
