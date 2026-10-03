@@ -417,4 +417,4 @@ JSON/SARIF, baseline, suppression과 종료 코드 정책은 CI에서 활용할 
 
 공식 Java 25 `bash ./gradlew build --no-daemon`은 PASS이며 Python 149개를 실행했다. 기존 Java 233개 결과는 UP-TO-DATE로 재사용했다. timeout 시 자식 소켓 해제의 race를 보강하고 기존 종료·취소 테스트도 통과했다.
 
-복잡한 HTTP fixture의 단일 메서드에서는 정적 Obligation ID 중복을 발견했다. 현재는 EVIDENCE/NEEDS_REVIEW로 차단하고 자동 수정이나 완료에 사용하지 않는다. ID 생성·중복 원인 보강은 다음 수정 대상이다. 이 시험의 성공 범위는 순수 계산 클래스와 별도 서비스 harness로 선언된 검증이며, 모든 Spring 업무의 자동 완료를 보장하지 않는다.
+복잡한 HTTP fixture의 단일 메서드에서는 정적 Obligation ID 중복을 발견했다. 원인은 한 메서드 안에서 같은 조건·예외·저장 호출이 반복될 때 메서드 위치만으로 ID를 만든 것이었다. 2026-10-03에 반복되는 키에만 AST 노드 위치를 더해 고유 ID를 부여하도록 보강했다. 중복이 없는 기존 ID는 바뀌지 않는다. 중복 ID 입력을 EVIDENCE/NEEDS_REVIEW로 차단하는 기존 검사는 유지한다. 이 시험의 성공 범위는 순수 계산 클래스와 별도 서비스 harness로 선언된 검증이며, 모든 Spring 업무의 자동 완료를 보장하지 않는다.

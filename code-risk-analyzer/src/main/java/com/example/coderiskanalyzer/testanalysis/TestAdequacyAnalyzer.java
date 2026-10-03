@@ -3,7 +3,9 @@ package com.example.coderiskanalyzer.testanalysis;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -62,12 +64,12 @@ public class TestAdequacyAnalyzer {
                     .flatMap(c -> c.getStorage().map(s -> s.getPath().equals(risk.location().file()))).orElse(false))
                     .filter(m -> m.getRange().map(r -> r.begin.line <= risk.location().startLine()
                             && r.end.line >= risk.location().startLine()).orElse(false)).findFirst().orElse(null);
-            if (method != null) obligations.add(new TestObligation(id(next), "RISK", risk.ruleId() + ": " + risk.title(),
+            if (method != null) obligations.add(new TestObligation(id(next, risk.location().startLine(), risk.location().startColumn()), "RISK", risk.ruleId() + ": " + risk.title(),
                     ownerName(method), method.getNameAsString(), location(sources, risk.location().file(), method),
                     "test the production risk and its failure condition", risk.ruleId(), risk.category(), risk.severity()));
         }
         extractWeakTests(production, tests, sources, obligations, next);
-        obligations = obligations.stream().map(this::stableIdentifier).toList();
+        obligations = stableIdentifiers(obligations);
 
         List<TestAdequacyResult> results = new ArrayList<>();
         for (TestObligation obligation : obligations) {
@@ -139,9 +141,9 @@ public class TestAdequacyAnalyzer {
         SourceLocation location = locationFor(method, sources);
         method.findAll(IfStmt.class).forEach(branch -> {
             String condition = branch.getCondition().toString();
-            out.add(new TestObligation(id(next), "BRANCH", "condition true: " + condition, owner,
+            out.add(new TestObligation(id(next, branch), "BRANCH", "condition true: " + condition, owner,
                     method.getNameAsString(), location, "assert the true-path outcome for " + condition, null));
-            out.add(new TestObligation(id(next), "BRANCH", "condition false: " + condition, owner,
+            out.add(new TestObligation(id(next, branch), "BRANCH", "condition false: " + condition, owner,
                     method.getNameAsString(), location, "assert the false-path outcome for " + condition, null));
             branch.getCondition().findAll(BinaryExpr.class).forEach(binary -> {
                 String caseText = switch (binary.getOperator()) {
@@ -149,28 +151,28 @@ public class TestAdequacyAnalyzer {
                     case EQUALS, NOT_EQUALS -> "equal and not equal cases";
                     default -> null;
                 };
-                if (caseText != null) out.add(new TestObligation(id(next), "BOUNDARY", binary.toString(), owner,
+                if (caseText != null) out.add(new TestObligation(id(next, binary), "BOUNDARY", binary.toString(), owner,
                         method.getNameAsString(), location, "exercise " + caseText + " for " + binary, null));
             });
         });
-        method.findAll(SwitchStmt.class).forEach(branch -> out.add(new TestObligation(id(next), "BRANCH",
+        method.findAll(SwitchStmt.class).forEach(branch -> out.add(new TestObligation(id(next, branch), "BRANCH",
                 "switch cases: " + branch.getEntries().stream().map(Object::toString).collect(Collectors.joining(", ")),
                 owner, method.getNameAsString(), location, "assert each meaningful switch outcome", null)));
-        method.findAll(SwitchExpr.class).forEach(branch -> out.add(new TestObligation(id(next), "BRANCH",
+        method.findAll(SwitchExpr.class).forEach(branch -> out.add(new TestObligation(id(next, branch), "BRANCH",
                 "switch expression cases: " + branch.getEntries().stream().map(Object::toString).collect(Collectors.joining(", ")),
                 owner, method.getNameAsString(), location, "assert each meaningful switch expression outcome", null)));
-        method.findAll(ConditionalExpr.class).forEach(branch -> out.add(new TestObligation(id(next), "BRANCH",
+        method.findAll(ConditionalExpr.class).forEach(branch -> out.add(new TestObligation(id(next, branch), "BRANCH",
                 "ternary condition: " + branch.getCondition(), owner, method.getNameAsString(), location,
                 "assert both ternary outcomes", null)));
         method.findAll(ObjectCreationExpr.class).stream().filter(c -> c.getParentNode().map(p -> p instanceof com.github.javaparser.ast.stmt.ThrowStmt).orElse(false))
-                .forEach(creation -> out.add(new TestObligation(id(next), "EXCEPTION_PATH", "throws " + creation.getType(), owner,
+                .forEach(creation -> out.add(new TestObligation(id(next, creation), "EXCEPTION_PATH", "throws " + creation.getType(), owner,
                         method.getNameAsString(), location, creation.getType().getNameAsString(), null)));
         method.findAll(MethodCallExpr.class).stream().filter(call -> call.getNameAsString().equals("orElseThrow"))
-                .forEach(call -> out.add(new TestObligation(id(next), "EXCEPTION_PATH", "orElseThrow path", owner,
+                .forEach(call -> out.add(new TestObligation(id(next, call), "EXCEPTION_PATH", "orElseThrow path", owner,
                         method.getNameAsString(), location, call.getArguments().isEmpty() ? "RuntimeException" : exceptionName(call.getArgument(0).toString()), null)));
         method.findAll(MethodCallExpr.class).stream().filter(call -> Set.of("save", "saveAll", "saveAndFlush", "delete", "deleteAll").contains(call.getNameAsString())
                 || call.getNameAsString().startsWith("deleteBy") || call.getNameAsString().startsWith("update"))
-                .forEach(call -> out.add(new TestObligation(id(next), "PERSISTENCE", call.getNameAsString(), owner,
+                .forEach(call -> out.add(new TestObligation(id(next, call), "PERSISTENCE", call.getNameAsString(), owner,
                         method.getNameAsString(), location, call.getNameAsString(), null)));
         boolean directStateMutation = method.findAll(com.github.javaparser.ast.expr.AssignExpr.class).stream()
                 .anyMatch(assign -> assign.getTarget() instanceof com.github.javaparser.ast.expr.FieldAccessExpr
@@ -382,13 +384,42 @@ public class TestAdequacyAnalyzer {
                 : new SourceLocation(absolute, r.begin.line, r.begin.column, r.end.line, r.end.column);
     }
     private static String id(int[] next) { return "OBLIGATION-%03d".formatted(next[0]++); }
+    // The anchor only disambiguates obligations whose stable key would otherwise repeat within a method.
+    private static String id(int[] next, com.github.javaparser.ast.Node node) {
+        return node.getBegin().map(begin -> id(next, begin.line, begin.column)).orElseGet(() -> id(next));
+    }
+    private static String id(int[] next, int line, int column) { return id(next) + "@" + line + ":" + column; }
 
     private record BoundaryCoverage(List<String> covered, List<String> missing) {}
 
-    private TestObligation stableIdentifier(TestObligation obligation) {
-        String key = "%s|%s|%s|%s|%d|%d|%s".formatted(obligation.owner(), obligation.method(), obligation.type(),
+    private List<TestObligation> stableIdentifiers(List<TestObligation> obligations) {
+        List<String> keys = obligations.stream().map(TestAdequacyAnalyzer::stableKey).toList();
+        Map<String, Long> counts = keys.stream().collect(Collectors.groupingBy(key -> key, Collectors.counting()));
+        // Unique keys keep their earlier identifiers; only repeated keys are extended with the AST anchor.
+        List<String> anchored = new ArrayList<>();
+        for (int i = 0; i < keys.size(); i++) {
+            String id = obligations.get(i).id();
+            anchored.add(counts.get(keys.get(i)) == 1 ? keys.get(i)
+                    : keys.get(i) + "|@" + (id.contains("@") ? id.substring(id.indexOf('@') + 1) : ""));
+        }
+        Map<String, Long> anchoredCounts = anchored.stream().collect(Collectors.groupingBy(key -> key, Collectors.counting()));
+        Map<String, Integer> seen = new HashMap<>();
+        List<TestObligation> result = new ArrayList<>();
+        for (int i = 0; i < anchored.size(); i++) {
+            String key = anchored.get(i);
+            if (anchoredCounts.get(key) > 1) key += "|#" + seen.merge(key, 1, Integer::sum);
+            result.add(stableIdentifier(obligations.get(i), key));
+        }
+        return result;
+    }
+
+    private static String stableKey(TestObligation obligation) {
+        return "%s|%s|%s|%s|%d|%d|%s".formatted(obligation.owner(), obligation.method(), obligation.type(),
                 obligation.condition(), obligation.location().startLine(), obligation.location().startColumn(),
                 obligation.riskId() == null ? "" : obligation.riskId());
+    }
+
+    private TestObligation stableIdentifier(TestObligation obligation, String key) {
         try {
             byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
                     .digest(key.getBytes(java.nio.charset.StandardCharsets.UTF_8));
