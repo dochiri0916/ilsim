@@ -30,7 +30,7 @@ class GeneralServiceStageTests(unittest.TestCase):
         self.put('checks/scenario.py', CHECK)
         self.put('server.py', SERVER)
         self.config['serviceAdapter'] = {'jar': 'build/libs/service.jar', 'readyPath': '/ready', 'readyTimeoutSeconds': 20,
-                                         'scenarios': {name: ['python3', 'checks/scenario.py'] for name in
+                                         'scenarios': {name: ['python3', 'checks/scenario.py', name] for name in
                                                        ('normal', 'duplicate', 'concurrency', 'rollback')}}
         launcher = lambda jar, port, arguments: [sys.executable, str(self.project/'server.py'), str(port)]
         patcher = patch.object(controller.service_adapter, 'java_launcher', launcher)

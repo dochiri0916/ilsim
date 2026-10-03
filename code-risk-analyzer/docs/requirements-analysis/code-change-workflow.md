@@ -10,7 +10,7 @@
 |---|---|---|
 | baseline | 새 전용 세션, 승인된 CODE_CHANGE | JSON Schema 검증, 기존 전체 테스트·빌드 실제 실행. 실패하면 작성 차단. 기준선 덮어쓰기 금지 |
 | test-writing | 성공한 기준선 | 승인된 `src/test/` 파일만 `WRITE_TESTS/TEST_WRITING`으로 작성. production·기존 동작·신규 동작 코드 작성 금지 |
-| implementation | 성공한 test-writing | 승인된 변경을 `IMPLEMENT/IMPLEMENTATION`으로 적용 |
+| implementation | 성공한 test-writing | 승인된 `src/main/` 변경만 `IMPLEMENT/IMPLEMENTATION`으로 적용. 테스트·빌드 파일은 바꿀 수 없다 |
 | generate-tests / generate-implementation | 해당 작성 단계의 선행 조건과 명시적 agent 또는 routing 설정 | 독립 CLI 세션으로 변경을 생성하고 기존 작성 실행기로 적용. [로컬 Agent 생성 연결](agent-generation.md)과 [모델 라우팅](model-routing.md) 참고 |
 | verification | 구현 단계 완료 | 같은 기존 테스트·새 기능 테스트를 전체 재실행, 기준선 비교, 최종 정적 scan. 실패·skip·삭제·검토 없는 기존 테스트/빌드 변경은 후속 검토 차단 |
 | repair | 구현 단계 완료, 명시적 repair·qualityGates 설정 | 실제 검증 → 실패 분류 → 승인된 production 구현 수정 → 재검증. 수락한 테스트·빌드 입력 고정, 반복·시간·모델 호출 한도 유지 |
@@ -19,9 +19,9 @@
 | complete | 성공한 review | 현재 소스·문서·환경·JUnit·JAR·scan·검토 파일을 다시 확인하고 요구사항/assertion 근거 재검토 |
 | pull-request | COMPLETED 세션 | 검토 파일을 다시 확인하고 완료 근거로 `pull-request.md` 본문 작성. `submit: true`는 plan의 `PULL_REQUEST` 승인, 커밋·푸시된 feature 브랜치, 검증 소스 일치를 확인한 뒤 `gh pr create --draft`만 호출 |
 
-test-writing 성공은 **파일 작성** 성공이다. 예상한 원인의 테스트 실패나 assertion의 의미를 자동 증명하지 않는다. 테스트를 직접 설계하고 필요한 구현 전 실행을 별도로 기록한다. 도메인·MySQL 테스트 수준과 영향 범위도 plan의 명시적 매핑이며 자동 추론하지 않는다.
+test-writing은 파일 작성 뒤 구현 전 빌드를 한 번 실행해 `red.json`에 남긴다. plan `newFeatures`의 테스트와 생성 계약의 `expectedFailures` 테스트가 이때 이미 통과하면 NEEDS_REVIEW로 멈추고 implementation을 막는다. 이미 통과하는 테스트는 기존 동작이므로 `features`로 옮긴다. 실패·skip·누락·컴파일 실패는 모두 NOT_PASSED로 기록하며, 예상한 원인으로 실패했는지나 assertion의 의미는 자동 증명하지 않는다. test-writing이 성공하면 테스트·빌드 입력(`src/test/`, Gradle 파일 등) 해시를 잠근다. 이후 바뀌면 verification이 거부하고 test-writing을 다시 거쳐야 한다. 도메인·MySQL 테스트 수준과 영향 범위도 plan의 명시적 매핑이며 자동 추론하지 않는다.
 
-일반 프로젝트의 서비스 검증은 프로젝트별 별도 프로세스/DB adapter가 수행하고 `review --service`로 결과를 전달한다. 실행기는 서비스의 PASS, 정상·중복·동시성·rollback, 종료 여부, 최종 소스와 JAR 해시를 검사한다. 모든 프로젝트의 서비스를 자동 기동하는 adapter는 제공하지 않는다.
+일반 프로젝트의 서비스 검증은 아래 `serviceAdapter`로 실행기가 직접 수행한다. adapter 없이 `review --service`로 전달한 결과는 실행기가 실행한 근거가 아니므로 형식이 맞아도 NEEDS_REVIEW로 남고 complete·pull-request에 도달하지 않는다.
 
 저장소의 MySQL fixture는 config에 `"fixtureAdapter": "MYSQL"`을 추가해 새 실행기가 직접 연결한다. 이 preset은 정확히 `integration-fixtures/spring-risk-sample`에만 허용한다. verification은 기존 명시적 실행 근거 연결을 재사용하고 그 scan을 세션에 고정한다. local-service는 전용 이름·소유 label을 확인한 컨테이너와 환경 변수의 DB 설정을 사용한다. 이 preset에서는 성공한 local-service 없이 review할 수 없고, 외부 서비스 JSON으로 실행 결과를 교체할 수 없다.
 
@@ -95,7 +95,7 @@ fixture가 아닌 프로젝트는 config에 `serviceAdapter`를 두면 `local-se
 }
 ```
 
-실행기는 verification에서 기록한 JAR를 `127.0.0.1`의 빈 포트로 기동하고, 준비 경로가 200을 반환하면 각 시나리오 명령을 `SERVICE_BASE_URL` 환경변수와 함께 실행한다. 종료 코드 0만 PASSED로 기록하고 프로세스 출력은 저장하지 않는다. 마지막에 프로세스 종료와 포트 반환을 확인한다. 시나리오가 참조하는 프로젝트 파일은 해시로 고정되어 바뀌면 세션이 무효화된다. 이 adapter를 쓰면 `review`에 외부 `--service` 결과를 대신 넣을 수 없다. 시나리오 명령의 assertion과 DB 상태 확인은 프로젝트가 책임진다. `serviceAdapter`의 선택 항목은 `arguments`, `readyTimeoutSeconds`(기본 60), `scenarioTimeoutSeconds`(기본 120)이며 `--server.port`·`--server.address`는 지정할 수 없다.
+실행기는 verification에서 기록한 JAR를 `127.0.0.1`의 빈 포트로 기동하고, 준비 경로가 200을 반환하면 각 시나리오 명령을 `SERVICE_BASE_URL` 환경변수와 함께 실행한다. 종료 코드 0만 PASSED로 기록하고 프로세스 출력은 저장하지 않는다. 마지막에 프로세스 종료와 포트 반환을 확인한다. 네 시나리오는 서로 다른 명령이어야 하고, 각 명령은 프로젝트 안의 검사 스크립트를 실행 파일이나 인자로 참조해야 한다(`true` 같은 빈 명령 거부). 실행 파일을 포함해 참조한 프로젝트 파일은 해시로 고정되어 바뀌면 세션이 무효화된다. 이 adapter를 쓰면 `review`에 외부 `--service` 결과를 대신 넣을 수 없다. 시나리오 명령의 assertion과 DB 상태 확인은 프로젝트가 책임진다. `serviceAdapter`의 선택 항목은 `arguments`, `readyTimeoutSeconds`(기본 60), `scenarioTimeoutSeconds`(기본 120)이며 `--server.port`·`--server.address`는 지정할 수 없다.
 
 일반 프로젝트에는 fixture 정책을 전달하지 않는다. fixture만 별도 승인한 정확한 예외 목록을 `review --fixture-policy`로 전달한다. production 위험은 일반 프로젝트에서 계속 차단한다. fixture의 승인된 결함을 재현해 COMPLETED가 되더라도 `targetRiskStatus=UNRESOLVED`를 유지한다.
 

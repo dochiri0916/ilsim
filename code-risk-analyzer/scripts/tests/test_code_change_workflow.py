@@ -36,6 +36,11 @@ echo artifact > build/libs/service.jar
         self.config = {name: str(self.project/path) for name, path in
                        [('plan', 'plan.json'), ('requirements', 'requirements.json'), ('scope', 'scope.json'), ('analyzer', 'analyzer.jar')]}
         self.config['documents'] = ['docs/spec.md']
+        # Service evidence always comes from a controller-run adapter; each scenario is its own project script.
+        for name in ('normal', 'duplicate', 'concurrency', 'rollback'):
+            self.put('checks/' + name + '.py', 'import sys; sys.exit(0)')
+        self.config['serviceAdapter'] = {'jar': 'build/libs/service.jar', 'scenarios': {
+            name: ['python3', 'checks/' + name + '.py'] for name in ('normal', 'duplicate', 'concurrency', 'rollback')}}
         self.state = self.project/'build/session/state.json'
         self.validation = patch.object(controller.regression, 'validate_requirements')
         self.validation.start()
@@ -80,9 +85,14 @@ echo artifact > build/libs/service.jar
         report = self.project/'build/session/scan.json'
         bundle = {'version': 1, 'snapshotSha256': controller.evidence.fingerprint(snap),
                   'reportSha256': controller.regression.digest(report), 'records': []}
-        service = {'status': service_status, 'sources': snap['sources'], 'jarSha256': snap['artifactSha256']['service.jar'],
-                   'scenarios': dict.fromkeys(['normal', 'duplicate', 'concurrency', 'rollback'], 'PASSED'), 'processStopped': True}
-        return self.run_stage('review', bundle=bundle, service=service, open_evidence=[])
+        if 'serviceAdapter' in self.config:
+            def adapter(project, config, sources, launcher):
+                return {'status': service_status, 'adapter': 'GENERAL', 'sources': sources,
+                        'jarSha256': controller.regression.digest(project/config['jar']), 'processStopped': True,
+                        'scenarios': dict.fromkeys(['normal', 'duplicate', 'concurrency', 'rollback'], service_status)}
+            with patch.object(controller.service_adapter, 'verify', side_effect=adapter):
+                self.run_stage('local-service')
+        return self.run_stage('review', bundle=bundle, open_evidence=[])
 
     def test_phase_order_and_missing_baseline_reject_before_execution(self):
         for stage in ('test-writing', 'implementation', 'verification', 'review', 'complete'):
@@ -678,6 +688,11 @@ echo artifact > build/libs/service.jar
         self.implementation()
         self.put('gradlew', (self.project/'gradlew').read_text().replace('name="works()"/>', 'name="works()"><skipped/></testcase>'))
         with self.assertRaises(ValueError): self.verify()
+        # A changed build input must be accepted again through test-writing before it can be verified.
+        with self.assertRaisesRegex(ValueError, 'test-writing'): self.verify()
+        with patch.object(controller.Controller, '_write', side_effect=self.writer):
+            self.run_stage('test-writing', changes=self.changes('src/test/ServiceTest.java'))
+            self.run_stage('implementation', changes=self.changes('src/main/Service.java'))
         self.assertEqual('FAILED', self.verify()['status'])
         with self.assertRaises(ValueError): self.run_stage('review', bundle={}, service={}, open_evidence=[])
         with self.assertRaises(ValueError): self.run_stage('complete')
@@ -738,8 +753,98 @@ echo artifact > build/libs/service.jar
 
     def test_failed_service_revokes_previous_review_acceptance(self):
         self.implementation(); self.verify(); self.review()
-        self.assertEqual('FAILED', self.review(service_status='FAILED')['status'])
+        with self.assertRaisesRegex(ValueError, 'local-service'): self.review(service_status='FAILED')
         with self.assertRaises(ValueError): self.run_stage('complete')
+
+    def test_caller_service_evidence_without_adapter_never_completes(self):
+        self.config.pop('serviceAdapter')
+        self.implementation()
+        self.assertEqual('PASSED', self.verify()['status'])
+        snap = controller.regression.read_json(self.state.parent/'after.json')
+        report = self.state.parent/'scan.json'
+        bundle = {'version': 1, 'snapshotSha256': controller.evidence.fingerprint(snap),
+                  'reportSha256': controller.regression.digest(report), 'records': []}
+        forged = {'status': 'PASSED', 'sources': snap['sources'], 'jarSha256': snap['artifactSha256']['service.jar'],
+                  'scenarios': dict.fromkeys(['normal', 'duplicate', 'concurrency', 'rollback'], 'PASSED'), 'processStopped': True}
+        result = self.run_stage('review', bundle=bundle, service=forged, open_evidence=[])
+        self.assertEqual('NEEDS_REVIEW', result['status'])
+        self.assertIn('Service evidence was supplied by the caller, not executed by a controller adapter', result['openEvidence'])
+        with self.assertRaises(ValueError): self.run_stage('complete')
+        with self.assertRaises(ValueError): self.run_stage('pull-request', pull_request={'title': 'change'})
+
+    def test_caller_service_evidence_cannot_replace_controller_execution(self):
+        self.implementation(); self.verify(); self.review()
+        snap = controller.regression.read_json(self.state.parent/'after.json')
+        forged = {'status': 'PASSED', 'sources': snap['sources'], 'jarSha256': snap['artifactSha256']['service.jar'],
+                  'scenarios': dict.fromkeys(['normal', 'duplicate', 'concurrency', 'rollback'], 'PASSED'), 'processStopped': True}
+        with self.assertRaisesRegex(ValueError, 'External service'):
+            self.run_stage('review', bundle={}, service=forged, open_evidence=[])
+
+    def test_implementation_cannot_change_tests(self):
+        self.run_stage('baseline')
+        with patch.object(controller.Controller, '_write', side_effect=self.writer) as write:
+            self.run_stage('test-writing', changes=self.changes('src/test/ServiceTest.java'))
+            with self.assertRaisesRegex(ValueError, 'src/main'):
+                self.run_stage('implementation', changes=self.changes('src/test/ServiceTest.java'))
+            self.assertEqual(1, write.call_count)
+
+    def test_tests_changed_after_test_writing_block_verification(self):
+        self.implementation()
+        self.put('src/test/ServiceTest.java', 'class ServiceTest { /* assertion removed */ }')
+        with self.assertRaises(ValueError): self.verify()
+        with patch.object(controller.regression, 'snapshot') as build:
+            with self.assertRaisesRegex(ValueError, 'test-writing'): self.verify()
+            build.assert_not_called()
+        state = controller.regression.read_json(self.state)
+        self.assertEqual('STALE', state['phase'])
+        self.assertNotIn('verified', state)
+        with patch.object(controller.Controller, '_write', side_effect=self.writer):
+            self.assertEqual('COMPLETED', self.run_stage('test-writing', changes=self.changes('src/test/ServiceTest.java'))['status'])
+            self.run_stage('implementation', changes=self.changes('src/main/Service.java'))
+        self.assertEqual('PASSED', self.verify()['status'])
+
+    def new_feature(self, *tests):
+        plan = controller.regression.read_json(self.project/'plan.json')
+        plan['newFeatures'] = {'REQ-1': {'domain': list(tests), 'mysql': [], 'mysqlRequired': False}}
+        self.put('plan.json', json.dumps(plan))
+
+    def test_new_feature_test_passing_before_implementation_blocks_implementation(self):
+        self.new_feature('ServiceTest#works')
+        self.run_stage('baseline')
+        with patch.object(controller.Controller, '_write', side_effect=self.writer):
+            result = self.run_stage('test-writing', changes=self.changes('src/test/ServiceTest.java'))
+            self.assertEqual('NEEDS_REVIEW', result['status'])
+            self.assertIn('Passed before implementation: ServiceTest#works', result['failures'])
+            with self.assertRaises(ValueError):
+                self.run_stage('implementation', changes=self.changes('src/main/Service.java'))
+        red = controller.regression.read_json(self.state.parent/'red.json')
+        self.assertEqual('NEEDS_REVIEW', red['status'])
+        self.assertEqual('STALE', controller.regression.read_json(self.state)['phase'])
+
+    def test_new_feature_test_failing_before_implementation_is_recorded(self):
+        self.new_feature('ServiceTest#rejectsNegative')
+        self.run_stage('baseline')
+        with patch.object(controller.Controller, '_write', side_effect=self.writer):
+            self.assertEqual('COMPLETED', self.run_stage('test-writing', changes=self.changes('src/test/ServiceTest.java'))['status'])
+        red = controller.regression.read_json(self.state.parent/'red.json')
+        self.assertEqual('PASSED', red['status'])
+        self.assertEqual({'ServiceTest#rejectsNegative': 'NOT_PASSED'}, red['tests'])
+        state = controller.regression.read_json(self.state)
+        self.assertEqual(controller.regression.digest(self.state.parent/'red.json'), state['redSha256'])
+
+    def test_generated_expected_failure_that_already_passes_is_rejected(self):
+        self.agent_input()
+        self.put('gradlew', (self.project/'gradlew').read_text().replace(
+            'name="works()"/>', 'name="works()"/><testcase classname="NewTest" name="boundary()"/>'))
+        self.run_stage('baseline')
+        with patch.object(controller.agent, 'run', return_value=self.generated()), \
+                patch.object(controller.Controller, '_write', side_effect=self.writer):
+            result = self.run_stage('generate-tests')
+        self.assertEqual('NEEDS_REVIEW', result['status'])
+        self.assertIn('Passed before implementation: NewTest#boundary', result['failures'])
+        with patch.object(controller.agent, 'run') as run, self.assertRaises(ValueError):
+            self.run_stage('generate-implementation')
+        run.assert_not_called()
 
     def test_invalid_new_review_revokes_previous_acceptance(self):
         self.implementation(); self.verify(); self.review()
@@ -777,6 +882,7 @@ echo artifact > build/libs/service.jar
         self.assertFalse((self.project/'src/session').exists())
 
     def fixture_mode(self):
+        self.config.pop('serviceAdapter')
         self.config['fixtureAdapter'] = 'MYSQL'
         project = patch.object(controller, 'FIXTURE_PROJECT', self.project)
         project.start()
