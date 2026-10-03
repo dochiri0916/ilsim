@@ -123,6 +123,51 @@ class LintConventionPluginTest {
     }
 
     @Test
+    void 'check fails when required task onlyIf cannot be evaluated'() {
+        Project project = sampleProject()
+        project.tasks.named('validateClaudeConventions').configure { task ->
+            task.onlyIf { throw new IllegalStateException('onlyIf failure') }
+        }
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('onlyIf-skipped tasks: validateClaudeConventions')
+    }
+
+    @Test
+    void 'check fails when dash x names the same task in this project by path'() {
+        Project root = ProjectBuilder.builder().withProjectDir(File.createTempDir('lint-convention-root', '')).build()
+        Project order = subprojectWithPlugin(root, 'order')
+        root.gradle.startParameter.setExcludedTaskNames([':order:validateClaudeConventions'])
+
+        try {
+            GradleException exception = assertThrows(GradleException) {
+                executeCheckActions(order)
+            }
+
+            assert exception.message.contains('-x excluded tasks: validateClaudeConventions')
+        } finally {
+            root.gradle.startParameter.setExcludedTaskNames([])
+        }
+    }
+
+    @Test
+    void 'check ignores dash x of a same-named task in another project'() {
+        Project root = ProjectBuilder.builder().withProjectDir(File.createTempDir('lint-convention-root', '')).build()
+        Project order = subprojectWithPlugin(root, 'order')
+        subprojectWithPlugin(root, 'payment')
+        root.gradle.startParameter.setExcludedTaskNames([':payment:validateClaudeConventions'])
+
+        try {
+            executeCheckActions(order)
+        } finally {
+            root.gradle.startParameter.setExcludedTaskNames([])
+        }
+    }
+
+    @Test
     void 'check fails when test task is disabled'() {
         Project project = sampleProject()
         project.tasks.named('test').get().enabled = false
@@ -166,6 +211,48 @@ class LintConventionPluginTest {
 
         assert exception.message.contains('Build convention verification must not be disabled')
         assert exception.message.contains('empty source tasks: checkstyleMain')
+    }
+
+    @Test
+    void 'check fails when quality task source cannot be resolved'() {
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/domain/model/Order.java', '''
+                package com.example.order.domain.model;
+
+                public record Order() {
+                }
+                ''')
+        project.tasks.named('checkstyleMain').get().source = project.files({
+            throw new IllegalStateException('source failure')
+        })
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('empty source tasks: checkstyleMain')
+        assert exception.message.contains('checkstyleMain: source could not be resolved')
+    }
+
+    @Test
+    void 'check fails when coverage class directories cannot be resolved'() {
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/domain/model/Order.java', '''
+                package com.example.order.domain.model;
+
+                public record Order() {
+                }
+                ''')
+        project.file('build/classes/java/main').mkdirs()
+        project.tasks.named('jacocoTestCoverageVerification').get().classDirectories.setFrom(project.files({
+            throw new IllegalStateException('class directory failure')
+        }))
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('empty coverage tasks: jacocoTestCoverageVerification')
     }
 
     @Test
@@ -356,6 +443,54 @@ class LintConventionPluginTest {
     }
 
     @Test
+    void 'check fails when JUnit Platform tags or engines skip tests'() {
+        Project project = sampleProject()
+        project.tasks.named('test').configure { task ->
+            task.useJUnitPlatform { options ->
+                options.excludeTags 'slow'
+                options.includeTags 'fast'
+                options.excludeEngines 'junit-jupiter'
+                options.includeEngines 'junit-vintage'
+            }
+        }
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('Build convention verification must not be disabled')
+        ['excludeTags', 'includeTags', 'excludeEngines', 'includeEngines'].each { String name ->
+            assert exception.message.contains("test.options.${name}")
+        }
+    }
+
+    @Test
+    void 'check fails when test class scanning is disabled'() {
+        Project project = sampleProject()
+        project.tasks.named('test').configure { task -> task.scanForTestClasses = false }
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('test.scanForTestClasses=false')
+    }
+
+    @Test
+    void 'check fails when test classes dirs are replaced'() {
+        Project project = sampleProject()
+        project.tasks.named('test').configure { task ->
+            task.testClassesDirs = project.files('build/empty-test-classes')
+        }
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('test.testClassesDirs missing')
+    }
+
+    @Test
     void 'check fails when test jacoco is disabled'() {
         Project project = sampleProject()
         project.tasks.named('test').get().extensions.getByType(JacocoTaskExtension).enabled = false
@@ -477,6 +612,25 @@ class LintConventionPluginTest {
     }
 
     @Test
+    void 'check fails when mutation test selection is narrowed after evaluation'() {
+        Project project = sampleProject()
+        ((org.gradle.api.internal.project.ProjectInternal) project).evaluate()
+        def pitest = project.extensions.getByName('pitest')
+        pitest.targetTests.set(['com.example.NothingTest'])
+        pitest.excludedGroups.set(['slow'])
+        pitest.includedGroups.set(['fast'])
+        pitest.includedTestMethods.set(['nothing'])
+        pitest.skipFailingTests.set(true)
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        ['targetTests', 'excludedGroups', 'includedGroups', 'includedTestMethods', 'skipFailingTests']
+                .each { String name -> assert exception.message.contains("pitest.${name}") }
+    }
+
+    @Test
     void 'check accepts the default coverage rules and mutation configuration after evaluation'() {
         Project project = sampleProject()
         ((org.gradle.api.internal.project.ProjectInternal) project).evaluate()
@@ -488,6 +642,15 @@ class LintConventionPluginTest {
     private static Project sampleProject() {
         File projectDir = File.createTempDir('lint-convention-plugin-test', '')
         Project project = ProjectBuilder.builder().withProjectDir(projectDir).build()
+        project.pluginManager.apply('java')
+        project.pluginManager.apply(LintConventionPlugin)
+        return project
+    }
+
+    private static Project subprojectWithPlugin(Project root, String name) {
+        File projectDir = new File(root.projectDir, name)
+        projectDir.mkdirs()
+        Project project = ProjectBuilder.builder().withName(name).withParent(root).withProjectDir(projectDir).build()
         project.pluginManager.apply('java')
         project.pluginManager.apply(LintConventionPlugin)
         return project
