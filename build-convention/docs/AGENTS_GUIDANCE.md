@@ -2,7 +2,7 @@
 
 Java 21+, Spring Boot, JPA를 사용하고 `io.github.dochiri0916.build-convention`을 적용한 소스 모듈에 이 지침을 적용한다. 최신 사용자 요청과 대화에서 명시적으로 합의한 결정, 저장소의 `AGENTS.md`, 저장소의 기존 구조가 이 지침보다 우선한다. 기존 프로젝트의 작은 변경에서는 요청 범위 밖 구조 개편이나 기존 코드 일괄 마이그레이션을 하지 않는다.
 
-기준 예시는 `tool-test-lab` 저장소다. 이 지침에 없는 구조와 스타일은 검증에서 거부된다. 다음 경로는 build-convention 저장소의 루트에서 해석한다.
+기준 예시는 `tool-test-lab` 저장소이고, 검증을 통과하는 파일 단위 틀은 `docs/templates`(`com.example.demo`, Context `book`)에 있다. 이 지침에 없는 구조와 스타일은 검증에서 거부된다. 다음 경로는 build-convention 저장소의 루트에서 해석한다.
 
 - `docs/ARCHITECTURE.md`: 패키지, 계층, Domain/Application/Adapter 책임
 - `docs/ERROR_HANDLING.md`: Context별 sealed 예외, ExceptionHandler, ProblemDetail
@@ -33,14 +33,15 @@ com.example.project/
 │   ├── exception/              # GlobalApiControllerAdvice, ProblemDetails
 │   └── persistence/            # BaseEntity, RepositoryExceptionTranslator
 └── {context}/ 또는 {context}/{module}/
-    ├── domain/                 # Aggregate Root를 직접 두거나 model/, vo/ 에 둔다. exception/
+    ├── domain/                 # Aggregate Root를 직접 두거나 model/, vo/ 에 둔다. event/, exception/
     ├── application/{port/in,port/out,exception,service}/
     └── adapter/{in/{web,bootstrap},out/{persistence,...}}/
 ```
 
 - `port/in`에는 UseCase를 바로 두고, Command와 Result는 같은 곳이나 `port/in/command`, `port/in/result`에 둔다. `usecase`, `query` 하위 패키지는 쓰지 않는다.
 - `adapter/in/web`에는 Controller, `{Context}ExceptionHandler`, `request/`, `response/`, (필요하면) `exception/`을 둔다.
-- `domain.event`, `adapter.in.scheduler/messaging/event`, `global.web`은 쓰지 않는다.
+- `adapter.in.scheduler/messaging/event`, `global.web`은 쓰지 않는다.
+- 도메인 이벤트는 `domain/event`의 `record`다. 이름은 과거형이고 `Event` 접미사를 붙이지 않으며(`BookRegistered`), compact constructor에서 null을 막는다. 발행은 Application이 Outbound Port(`{Context}EventPort`)로 한다.
 - `global`은 어떤 `{context}` 패키지도 import하지 않는다.
 
 ## Domain

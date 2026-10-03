@@ -2703,7 +2703,7 @@ class JavaSourceArchitectureValidatorTest {
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         // then
-        assert violations.any { it.contains('OrderPlaced.java order.domain package must use model, vo, or exception') }
+        assert !violations.any { it.contains('OrderPlaced.java') && it.contains('order.domain package must use') }
         assert violations.any { it.contains('WebConfig.java global package must be limited') }
         assert violations.any { it.contains('FindOrderQuery.java order.application.port.in package may only add command or result') }
         assert violations.any { it.contains("application..port.in type 'OrderLookup' must end with UseCase, Command, or Result") }

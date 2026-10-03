@@ -370,7 +370,10 @@ class Controller:
             task['failureHistory'] = [item['classification'] for item in self.state['repair']['history']]
         prompt = ('Return JSON conforming to the supplied output schema. Propose complete file contents only; do not edit files or run tools. '
                   'Follow the provided repository rules. Do not invent observable behavior, weaken assertions, suppress findings, '
-                  'or include credentials. If the contract is ambiguous, return NEEDS_REVIEW with unknowns and no changes.\n'
+                  'or include credentials. If the contract is ambiguous, return NEEDS_REVIEW with unknowns and no changes. '
+                  # A COMPLETED result with any unknown is rejected, and models tend to add notes like "tests not run".
+                  'With status COMPLETED, unknowns must be empty: the tool compiles and runs the code itself, so never '
+                  'note that you did not compile, run or verify something.\n'
                   + instructions + '\n' + json.dumps(task, ensure_ascii=False))
         if len(prompt.encode()) > agent.MAX_OUTPUT_BYTES:
             raise ValueError('Agent context too large; narrow the approved scope')

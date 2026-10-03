@@ -22,6 +22,7 @@ class PackageTopologyConventionValidator {
     private static final Set<String> DOMAIN_CHILD_SEGMENTS = [
             'model',
             'vo',
+            'event',
             'exception'
     ] as Set
     private static final Set<String> APPLICATION_CHILD_SEGMENTS = [
@@ -235,7 +236,7 @@ class PackageTopologyConventionValidator {
         String path = project.relativePath(file)
         String childName = segments[2]
         if (layerName == 'domain' && !DOMAIN_CHILD_SEGMENTS.contains(childName)) {
-            violations.add("${path} ${contextName}.domain package must use model, vo, or exception")
+            violations.add("${path} ${contextName}.domain package must use model, vo, event, or exception")
         }
         if (layerName == 'application' && !APPLICATION_CHILD_SEGMENTS.contains(childName)) {
             violations.add("${path} ${contextName}.application package must use port, exception, or service")

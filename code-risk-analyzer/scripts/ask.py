@@ -419,6 +419,7 @@ def execute(value, confirmed, run, options=None):
             print(f"{stage} 단계에는 {', '.join('--' + name for name in missing)} 파일이 필요해 여기서 멈춥니다")
             return 3
         if stage == 'baseline' and value.get('convention'):
+            provide_globals(value)
             # Existing violations are fixed first, so the baseline and the change start from a convention-clean project.
             if not (Path(value['convention']['session'])/'convention-before.json').is_file():
                 run(_convention(value, 'before'))
@@ -492,6 +493,19 @@ CONVENTION_FIX_ROUNDS = 2
 CONVENTION_SKIPPED = '컨벤션 검증을 실행하지 못해 건너뜁니다 (install.sh로 build-convention을 설치하면 함께 검사)'
 CONVENTION_STOP = ('컨벤션 검증에서 멈췄습니다. 남은 위반을 고친 뒤 "검증 다시 해줘"로 다시 확인하세요 '
                    '(컨벤션 없이 진행하려면 새 요청에 "컨벤션 없이"를 넣으세요)')
+
+
+def provide_globals(value):
+    """Copy the convention's shared global types the project lacks, and count their tests in the regression plan."""
+    project = Path(value['convention']['project'])
+    written = _module('convention_templates').provide(project)
+    if written:
+        print('컨벤션: 틀에서 공통 파일을 추가했습니다 - ' + ', '.join(Path(path).name for path in written))
+        plan_path = Path(value['config']['plan'])
+        plan_value = _read(plan_path)
+        plan_value['features']['existing-tests'] = _module('ask_draft').existing_tests(project)
+        plan_path.write_text(json.dumps(plan_value, ensure_ascii=False, indent=2), encoding='utf-8')
+    return written
 
 
 def _convention_gate(value, run):
@@ -643,7 +657,8 @@ def start_change(text, project, decided, allowed, judge, call, check=None, measu
     session = new_session(project)
     (session/CONVENTION_MARKER).write_text(json.dumps({'enabled': enabled}), encoding='utf-8')
     print(f"요구사항 초안 작성 중 ({configs[0]['model']}, 프로젝트 파일은 읽기만 함)...")
-    options = {'guidance': conventions.guidance() if enabled else None}
+    # The draft only places files, so it gets the template tree; the code writers also get the example files.
+    options = {'guidance': conventions.guidance(examples=False), 'rules': conventions.guidance()} if enabled else {}
     if check is not None:
         options['check'] = check
     result = draft.draft(project, session, text, configs, routing, DEFAULT_JAR, call, **options)

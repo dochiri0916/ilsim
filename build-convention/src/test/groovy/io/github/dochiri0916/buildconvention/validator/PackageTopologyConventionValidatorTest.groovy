@@ -150,7 +150,7 @@ class PackageTopologyConventionValidatorTest {
         assert violations.any { it.contains("package 'common' is not a bounded context") }
         assert violations.any { it.contains("bounded context package 'order' must contain") }
         assert violations.any { it.contains('package must follow {context}/domain') }
-        assert violations.any { it.contains('order.domain package must use model, vo, or exception') }
+        assert violations.any { it.contains('order.domain package must use model, vo, event, or exception') }
         assert violations.any { it.contains('order.application package must declare a valid child package') }
         assert violations.any { it.contains('order.application package must use port, exception, or service') }
         assert violations.any { it.contains('order.application.port package must use in or out') }
@@ -193,7 +193,7 @@ class PackageTopologyConventionValidatorTest {
         )
 
         // then
-        assert violations.any { it.contains('order.domain package must use model, vo, or exception') }
+        assert violations.any { it.contains('order.domain package must use model, vo, event, or exception') }
     }
 
     @Test

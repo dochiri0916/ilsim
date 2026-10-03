@@ -5,6 +5,7 @@ applies it to every Java project that does not apply it already. `check --contin
 report, which is saved into the session with the violations Gradle printed. Any failing check fails the run.
 """
 import argparse
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -55,8 +56,18 @@ allprojects {{
 """
 
 
-def guidance():
-    return GUIDANCE.read_text(encoding='utf-8') if GUIDANCE.is_file() else None
+def guidance(examples=True):
+    """The agent guidance plus the template tree; examples adds one template file per kind (for code writers)."""
+    if not GUIDANCE.is_file():
+        return None
+    return GUIDANCE.read_text(encoding='utf-8') + _templates().guidance(examples)
+
+
+def _templates():
+    spec = importlib.util.spec_from_file_location('convention_templates', SCRIPTS/'convention_templates.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 CHECKSTYLE = re.compile(r'\[ant:checkstyle\] \[(?:ERROR|WARN)\] (.+?):(\d+)(?::\d+)?: (.+)')

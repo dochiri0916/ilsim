@@ -204,6 +204,17 @@ class DraftTests(unittest.TestCase):
         self.assertEqual([{'input': 1}, {'input': 2}], result['usage'])
         self.assertTrue((self.project.session/'plan.json').is_file())
 
+    def test_draft_prompt_gets_the_short_guidance_and_the_writers_get_the_full_rules(self):
+        # given
+        call = self.caller({'status': 'COMPLETED', 'output': sample()})
+        # when
+        draft.draft(self.project.root, self.project.session, '회원 가입 추가해줘', [{'model': 'first'}], {}, JAR, call,
+                    lambda path, analyzer: None, guidance='# 파일 트리', rules='# 트리와 예시 코드')
+        # then
+        self.assertIn('# 파일 트리', self.calls[0]['prompt'])
+        self.assertNotIn('# 트리와 예시 코드', self.calls[0]['prompt'])
+        self.assertEqual('# 트리와 예시 코드', (self.project.session/'conventions.md').read_text())
+
     def test_questions_stop_before_any_file_is_written(self):
         call = self.caller({'status': 'NEEDS_REVIEW', 'output': sample(status='NEEDS_REVIEW', unknowns=['어떤 DB?'])})
         result = self.run_draft(call)
