@@ -13,6 +13,7 @@ ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
 MAX_BYTES = 2 * 1024 * 1024
 MODEL = re.compile(r'jev-[A-Za-z0-9][A-Za-z0-9._-]{0,60}')
 TIERS = ('TIER_1', 'TIER_2', 'TIER_3', 'TIER_4')
+CONTEXT_PROJECTION_VERSION = 2
 QUESTIONS = {
     'requiredTier': {
         'type': 'choice',
@@ -49,10 +50,12 @@ QUESTIONS_V2 = {
     'risk': {
         'type': 'score',
         'instructions': 'Assess the consequences of a wrong implementation of this requested behavior. '
-                        'Judge actual effects, not general repository complexity. Use requirements and code as evidence.',
+                        'Judge effects within the approved component scope. For test-writing, assess the target behavior and test omissions. '
+                        'A public pure method is a local component API; integration requires effects on other components. '
+                        'Use the stated persistence, shared-state and trust-boundary effects as evidence.',
         'criteria': [
-            'Only an isolated reversible local behavior or cosmetic change; no shared persistent state, trust boundary or required validation can be compromised.',
-            'A recoverable integration/API behavior may break, with bounded effects and no loss of data, security or mandatory verification.',
+            'An isolated stateless calculation, local unit test or cosmetic edit. A wrong result affects only the named component; persistent state, concurrency, security and evidence/approval controllers are untouched.',
+            'An external API or integration across components changes. A wrong result can cause bounded recoverable failures in dependent components, without data loss, security bypass or false completion approval.',
             'Shared data may be lost/corrupted, transaction or concurrency invariants violated, security bypassed, or invalid evidence may grant completion/execution.']},
     'sufficiency': {
         'type': 'choice',
@@ -71,21 +74,35 @@ def questions(version):
 
 
 def project_state(state):
-    """Bound code context explicitly; preserve the entire behavioral requirement."""
+    """Separate task semantics from generator instructions and workflow administration."""
     if not isinstance(state, dict):
         raise ValueError('Structured capability state required')
     projected = {key: state[key] for key in ('stage', 'requirements', 'allowedFiles', 'acceptedTests', 'failureHistory') if key in state}
+    requirements = state.get('requirements', {})
+    if isinstance(requirements, dict) and isinstance(requirements.get('requirements'), dict):
+        compact = {}
+        for identifier, requirement in requirements['requirements'].items():
+            if not isinstance(requirement, dict):
+                raise ValueError('Structured behavioral requirements required')
+            item = {key: requirement[key] for key in ('title', 'preconditions', 'postconditions', 'invariants', 'coreLogic', 'scenarios') if key in requirement}
+            item['source'] = requirement.get('source', {})
+            item['domain'] = requirement.get('domain', {})
+            item['effects'] = {key: requirement[key] for key in ('transaction', 'concurrency', 'idempotency', 'consistency') if key in requirement}
+            compact[identifier] = item
+        projected['requirements'] = compact
     context, budget = {}, 24000
     for path, content in sorted(state.get('contextFiles', {}).items()):
         if not isinstance(path, str) or not isinstance(content, str):
             raise ValueError('Text context required')
+        if path.rsplit('/', 1)[-1] in ('AGENTS.md', 'build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts', '.code-risk.yml'):
+            continue
         limit = min(4000, budget)
         excerpt = content[:limit]
         budget -= len(excerpt)
         context[path] = {'excerpt': excerpt, 'omittedCharacters': len(content)-len(excerpt),
                          'sha256': hashlib.sha256(content.encode()).hexdigest()}
     projected['contextFiles'] = context
-    projected['contextProjectionVersion'] = 1
+    projected['contextProjectionVersion'] = CONTEXT_PROJECTION_VERSION
     return projected
 
 
@@ -97,6 +114,59 @@ def answer_confidence(answer):
     mode = values.index(max(values))
     spread = sum(probability*abs(index-mode) for index, probability in enumerate(values))
     uniform = sum(abs(index-(len(values)-1)/2) for index in range(len(values)))/len(values)
+    return max(0.0, 1-spread/uniform)
+
+
+ROUNDING = 0.005001
+
+
+def expectation_bounds(values, weights):
+    """Feasible unit-sum distributions behind independently rounded probabilities."""
+    lower = [max(0.0, value-ROUNDING) for value in values]
+    upper = [min(1.0, value+ROUNDING) for value in values]
+    if sum(lower) > 1+1e-9 or sum(upper) < 1-1e-9:
+        raise ValueError('Inconsistent probability sum')
+    result = []
+    for reverse in (False, True):
+        remaining, total = 1-sum(lower), sum(value*weight for value, weight in zip(lower, weights))
+        for index in sorted(range(len(values)), key=lambda index: weights[index], reverse=reverse):
+            addition = min(remaining, upper[index]-lower[index])
+            total += addition*weights[index]
+            remaining -= addition
+        result.append(total)
+    return result
+
+
+def confidence_bounds(answer):
+    probabilities = answer['probabilities']
+    if answer['type'] == 'choice':
+        labels, values = list(probabilities), list(probabilities.values())
+        weights = [float(label == answer['choice']) for label in labels]
+        low, high = expectation_bounds(values, weights)
+        return [max(0.0, (value-1/len(values))/(1-1/len(values))) for value in (low, high)]
+    values = [probabilities[str(index)] for index in range(len(probabilities))]
+    uniform = sum(abs(index-(len(values)-1)/2) for index in range(len(values)))/len(values)
+    bounds = []
+    for mode, probability in enumerate(values):
+        if probability + 2*ROUNDING < max(values):
+            continue
+        low, high = expectation_bounds(values, [abs(index-mode) for index in range(len(values))])
+        bounds.append((max(0.0, 1-high/uniform), max(0.0, 1-low/uniform)))
+    return min(bound[0] for bound in bounds), max(bound[1] for bound in bounds)
+
+
+def routed_tier_confidence(answer, floor):
+    """Concentration of the decision after the deterministic risk floor, not unused raw levels."""
+    values = [answer['probabilities'][str(index)] for index in range(len(TIERS))]
+    levels = [max(index, floor) for index in range(len(TIERS))]
+    if floor == len(TIERS)-1:
+        return 1.0
+    if floor == 0:
+        return min(answer['confidence'], confidence_bounds(answer)[0])
+    grouped = {level: sum(value for value, destination in zip(values, levels) if destination == level) for level in set(levels)}
+    mode = max(grouped, key=grouped.get)
+    uniform = sum(abs(index-(len(TIERS)-1)/2) for index in range(len(TIERS)))/len(TIERS)
+    _, spread = expectation_bounds(values, [abs(level-mode) for level in levels])
     return max(0.0, 1-spread/uniform)
 
 
@@ -133,16 +203,18 @@ def validate_response(value, version=1):
         if not isinstance(probabilities, dict) or set(probabilities) != labels:
             raise ValueError('Complete choice distribution required')
         values = [number(probability) for probability in probabilities.values()]
-        if not math.isclose(sum(values), 1, abs_tol=0.001) or choice and probabilities[answer['choice']] < max(values) - 0.000001:
+        expectation_bounds(values, [0.0]*len(values))
+        if choice and probabilities[answer['choice']] < max(values) - 0.000001:
             raise ValueError('Inconsistent choice distribution')
         if not choice:
             score = answer['score']
-            if type(score) not in (int, float) or not math.isfinite(score) \
-                    or not math.isclose(score, sum(int(index)*probability for index, probability in probabilities.items()), abs_tol=0.005001):
+            low, high = expectation_bounds([probabilities[str(index)] for index in range(len(values))], list(range(len(values))))
+            if type(score) not in (int, float) or not math.isfinite(score) or not 0 <= score <= len(values)-1 \
+                    or not low-ROUNDING <= score <= high+ROUNDING:
                 raise ValueError('Inconsistent score')
-        confidence = answer_confidence(answer)
-        # The API rounds its confidence to two decimals; validate that rounding only.
-        if not math.isclose(number(answer['confidence']), confidence, abs_tol=0.005001):
+        low, high = confidence_bounds(answer)
+        # Confidence, score and each probability are independently rounded by the API.
+        if not low-ROUNDING <= number(answer['confidence']) <= high+ROUNDING:
             raise ValueError('Inconsistent choice confidence')
     usage = value.get('usage')
     if not isinstance(usage, dict) or any(type(usage.get(name)) is not int or usage[name] < 0
@@ -200,11 +272,14 @@ def judge(config, state, decode):
         return dict(result, failureKind='UNKNOWN', reason='Capability or risk is unknown')
     risk = answers['risk']['choice'] if version == 1 else ('LOW', 'MEDIUM', 'HIGH')[int(max(answers['risk']['probabilities'], key=answers['risk']['probabilities'].get))]
     threshold = max(config['minConfidence'], 0.9 if risk == 'HIGH' else 0.85 if risk == 'MEDIUM' else 0.0)
-    confidence = min(min(answer['confidence'], answer_confidence(answer)) for answer in answers.values())
-    result.update(confidence=confidence, confidenceThreshold=threshold)
+    floor = {'LOW': 'TIER_1', 'MEDIUM': 'TIER_3', 'HIGH': 'TIER_4'}[risk]
+    raw_confidence = min(min(answer['confidence'], confidence_bounds(answer)[0]) for answer in answers.values())
+    confidence = raw_confidence if version == 1 else min(
+        routed_tier_confidence(answers['requiredTier'], TIERS.index(floor)),
+        *(min(answers[name]['confidence'], confidence_bounds(answers[name])[0]) for name in ('risk', 'sufficiency')))
+    result.update(confidence=confidence, rawConfidence=raw_confidence, confidenceThreshold=threshold, riskFloor=floor)
     if confidence < threshold:
         return dict(result, failureKind='LOW_CONFIDENCE', reason='Capability judgment requires review')
-    floor = {'LOW': 'TIER_1', 'MEDIUM': 'TIER_3', 'HIGH': 'TIER_4'}[risk]
     raw_tier = answers['requiredTier']['choice'] if version == 1 else TIERS[int(max(answers['requiredTier']['probabilities'], key=answers['requiredTier']['probabilities'].get))]
     tier = TIERS[max(TIERS.index(raw_tier), TIERS.index(floor))]
     return dict(result, status='COMPLETED', requiredTier=tier, risk=risk, failureKind='', reason='')

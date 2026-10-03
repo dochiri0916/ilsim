@@ -8,6 +8,7 @@ import signal
 import subprocess
 import tempfile
 import uuid
+import time
 
 
 VERSION = 1
@@ -131,6 +132,14 @@ def stop(process):
     except ProcessLookupError:
         pass
     process.wait(timeout=2)
+    # SIGKILL delivery is asynchronous; wait for orphaned group members to release resources.
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.01)
 
 
 def run(config, workspace, prompt):

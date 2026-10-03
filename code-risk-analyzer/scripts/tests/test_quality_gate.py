@@ -65,7 +65,7 @@ class QualityGateTests(unittest.TestCase):
 
     def test_missing_duplicate_and_negative_coverage_are_rejected(self):
         original = (self.project/quality.COVERAGE_XML).read_text()
-        for invalid in ('<report/>', original.replace('missed="0"', 'missed="-1"'),
+        for invalid in ('<report/>', '<report', original.replace('missed="0"', 'missed="-1"'),
                         original.replace('</class>', '<counter type="LINE" missed="0" covered="1"/></class>'),
                         original.replace('example/Boundary', 'other/Class')):
             with self.subTest(invalid=invalid):

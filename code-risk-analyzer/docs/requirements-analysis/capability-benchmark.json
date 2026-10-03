@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "price-comment", "split": "calibration",
+      "task": "Correct the PricePolicy class comment to say it is a deterministic discount calculator. Only edit the comment. Preserve all executable code and public APIs.",
+      "context": [{"path": "integration-fixtures/spring-risk-sample/src/main/java/com/example/risksample/PricePolicy.java"}],
+      "expectedTier": "TIER_1", "expectedRisk": "LOW"
+    },
+    {
+      "id": "price-boundary-test", "split": "calibration",
+      "task": "Write an isolated JUnit regression test for PricePolicy.discountPercent: quantity 1 returns 0, 9 returns 0, 10 returns 10, and 0 throws IllegalArgumentException. Do not modify production code. This calculator has no shared state or database.",
+      "context": [{"path": "integration-fixtures/spring-risk-sample/src/main/java/com/example/risksample/PricePolicy.java"}],
+      "expectedTier": "TIER_2", "expectedRisk": "LOW"
+    },
+    {
+      "id": "price-threshold-fix", "split": "calibration",
+      "task": "Change the pure PricePolicy.discountPercent threshold from quantity 10 to quantity 12. A positive quantity below 12 returns 0, quantity 12 and above returns 10, zero and negative inputs still throw. Only change the local method; no persistence, shared state or external effects.",
+      "context": [{"path": "integration-fixtures/spring-risk-sample/src/main/java/com/example/risksample/PricePolicy.java"}],
+      "expectedTier": "TIER_2", "expectedRisk": "LOW"
+    },
+    {
+      "id": "endpoint-discount-integration", "split": "calibration",
+      "task": "Coordinate the existing HTTP /discount endpoint and PricePolicy to include a named JSON discountPercent field, preserving status codes and invalid quantity handling. Update the endpoint mapping and integration tests. This bounded read-only integration must not change database writes, security, concurrency or completion permissions.",
+      "context": [{"path": "integration-fixtures/spring-risk-sample/src/main/java/com/example/risksample/LocalServiceEndpoint.java"}, {"path": "integration-fixtures/spring-risk-sample/src/main/java/com/example/risksample/PricePolicy.java"}],
+      "expectedTier": "TIER_3", "expectedRisk": "MEDIUM"
+    },
+    {
+      "id": "mysql-rollback", "split": "calibration",
+      "task": "Verify and correct SafeService.saveThenFail transaction behavior using real MySQL. After a successful flush followed by an exception, the inserted business key must not persist. Preserve all existing tests and transaction boundaries. A wrong implementation can persist an invalid record.",
+      "context": [{"path": "integration-fixtures/spring-risk-sample/src/main/java/com/example/risksample/SafeService.java"}],
+      "expectedTier": "TIER_4", "expectedRisk": "HIGH"
+    },
+    {
+      "id": "sql-injection-fix", "split": "calibration",
+      "task": "Fix the SqlController.unsafe SQL injection trust boundary. Untrusted name values must be bound as query parameters, never concatenated into executable SQL. Keep normal lookup behavior and prove attack strings are treated only as data. This change protects the database security boundary.",
+      "context": [{"path": "integration-fixtures/static-rules-sample/src/main/java/com/example/staticrules/SqlController.java"}],
+      "expectedTier": "TIER_4", "expectedRisk": "HIGH"
+    },
+    {
+      "id": "completion-evidence-binding", "split": "calibration",
+      "task": "Harden workflow completion so stale JaCoCo/PIT evidence cannot grant VERIFIED or COMPLETED after code or tests change. Bind the final run to current source, test, bytecode and report hashes; missing or changed evidence must block completion. Preserve accepted tests. This is a validation trust boundary across the workflow controller and regression checker.",
+      "context": [{"path": "scripts/code_change_workflow.py", "symbol": "Controller._fresh_execution"}, {"path": "scripts/regression_workflow.py", "symbol": "verified_snapshot"}],
+      "expectedTier": "TIER_4", "expectedRisk": "HIGH"
+    },
+    {
+      "id": "unspecified-workflow", "split": "calibration",
+      "task": "Make the workflow better. There is no specified behavior, approved change scope or acceptance contract.",
+      "context": [{"path": "scripts/regression_workflow.py", "symbol": "compare"}],
+      "expectedTier": "UNKNOWN", "expectedRisk": "UNKNOWN"
+    },
+    {
+      "id": "sql-comment-only", "split": "holdout",
+      "task": "Fix the spelling of an explanatory comment in SqlController. Only comment text may change; preserve every executable byte of the SQL methods, their signatures and behavior. The requested change has no runtime effect.",
+      "context": [{"path": "integration-fixtures/static-rules-sample/src/main/java/com/example/staticrules/SqlController.java"}],
+      "expectedTier": "TIER_1", "expectedRisk": "LOW"
+    },
+    {
+      "id": "price-negative-test", "split": "holdout",
+      "task": "Add a local JUnit unit test proving PricePolicy.discountPercent rejects -1 and Integer.MIN_VALUE with IllegalArgumentException. Keep the pure calculator and all existing tests unchanged. No integration, database or shared state is involved.",
+      "context": [{"path": "integration-fixtures/spring-risk-sample/src/main/java/com/example/risksample/PricePolicy.java"}],
+      "expectedTier": "TIER_2", "expectedRisk": "LOW"
+    },
+    {
+      "id": "singleton-counter-concurrency", "split": "holdout",
+      "task": "Fix CounterService.next so parallel HTTP requests to the singleton cannot lose updates or return duplicate counter values. Preserve the API, prove the shared-state concurrency invariant, and avoid serializing unrelated state. A wrong implementation violates concurrent request correctness.",
+      "context": [{"path": "integration-fixtures/static-rules-sample/src/main/java/com/example/staticrules/CounterService.java"}],
+      "expectedTier": "TIER_4", "expectedRisk": "HIGH"
+    },
+    {
+      "id": "unspecified-price-behavior", "split": "holdout",
+      "task": "Improve the price policy. The new discount rules, allowed modifications, side effects and acceptance expectations are unspecified.",
+      "context": [{"path": "integration-fixtures/spring-risk-sample/src/main/java/com/example/risksample/PricePolicy.java"}],
+      "expectedTier": "UNKNOWN", "expectedRisk": "UNKNOWN"
+    }
+  ]
+}

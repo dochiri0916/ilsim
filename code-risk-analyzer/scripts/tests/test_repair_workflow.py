@@ -128,6 +128,43 @@ class RepairWorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.repair(generated)
         self.assertEqual('class ServiceTest {}', (self.project/'src/test/ServiceTest.java').read_text())
 
+    def test_consumed_model_budget_stops_before_another_external_call(self):
+        # given: a persisted attempt already consumed the call budget.
+        state = controller.regression.read_json(self.state)
+        state['repair'] = dict(controller.repair_settings(self.config['repair']), startedAt=time.time(),
+                               modelCalls=3, iterations=0, history=[],
+                               protected=controller.regression.protected_sources(state['sources']))
+        controller.regression.save(self.state, state)
+        # when
+        result, run = self.repair()
+        # then
+        self.assertEqual('NEEDS_REVIEW', result['status'])
+        self.assertIn('model-call budget', result['reason'])
+        run.assert_not_called()
+
+    def test_input_drift_on_a_failed_build_invalidates_before_spending_a_call(self):
+        original = controller.regression.snapshot
+        def changed(*args, **kwargs):
+            result = self.snapshot_using(original)
+            self.put('docs/spec.md', 'A changed requirement during failed verification')
+            return result
+        # when / then
+        with patch.object(controller.regression, 'snapshot', side_effect=changed), patch.object(controller.agent, 'run') as run:
+            with self.assertRaises(ValueError): self.phase('repair')
+            run.assert_not_called()
+        state = controller.regression.read_json(self.state)
+        self.assertEqual('INPUTS', state['staleKind'])
+        self.assertNotIn('verified', state)
+
+    def test_ambiguous_static_evidence_is_classified_and_never_repaired(self):
+        after = controller.regression.snapshot(self.project, controller.regression.read_json(self.project/'plan.json'), coverage=True)
+        with patch.object(controller.Controller, '_scan', side_effect=ValueError('Ambiguous static evidence identifier')):
+            result, run = self.repair(snapshot=lambda *a, **k: after)
+        self.assertEqual('NEEDS_REVIEW', result['status'])
+        self.assertIn('EVIDENCE', result['reason'])
+        run.assert_not_called()
+        self.assertNotIn('verified', controller.regression.read_json(self.state))
+
 
 if __name__ == '__main__':
     unittest.main()

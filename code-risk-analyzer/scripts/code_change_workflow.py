@@ -31,6 +31,7 @@ router = module('model_router')
 jev = module('jev_capability')
 failure = module('validation_failure')
 quality = module('quality_gate')
+calibration = module('calibrate_jev')
 FIXTURE_PROJECT = Path(__file__).resolve().parents[1]/'integration-fixtures/spring-risk-sample'
 
 
@@ -108,6 +109,9 @@ class Controller:
             agent.settings(config['agent'])
         if 'routing' in config:
             self.routing = router.settings(config['routing'])
+            if 'capability' in self.routing and 'calibration' in self.routing['capability']:
+                self.calibration_path = Path(self.routing['capability']['calibration']).resolve()
+                self.calibration = calibration.validate_receipt(self.calibration_path, self.routing['capability'])
             self.routing_paths = {name: Path(self.routing[name]).resolve() for name in ('registry', 'policy')}
             contents = {name: path.read_bytes() for name, path in self.routing_paths.items()}
             self.routing_hashes = {name: hashlib.sha256(content).hexdigest() for name, content in contents.items()}
@@ -147,6 +151,9 @@ class Controller:
             tools = ['agent_runner.py', 'code_change_workflow.py', 'model_router.py']
             if 'routing' in self.config and 'capability' in self.routing:
                 tools.append('jev_capability.py')
+                if 'calibration' in self.routing['capability']:
+                    tools.append('calibrate_jev.py')
+                    result['calibrationSha256'] = regression.digest(self.calibration_path)
             if self.quality or self.repair_config:
                 tools += ['regression_workflow.py', 'validation_failure.py', 'quality_gate.py']
             result['agentTools'] = {name: regression.digest(Path(__file__).with_name(name))
@@ -369,6 +376,12 @@ class Controller:
                     self._invalidate('Capability evaluation interrupted or failed', 'SOURCES')
                     raise
                 self._generation_inputs(sources)
+                if capability['status'] == 'COMPLETED' and hasattr(self, 'calibration'):
+                    snapshots = {record['result'].get('modelSnapshot') for record in
+                                 self.calibration['profiles'][str(self.routing['capability'].get('questionVersion', 1))]['records']}
+                    capability['calibrationSha256'] = self.state['inputs']['calibrationSha256']
+                    if capability.get('modelSnapshot') not in snapshots:
+                        capability.update(status='NEEDS_REVIEW', failureKind='UNCALIBRATED_SNAPSHOT')
                 if capability['status'] == 'COMPLETED':
                     tier = capability['requiredTier']
             else:
@@ -514,22 +527,8 @@ class Controller:
         try:
             output, _ = process.communicate(timeout=timeout)
         except BaseException:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                process.communicate(timeout=10)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.communicate()
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            agent.stop(process)
+            process.communicate()
             raise
         if process.returncode and not allow_failure:
             raise ValueError('Approved executor failed; inspect partial changes or verification')
@@ -604,7 +603,15 @@ class Controller:
         if result['status'] != 'PASSED':
             self._record('IMPLEMENTATION', result['status'])
             return result
-        self._scan()
+        try:
+            self._scan()
+        except (ValueError, OSError, KeyError, TypeError):
+            self._generation_inputs(self.state['sources'])
+            result.update(status='NEEDS_REVIEW', classification=failure.outcome('EVIDENCE'))
+            result['failures'].append('Static execution evidence is invalid or incomplete')
+            regression.save(self.directory/'regression.json', result)
+            self._record('IMPLEMENTATION', result['status'])
+            return result
         if self.repair_config:
             blocking = [item for item in evidence.items_from_report(regression.read_json(self.directory/'scan.json')).values()
                         if item['kind'] == 'PRODUCTION_RISK' and item['severity'] in ('HIGH', 'CRITICAL')]

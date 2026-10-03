@@ -2,7 +2,7 @@
 
 `scripts/model_router.py`는 Tier와 Registry·Policy JSON으로 로컬 CLI 모델을 선택한다. Tier는 명시적으로 지정하거나 `scripts/jev_capability.py`의 JEV 판단으로 얻는다. JEV에는 모델 후보·Registry·Policy를 전달하지 않는다. 추가 Python dependency와 외부 ai-router 디렉터리는 사용하지 않는다.
 
-정책에 지정된 모델 선택, JEV의 Tier·위험도 판단과 제한된 생성 오류 escalation을 제공한다. 성공 작업당 비용 최적화, 검증 실패의 자동 코드 수정, Golden Benchmark·Shadow·Canary 승격은 후속 범위다. 기존 `agent` 직접 선택과 수동 작성 경로도 유지한다.
+정책에 지정된 모델 선택, JEV의 Tier·위험도 판단, 제한된 생성 오류 escalation과 [검증 실패의 구현 수정 루프](code-change-workflow.md)를 제공한다. 성공 작업당 비용 최적화와 개발 모델 Golden Benchmark·Shadow·Canary 승격은 후속 범위다. 기존 `agent` 직접 선택과 수동 작성 경로도 유지한다.
 
 ## Registry
 
@@ -177,3 +177,36 @@ CLI 옵션 기준: [Codex 설정](https://learn.chatgpt.com/docs/developer-setti
 두 건 모두 낮은 confidence에서 라우팅과 후속 모델 실행을 차단했다. 이는 API 인증·응답 처리와 보수적 실행 차단을 확인한 결과이며, 해당 개발 작업의 수행 성공이나 판단 정확성 검증은 아니다. 실제 프로젝트 코드를 사용한 입력·파일 해시·응답은 `build/jev-approved-api-test/`에 기록했다. 입력 token은 합계 26,286개, 출력 token은 합계 226개다.
 
 이 결과를 기준으로 실제 작업별 기준 데이터를 모아 질문의 Tier 구분, 단계에 필요한 context 범위와 confidence 기준을 보정한 뒤 검증 실패의 자동 수정 루프를 연결한다. 두 시험 결과만으로 기준값을 변경하지 않는다.
+
+## JEV 질문·입력·confidence 보정
+
+기존 Choice 계약은 `questionVersion: 1`로 유지한다. `questionVersion: 2`에서는 난이도와 위험도를 순서 있는 Score로 분리하고, 입력의 판단 가능성을 별도 SUFFICIENT/UNKNOWN Choice로 판단한다. 기본값은 기존 버전이며 새 버전은 설정으로 선택한다. [TypeSafe Score](https://docs.typesafe.ai/primitives/score)와 [confidence 계산](https://docs.typesafe.ai/confidence)의 응답 계약을 사용한다.
+
+```json
+"capability": {
+  "model": "jev-latest",
+  "questionVersion": 2,
+  "minConfidence": 0.8,
+  "timeoutSeconds": 30,
+  "calibration": "/absolute/repository/build/jev-calibration-current/summary.json"
+}
+```
+
+JEV에는 행동 계약·시나리오·도메인·효과 조건과 직접 코드 context를 제공한다. mode·review 판정·mappings 등 workflow 관리 정보와 AGENTS·Gradle 작성 규칙을 제외한다. 코드 생성 Agent에는 기존 전체 context를 계속 전달한다. 요구사항 행동 계약은 보존하고 코드 context만 파일별 4,000자, 전체 24,000자로 제한하며 누락 문자 수와 원본 해시를 표시한다. 원본 입력의 2MB 한도도 먼저 검사한다.
+
+실제 API는 probability, score, confidence를 독립적으로 반올림한다. 표시된 probability의 가능한 unit-sum 분포를 계산해 응답 일관성을 검증하며, 수락에는 가능한 confidence의 최저값을 사용한다. 기본 임계값은 LOW 0.8, MEDIUM 최소 0.85, HIGH 최소 0.9를 유지한다. Score의 최빈 수준을 Tier/위험도에 연결하고 기존 위험도 Tier floor를 적용한다. HIGH가 충분히 확실하면 모든 원시 Tier가 TIER_4로 연결되므로 최종 Tier의 불확실성은 없다. MEDIUM도 floor로 동일해진 수준의 분포를 합쳐 최종 Tier confidence를 계산한다. 위험도·sufficiency의 불확실성은 계속 차단하며 원시 confidence도 보존한다. 입력 부족과 낮은 최종 판단 confidence를 모델 교체나 반복 호출로 우회하지 않는다.
+
+[실제 저장소 작업 corpus](capability-benchmark.json)는 8개 보정 작업과 4개 holdout을 분리한다. comment, 순수 계산 테스트, HTTP 연계, MySQL rollback, SQL 보안, 완료 근거, 동시성 및 불명확 요구사항을 포함한다. 실제 소스와 Python symbol을 읽어 요청·원본·질문·모델 snapshot·usage를 기록한다.
+
+```sh
+python3 scripts/calibrate_jev.py \
+  --project /absolute/repository \
+  --corpus /absolute/repository/docs/requirements-analysis/capability-benchmark.json \
+  --output /absolute/repository/build/jev-calibration
+```
+
+실행 환경의 `TYPESAFE_API_KEY`를 사용해 두 질문 버전을 실제 API에서 평가한다. 키와 원본 응답·provider 로그를 receipt에 저장하지 않는다. 보정·holdout 각각에서 수락한 판단의 precision 1.0, 수락 비율 최소 0.5, 고위험 과소 분류와 불명확 작업 수락 0건을 요구한다. 모델 confidence를 정답 확률로 해석하지 않는다. 동일한 고정 요청의 2~3개 완전한 평가 trial을 `combine_reports`로 합쳐 변동성도 측정할 수 있다. 모든 관측을 포함하며 실패한 관측을 제거하지 않는다. 운영 요청에는 이를 재시도 정책으로 적용하지 않는다.
+
+선택한 calibration receipt가 현재 질문·의미 입력 버전·JEV 도구·요청 context·corpus와 일치하지 않거나 기준을 충족하지 않으면 실행을 거부한다. workflow 입력에 receipt와 도구 해시를 포함한다. 운영 호출이 평가와 다른 JEV snapshot을 반환하면 CLI 실행을 차단한다. 초기 12개 작업은 운영 성공률이나 개발 모델의 200개 Golden Benchmark를 증명하는 데이터가 아니다.
+
+최종 의미 입력·위험 기준으로 `jev-1.13.0`을 12개 고정 작업에서 두 번 평가했다. 보정 split은 알려진 판단 14회 중 12회 수락(85.7%), holdout은 알려진 판단 6회 모두 수락했다. 수락한 18회 판단의 Tier·위험도 오판은 0건이며, 불명확한 4회 판단은 모두 차단됐다. 두 평가의 모든 관측을 `build/jev-calibration-current/summary.json`에 포함했다. 낮은 confidence로 중단된 나머지 작업을 자동 재요청하지 않는다. 이 소규모 결과를 일반 업무의 정확도 보장으로 해석하지 않는다.

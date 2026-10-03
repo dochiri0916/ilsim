@@ -14,17 +14,17 @@ allprojects { p ->
     p.plugins.withId('java') {
         def configured = p.plugins.hasPlugin('jacoco')
         p.pluginManager.apply('jacoco')
-        if (!configured) p.extensions.configure('jacoco') { toolVersion = '0.8.14' }
-        p.tasks.named('jacocoTestReport') {
-            dependsOn p.tasks.named('test')
-            reports { xml.required = true }
+        if (!configured) p.extensions.configure('jacoco') { extension -> extension.toolVersion = '0.8.14' }
+        p.tasks.named('jacocoTestReport') { task ->
+            task.dependsOn(p.tasks.named('test'))
+            task.reports.xml.required.set(true)
         }
     }
 }
 gradle.projectsEvaluated {
     def report = gradle.rootProject.tasks.findByName('jacocoTestReport')
     if (report == null) throw new GradleException('Root Java JaCoCo report task required')
-    gradle.rootProject.tasks.register('codeRiskCoverage') { dependsOn(report) }
+    gradle.rootProject.tasks.register('codeRiskCoverage') { task -> task.dependsOn(report) }
 }
 '''
 
@@ -77,7 +77,10 @@ def coverage(project, config):
     raw = safe_file(project, COVERAGE_XML).read_bytes()
     if len(raw) > 16*1024*1024 or b'<!ENTITY' in raw:
         raise ValueError('Invalid coverage XML')
-    root = ET.fromstring(raw)
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as error:
+        raise ValueError('Malformed coverage XML') from error
     if root.tag != 'report':
         raise ValueError('JaCoCo report required')
     classes = {}
