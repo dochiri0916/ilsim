@@ -12,6 +12,8 @@
         <exclude name="PreserveStackTrace"/>
         <exclude name="GuardLogStatement"/>
         <exclude name="UnusedFormalParameter"/>
+        <!-- tool-test-lab convention: abstract JPA @MappedSuperclass bases without abstract methods. -->
+        <exclude name="AbstractClassWithoutAbstractMethod"/>
     </rule>
     <rule ref="category/java/codestyle.xml">
         <exclude name="AtLeastOneConstructor"/>
@@ -29,6 +31,9 @@
         <exclude name="LambdaCanBeMethodReference"/>
         <exclude name="UnnecessaryFullyQualifiedName"/>
         <exclude name="TooManyStaticImports"/>
+        <!-- tool-test-lab convention: `abstract sealed` exception bases. -->
+        <exclude name="ModifierOrder"/>
+        <exclude name="CallSuperInConstructor"/>
     </rule>
     <rule ref="category/java/design.xml">
         <exclude name="LoosePackageCoupling"/>
@@ -44,6 +49,10 @@
         <exclude name="TooManyFields"/>
         <exclude name="TooManyMethods"/>
         <exclude name="UseObjectForClearerAPI"/>
+        <!-- tool-test-lab convention: abstract JPA @MappedSuperclass bases without abstract methods. -->
+        <exclude name="AbstractClassWithoutAnyMethod"/>
+        <!-- tool-test-lab convention: enums carrying display names and behavior. -->
+        <exclude name="DataClass"/>
     </rule>
     <rule ref="category/java/design.xml/ImmutableField">
         <properties>
@@ -56,5 +65,7 @@
         <exclude name="AvoidLiteralsInIfCondition"/>
         <exclude name="NullAssignment"/>
         <exclude name="MissingSerialVersionUID"/>
+        <!-- tool-test-lab convention: record-style accessors such as id() beside the id field. -->
+        <exclude name="AvoidFieldNameMatchingMethodName"/>
     </rule>
 </ruleset>

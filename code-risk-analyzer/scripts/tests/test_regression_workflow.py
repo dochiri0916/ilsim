@@ -87,6 +87,15 @@ class RegressionWorkflowTests(unittest.TestCase):
         service['processStopped'] = False
         self.assertEqual('FAILED', workflow.completion(regression, snapshot, service, [])['status'])
 
+    def test_feature_tests_accept_method_and_display_names_only(self):
+        workflow.validate_tests(['com.example.PriceTest#boundary', 'com.example.PriceTest#경계 가격을 거절한다',
+                                 'com.example.PriceTest#parameterized(int)[1]'])
+        for invalid in (['PriceTest'], ['#boundary'], ['PriceTest# boundary'], ['PriceTest#boundary '],
+                        ['PriceTest#a#b'], ['PriceTest#a\nb'], ['PriceTest#a', 'PriceTest#a'], []):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    workflow.validate_tests(invalid)
+
     def test_spec_only_and_review_are_rejected_before_project_read(self):
         for mode in ('SPEC_ONLY', 'SPEC_CODE_REVIEW'):
             with self.assertRaises(ValueError):

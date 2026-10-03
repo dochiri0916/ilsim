@@ -108,8 +108,8 @@ class DomainStaticFactoryValidatorTest {
     }
 
     @Test
-    @DisplayName('Value Object record는 of 팩토리를 선언해야 한다')
-    void rejectsValueObjectWithoutOfFactory() {
+    @DisplayName('Value Object record는 of 팩토리 없이 생성자로 만들어도 된다')
+    void acceptsValueObjectRecordsCreatedWithNewOrOf() {
         // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/domain/vo/Money.java', '''
@@ -125,62 +125,19 @@ class DomainStaticFactoryValidatorTest {
                     }
                 }
                 ''')
-        writeJava(project, 'com/example/order/domain/event/OrderPlaced.java', '''
-                package com.example.order.domain.event;
-                public record OrderPlaced(long orderId) {
-                }
-                ''')
-
-        // when
-        List<String> violations = DomainStaticFactoryValidator.validate(project, new HexagonalConventionExtension())
-
-        // then
-        assert violations.any { it.contains("value object 'Money' must declare a public static 'of' factory method") }
-        assert !violations.any { it.contains("'Quantity'") }
-        assert !violations.any { it.contains("'OrderPlaced'") }
-    }
-
-    @Test
-    @DisplayName('Value Object를 new로 생성하면 거부하고 of 사용은 허용한다')
-    void rejectsValueObjectInstantiationWithNew() {
-        // given
-        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
-        writeJava(project, 'com/example/order/domain/vo/Money.java', '''
-                package com.example.order.domain.vo;
-                public record Money(long amount) {
-                    public static Money of(long amount) {
-                        return new Money(amount);
-                    }
-                }
-                ''')
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderMapper.java', '''
                 package com.example.order.adapter.out.persistence;
 
                 import com.example.order.domain.vo.Money;
+                import com.example.order.domain.vo.Quantity;
 
                 public final class OrderMapper {
-                    Money bad() {
+                    Money money() {
                         return new Money(1L);
                     }
 
-                    Money qualified() {
-                        return new com.example.order.domain.vo.Money(2L);
-                    }
-
-                    Money good() {
-                        return Money.of(3L); // new Money(4L)
-                    }
-                }
-                ''')
-        writeJava(project, 'com/example/order/adapter/out/persistence/OtherMapper.java', '''
-                package com.example.order.adapter.out.persistence;
-
-                public final class OtherMapper {
-                    record Money(long value) {
-                    }
-
-                    Object local() {
-                        return new Money(1L);
+                    Quantity quantity() {
+                        return Quantity.of(2);
                     }
                 }
                 ''')
@@ -189,9 +146,7 @@ class DomainStaticFactoryValidatorTest {
         List<String> violations = DomainStaticFactoryValidator.validate(project, new HexagonalConventionExtension())
 
         // then
-        assert violations.count { it.contains('OrderMapper.java') && it.contains("'Money' must be created with Money.of") } == 1
-        assert !violations.any { it.contains('OtherMapper.java') }
-        assert !violations.any { it.contains('Money.java') }
+        assert violations.isEmpty()
     }
 
     @Test

@@ -171,15 +171,16 @@ def usage(provider, stream):
         return {}
 
 
-def run(config, workspace, prompt):
+def run(config, workspace, prompt, schema=None, validate=None):
+    """schema/validate default to the generation contract; other callers pass their own strict pair."""
     started = time.monotonic()
-    result = _run(config, workspace, prompt)
+    result = _run(config, workspace, prompt, schema or OUTPUT_SCHEMA, validate or validate_output)
     result.setdefault('usage', {})
     result['durationSeconds'] = round(time.monotonic() - started, 3)
     return result
 
 
-def _run(config, workspace, prompt):
+def _run(config, workspace, prompt, output_schema, validate):
     config = settings(config)
     root = Path(workspace)
     if not root.is_absolute() or root.is_symlink() or root.resolve() != root or not root.is_dir() or not isinstance(prompt, str) or not prompt.strip():
@@ -194,7 +195,7 @@ def _run(config, workspace, prompt):
             tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         schema = Path(directory)/'schema.json'
         final = Path(directory)/'result.json'
-        schema.write_text(json.dumps(OUTPUT_SCHEMA))
+        schema.write_text(json.dumps(output_schema))
         if config['provider'] == 'codex':
             command = [binary, 'exec', '--cd', str(root), '--sandbox', 'read-only', '--ephemeral',
                        '--ignore-user-config', '--skip-git-repo-check', '--json', '--color', 'never',
@@ -203,7 +204,7 @@ def _run(config, workspace, prompt):
         else:
             command = [binary, '--print', '--output-format', 'json', '--no-session-persistence',
                        '--safe-mode', '--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-                       '--permission-mode', 'dontAsk', '--json-schema', json.dumps(OUTPUT_SCHEMA)]
+                       '--permission-mode', 'dontAsk', '--json-schema', json.dumps(output_schema)]
         if config['model']:
             command.extend(['--model', config['model']])
         if config['reasoningEffort']:
@@ -263,7 +264,7 @@ def _run(config, workspace, prompt):
                     raise ValueError('Claude turn did not complete successfully')
                 failure = 'OUTPUT_CONTRACT'
                 payload = envelope['structured_output']
-            validate_output(payload)
+            validate(payload)
             return dict(result, status=payload['status'], failureKind='' if payload['status'] == 'COMPLETED' else 'AMBIGUITY',
                         reason='', output=payload)
         except (ValueError, OSError, KeyError, UnicodeError) as error:
@@ -271,4 +272,7 @@ def _run(config, workspace, prompt):
                 failure = 'SCOPE'
             elif isinstance(payload, dict) and payload.get('status') == 'NEEDS_REVIEW':
                 failure = 'AMBIGUITY'
-            return dict(result, status='INVALID_OUTPUT', failureKind=failure, reason='Provider returned an invalid or incomplete result')
+            # Keep the failed check and the rejected answer, so a long generation is never lost without a reason.
+            rejected = {'rejectedOutput': payload} if isinstance(payload, dict) else {}
+            return dict(result, status='INVALID_OUTPUT', failureKind=failure, reason='Provider returned an invalid or incomplete result',
+                        detail=f'{type(error).__name__}: {error}'[:500], **rejected)
