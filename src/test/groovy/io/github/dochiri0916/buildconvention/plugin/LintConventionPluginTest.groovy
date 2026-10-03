@@ -123,6 +123,51 @@ class LintConventionPluginTest {
     }
 
     @Test
+    void 'check fails when required task onlyIf cannot be evaluated'() {
+        Project project = sampleProject()
+        project.tasks.named('validateClaudeConventions').configure { task ->
+            task.onlyIf { throw new IllegalStateException('onlyIf failure') }
+        }
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('onlyIf-skipped tasks: validateClaudeConventions')
+    }
+
+    @Test
+    void 'check fails when dash x names the same task in this project by path'() {
+        Project root = ProjectBuilder.builder().withProjectDir(File.createTempDir('lint-convention-root', '')).build()
+        Project order = subprojectWithPlugin(root, 'order')
+        root.gradle.startParameter.setExcludedTaskNames([':order:validateClaudeConventions'])
+
+        try {
+            GradleException exception = assertThrows(GradleException) {
+                executeCheckActions(order)
+            }
+
+            assert exception.message.contains('-x excluded tasks: validateClaudeConventions')
+        } finally {
+            root.gradle.startParameter.setExcludedTaskNames([])
+        }
+    }
+
+    @Test
+    void 'check ignores dash x of a same-named task in another project'() {
+        Project root = ProjectBuilder.builder().withProjectDir(File.createTempDir('lint-convention-root', '')).build()
+        Project order = subprojectWithPlugin(root, 'order')
+        subprojectWithPlugin(root, 'payment')
+        root.gradle.startParameter.setExcludedTaskNames([':payment:validateClaudeConventions'])
+
+        try {
+            executeCheckActions(order)
+        } finally {
+            root.gradle.startParameter.setExcludedTaskNames([])
+        }
+    }
+
+    @Test
     void 'check fails when test task is disabled'() {
         Project project = sampleProject()
         project.tasks.named('test').get().enabled = false
@@ -166,6 +211,48 @@ class LintConventionPluginTest {
 
         assert exception.message.contains('Build convention verification must not be disabled')
         assert exception.message.contains('empty source tasks: checkstyleMain')
+    }
+
+    @Test
+    void 'check fails when quality task source cannot be resolved'() {
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/domain/model/Order.java', '''
+                package com.example.order.domain.model;
+
+                public record Order() {
+                }
+                ''')
+        project.tasks.named('checkstyleMain').get().source = project.files({
+            throw new IllegalStateException('source failure')
+        })
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('empty source tasks: checkstyleMain')
+        assert exception.message.contains('checkstyleMain: source could not be resolved')
+    }
+
+    @Test
+    void 'check fails when coverage class directories cannot be resolved'() {
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/domain/model/Order.java', '''
+                package com.example.order.domain.model;
+
+                public record Order() {
+                }
+                ''')
+        project.file('build/classes/java/main').mkdirs()
+        project.tasks.named('jacocoTestCoverageVerification').get().classDirectories.setFrom(project.files({
+            throw new IllegalStateException('class directory failure')
+        }))
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('empty coverage tasks: jacocoTestCoverageVerification')
     }
 
     @Test
@@ -555,6 +642,15 @@ class LintConventionPluginTest {
     private static Project sampleProject() {
         File projectDir = File.createTempDir('lint-convention-plugin-test', '')
         Project project = ProjectBuilder.builder().withProjectDir(projectDir).build()
+        project.pluginManager.apply('java')
+        project.pluginManager.apply(LintConventionPlugin)
+        return project
+    }
+
+    private static Project subprojectWithPlugin(Project root, String name) {
+        File projectDir = new File(root.projectDir, name)
+        projectDir.mkdirs()
+        Project project = ProjectBuilder.builder().withName(name).withParent(root).withProjectDir(projectDir).build()
         project.pluginManager.apply('java')
         project.pluginManager.apply(LintConventionPlugin)
         return project

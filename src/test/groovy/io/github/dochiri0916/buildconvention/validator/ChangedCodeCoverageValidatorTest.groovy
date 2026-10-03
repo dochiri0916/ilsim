@@ -5,6 +5,7 @@ import org.gradle.api.Project
 import org.gradle.testfixtures.ProjectBuilder
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 
 class ChangedCodeCoverageValidatorTest {
@@ -332,6 +333,22 @@ class ChangedCodeCoverageValidatorTest {
         // then
         assert violations.any { it.contains('Changed production line coverage') }
         assert violations.any { it.contains('Uncovered changed line: src/main/java/com/example/Sample.java:5') }
+    }
+
+    @Test
+    @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    @DisplayName('stderr 출력이 파이프 버퍼보다 커도 프로세스 실행이 멈추지 않는다')
+    void drainsLargeStderrWithoutBlocking() {
+        // given
+        List<String> command = ['sh', '-c', 'head -c 1000000 /dev/zero | tr "\\0" x >&2; echo done']
+
+        // when
+        ChangedCodeCoverageValidator.ProcessResult result = ChangedCodeCoverageValidator.runProcess(command, tempDir)
+
+        // then
+        assert result.exitValue == 0
+        assert result.stdout.trim() == 'done'
+        assert result.stderr.length() == 1000000
     }
 
     private Project gitProject(String name) {
