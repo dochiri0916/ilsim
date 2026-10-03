@@ -1,0 +1,94 @@
+{
+ "version": 1,
+ "note": "Held out: never used to tune keywords or JEV criteria.",
+ "items": [
+  {
+   "text": "포인트 적립이 안 되는 버그 손봐줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "상품 검색에 정렬 옵션 달아줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "비밀번호 재설정 기능 개발해줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "Update the refund flow to handle partial refunds",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "결제 모듈에 멱등성 문제 있는지 검토만 해줘",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "이번 변경의 위험도 평가해줘",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "세션 지금 어떤 상태야?",
+   "expected": "STATUS"
+  },
+  {
+   "text": "얼마나 진행됐는지 알려줘",
+   "expected": "STATUS"
+  },
+  {
+   "text": "하던 거 마저 해줘",
+   "expected": "CONTINUE"
+  },
+  {
+   "text": "Continue the workflow",
+   "expected": "CONTINUE"
+  },
+  {
+   "text": "구현 끝난 코드 테스트 다시 돌려봐",
+   "expected": "VERIFY"
+  },
+  {
+   "text": "품질 게이트 통과하는지 확인해줘",
+   "expected": "VERIFY"
+  },
+  {
+   "text": "변경사항 PR로 올려",
+   "expected": "PULL_REQUEST"
+  },
+  {
+   "text": "Submit this as a pull request",
+   "expected": "PULL_REQUEST"
+  },
+  {
+   "text": "이번 세션 비용 정리해줘",
+   "expected": "COST"
+  },
+  {
+   "text": "IDEM-003 설명해줘",
+   "expected": "RULES"
+  },
+  {
+   "text": "SEC 규칙들 뭐 있어?",
+   "expected": "RULES"
+  },
+  {
+   "text": "변이 점수 측정해줘",
+   "expected": "MUTATION"
+  },
+  {
+   "text": "버그 찾아서 고치고 PR까지 올려줘",
+   "expected": "REJECT"
+  },
+  {
+   "text": "서버 재시작해줘",
+   "expected": "REJECT"
+  },
+  {
+   "text": "음..",
+   "expected": "REJECT"
+  },
+  {
+   "text": "이거 맞아?",
+   "expected": "REJECT"
+  }
+ ]
+}
