@@ -12,6 +12,7 @@ from pathlib import Path
 import signal
 import sys
 import subprocess
+import re
 import tempfile
 import time
 import math
@@ -34,6 +35,12 @@ quality = module('quality_gate')
 calibration = module('calibrate_jev')
 service_adapter = module('service_adapter')
 FIXTURE_PROJECT = Path(__file__).resolve().parents[1]/'integration-fixtures/spring-risk-sample'
+IMPORT = re.compile(r'^\s*import\s+(static\s+)?([\w.]+)\s*;', re.M)
+# Libraries generated tests tend to reach for, and the build-file text that shows the project declares them.
+LIBRARIES = (('org.springframework.security.', re.compile(r'security')), ('org.testcontainers.', re.compile(r'testcontainers')),
+             ('io.jsonwebtoken.', re.compile(r'jjwt')), ('org.springframework.data.redis.', re.compile(r'redis')),
+             ('org.springframework.kafka.', re.compile(r'kafka')), ('com.querydsl.', re.compile(r'querydsl')),
+             ('org.mindrot.', re.compile(r'jbcrypt')))
 
 
 class RepairStop(ValueError):
@@ -360,7 +367,9 @@ class Controller:
                         'files), constructors or factories, method signatures, accessors, exception types and messages. Follow '
                         'the repository rules and existing code, choose conventional names, and use them consistently. This is '
                         'not ambiguity; return NEEDS_REVIEW only when a business rule or observable outcome (input rules, '
-                        'status codes, results) is undecided by the requirements.' if stage == 'test-writing' else
+                        'status codes, results) is undecided by the requirements. Use only production types whose files are in '
+                        'the approved files or already exist (implementation may create nothing else), and only the JDK and '
+                        'dependencies the build already declares.' if stage == 'test-writing' else
                         'Implement the minimum change satisfying the accepted tests and requirements. Do not change any test. '
                         'Production types must match exactly the packages, signatures, exception types and messages the tests use. '
                         'Return empty requirementTestMap and expectedFailures; empty changes are allowed if no fix is needed.')
@@ -467,6 +476,7 @@ class Controller:
                         raise ValueError('Agent proposed changes outside the stage scope')
                     if stage == 'test-writing':
                         self._validate_generated_tests(output, requirements)
+                        self._validate_test_references(output)
                         if not output['changes']:
                             raise ValueError('Test generation requires changes')
                     elif output['requirementTestMap'] or output['expectedFailures']:
@@ -529,6 +539,45 @@ class Controller:
         if inputs != self.state['inputs'] or current_sources != sources:
             self._invalidate('Inputs changed during agent generation', 'INPUTS')
             raise ValueError('Generation inputs drifted')
+
+    def _validate_test_references(self, output):
+        """Tests may only use project types the approved scope or the project provides, and declared libraries.
+
+        Otherwise implementation is asked to satisfy tests it is not allowed to (types outside its files, a dependency
+        it cannot add) and can only stop.
+        """
+        base = module('convention_templates').base_package(self.project)
+        build = '\n'.join(path.read_text(encoding='utf-8', errors='replace')
+                          for path in (self.project/'build.gradle', self.project/'build.gradle.kts') if path.is_file())
+        written = {change['path'] for change in output['changes']}
+        missing, libraries = set(), set()
+        for change in output['changes']:
+            for static, name in IMPORT.findall(change['content']):
+                if name.endswith('.*'):
+                    continue
+                if base and name.startswith(base + '.'):
+                    parts = name.split('.')
+                    # A static import names a member; the type is the last capitalized segment.
+                    while static and parts and not parts[-1][:1].isupper():
+                        parts.pop()
+                    while len(parts) > 1 and parts[-2][:1].isupper():
+                        parts.pop()  # nested type: the file is named after the outer type
+                    relative = '/'.join(parts) + '.java'
+                    paths = ('src/main/java/' + relative, 'src/test/java/' + relative)
+                    if not any((self.project/path).is_file() or path in self.scope['files'] or path in written for path in paths):
+                        missing.add('.'.join(parts))
+                for prefix, declared in LIBRARIES:
+                    if name.startswith(prefix) and not declared.search(build):
+                        libraries.add(prefix.rstrip('.'))
+        problems = []
+        if missing:
+            problems.append('tests use project types that are neither in the project nor in the approved files '
+                            '(use an approved type instead, or put the logic in one): ' + ', '.join(sorted(missing)))
+        if libraries:
+            problems.append('tests use libraries the build does not declare (use the JDK or a declared dependency): '
+                            + ', '.join(sorted(libraries)))
+        if problems:
+            raise ValueError('; '.join(problems))
 
     def _validate_generated_tests(self, output, requirements):
         expected = {(req, scenario) for req, data in requirements['requirements'].items() for scenario in data['scenarios']}

@@ -186,7 +186,11 @@ def prompt(request, project, feedback=None, guidance=None):
         'Tests are written only from this draft, so leave nothing for them to guess.',
         'implementationStatus: NOT_IMPLEMENTED with empty existingCode for new behavior; otherwise link the existing code.',
         'files: every src/main and src/test path the change will create or edit, following the existing package layout '
-        'and AGENTS.md if present. Include at least one test file and one production file.',
+        'and AGENTS.md if present. Include at least one test file and one production file. Tests and implementation may '
+        'create no other file, so list every production type as its own file: each port (e.g. password hashing, time), '
+        'value object, exception and event, plus their adapters and a test per production class.',
+        'Use only the JDK and the dependencies the build file already declares; the change cannot edit build files. '
+        'When a feature usually needs a library (e.g. password hashing), choose a JDK-only way and record it in assumptions.',
         'database: MYSQL only when the project uses MySQL, OTHER for another database, UNDECIDED when none is configured.',
         '', 'Request:', request, '', context(project, request)]
     if guidance:
