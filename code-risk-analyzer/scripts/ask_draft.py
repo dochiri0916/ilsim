@@ -128,12 +128,13 @@ def existing_tests(project):
         text = path.read_text(encoding='utf-8', errors='replace')
         package = re.search(r'^\s*package\s+([\w.]+)\s*;', text, re.M)
         name = (package.group(1) + '.' if package else '') + path.stem
-        for match in re.finditer(r'((?:@\w+(?:\((?:[^()"]|"(?:[^"\\]|\\.)*")*\))?\s*)+)(?:public\s+|protected\s+)?void\s+(\w+)\s*\(', text):
+        # Annotations may be written with their full name, e.g. @org.junit.jupiter.api.DisplayName("...").
+        for match in re.finditer(r'((?:@[\w.]+(?:\((?:[^()"]|"(?:[^"\\]|\\.)*")*\))?\s*)+)(?:public\s+|protected\s+)?void\s+(\w+)\s*\(', text):
             annotations = match.group(1)
-            if not re.search(r'@Test\b', annotations):
+            if not re.search(r'@(?:[\w.]+\.)?Test\b', annotations):
                 continue
-            display = re.search(r'@DisplayName\s*\(\s*"((?:[^"\\]|\\.)*)"\s*\)', annotations)
-            if '@DisplayName' in annotations and (not display or '\\' in display.group(1)):
+            display = re.search(r'@(?:[\w.]+\.)?DisplayName\s*\(\s*"((?:[^"\\]|\\.)*)"\s*\)', annotations)
+            if re.search(r'@(?:[\w.]+\.)?DisplayName\b', annotations) and (not display or '\\' in display.group(1)):
                 continue  # A computed or escaped name cannot be matched reliably; leave it to the full test run.
             label = display.group(1) if display else match.group(2)
             if label.strip() == label and label and '#' not in label:
@@ -178,6 +179,11 @@ def prompt(request, project, feedback=None, guidance=None):
         'with concrete expectations, or NOT_APPLICABLE with the reason and no expectations.',
         'scenarios: SCN-1, SCN-2, ... per requirement, covering the normal path plus each relevant failure, validation, '
         'duplicate or concurrency case. testTypes name the test level that should prove it.',
+        'For an HTTP API, state in the requirements and each scenario the method and path, the success status code, '
+        'the status code of every failure (e.g. 400 validation, 404 missing, 409 duplicate) and the error response body '
+        'format (follow the project\'s existing error handling, else Spring ProblemDetail with a code field). '
+        'For persistence, name the repository operations and the test setup (e.g. @DataJpaTest with the configured database). '
+        'Tests are written only from this draft, so leave nothing for them to guess.',
         'implementationStatus: NOT_IMPLEMENTED with empty existingCode for new behavior; otherwise link the existing code.',
         'files: every src/main and src/test path the change will create or edit, following the existing package layout '
         'and AGENTS.md if present. Include at least one test file and one production file.',

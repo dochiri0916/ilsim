@@ -413,6 +413,7 @@ def execute(value, confirmed, run, options=None):
         state.parent.mkdir(parents=True, exist_ok=True)
         (state.parent/SESSION_CONFIG).write_text(json.dumps(value['config'], ensure_ascii=False, indent=2), encoding='utf-8')
     for stage in value['stages']:
+        started = time.time()
         missing = [name for name in REQUIRED_OPTIONS.get(stage, ()) if name not in options]
         if missing:
             print(f"{stage} 단계에는 {', '.join('--' + name for name in missing)} 파일이 필요해 여기서 멈춥니다")
@@ -444,8 +445,41 @@ def execute(value, confirmed, run, options=None):
                 return code
         if code:
             print(f'{stage} 단계가 종료 코드 {code}로 멈췄습니다 (1 실패, 2 거부, 3 검토 필요)')
+            for line in stop_reason(state.parent, started):
+                print(line)
             return code
     return 0
+
+
+CAPABILITY_REASONS = {
+    'LOW_CONFIDENCE': '작업 난이도·위험도 판단(JEV)이 충분히 확실하지 않습니다',
+    'UNKNOWN': '작업 난이도·위험도 판단(JEV)이 알 수 없다고 답했습니다',
+    'MISSING_CREDENTIAL': 'TYPESAFE_API_KEY가 없습니다',
+    'UNCALIBRATED_SNAPSHOT': 'JEV 모델 버전이 보정 기록에 없습니다',
+}
+
+
+def stop_reason(directory, since):
+    """Why a generation stage stopped, from the agent record it wrote: the model's questions or the gate that refused."""
+    records = sorted((path for path in Path(directory).glob('agent-*.json') if path.stat().st_mtime >= since - 1),
+                     key=lambda path: path.stat().st_mtime)
+    if not records:
+        return []
+    try:
+        record = json.loads(records[-1].read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    capability = record.get('capability') or {}
+    unknowns = (record.get('output') or {}).get('unknowns') or []
+    if unknowns:
+        lines = ['모델이 정해지지 않은 내용이 있어 멈췄습니다:'] + ['- ' + str(text) for text in unknowns]
+        return lines + ['빠진 내용을 요청 문장에 넣어 새로 요청하세요']
+    if capability.get('status') not in (None, 'COMPLETED'):
+        kind = capability.get('failureKind', '')
+        return ['이유: ' + CAPABILITY_REASONS.get(kind, f"JEV 판단 실패 ({kind}: {capability.get('reason', '')})")]
+    if record.get('failureKind'):
+        return [f"이유: {record['failureKind']} {record.get('reason', '')}".rstrip()]
+    return []
 
 
 CONVENTION_FIX_ROUNDS = 2

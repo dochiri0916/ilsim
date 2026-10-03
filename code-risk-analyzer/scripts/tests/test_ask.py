@@ -173,6 +173,26 @@ class StageTests(unittest.TestCase):
             ask.stages('VERIFY', None, generator=True, service=False)
 
 
+class StopReasonTests(unittest.TestCase):
+    def test_model_questions_and_gate_refusals_are_explained(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            # given: no record yet
+            self.assertEqual([], ask.stop_reason(directory, 0))
+            # given: the test writer asked questions
+            (directory/'agent-test-writing.json').write_text(json.dumps(
+                {'status': 'NEEDS_REVIEW', 'failureKind': 'AMBIGUITY', 'output': {'unknowns': ['상태 코드가 없습니다']}}))
+            lines = ask.stop_reason(directory, 0)
+            self.assertIn('- 상태 코드가 없습니다', lines)
+            # given: the capability gate refused
+            (directory/'agent-test-writing.json').write_text(json.dumps(
+                {'status': 'NEEDS_REVIEW', 'failureKind': 'CAPABILITY',
+                 'capability': {'status': 'NEEDS_REVIEW', 'failureKind': 'LOW_CONFIDENCE'}}))
+            self.assertIn('JEV', ask.stop_reason(directory, 0)[0])
+            # given: the record is older than the stage
+            self.assertEqual([], ask.stop_reason(directory, 10**12))
+
+
 class SessionTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()

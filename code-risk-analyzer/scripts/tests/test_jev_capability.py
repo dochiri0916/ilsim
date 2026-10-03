@@ -77,6 +77,21 @@ class JevCapabilityTests(unittest.TestCase):
         self.assertEqual('TIER_1', result['answers']['requiredTier']['choice'])
         self.assertEqual('HIGH', result['risk'])
 
+    def test_confident_high_risk_goes_to_the_top_tier_even_when_the_tier_is_uncertain(self):
+        # given: risk is surely HIGH, the raw tier is spread out
+        response = self.response(risk='HIGH')
+        response['answers']['requiredTier'].update(
+            probabilities={'TIER_1': 0.1, 'TIER_2': 0.5, 'TIER_3': 0.3, 'TIER_4': 0.1, 'UNKNOWN': 0.0}, confidence=0.375)
+        # when
+        result, _ = self.judge(response)
+        # then
+        self.assertEqual(('COMPLETED', 'TIER_4'), (result['status'], result['requiredTier']))
+        # given: the risk itself is uncertain
+        answer = response['answers']['risk']
+        answer.update(probabilities={'LOW': 0.2, 'MEDIUM': 0.2, 'HIGH': 0.6, 'UNKNOWN': 0.0}, confidence=0.4667)
+        # when / then
+        self.assertEqual('LOW_CONFIDENCE', self.judge(response)[0]['failureKind'])
+
     def test_unknown_or_low_confidence_stops_without_guessing(self):
         for name in ('requiredTier', 'risk'):
             for uncertain in ('UNKNOWN', 'LOW_CONFIDENCE'):
