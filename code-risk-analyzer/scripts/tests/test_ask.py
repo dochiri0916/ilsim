@@ -253,6 +253,20 @@ class ConventionGateTests(unittest.TestCase):
         self.assertEqual(((0, True), [False, True, False]), self.gate(broken, {'compilation': 'FAIL'}))
         self.assertEqual(((0, True), [False, True]), self.gate(broken, fix_code=1))
 
+    def test_skipped_architecture_failure_is_not_fixed(self):
+        # given: the report records architecture as skipped by the project's validators setting
+        with tempfile.TemporaryDirectory() as folder:
+            calls = []
+
+            def run(command):
+                calls.append(command)
+                Path(command[command.index('--output') + 1]).write_text(json.dumps({
+                    'checks': {'architecture': 'FAIL', 'compilation': 'FAIL'}, 'skipped': {'architecture': 'off'}}))
+                return 1
+            result = ask._convention_gate({'convention': {'session': folder, 'project': folder}}, run)
+        # then: only compilation remains, which verification reports, so no fix round runs
+        self.assertEqual(((0, True), 1), (result, len(calls)))
+
     def test_only_compilation_failing_steps_aside_at_once(self):
         self.assertEqual(((0, True), [False]), self.gate({'compilation': 'FAIL', 'tests': 'FAIL'}))
 
@@ -494,12 +508,56 @@ class ZeroConfigTests(unittest.TestCase):
         self.calls.append(config)
         return {'status': 'COMPLETED', 'output': validate(self.samples.sample()), 'usage': {}}
 
-    def measure(self, project, output, base_ref):
+    def measure(self, project, output, base_ref, **options):
         report = {'status': 'FAIL', 'checks': {'checkstyle': 'FAIL'}, 'baseRef': base_ref, 'violations': [
             {'file': 'src/test/java/com/example/demo/DemoApplicationTests.java', 'line': 3, 'message': 'tab'}]}
         output.write_text(json.dumps(report))
         self.measured.append(base_ref)
+        self.measured_off = options.get('off')
         return report
+
+    def validators(self, configured):
+        """The project's .code-risk.yml validators, as the analyzer jar would report them."""
+        original, self.configured = ask._module, dict(configured)
+
+        def module(name):
+            loaded = original(name)
+            if name == 'convention_check':
+                loaded.settings = lambda project, *args, **kwargs: dict(self.configured)
+            return loaded
+        ask._module = module
+        self.addCleanup(setattr, ask, '_module', original)
+
+    def test_architecture_switched_off_in_the_project_config_is_skipped_with_its_reason(self):
+        # given
+        self.validators({'architecture': False, 'convention': None})
+        # when
+        value, output = self.start()
+        # then: conventions still run, architecture is recorded as skipped for the whole session
+        marker = json.loads((Path(value['state']).parent/ask.CONVENTION_MARKER).read_text())
+        self.assertEqual((True, ['architecture']), (marker['enabled'], list(marker['off'])))
+        self.assertEqual({'architecture': False, 'convention': None}, marker['validators'])
+        self.assertIn('validators.architecture.enabled: false', self.measured_off['architecture'])
+        self.assertIn('아키텍처 검사 건너뜀(SKIP)', output)
+
+    def test_convention_switched_off_in_the_project_config_checks_nothing(self):
+        self.validators({'architecture': None, 'convention': False})
+        value, output = self.start()
+        self.assertEqual([], self.measured)
+        self.assertNotIn('convention', value)
+        self.assertIn('컨벤션: 끔', output)
+        self.assertIn('컨벤션 검사 건너뜀(SKIP) - .code-risk.yml validators.convention.enabled: false', output)
+
+    def test_a_changed_validators_setting_stops_the_session_it_did_not_start(self):
+        # given
+        self.validators({'architecture': None, 'convention': None})
+        self.start()
+        # when: the project config switches architecture off after the draft
+        self.configured = {'architecture': False, 'convention': None}
+        # then: continuing would mix evidence from both settings
+        for text in (None, '검증 다시 해줘'):
+            with self.subTest(text=text), self.assertRaisesRegex(ValueError, 'validators 설정이 이 세션을 시작한 뒤 바뀌었습니다'):
+                ask.zero_config(text, self.project, None, None, self.call)
 
     def start(self, text='회원 가입 기능 추가해줘'):
         self.measured = []
