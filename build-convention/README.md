@@ -15,23 +15,23 @@ Dependencies point inward. Domain contains business rules and does not depend on
 ```text
 com.example.project/
 ├── global/
-│   ├── configuration/properties/     # shared @ConfigurationProperties
-│   ├── exception/             # shared, technology-independent error contracts
-│   ├── persistence/           # shared persistence configuration (JPA auditing, base entities)
-│   └── web/                   # shared web and MVC configuration
-└── {context}/                 # one bounded context
-    ├── domain/
+│   ├── configuration/         # @Configuration, properties/
+│   ├── domain/                # shared kernel values (Money, Quantity)
+│   ├── application/exception/ # shared application exceptions
+│   ├── exception/             # GlobalApiControllerAdvice, ProblemDetails
+│   └── persistence/           # shared persistence configuration (JPA auditing, base entities)
+└── {context}/                 # one bounded context, or {group}/{module}/
+    ├── domain/                # aggregate root may sit here directly
     │   ├── model/
     │   ├── vo/                # Value Objects and First-class Collections
-    │   ├── event/
     │   └── exception/
     ├── application/
-    │   ├── port/in/           # usecase/, command/, query/, result/
+    │   ├── port/in/           # UseCase, Command, Result, command/, result/
     │   ├── port/out/          # ports required by the use cases
     │   ├── service/
     │   └── exception/
     └── adapter/
-        ├── in/web/            # Controller, request/, response/
+        ├── in/web/            # Controller, {Context}ExceptionHandler, request/, response/
         └── out/persistence/   # repository adapters, JPA entities, and mappers
 ```
 
@@ -68,8 +68,9 @@ The controller calls an inbound `*UseCase`; it does not depend on an Application
 - Create new aggregates with `create`; restore persisted state with `restore`. State-changing methods return a new aggregate.
 - Aggregates refer to other aggregates by identifier, not by object reference. JPA relationships and lazy loading are not used to navigate between aggregates.
 - Application services place transactions on public methods; read methods use read-only transactions. They do not perform external I/O inside a transaction.
-- Repository ports distinguish creation from updates with `create` and `update`; they do not use ambiguous `save` or `upsert` contracts.
-- Domain and Application exceptions use technology-independent error contracts. The Web layer maps business errors to HTTP `ProblemDetail` responses.
+- Repository ports may use `save`, `create`, or `update`; they do not use `upsert`.
+- Each context has `abstract sealed` Domain and Application exception bases with `final` subclasses. A per-context `{Context}ExceptionHandler` maps them to HTTP `ProblemDetail` responses.
+- The reference layout is the `tool-test-lab` repository; structures outside it are rejected.
 
 ## What the plugin checks
 

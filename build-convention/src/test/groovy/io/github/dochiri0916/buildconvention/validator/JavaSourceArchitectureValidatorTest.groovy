@@ -111,7 +111,7 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
-    void 'rejects repository port save and upsert operations'() {
+    void 'allows repository port save create update and rejects upsert'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/Order.java', '''
@@ -135,8 +135,8 @@ class JavaSourceArchitectureValidatorTest {
 
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains("repository port 'OrderRepositoryPort' must not declare save; use create or update") }
-        assert violations.any { it.contains("repository port 'OrderRepositoryPort' must not declare upsert; use create or update") }
+        assert !violations.any { it.contains("must not declare save") }
+        assert violations.any { it.contains("repository port 'OrderRepositoryPort' must not declare upsert; use save, create, or update") }
     }
 
     @Test
@@ -462,7 +462,7 @@ class JavaSourceArchitectureValidatorTest {
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('order.application.port package must use in or out') }
-        assert violations.any { it.contains('order.adapter.in package must use bootstrap, event, messaging, scheduler, or web') }
+        assert violations.any { it.contains('order.adapter.in package must use bootstrap or web') }
     }
 
     @Test
@@ -759,8 +759,8 @@ class JavaSourceArchitectureValidatorTest {
                 public final class GlobalExceptionHandler {
                 }
                 ''')
-        writeJava(project, 'com/example/global/web/ApiWebConfig.java', '''
-                package com.example.global.web;
+        writeJava(project, 'com/example/global/configuration/ApiWebConfig.java', '''
+                package com.example.global.configuration;
 
                 import lombok.RequiredArgsConstructor;
                 import org.springframework.context.annotation.Configuration;
@@ -827,13 +827,12 @@ class JavaSourceArchitectureValidatorTest {
 
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains("inbound port type 'PlaceOrderUseCase' must live in application..port.in.usecase package") }
-        assert violations.any { it.contains("inbound port type 'PlaceOrderQuery' must live in application..port.in.query package") }
+        assert !violations.any { it.contains("'PlaceOrderUseCase'") }
         assert violations.any { it.contains("port.in.command type 'PlaceOrderQuery' must end with Command") }
-        assert violations.any { it.contains("inbound port type 'PlaceOrderCommand' must live in application..port.in.command package") }
-        assert !violations.any { it.contains("'CancelOrderUseCase'") }
+        assert violations.any { it.contains('PlaceOrderCommand.java order.application.port.in package may only add command or result') }
+        assert violations.any { it.contains("inbound port 'CancelOrderUseCase' must live directly in application..port.in package") }
         assert violations.any { it.contains("controller 'OrderController' must live directly in adapter.in.web package") }
-        assert violations.any { it.contains("adapter.in.web package may contain only Controller types; place 'OrderMapper'") }
+        assert violations.any { it.contains("adapter.in.web package may contain only Controller, ExceptionHandler, or ControllerAdvice types; place 'OrderMapper'") }
         assert violations.any { it.contains("adapter.in.web.request type 'PlaceOrderHelper' must end with Request") }
     }
 
@@ -1265,7 +1264,7 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
-    void 'allows context error code details and shared exception base contracts'() {
+    void 'rejects shared ErrorCode exception bases in favor of context sealed bases'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/global/exception/BusinessException.java', '''
@@ -1412,7 +1411,8 @@ class JavaSourceArchitectureValidatorTest {
 
         assert !violations.any { it.contains("shared exception contract 'DomainException' must extend BusinessException") }
         assert !violations.any { it.contains("shared exception contract 'ApplicationException' must extend BusinessException") }
-        assert !violations.any { it.contains("domain exception 'InsufficientStockException' must extend RuntimeException") }
+        assert violations.any { it.contains("domain exception 'InsufficientStockException' must extend RuntimeException or its context's sealed '{Context}DomainException'") }
+        assert violations.any { it.contains("application exception 'OrderNotFoundException' must extend RuntimeException or its context's sealed '{Context}ApplicationException'") }
         assert !violations.any { it.contains("domain must not depend on global.exception 'com.example.global.exception.ErrorCode'") }
         assert !violations.any { it.contains("application must not depend on adapter/global error layer 'com.example.global.exception.ErrorCode'") }
         assert !violations.any { it.contains("application must not depend on adapter/global error layer 'com.example.global.exception.ApplicationException'") }
@@ -1692,8 +1692,8 @@ class JavaSourceArchitectureValidatorTest {
       void 'rejects path based public API exclusions and nullable authenticated member resolver'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/global/web/ApiWebConfig.java', '''
-                package com.example.global.web;
+        writeJava(project, 'com/example/global/configuration/ApiWebConfig.java', '''
+                package com.example.global.configuration;
 
                 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
                 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -1760,7 +1760,7 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
-    void 'rejects domain invariant exceptions without ErrorCode factories'() {
+    void 'accepts domain exceptions with messages and rejects requireNonNull in value object constructors'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/member/domain/exception/InvalidMemberIdException.java', '''
@@ -1796,15 +1796,13 @@ class JavaSourceArchitectureValidatorTest {
 
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains("domain exception 'InvalidMemberIdException' must keep constructors private") }
-        assert violations.any { it.contains("domain exception 'InvalidMemberIdException' must expose at least one static factory") }
+        assert !violations.any { it.contains("'InvalidMemberIdException'") }
         assert violations.any { it.contains('requireNonNull is only allowed for structural guards in a private aggregate constructor') }
-        assert violations.any { it.contains('domain must raise exceptions through static factory methods') }
-        assert violations.any { it.contains('domain must use ErrorCode-based exceptions') }
+        assert !violations.any { it.contains('static factory') || it.contains('ErrorCode') }
     }
 
     @Test
-    void 'rejects application exceptions created with string messages'() {
+    void 'accepts application exceptions created with messages'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/order/application/exception/EmptyCartException.java', '''
@@ -1834,14 +1832,12 @@ class JavaSourceArchitectureValidatorTest {
 
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains("application exception 'EmptyCartException' must keep constructors private") }
-        assert violations.any { it.contains("application exception 'EmptyCartException' must expose at least one static factory") }
-        assert violations.any { it.contains('application must raise exceptions through static factory methods') }
-        assert violations.any { it.contains('application must use ErrorCode-based exceptions') }
+        assert !violations.any { it.contains('EmptyCartException') }
+        assert !violations.any { it.contains('static factory') || it.contains('ErrorCode') }
     }
 
     @Test
-    void 'rejects exception detail fields that match accessors'() {
+    void 'allows exception detail fields that match accessors'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/member/application/exception/MemberApplicationErrorCode.java', '''
@@ -1883,7 +1879,7 @@ class JavaSourceArchitectureValidatorTest {
 
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains("exception detail field 'email' must use a context-specific internal name") }
+        assert !violations.any { it.contains('exception detail field') }
     }
 
     @Test
@@ -1949,7 +1945,7 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
-    void 'keeps JPA domain identifier naming as domain id instead of public id'() {
+    void 'accepts target id or publicId as JPA domain identifier and rejects other public id names'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/member/adapter/out/persistence/MemberEntity.java', '''
@@ -2010,13 +2006,17 @@ class JavaSourceArchitectureValidatorTest {
                     @Column(nullable = false, unique = true, length = 32)
                     private String publicId;
 
-                    private OrderEntity(final Long id, final String publicId) {
+                    @Column(nullable = false, length = 32)
+                    private String memberPublicId;
+
+                    private OrderEntity(final Long id, final String publicId, final String memberPublicId) {
                         this.id = id;
                         this.publicId = publicId;
+                        this.memberPublicId = memberPublicId;
                     }
 
-                    static OrderEntity create(final String publicId) {
-                        return new OrderEntity(null, publicId);
+                    static OrderEntity create(final String publicId, final String memberPublicId) {
+                        return new OrderEntity(null, publicId, memberPublicId);
                     }
                 }
                 ''')
@@ -2025,8 +2025,9 @@ class JavaSourceArchitectureValidatorTest {
 
         assert !violations.any { it.contains("JPA entity 'MemberEntity' must declare private String memberId") }
         assert !violations.any { it.contains("JPA reference field 'orderId' must store identifier VO value as String") }
-        assert violations.any { it.contains("JPA entity 'OrderEntity' must declare private String orderId") }
-        assert violations.any { it.contains("JPA reference field 'publicId' must use '{target}Id' naming") }
+        assert !violations.any { it.contains("JPA entity 'OrderEntity' must declare") }
+        assert !violations.any { it.contains("JPA reference field 'publicId'") }
+        assert violations.any { it.contains("JPA reference field 'memberPublicId' must use '{target}Id' naming") }
     }
 
     @Test
@@ -2427,6 +2428,291 @@ class JavaSourceArchitectureValidatorTest {
         List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
 
         assert !violations.any { it.contains('must declare one concrete domain exception') }
+    }
+
+    @Test
+    @DisplayName('tool-test-lab 구조(묶음 컨텍스트, domain 루트 애그리거트, global 공유 값, sealed 예외)를 허용한다')
+    void 'accepts the tool-test-lab layout'() {
+        // given
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/global/domain/Money.java', '''
+                package com.example.global.domain;
+
+                import com.example.global.domain.exception.IllegalMoneyException;
+
+                public record Money(long amount) {
+                    public Money {
+                        if (amount < 0) {
+                            throw new IllegalMoneyException();
+                        }
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/global/domain/exception/IllegalMoneyException.java', '''
+                package com.example.global.domain.exception;
+
+                public final class IllegalMoneyException extends RuntimeException {
+                    public IllegalMoneyException() {
+                        super("금액은 0 이상이어야 합니다.");
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/global/application/exception/RepositoryOperationException.java', '''
+                package com.example.global.application.exception;
+
+                public final class RepositoryOperationException extends RuntimeException {
+                    public RepositoryOperationException(final Throwable cause) {
+                        super("저장소 작업을 처리하지 못했습니다.", cause);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/category/domain/model/CategoryId.java', '''
+                package com.example.catalog.category.domain.model;
+
+                import com.example.catalog.category.domain.exception.CategoryIdRequiredException;
+                import java.util.UUID;
+
+                public record CategoryId(String value) {
+                    public CategoryId {
+                        if (value == null || value.isBlank()) {
+                            throw new CategoryIdRequiredException();
+                        }
+                    }
+
+                    public static CategoryId generate() {
+                        return new CategoryId(UUID.randomUUID().toString().replace("-", ""));
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/category/domain/exception/CategoryDomainException.java', '''
+                package com.example.catalog.category.domain.exception;
+
+                public abstract sealed class CategoryDomainException extends RuntimeException
+                        permits CategoryIdRequiredException {
+                    protected CategoryDomainException(final String message) {
+                        super(message);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/category/domain/exception/CategoryIdRequiredException.java', '''
+                package com.example.catalog.category.domain.exception;
+
+                public final class CategoryIdRequiredException extends CategoryDomainException {
+                    public CategoryIdRequiredException() {
+                        super("카테고리 ID는 필수입니다.");
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/category/application/port/out/CategoryLookupPort.java', '''
+                package com.example.catalog.category.application.port.out;
+
+                import com.example.catalog.category.domain.model.CategoryId;
+                import com.example.global.application.exception.RepositoryOperationException;
+
+                public interface CategoryLookupPort {
+                    boolean exists(CategoryId categoryId) throws RepositoryOperationException;
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/category/application/port/in/result/CategorySummary.java', '''
+                package com.example.catalog.category.application.port.in.result;
+
+                public record CategorySummary(String categoryId, String name) {
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/product/application/port/in/RegisterProductUseCase.java', '''
+                package com.example.catalog.product.application.port.in;
+
+                @FunctionalInterface
+                public interface RegisterProductUseCase {
+                    RegisterProductResult register(RegisterProductCommand command);
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/product/application/port/in/RegisterProductCommand.java', '''
+                package com.example.catalog.product.application.port.in;
+
+                public record RegisterProductCommand(String categoryId, long price) {
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/product/application/port/in/RegisterProductResult.java', '''
+                package com.example.catalog.product.application.port.in;
+
+                public record RegisterProductResult(String categoryId) {
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/product/application/service/RegisterProductService.java', '''
+                package com.example.catalog.product.application.service;
+
+                import com.example.catalog.category.application.port.out.CategoryLookupPort;
+                import com.example.catalog.category.domain.model.CategoryId;
+                import com.example.catalog.product.application.port.in.RegisterProductCommand;
+                import com.example.catalog.product.application.port.in.RegisterProductResult;
+                import com.example.catalog.product.application.port.in.RegisterProductUseCase;
+                import com.example.global.domain.Money;
+                import lombok.RequiredArgsConstructor;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                @RequiredArgsConstructor
+                public final class RegisterProductService implements RegisterProductUseCase {
+
+                    private final CategoryLookupPort categoryLookupPort;
+
+                    @Override
+                    @Transactional
+                    public RegisterProductResult register(final RegisterProductCommand command) {
+                        final CategoryId categoryId = new CategoryId(command.categoryId());
+                        categoryLookupPort.exists(categoryId);
+                        new Money(command.price());
+                        return new RegisterProductResult(categoryId.value());
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/product/adapter/in/web/ProductExceptionHandler.java', '''
+                package com.example.catalog.product.adapter.in.web;
+
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+                @RestControllerAdvice
+                public final class ProductExceptionHandler {
+                }
+                ''')
+        writeJava(project, 'com/example/catalog/product/adapter/in/web/exception/ProductApiControllerAdvice.java', '''
+                package com.example.catalog.product.adapter.in.web.exception;
+
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+                @RestControllerAdvice
+                public final class ProductApiControllerAdvice {
+                }
+                ''')
+        writeJava(project, 'com/example/member/domain/vo/MemberId.java', '''
+                package com.example.member.domain.vo;
+
+                import com.example.member.domain.exception.IllegalMemberIdException;
+                import java.util.UUID;
+
+                public record MemberId(String value) {
+                    public MemberId {
+                        if (value == null || value.isBlank()) {
+                            throw new IllegalMemberIdException();
+                        }
+                    }
+
+                    public static MemberId generate() {
+                        return new MemberId(UUID.randomUUID().toString().replace("-", ""));
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/member/domain/exception/IllegalMemberIdException.java', '''
+                package com.example.member.domain.exception;
+
+                public final class IllegalMemberIdException extends RuntimeException {
+                    public IllegalMemberIdException() {
+                        super("회원 ID는 필수입니다.");
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains('package must follow') || it.contains('global package must be limited') }
+        assert !violations.any { it.contains('another context') }
+        assert !violations.any { it.contains('exception') && it.contains('must') }
+        assert !violations.any { it.contains('ProductExceptionHandler') || it.contains('ProductApiControllerAdvice') }
+        assert !violations.any { it.contains('CategorySummary') || it.contains('RegisterProductCommand') }
+        assert !violations.any { it.contains("'Money'") }
+    }
+
+    @Test
+    @DisplayName('tool-test-lab에 없는 구조와 예외 스타일은 거부한다')
+    void 'rejects layouts and exception styles outside the tool-test-lab convention'() {
+        // given
+        Project project = sampleProject()
+        writeApplication(project)
+        writeJava(project, 'com/example/order/domain/event/OrderPlaced.java', '''
+                package com.example.order.domain.event;
+
+                public record OrderPlaced(String orderId) {
+                }
+                ''')
+        writeJava(project, 'com/example/global/web/WebConfig.java', '''
+                package com.example.global.web;
+
+                public final class WebConfig {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/query/FindOrderQuery.java', '''
+                package com.example.order.application.port.in.query;
+
+                public record FindOrderQuery(String orderId) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/OrderLookup.java', '''
+                package com.example.order.application.port.in;
+
+                public record OrderLookup(String orderId) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/scheduler/OrderScheduler.java', '''
+                package com.example.order.adapter.in.scheduler;
+
+                public final class OrderScheduler {
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/exception/OrderDomainException.java', '''
+                package com.example.order.domain.exception;
+
+                public abstract class OrderDomainException extends RuntimeException {
+                    public OrderDomainException(final String message) {
+                        super(message);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/exception/OpenOrderException.java', '''
+                package com.example.order.domain.exception;
+
+                public class OpenOrderException extends OrderDomainException {
+                    public OpenOrderException() {
+                        super("열린 예외");
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/exception/OrderFailedException.java', '''
+                package com.example.order.application.exception;
+
+                public final class OrderFailedException extends IllegalStateException {
+                    public OrderFailedException() {
+                        super("주문 실패");
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/service/PlaceOrderService.java', '''
+                package com.example.order.application.service;
+
+                import com.example.order.domain.model.*;
+
+                public final class PlaceOrderService {
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert violations.any { it.contains('OrderPlaced.java order.domain package must use model, vo, or exception') }
+        assert violations.any { it.contains('WebConfig.java global package must be limited') }
+        assert violations.any { it.contains('FindOrderQuery.java order.application.port.in package may only add command or result') }
+        assert violations.any { it.contains("application..port.in type 'OrderLookup' must end with UseCase, Command, or Result") }
+        assert violations.any { it.contains('OrderScheduler.java order.adapter.in package must use bootstrap or web') }
+        assert violations.any { it.contains("domain exception base 'OrderDomainException' must be sealed") }
+        assert violations.any { it.contains("domain exception base 'OrderDomainException' must keep constructors protected") }
+        assert violations.any { it.contains("domain exception 'OpenOrderException' must be final") }
+        assert violations.any { it.contains("application exception 'OrderFailedException' must extend RuntimeException or its context's sealed") }
+        assert violations.any { it.contains("must not use wildcard import 'com.example.order.domain.model.*'") }
     }
 
     private Project sampleProject() {

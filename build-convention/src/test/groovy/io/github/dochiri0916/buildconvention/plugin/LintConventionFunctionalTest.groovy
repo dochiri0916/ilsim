@@ -25,7 +25,7 @@ class LintConventionFunctionalTest {
 
         assert result.task(':check').outcome == TaskOutcome.SUCCESS
         assert report.schemaVersion == '1.0'
-        assert report.pluginVersion == '1.0.1'
+        assert report.pluginVersion == '1.2.0'
         assert report.status == 'PASS'
         assert report.checks.architecture == 'PASS'
         assert report.checks.mutationGate == 'PASS'

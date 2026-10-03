@@ -2,10 +2,10 @@
 
 Java 21+, Spring Boot, JPA를 사용하고 `io.github.dochiri0916.build-convention`을 적용한 소스 모듈에 이 지침을 적용한다. 최신 사용자 요청과 대화에서 명시적으로 합의한 결정, 저장소의 `AGENTS.md`, 저장소의 기존 구조가 이 지침보다 우선한다. 기존 프로젝트의 작은 변경에서는 요청 범위 밖 구조 개편이나 기존 코드 일괄 마이그레이션을 하지 않는다.
 
-상세 기준 저장소는 `~/programming/utility/build-convention`이다. 다음 경로는 현재 작업 저장소가 아니라 이 기준 저장소의 루트에서 해석한다.
+기준 예시는 `tool-test-lab` 저장소다. 이 지침에 없는 구조와 스타일은 검증에서 거부된다. 다음 경로는 build-convention 저장소의 루트에서 해석한다.
 
 - `docs/ARCHITECTURE.md`: 패키지, 계층, Domain/Application/Adapter 책임
-- `docs/ERROR_HANDLING.md`: `global.exception`, ErrorCode, BusinessException, ProblemDetail
+- `docs/ERROR_HANDLING.md`: Context별 sealed 예외, ExceptionHandler, ProblemDetail
 - `docs/TESTING.md`: 테스트 작성 방식과 검증 명령
 
 ## 핵심 구조
@@ -14,11 +14,12 @@ Java 21+, Spring Boot, JPA를 사용하고 `io.github.dochiri0916.build-conventi
 Domain <- Application <- Adapter
 ```
 
-- Domain은 Spring, JPA, Lombok, Application, Adapter를 모른다. `global.exception`에서는 기술 독립적인 ErrorCode와 공통 예외 계약만 사용한다.
-- Application은 같은 Context의 Domain과 자신이 소유한 Port를 사용한다. `global.exception`에서는 기술 독립적인 ErrorCode와 공통 예외 계약만 사용할 수 있다.
-- Application은 실용적 예외로 Spring의 stereotype·transaction annotation과 compile-time Lombok을 사용할 수 있다. 따라서 이 구조는 strict Clean Architecture가 아니라 실용적 hexagonal/clean architecture다. 그 외 Jackson, Servlet, Kafka, Redis, JDBC/ORM 드라이버 같은 기술 타입은 Application과 Domain에서 사용할 수 없다.
+- Domain은 Spring, JPA, Lombok, Application, Adapter를 모른다.
+- Application은 같은 Context의 Domain과 자신이 소유한 Port, 그리고 공유 커널(`global.domain`, `global.application.exception`)만 사용한다.
+- Application은 실용적 예외로 Spring의 stereotype·transaction annotation과 compile-time Lombok을 사용할 수 있다. 그 외 Jackson, Servlet, Kafka, Redis, JDBC/ORM 드라이버 같은 기술 타입은 Application과 Domain에서 사용할 수 없다.
 - Controller는 Inbound `UseCase`만 호출하고, Application Service는 Outbound `Port` 또는 무상태 Domain Service만 주입받는다.
-- `{context}`는 Bounded Context이며 Aggregate와 같은 뜻으로 사용하지 않는다. 다른 Context의 모델·Application 타입·식별자 VO를 직접 import하지 않는다. 통합 Port 경계에서 현재 Context 소유 VO로 번역한다. 공유 식별자 계약이 필요하면 소유권과 버전이 명시된 Published Language module에서만 공유한다.
+- `{context}`는 Bounded Context다. 다른 Context의 모델·Application 타입은 직접 import하지 않고 통합 Port와 Adapter(예: `cart.adapter.out.product.ProductCatalogAdapter`)로 번역한다.
+- 묶음 Context(`catalog/category`, `catalog/product`)는 하나의 Context다. 같은 묶음의 모듈끼리는 Port와 Domain 모델을 직접 사용할 수 있다.
 - `common` 패키지를 만들지 않는다.
 
 ## 패키지
@@ -26,53 +27,51 @@ Domain <- Application <- Adapter
 ```
 com.example.project/
 ├── global/
-│   ├── configuration/properties/
-│   ├── exception/
-│   ├── persistence/
-│   └── web/
-└── {context}/
-    ├── domain/{model,vo,event,exception}/
-    ├── application/{port/in/{usecase,command,query,result},port/out,exception,service}/
-    └── adapter/{in/web/{request,response},out/persistence}/
+│   ├── configuration/          # @Configuration, properties/ 에 @ConfigurationProperties
+│   ├── domain/                 # 여러 Context가 쓰는 값 객체(Money, Quantity), exception/
+│   ├── application/exception/  # 공통 Application 예외(RepositoryOperationException)
+│   ├── exception/              # GlobalApiControllerAdvice, ProblemDetails
+│   └── persistence/            # BaseEntity, RepositoryExceptionTranslator
+└── {context}/ 또는 {context}/{module}/
+    ├── domain/                 # Aggregate Root를 직접 두거나 model/, vo/ 에 둔다. exception/
+    ├── application/{port/in,port/out,exception,service}/
+    └── adapter/{in/{web,bootstrap},out/{persistence,...}}/
 ```
 
-`global.exception`에는 `ErrorCode`, `ErrorKind`, `BusinessException`, `DomainException`, `ApplicationException`, `GlobalExceptionHandler`를 둔다. 공통 계약 타입은 Spring과 HTTP 타입을 모르며, `GlobalExceptionHandler`만 Spring Web 타입을 사용한다. `global.web`에는 인증과 MVC 설정을, `global.persistence`에는 JPA 공통 설정을, `global.configuration.properties`에는 `@ConfigurationProperties` 타입을 둔다. `global`은 어떤 `{context}` 패키지도 import하지 않는다.
+- `port/in`에는 UseCase를 바로 두고, Command와 Result는 같은 곳이나 `port/in/command`, `port/in/result`에 둔다. `usecase`, `query` 하위 패키지는 쓰지 않는다.
+- `adapter/in/web`에는 Controller, `{Context}ExceptionHandler`, `request/`, `response/`, (필요하면) `exception/`을 둔다.
+- `domain.event`, `adapter.in.scheduler/messaging/event`, `global.web`은 쓰지 않는다.
+- `global`은 어떤 `{context}` 패키지도 import하지 않는다.
 
 ## Domain
 
-- Aggregate는 `final class`이며 모든 필드는 `private final` Value Object·enum·First-class Collection이다. Value Object(record)는 `public static of(...)`로만 생성하고 `new`로 생성하지 않는다.
-
-- Entity와 Aggregate Root는 불변 `final class`다. Value Object와 First-class Collection은 `record`다.
-- `domain.model`의 상태를 가진 class는 `id` 필드(`{Domain}Id` Value Object)를 반드시 선언한다.
-- 식별자는 `{Domain}Id` Value Object로 표현하며 DB 기술 키 `Long id`를 Domain에 두지 않는다.
-- 신규 Aggregate는 `create`, 영속 상태 복원은 `restore`를 사용한다.
-- 상태 변경은 새 Aggregate를 반환한다. ID 기반 `equals`와 `hashCode`를 구현한다.
-- raw scalar는 VO 내부 또는 create/행위 경계에서만 받고, Aggregate 상태에는 VO/enum/불변 collection을 둔다.
-- 다른 Aggregate는 객체가 아닌 식별자 VO로만 참조한다. JPA 연관관계와 Lazy Loading으로 Aggregate를 탐색하지 않는다.
-- Business invariant 실패는 Domain 예외와 ErrorCode로 표현하며 JDK 기본 예외로 표현하지 않는다. 이미 검증된 구성요소를 받는 private Aggregate constructor의 구조적 null guard에 한해 `Objects.requireNonNull`을 허용한다.
+- Aggregate Root는 `final class`이고 상태 필드는 `private final` Value Object·enum·First-class Collection이다. 값을 받는 constructor는 `private`, 생성은 `create`, 영속 상태 복원은 `restore`를 쓴다.
+- Value Object는 `record`이고 compact constructor에서 검증한다. `new`로 만들어도 되고 필요하면 `of`를 둔다.
+- 식별자는 `{Domain}Id` record이고 `generate()`를 제공한다. 다른 Context를 가리키는 `*ReferenceId`는 `generate()`가 없다.
+- 상수는 `private static final int MAX_LENGTH = 1_000;`처럼 둘 수 있다.
+- 실패는 Context의 Domain 예외를 `throw new ...Exception()`으로 던진다. JDK 기본 예외(`IllegalArgumentException` 등)는 쓰지 않는다.
+- 상태 변경은 새 Aggregate를 반환한다. 다른 Aggregate는 식별자 VO로만 참조한다.
 
 ## Application
 
-- 각 Application Service는 정확히 하나의 Inbound UseCase를 구현한다.
-- 트랜잭션은 public Application Service 메서드에 둔다. 조회는 `@Transactional(readOnly = true)`를 사용한다.
-- 하나의 트랜잭션에서 여러 Aggregate를 직접 변경하거나 외부 API·메시지·메일·파일 I/O를 수행하지 않는다.
-- Repository Port의 생성과 변경은 `create`와 `update`로 분리한다. `save`와 `upsert`는 사용하지 않는다.
-- UseCase Command/Query/Result는 `application.port.in`에 두고, HTTP API Request/Response DTO는 `adapter.in.web`에 둔다.
+- 각 Application Service는 `final`이고 정확히 하나의 Inbound UseCase를 구현한다. 메서드 하나인 UseCase와 Port에는 `@FunctionalInterface`를 붙인다.
+- 트랜잭션은 public Application Service 메서드에 둔다. 조회와 로그인은 `@Transactional(readOnly = true)`를 사용한다.
+- Repository Port는 `save`, `create`, `update`, `find...`, `exists...`, `delete...`를 쓴다. `upsert`는 쓰지 않는다.
+- Command는 record compact constructor에서 입력을 검증하고 실패 시 Context의 `InvalidCommandException`을 던진다.
+- 저장소 기술 예외는 `RepositoryOperationException`으로 바꿔 Port 밖으로 전달한다.
 
 ## Adapter와 오류
 
-- Controller는 요청 파싱, Command/Query 생성, UseCase 호출, Response 변환만 담당한다.
-- JPA Entity는 `adapter.out.persistence`에만 두며 Domain과 분리한다. JPA Entity 간 객체 연관관계를 사용하지 않는다.
-- `global.exception.GlobalExceptionHandler`는 Spring의 `ResponseEntityExceptionHandler`를 상속하고 `BusinessException`의 ErrorCode와 extensions를 RFC 9457 `ProblemDetail`로 변환한다.
-- `@ExceptionHandler`는 단순 오류 응답에서 `ProblemDetail`을 직접 반환한다. status는 ErrorKind에서 변환하고, 안정적인 code와 안전한 extensions는 properties로 추가한다.
-- 예외의 `getMessage()`를 그대로 detail로 노출하지 않는다. 기본값은 `ErrorCode.detail()`을 사용하고, 다국어가 실제로 필요할 때만 Web 계층에서 Spring `MessageSource`를 사용한다.
-- 기본 구조에서는 별도 Exception Mapper Registry나 메시지 Provider를 만들지 않는다. 다중 프로토콜·API 버전처럼 실제 매핑 요구가 생길 때만 추가한다.
-- `ProblemDetail`, `HttpStatus`, `@RestControllerAdvice`는 `global.exception` 또는 `adapter.in.web`에만 둔다.
+- Controller는 요청 파싱, Command 생성, UseCase 호출, Response 변환만 담당한다. JPA 엔티티와 Spring Web 어노테이션은 와일드카드 import(`jakarta.persistence.*`, `org.springframework.web.bind.annotation.*`)를 쓸 수 있고, 그 외에는 쓰지 않는다.
+- JPA Entity는 `adapter.out.persistence`에만 두고 `BaseEntity`를 상속한다. 기술 키 `Long id`와 도메인 식별 컬럼 `{target}Id` 또는 `publicId`(String, 길이 32, 유일)를 둔다.
+- Mapper는 `final` 유틸리티 클래스다. 자식 행 키 UUID는 만들 수 있지만 시간 값은 만들지 않는다.
+- 예외 응답은 Context별 `{Context}ExceptionHandler`(`@RestControllerAdvice`, `HIGHEST_PRECEDENCE`)가 sealed 예외를 `switch`로 나눠 `ProblemDetails.create(status, code, message)`로 만든다. 나머지는 `GlobalApiControllerAdvice`가 500으로 처리한다.
 - Domain/Application/Outbound Port는 DB, HTTP, SDK, Spring 기술 예외를 노출하지 않는다.
 
 ## 품질
 
 - 테스트는 한국어 `@DisplayName`과 `// given`, `// when`, `// then` 구조를 사용한다.
-- 예외 테스트는 예외 타입, ErrorCode, 필요한 실패 맥락을 검증한다.
+- 예외 테스트는 예외 타입과 메시지를 검증한다.
+- 줄 길이는 130자 이하, 사용하지 않는 import는 남기지 않는다.
 - 검증을 비활성화하거나 제외해 실패를 숨기지 않는다.
 - Production, 테스트, build 설정, migration을 바꾸면 완료 전에 `./gradlew check`를 실행한다.
