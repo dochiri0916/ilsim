@@ -113,7 +113,7 @@ Registry·Policy는 절대 경로로 지정하며, `requiredTiers`에는 두 생
 
 생성 단계·검토된 요구사항·승인된 파일 범위·문서와 코드 context·수락한 테스트 연결을 한 요청에 담아 Tier와 위험도를 두 `Choice` 질문으로 판단한다. 목적지는 `https://api.typesafe.ai/v1/systemone`으로 고정하며 redirect와 환경 proxy 설정을 사용하지 않는다. **자동 판단은 해당 context를 TypeSafe로 전송하는 설정**이므로 전송 가능한 프로젝트에서 명시적으로 활성화한다. 기존 필수 검증·scope·실행 권한은 JEV 판단으로 변경하지 않는다. [TypeSafe API](https://docs.typesafe.ai/api), [Choice](https://docs.typesafe.ai/primitives/choice).
 
-선택·분포·confidence·실제 JEV snapshot·token usage를 검증한다. `UNKNOWN`이나 낮은 confidence는 모델 호출과 변경 적용을 차단한다. 위험도 MEDIUM은 TIER_3와 confidence 0.85 이상, HIGH는 TIER_4와 confidence 0.9 이상을 코드에서 최소 기준으로 적용한다. 설정한 minConfidence가 더 높으면 그 값을 사용한다. API confidence의 반올림은 허용하되 분포에서 계산한 confidence보다 높게 수락하지 않는다. 이 초기 기준은 자체 업무 데이터로 보정해야 하며, 의미적 정확성의 증명이 아니다. [TypeSafe confidence](https://docs.typesafe.ai/confidence).
+선택·분포·confidence·실제 JEV snapshot·token usage를 검증한다. `UNKNOWN`이나 낮은 confidence는 모델 호출과 변경 적용을 차단한다. 위험도 MEDIUM은 TIER_3와 confidence 0.85 이상, HIGH는 TIER_4와 confidence 0.9 이상을 코드에서 최소 기준으로 적용한다. 설정한 minConfidence가 더 높으면 그 값을 사용한다. HIGH가 충분히 확실하면 모든 Tier가 TIER_4로 연결되므로 Tier 답의 confidence는 기준에서 뺀다(위험도 confidence는 계속 0.9 이상이어야 한다). API confidence의 반올림은 허용하되 분포에서 계산한 confidence보다 높게 수락하지 않는다. 이 초기 기준은 자체 업무 데이터로 보정해야 하며, 의미적 정확성의 증명이 아니다. [TypeSafe confidence](https://docs.typesafe.ai/confidence).
 
 인증은 실행 환경의 `TYPESAFE_API_KEY`만 사용한다. 키·임의 endpoint를 config에 넣을 수 없으며 키를 artifact·prompt·CLI 자식 프로세스에 전달하지 않는다. 현재 터미널에서 등록한 파일을 사용하는 실행 예시는 다음과 같다.
 

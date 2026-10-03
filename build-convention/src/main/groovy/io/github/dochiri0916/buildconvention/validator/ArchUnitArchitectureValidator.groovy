@@ -28,7 +28,27 @@ class ArchUnitArchitectureValidator {
         JavaClasses importedClasses = new ClassFileImporter()
                 .importPaths(existingClassDirs.collect { File classDir -> classDir.toPath() })
 
+        // ArchUnit only logs class files it cannot parse (for example a newer Java version) and then
+        // checks the rest, which would let those classes pass unchecked.
+        List<String> unreadable = (compiledClassNames(existingClassDirs) - importedClasses.collect { it.name }).sort()
+        if (!unreadable.isEmpty()) {
+            return ["ArchUnit could not read compiled classes; update the bundled bytecode reader for this Java version: ${unreadable.join(', ')}".toString()]
+        }
+
         return evaluateRules(importedClasses, buildRules(convention))
+    }
+
+    private static Set<String> compiledClassNames(List<File> classDirs) {
+        Set<String> names = [] as Set
+        classDirs.each { File classDir ->
+            classDir.eachFileRecurse { File file ->
+                if (file.file && file.name.endsWith('.class') && !(file.name in ['module-info.class', 'package-info.class'])) {
+                    String relative = classDir.toPath().relativize(file.toPath()).toString()
+                    names.add(relative.substring(0, relative.length() - '.class'.length()).replace(File.separator, '.'))
+                }
+            }
+        }
+        return names
     }
 
     private static List<ArchRule> buildRules(HexagonalConventionExtension convention) {

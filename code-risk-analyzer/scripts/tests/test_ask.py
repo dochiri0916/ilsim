@@ -1,7 +1,10 @@
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
+import io
 import json
 import re
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -169,6 +172,89 @@ class StageTests(unittest.TestCase):
             ask.stages('CONTINUE', 'STALE', generator=True, service=False)
         with self.assertRaises(ValueError):
             ask.stages('VERIFY', None, generator=True, service=False)
+
+
+class ResumeTests(unittest.TestCase):
+    def stale(self, stage, reason=None, kind='SOURCES'):
+        return {'phase': 'STALE', 'staleKind': kind, 'generationStage': stage,
+                'invalidations': [{'reason': reason or ask.AGENT_STOP, 'kind': kind}]}
+
+    def test_unfinished_model_stage_resumes_there(self):
+        self.assertEqual(['generate-tests', 'generate-implementation', 'verification'],
+                         ask.stages('CONTINUE', ask.resume_phase(self.stale('test-writing')), True, False))
+        self.assertEqual(['generate-implementation', 'verification'],
+                         ask.stages('CONTINUE', ask.resume_phase(self.stale('implementation')), True, False))
+
+    def test_other_invalidations_still_need_a_new_session(self):
+        for state in (self.stale('test-writing', 'Source or test changed outside the recorded operation'),
+                      self.stale('test-writing', kind='INPUTS'), dict(self.stale(None))):
+            self.assertEqual('STALE', ask.resume_phase(state))
+
+
+class StopReasonTests(unittest.TestCase):
+    def test_model_questions_and_gate_refusals_are_explained(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            # given: no record yet
+            self.assertEqual([], ask.stop_reason(directory, 0))
+            # given: the test writer asked questions
+            (directory/'agent-test-writing.json').write_text(json.dumps(
+                {'status': 'NEEDS_REVIEW', 'failureKind': 'AMBIGUITY', 'output': {'unknowns': ['상태 코드가 없습니다']}}))
+            lines = ask.stop_reason(directory, 0)
+            self.assertIn('- 상태 코드가 없습니다', lines)
+            # given: the capability gate refused
+            (directory/'agent-test-writing.json').write_text(json.dumps(
+                {'status': 'NEEDS_REVIEW', 'failureKind': 'CAPABILITY',
+                 'capability': {'status': 'NEEDS_REVIEW', 'failureKind': 'LOW_CONFIDENCE'}}))
+            self.assertIn('JEV', ask.stop_reason(directory, 0)[0])
+            # given: the answer broke the output contract
+            (directory/'agent-test-writing.json').write_text(json.dumps(
+                {'status': 'INVALID_OUTPUT', 'failureKind': 'OUTPUT_CONTRACT', 'reason': 'r', 'detail': 'ValueError: x',
+                 'rejectedOutput': {'changes': []}}))
+            lines = ask.stop_reason(directory, 0)
+            self.assertIn('검사 내용: ValueError: x', lines)
+            self.assertIn('rejectedOutput', lines[-2])
+            self.assertEqual(ask.RETRY_HINT, lines[-1])
+            # given: the record is older than the stage
+            self.assertEqual([], ask.stop_reason(directory, 10**12))
+
+
+class CompileErrorTests(unittest.TestCase):
+    def test_missing_junit_results_show_the_javac_errors(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            (directory/'after.json').write_text(json.dumps({'project': folder, 'evidenceError': 'No unambiguous fresh JUnit results'}))
+            output = f'{folder}/src/test/java/a/ATest.java:55: error: cannot find symbol\n  symbol: method x()\n'
+            run = lambda command, **kwargs: subprocess.CompletedProcess(command, 1, output, '')
+            self.assertEqual(['컴파일 오류:', '- src/test/java/a/ATest.java:55: error: cannot find symbol'],
+                             ask.compile_errors(directory, 0, run))
+            (directory/'after.json').write_text(json.dumps({'project': folder}))
+            self.assertEqual([], ask.compile_errors(directory, 0, run))
+
+
+class ConventionGateTests(unittest.TestCase):
+    def gate(self, *reports, fix_code=0):
+        with tempfile.TemporaryDirectory() as folder:
+            session, reports, calls = Path(folder), list(reports), []
+
+            def run(command):
+                calls.append(command)
+                if '--output' in command:
+                    checks = reports.pop(0)
+                    Path(command[command.index('--output') + 1]).write_text(json.dumps({'checks': checks}))
+                    return 0 if all(status != 'FAIL' for status in checks.values()) else 1
+                return fix_code
+            value = {'convention': {'session': folder, 'project': folder}}
+            result = ask._convention_gate(value, run)
+        return result, ['--mode' in command for command in calls]
+
+    def test_architecture_is_fixed_while_a_test_does_not_compile(self):
+        broken = {'architecture': 'FAIL', 'compilation': 'FAIL'}
+        self.assertEqual(((0, True), [False, True, False]), self.gate(broken, {'compilation': 'FAIL'}))
+        self.assertEqual(((0, True), [False, True]), self.gate(broken, fix_code=1))
+
+    def test_only_compilation_failing_steps_aside_at_once(self):
+        self.assertEqual(((0, True), [False]), self.gate({'compilation': 'FAIL', 'tests': 'FAIL'}))
 
 
 class SessionTests(unittest.TestCase):
@@ -386,6 +472,207 @@ class SetupTests(unittest.TestCase):
         self.assertEqual('plans/p.json', config['plan'])
 
 
+class ZeroConfigTests(unittest.TestCase):
+    """A start.spring.io-shaped project with nothing added: ask finds it, drafts the inputs and keeps the session."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.project = Path(temp.name).resolve()/'demo'
+        tests = self.project/'src/test/java/com/example/demo'
+        tests.mkdir(parents=True)
+        (self.project/'gradlew').write_text('')
+        (self.project/'settings.gradle').write_text("rootProject.name = 'demo'")
+        (tests/'DemoApplicationTests.java').write_text(
+            'package com.example.demo;\nclass DemoApplicationTests {\n\t@Test\n\tvoid contextLoads() {\n\t}\n}\n')
+        self.calls = []
+        draft_spec = importlib.util.spec_from_file_location('test_ask_draft', Path(__file__).resolve().parent/'test_ask_draft.py')
+        self.samples = importlib.util.module_from_spec(draft_spec)
+        draft_spec.loader.exec_module(self.samples)
+
+    def call(self, config, workspace, prompt, schema, validate):
+        self.calls.append(config)
+        return {'status': 'COMPLETED', 'output': validate(self.samples.sample()), 'usage': {}}
+
+    def measure(self, project, output, base_ref):
+        report = {'status': 'FAIL', 'checks': {'checkstyle': 'FAIL'}, 'baseRef': base_ref, 'violations': [
+            {'file': 'src/test/java/com/example/demo/DemoApplicationTests.java', 'line': 3, 'message': 'tab'}]}
+        output.write_text(json.dumps(report))
+        self.measured.append(base_ref)
+        return report
+
+    def start(self, text='회원 가입 기능 추가해줘'):
+        self.measured = []
+        with redirect_stdout(io.StringIO()) as output:
+            value = ask.start_change(text, self.project, ask.decide(text, None), None, None, self.call,
+                                     lambda path, jar: None, self.measure)
+        return value, output.getvalue()
+
+    def test_request_wording_turns_conventions_on_or_off(self):
+        cases = {'회원 가입 추가해줘': ask.CONVENTION_DEFAULT, '컨벤션 없이 회원 가입 추가해줘': False,
+                 '코드 스타일 검사 빼고 고쳐줘': False, '컨벤션 무시하고 추가해줘': False,
+                 '컨벤션 적용해서 회원 가입 추가해줘': True, '컨벤션 지켜서 고쳐줘': True}
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(expected, ask.convention_choice(text))
+
+    def test_project_is_found_from_any_folder_inside_it(self):
+        self.assertEqual(self.project, ask.find_project(self.project/'src/test/java'))
+        with self.assertRaises(ValueError):
+            ask.find_project(self.project.parent)
+
+    def test_user_config_replaces_only_the_files_it_has(self):
+        home = self.project.parent/'home'
+        home.mkdir()
+        (home/'routing-policy.json').write_text('{}')
+        routing = ask.default_routing({'CODE_RISK_CONFIG_HOME': str(home)})
+        self.assertEqual(str(home/'routing-policy.json'), routing['policy'])
+        self.assertEqual(str(ask.DEFAULT_ROUTING/'models.json'), routing['registry'])
+
+    def test_draft_uses_the_cheap_tier_and_refuses_forbidden_models(self):
+        configs = ask.draft_models(ask.default_routing({}))
+        self.assertEqual(['gpt-6-luna', 'gpt-6.1-sol'], [config['model'] for config in configs])
+        registry = json.loads((ask.DEFAULT_ROUTING/'models.json').read_text())
+        registry['models']['general']['model'] = 'claude-opus-5-5'
+        path = self.project.parent/'models.json'
+        path.write_text(json.dumps(registry))
+        with self.assertRaisesRegex(ValueError, '금지된 고비용 모델'):
+            ask.draft_models(dict(ask.default_routing({}), registry=str(path)))
+
+    def test_change_request_drafts_a_new_session_and_waits_for_approval(self):
+        # when
+        value, output = self.start()
+        # then
+        session = Path(value['state']).parent
+        self.assertEqual(self.project/'build'/'ask', session.parent)
+        self.assertEqual(session.name, (self.project/'build/ask/current').read_text())
+        self.assertEqual(value['config'], json.loads((session/'ask-config.json').read_text()))
+        self.assertEqual(['baseline', 'generate-tests', 'generate-implementation', 'verification'], value['stages'])
+        self.assertEqual({'project': str(self.project), 'session': str(session), 'baseRef': None}, value['convention'])
+        self.assertEqual(['build/ask/' + session.name + '/request.md', 'build/ask/' + session.name + '/conventions.md'],
+                         value['config']['documents'])
+        self.assertIn('REQ-1 이메일로 회원 가입 (시나리오 2개)', output)
+        self.assertIn('먼저 기존 코드 위반을 고칩니다 - src/test/java/com/example/demo/DemoApplicationTests.java', output)
+        self.assertEqual([None], self.measured)
+        self.assertEqual(1, len(self.calls))
+        self.assertFalse((session/'state.json').exists())
+
+    def test_yes_alone_continues_the_current_session_with_its_saved_config(self):
+        # given
+        started, _ = self.start()
+        # when
+        value = ask.zero_config(None, self.project, None, None, self.call)
+        # then
+        self.assertEqual('CONTINUE', value['intent'])
+        self.assertEqual('session', value['configSource'])
+        self.assertEqual(started['config'], value['config'])
+        self.assertEqual(started['stages'], value['stages'])
+
+    def gate_runner(self, checks, commands):
+        """Convention checks fail with the next entry of `checks` (a set of failing check names) until it is empty."""
+        checks = list(checks)
+
+        def run(command):
+            commands.append(command)
+            if command[1].endswith('convention_check.py'):
+                failing = checks.pop(0) if checks else set()
+                output = Path(command[command.index('--output') + 1])
+                output.write_text(json.dumps({'status': 'FAIL' if failing else 'PASS',
+                                              'checks': {name: 'FAIL' for name in failing}}))
+                return 1 if failing else 0
+            return 0
+        return run
+
+    def names(self, commands):
+        return [Path(c[1]).name + (':' + c[c.index('--mode') + 1] if '--mode' in c else '') if 'convention' in c[1] else c[2]
+                for c in commands]
+
+    def test_new_code_violations_are_fixed_through_the_workflow_before_verification(self):
+        # given
+        value, _ = self.start()
+        commands = []
+        # when
+        with redirect_stdout(io.StringIO()):
+            code = ask.execute(value, True, self.gate_runner([{'architecture'}, {'checkstyle'}], commands))
+        # then
+        self.assertEqual(0, code)
+        self.assertEqual(['convention_fix.py', 'baseline', 'generate-tests', 'generate-implementation',
+                          'convention_check.py', 'convention_fix.py:implementation', 'convention_check.py',
+                          'convention_fix.py:implementation', 'convention_check.py', 'verification'], self.names(commands))
+        session = Path(value['state']).parent
+        self.assertEqual(str(session/'convention-after.json'), commands[5][commands[5].index('--report') + 1])
+        self.assertEqual(str(session/'convention-before.json'), commands[4][commands[4].index('--before') + 1])
+
+    def test_violations_left_after_the_fix_rounds_stop_before_verification(self):
+        value, _ = self.start()
+        commands = []
+        with redirect_stdout(io.StringIO()) as output:
+            code = ask.execute(value, True, self.gate_runner([{'architecture'}] * 3, commands))
+        self.assertEqual(1, code)
+        self.assertNotIn('verification', self.names(commands))
+        self.assertEqual(2, self.names(commands).count('convention_fix.py:implementation'))
+        self.assertIn('남은 위반', output.getvalue())
+
+    def test_failing_tests_are_left_to_verification_then_checked_once_more(self):
+        value, _ = self.start()
+        commands = []
+        with redirect_stdout(io.StringIO()):
+            code = ask.execute(value, True, self.gate_runner([{'tests'}, {'checkstyle'}], commands))
+        self.assertEqual(1, code)
+        self.assertEqual(['convention_check.py', 'verification', 'convention_check.py'], self.names(commands)[4:])
+
+    def test_failed_cleanup_stops_before_the_baseline(self):
+        value, _ = self.start()
+        commands = []
+        with redirect_stdout(io.StringIO()):
+            code = ask.execute(value, True, lambda command: commands.append(command) or 1)
+        self.assertEqual((1, 1), (code, len(commands)))
+
+    def test_conventions_off_follow_existing_style_without_checks(self):
+        # when
+        value, output = self.start('컨벤션 없이 회원 가입 기능 추가해줘')
+        commands = []
+        with redirect_stdout(io.StringIO()):
+            ask.execute(value, True, lambda command: commands.append(command) or 0)
+        # then
+        session = Path(value['state']).parent
+        self.assertNotIn('convention', value)
+        self.assertEqual(['build/ask/' + session.name + '/request.md'], value['config']['documents'])
+        self.assertEqual([], self.measured)
+        self.assertIn('컨벤션: 끔', output)
+        self.assertEqual(['baseline', 'generate-tests', 'generate-implementation', 'verification'], [c[2] for c in commands])
+        self.assertNotIn('convention', ask.zero_config(None, self.project, None, None, self.call))
+
+    def test_convention_that_cannot_run_never_blocks_the_verified_change(self):
+        value, _ = self.start()
+        commands = []
+        run = lambda command: commands.append(command) or (2 if command[1].endswith('convention_check.py') else 0)
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(0, ask.execute(value, True, run))
+        self.assertEqual('verification', commands[-1][2])
+        self.assertIn('건너뜁니다', output.getvalue())
+
+    def test_analysis_also_checks_conventions_and_runs_every_check(self):
+        # given
+        value = ask.zero_config('결제 코드 위험 분석해줘', self.project, None, None, self.call)
+        calls = []
+        # when
+        with redirect_stdout(io.StringIO()):
+            code = ask.execute(value, False, lambda command: calls.append(command) or (1 if len(calls) == 1 else 0))
+        # then
+        self.assertEqual(['scan', str(self.project)], value['commands'][0][3:])
+        self.assertTrue(value['commands'][1][1].endswith('convention_check.py'))
+        self.assertEqual((2, 1), (len(calls), code))
+
+    def test_follow_up_without_a_session_explains_what_to_do_first(self):
+        with self.assertRaisesRegex(ValueError, '진행 중인 작업이 없습니다'):
+            ask.zero_config('검증 다시 해줘', self.project, None, None, self.call)
+
+    def test_request_is_required_unless_continuing(self):
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            ask.main(['--project', str(self.project)])
+
+
 class ExampleSettingsTests(unittest.TestCase):
     def test_example_settings_are_valid_and_free_of_forbidden_models(self):
         router_spec = importlib.util.spec_from_file_location('model_router', Path(__file__).resolve().parents[1]/'model_router.py')
@@ -393,8 +680,9 @@ class ExampleSettingsTests(unittest.TestCase):
         router_spec.loader.exec_module(router)
         base = Path(__file__).resolve().parents[2]/'docs'/'examples'/'ask'
         config = ask.resolve_paths(json.loads((base/'config.json').read_text()), base)
-        registry = router.validate_registry(json.loads((base/'models.json').read_text()))
-        router.validate_policy(json.loads((base/'routing-policy.json').read_text()), registry)
+        self.assertEqual(ask.default_routing({'CODE_RISK_CONFIG_HOME': str(base)}), config['routing'])
+        registry = router.validate_registry(json.loads(Path(config['routing']['registry']).read_text()))
+        router.validate_policy(json.loads(Path(config['routing']['policy']).read_text()), registry)
         self.assertTrue(router.settings(dict(config['routing'], capability={})))
         self.assertTrue(ask.models(dict(config, routing=dict(config['routing'], capability={}))))
 

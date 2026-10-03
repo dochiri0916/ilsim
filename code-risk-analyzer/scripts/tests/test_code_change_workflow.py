@@ -660,6 +660,84 @@ echo artifact > build/libs/service.jar
         with patch.object(controller.regression, 'snapshot', return_value=snapshot):
             self.assertEqual('FAILED', self.run_stage('verification')['status'])
 
+    def test_generated_tests_may_not_use_unapproved_project_types_or_undeclared_libraries(self):
+        # given
+        self.put('src/main/java/com/acme/App.java', 'package com.acme;\n@SpringBootApplication\nclass App {}\n')
+        self.agent_input()
+        self.run_stage('baseline')
+        result = self.generated()
+        result['output']['changes'][0]['content'] = ('package com.acme;\nimport com.acme.App;\nimport com.acme.member.PasswordPort;\n'
+                                                     'import static com.acme.member.Clocks.FIXED;\n'
+                                                     'import org.springframework.security.crypto.bcrypt.BCrypt;\nclass NewTest {}\n')
+        # when
+        with patch.object(controller.agent, 'run', return_value=result), \
+                patch.object(controller.Controller, '_write') as write, self.assertRaises(ValueError):
+            self.run_stage('generate-tests')
+        # then
+        write.assert_not_called()
+        detail = controller.regression.read_json(self.project/'build/session/agent-test-writing.json')['detail']
+        self.assertIn('com.acme.member.Clocks, com.acme.member.PasswordPort', detail)
+        self.assertNotIn('com.acme.App', detail)
+        self.assertIn('org.springframework.security', detail)
+
+    def test_test_writer_sees_the_approved_production_files(self):
+        self.agent_input()
+        self.run_stage('baseline')
+        with patch.object(controller.agent, 'run', return_value=self.generated()) as run, \
+                patch.object(controller.Controller, '_write', side_effect=self.writer):
+            self.run_stage('generate-tests')
+        task = json.loads(run.call_args[0][2].rsplit('\n', 1)[1])
+        scope = controller.regression.read_json(self.project/'scope.json')['files']
+        self.assertEqual([path for path in scope if path.startswith('src/main/')], task['approvedProductionFiles'])
+        self.assertTrue(task['approvedProductionFiles'])
+
+    def test_unfinished_implementation_call_can_be_retried_in_the_same_session(self):
+        # given: tests accepted, then the implementation model stops with a question
+        self.agent_input()
+        self.run_stage('baseline')
+        with patch.object(controller.agent, 'run', return_value=self.generated()), \
+                patch.object(controller.Controller, '_write', side_effect=self.writer):
+            self.run_stage('generate-tests')
+        question = {'version': 1, 'status': 'NEEDS_REVIEW', 'failureKind': 'AMBIGUITY'}
+        with patch.object(controller.agent, 'run', return_value=question):
+            self.assertEqual('NEEDS_REVIEW', self.run_stage('generate-implementation')['status'])
+        state = controller.regression.read_json(self.state)
+        self.assertEqual(('STALE', 'implementation'), (state['phase'], state['generationStage']))
+        # when
+        result = self.generated('src/main/Service.java')
+        result['output'].update(changes=[], requirementTestMap=[], expectedFailures=[])
+        with patch.object(controller.agent, 'run', return_value=result):
+            retried = self.run_stage('generate-implementation')
+        # then
+        self.assertEqual('COMPLETED', retried['status'])
+        self.assertEqual('IMPLEMENTATION', controller.regression.read_json(self.state)['phase'])
+
+    def test_generated_tests_calling_a_missing_library_member_are_rejected_before_writing(self):
+        # given: compiling the proposed tests reports a missing project class (expected) and a missing AssertJ method
+        self.agent_input()
+        self.put('gradlew', '''#!/bin/sh
+case "$*" in *compileTestJava*)
+  test -f src/test/NewTest.java || exit 0
+  echo "$PWD/src/test/NewTest.java:3: error: cannot find symbol"
+  echo "  symbol:   class Service"
+  echo "  location: class NewTest"
+  echo "$PWD/src/test/NewTest.java:9: error: cannot find symbol"
+  echo "  symbol:   method isCompatibleWith(MediaType)"
+  echo "  location: class ObjectAssert<MediaType>"
+  exit 1;;
+esac
+''' + (self.project/'gradlew').read_text().split('\n', 1)[1])
+        self.run_stage('baseline')
+        # when
+        with patch.object(controller.agent, 'run', return_value=self.generated()), \
+                patch.object(controller.Controller, '_write') as write, self.assertRaises(ValueError):
+            self.run_stage('generate-tests')
+        # then
+        write.assert_not_called()
+        detail = controller.regression.read_json(self.project/'build/session/agent-test-writing.json')['detail']
+        self.assertIn('NewTest.java:9 method isCompatibleWith(MediaType) is not a member of ObjectAssert', detail)
+        self.assertNotIn('Service', detail)
+
     def test_test_writing_rejects_production_change_before_writer(self):
         self.run_stage('baseline')
         with patch.object(controller.Controller, '_write') as write:

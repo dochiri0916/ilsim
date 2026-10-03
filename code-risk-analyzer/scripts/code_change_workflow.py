@@ -9,9 +9,11 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import shutil
 import signal
 import sys
 import subprocess
+import re
 import tempfile
 import time
 import math
@@ -34,6 +36,42 @@ quality = module('quality_gate')
 calibration = module('calibrate_jev')
 service_adapter = module('service_adapter')
 FIXTURE_PROJECT = Path(__file__).resolve().parents[1]/'integration-fixtures/spring-risk-sample'
+IMPORT = re.compile(r'^\s*import\s+(static\s+)?([\w.]+)\s*;', re.M)
+# Libraries generated tests tend to reach for, and the build-file text that shows the project declares them.
+LIBRARIES = (('org.springframework.security.', re.compile(r'security')), ('org.testcontainers.', re.compile(r'testcontainers')),
+             ('io.jsonwebtoken.', re.compile(r'jjwt')), ('org.springframework.data.redis.', re.compile(r'redis')),
+             ('org.springframework.kafka.', re.compile(r'kafka')), ('com.querydsl.', re.compile(r'querydsl')),
+             ('org.mindrot.', re.compile(r'jbcrypt')))
+
+
+JAVAC_ERROR = re.compile(r'^(\S+\.java):(\d+): error: (.+)$')
+PROBE_INIT = """allprojects {
+    tasks.withType(JavaCompile).configureEach { options.compilerArgs += ['-Xmaxerrs', '10000'] }
+}
+"""
+
+
+def library_misuse(output, project_types):
+    """javac errors for a method or field that a non-project type lacks, e.g. an assertion AssertJ does not have.
+
+    Tests are compiled before their production code exists, so errors about project types are expected; an unknown
+    member of a library type is not, and no implementation can fix it.
+    """
+    lines, errors = output.splitlines(), []
+    for index, line in enumerate(lines):
+        match = JAVAC_ERROR.match(line.strip())
+        if not match or match.group(3) != 'cannot find symbol':
+            continue
+        block = lines[index + 1:index + 6]
+        symbol = next((item.split(':', 1)[1].strip() for item in block if item.strip().startswith('symbol:')), '')
+        location = next((item.split(':', 1)[1].strip() for item in block if item.strip().startswith('location:')), '')
+        if not symbol.startswith(('method ', 'variable ')) or not location:
+            continue
+        owner = location.rsplit(' of type ', 1)[1] if ' of type ' in location else location.split(' ', 1)[-1]
+        owner = owner.split('<', 1)[0].rsplit('.', 1)[-1].strip()
+        if owner and owner not in project_types:
+            errors.append(f'{Path(match.group(1)).name}:{match.group(2)} {symbol} is not a member of {owner}')
+    return errors
 
 
 class RepairStop(ValueError):
@@ -378,16 +416,32 @@ class Controller:
             accepted = regression.read_json(path)['output']['requirementTestMap']
         instructions = ('Create implementation-independent tests for every requirement scenario. Include expected pre-implementation failures. '
                         'Test IDs must be class#exact JUnit XML reported name: use the literal @DisplayName text if present, otherwise the method name. '
-                        'Return requirementTestMap and expectedFailures. Do not change production code.' if stage == 'test-writing' else
+                        'Return requirementTestMap and expectedFailures. Do not change production code. '
+                        # Tests come first, so they define the shape of code that does not exist yet.
+                        'You decide the public API of production types that do not exist yet: their package (from the approved '
+                        'files), constructors or factories, method signatures, accessors, exception types and messages. Follow '
+                        'the repository rules and existing code, choose conventional names, and use them consistently. This is '
+                        'not ambiguity; return NEEDS_REVIEW only when a business rule or observable outcome (input rules, '
+                        'status codes, results) is undecided by the requirements. allowedFiles are the test files you write; use only '
+                        'production types whose files are listed in approvedProductionFiles or already exist (implementation may '
+                        'create nothing else), and only the JDK and '
+                        'dependencies the build already declares.' if stage == 'test-writing' else
                         'Implement the minimum change satisfying the accepted tests and requirements. Do not change any test. '
+                        'Production types must match exactly the packages, signatures, exception types and messages the tests use. '
                         'Return empty requirementTestMap and expectedFailures; empty changes are allowed if no fix is needed.')
         task = {'stage': stage, 'requirements': requirements, 'allowedFiles': allowed,
                 'contextFiles': context, 'acceptedTests': accepted}
+        if stage == 'test-writing':
+            # Tests define the production types implementation will create, so the writer must see those files.
+            task['approvedProductionFiles'] = [path for path in self.scope['files'] if path.startswith('src/main/')]
         if self.repair_active:
             task['failureHistory'] = [item['classification'] for item in self.state['repair']['history']]
         prompt = ('Return JSON conforming to the supplied output schema. Propose complete file contents only; do not edit files or run tools. '
                   'Follow the provided repository rules. Do not invent observable behavior, weaken assertions, suppress findings, '
-                  'or include credentials. If the contract is ambiguous, return NEEDS_REVIEW with unknowns and no changes.\n'
+                  'or include credentials. If the contract is ambiguous, return NEEDS_REVIEW with unknowns and no changes. '
+                  # A COMPLETED result with any unknown is rejected, and models tend to add notes like "tests not run".
+                  'With status COMPLETED, unknowns must be empty: the tool compiles and runs the code itself, so never '
+                  'note that you did not compile, run or verify something.\n'
                   + instructions + '\n' + json.dumps(task, ensure_ascii=False))
         if len(prompt.encode()) > agent.MAX_OUTPUT_BYTES:
             raise ValueError('Agent context too large; narrow the approved scope')
@@ -449,8 +503,8 @@ class Controller:
             current_prompt = prompt
             if attempts:
                 current_prompt += '\nPrior output failed its response contract. Correct the reported contract failure while preserving the requirements, tests and scope.\n'
-                current_prompt += json.dumps({'failureHistory': [{key: item[key] for key in ('number', 'status', 'failureKind')}
-                                                                 for item in attempts]})
+                current_prompt += json.dumps({'failureHistory': [{key: item[key] for key in ('number', 'status', 'failureKind', 'detail')
+                                                                  if key in item} for item in attempts]})
             if len(current_prompt.encode()) > agent.MAX_OUTPUT_BYTES:
                 self._invalidate('Retry context exceeds size limit', 'SOURCES')
                 return {'status': 'NEEDS_REVIEW', 'agentStatus': 'INPUT_LIMIT'}
@@ -481,6 +535,8 @@ class Controller:
                         raise ValueError('Agent proposed changes outside the stage scope')
                     if stage == 'test-writing':
                         self._validate_generated_tests(output, requirements)
+                        self._validate_test_references(output)
+                        self._compile_probe(output)
                         if not output['changes']:
                             raise ValueError('Test generation requires changes')
                     elif output['requirementTestMap'] or output['expectedFailures']:
@@ -488,12 +544,14 @@ class Controller:
                 except (ValueError, KeyError, TypeError) as error:
                     rejected = True
                     scope_rejected = scope_rejected or isinstance(error, agent.OutputScopeError)
-                    result.pop('output', None)
+                    result['rejectedOutput'] = result.pop('output', None)
                     result.update(status='INVALID_OUTPUT', failureKind='SCOPE' if scope_rejected else 'OUTPUT_CONTRACT',
-                                  reason='Agent change contract rejected')
+                                  reason='Agent change contract rejected', detail=f'{type(error).__name__}: {error}'[:500])
             prompt_hash = hashlib.sha256(current_prompt.encode()).hexdigest()
             summary = {'number': attempt + 1, 'status': result['status'], 'failureKind': result.get('failureKind', ''),
                        'promptSha256': prompt_hash}
+            if result.get('detail'):
+                summary['detail'] = result['detail']
             for key in ('attemptId', 'provider', 'model', 'reasoningEffort', 'usage', 'durationSeconds'):
                 if key in result:
                     summary[key] = result[key]
@@ -542,6 +600,69 @@ class Controller:
         if inputs != self.state['inputs'] or current_sources != sources:
             self._invalidate('Inputs changed during agent generation', 'INPUTS')
             raise ValueError('Generation inputs drifted')
+
+    def _validate_test_references(self, output):
+        """Tests may only use project types the approved scope or the project provides, and declared libraries.
+
+        Otherwise implementation is asked to satisfy tests it is not allowed to (types outside its files, a dependency
+        it cannot add) and can only stop.
+        """
+        base = module('convention_templates').base_package(self.project)
+        build = '\n'.join(path.read_text(encoding='utf-8', errors='replace')
+                          for path in (self.project/'build.gradle', self.project/'build.gradle.kts') if path.is_file())
+        written = {change['path'] for change in output['changes']}
+        missing, libraries = set(), set()
+        for change in output['changes']:
+            for static, name in IMPORT.findall(change['content']):
+                if name.endswith('.*'):
+                    continue
+                if base and name.startswith(base + '.'):
+                    parts = name.split('.')
+                    # A static import names a member; the type is the last capitalized segment.
+                    while static and parts and not parts[-1][:1].isupper():
+                        parts.pop()
+                    while len(parts) > 1 and parts[-2][:1].isupper():
+                        parts.pop()  # nested type: the file is named after the outer type
+                    relative = '/'.join(parts) + '.java'
+                    paths = ('src/main/java/' + relative, 'src/test/java/' + relative)
+                    if not any((self.project/path).is_file() or path in self.scope['files'] or path in written for path in paths):
+                        missing.add('.'.join(parts))
+                for prefix, declared in LIBRARIES:
+                    if name.startswith(prefix) and not declared.search(build):
+                        libraries.add(prefix.rstrip('.'))
+        problems = []
+        if missing:
+            problems.append('tests use project types that are neither in the project nor in the approved files '
+                            '(use an approved type instead, or put the logic in one): ' + ', '.join(sorted(missing)))
+        if libraries:
+            problems.append('tests use libraries the build does not declare (use the JDK or a declared dependency): '
+                            + ', '.join(sorted(libraries)))
+        if problems:
+            raise ValueError('; '.join(problems))
+
+    def _compile_probe(self, output):
+        """Compile the proposed tests in a copy of the project; reject library members that do not exist."""
+        if not (self.project/'gradlew').is_file():
+            return
+        names = {path.stem for path in self.project.glob('src/*/java/**/*.java')}
+        names |= {Path(path).stem for path in self.scope['files']} | {Path(change['path']).stem for change in output['changes']}
+        with tempfile.TemporaryDirectory(prefix='code-risk-probe-') as directory:
+            copy = Path(directory)/'project'
+            shutil.copytree(self.project, copy, symlinks=True, ignore=shutil.ignore_patterns('build', '.gradle', '.git'))
+            for change in output['changes']:
+                target = copy/change['path']
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(change['content'])
+            (copy/'probe.init.gradle').write_text(PROBE_INIT)
+            try:
+                result = subprocess.run(['./gradlew', '-I', 'probe.init.gradle', 'compileTestJava', '--no-daemon', '-q'],
+                                        cwd=copy, capture_output=True, text=True, timeout=600)
+            except (OSError, subprocess.TimeoutExpired):
+                return  # The probe only adds feedback; verification still compiles everything.
+        errors = library_misuse(result.stdout + '\n' + result.stderr, names)
+        if errors:
+            raise ValueError('tests use members that do not exist in these library types (use a real API): '
+                             + '; '.join(errors[:10]))
 
     def _validate_generated_tests(self, output, requirements):
         expected = {(req, scenario) for req, data in requirements['requirements'].items() for scenario in data['scenarios']}

@@ -16,6 +16,26 @@ class ArchUnitArchitectureValidatorTest {
     File tempDir
 
     @Test
+    @DisplayName('읽지 못한 클래스 파일이 있으면 검증을 통과시키지 않는다')
+    void rejectsClassFilesArchUnitCannotRead() {
+        // given: a class file from a newer Java version than the bundled bytecode reader supports
+        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
+        File classFile = new File(tempDir, 'classes/com/example/order/domain/Order.class')
+        classFile.parentFile.mkdirs()
+        classFile.bytes = [0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x7F, 0x00, 0x01] as byte[]
+
+        // when
+        List<String> violations = ArchUnitArchitectureValidator.validate(
+                project,
+                new HexagonalConventionExtension(),
+                [new File(tempDir, 'classes')]
+        )
+
+        // then
+        assert violations.any { it.contains('could not read compiled classes') && it.contains('com.example.order.domain.Order') }
+    }
+
+    @Test
     @DisplayName('컴파일된 Application 클래스의 Adapter 의존을 거부한다')
     void rejectsCompiledApplicationDependencyOnAdapter() {
         // given

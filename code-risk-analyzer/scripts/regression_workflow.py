@@ -79,8 +79,11 @@ def validate_plan(plan):
 
 
 def validate_tests(tests, allow_empty=False):
-    if not isinstance(tests, list) or (not tests and not allow_empty) or any(not isinstance(t, str) or not re.fullmatch(r'[A-Za-z_$][\w.$]*#[A-Za-z_$][\w$]*', t) for t in tests) or len(tests) != len(set(tests)):
-        raise ValueError('Tests must be distinct Class#method identifiers')
+    # The JUnit XML name: the method name, or the literal @DisplayName (convention projects use Korean sentences).
+    if not isinstance(tests, list) or (not tests and not allow_empty) or any(
+            not isinstance(t, str) or not re.fullmatch(r'[A-Za-z_$][\w.$]*#[^\s#][^\r\n#]*', t) or t != t.rstrip() for t in tests) \
+            or len(tests) != len(set(tests)):
+        raise ValueError('Tests must be distinct Class#name identifiers')
 
 
 def source_hashes(project):
