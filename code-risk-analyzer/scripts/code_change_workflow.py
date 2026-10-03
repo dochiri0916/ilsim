@@ -9,6 +9,7 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import shutil
 import signal
 import sys
 import subprocess
@@ -41,6 +42,36 @@ LIBRARIES = (('org.springframework.security.', re.compile(r'security')), ('org.t
              ('io.jsonwebtoken.', re.compile(r'jjwt')), ('org.springframework.data.redis.', re.compile(r'redis')),
              ('org.springframework.kafka.', re.compile(r'kafka')), ('com.querydsl.', re.compile(r'querydsl')),
              ('org.mindrot.', re.compile(r'jbcrypt')))
+
+
+JAVAC_ERROR = re.compile(r'^(\S+\.java):(\d+): error: (.+)$')
+PROBE_INIT = """allprojects {
+    tasks.withType(JavaCompile).configureEach { options.compilerArgs += ['-Xmaxerrs', '10000'] }
+}
+"""
+
+
+def library_misuse(output, project_types):
+    """javac errors for a method or field that a non-project type lacks, e.g. an assertion AssertJ does not have.
+
+    Tests are compiled before their production code exists, so errors about project types are expected; an unknown
+    member of a library type is not, and no implementation can fix it.
+    """
+    lines, errors = output.splitlines(), []
+    for index, line in enumerate(lines):
+        match = JAVAC_ERROR.match(line.strip())
+        if not match or match.group(3) != 'cannot find symbol':
+            continue
+        block = lines[index + 1:index + 6]
+        symbol = next((item.split(':', 1)[1].strip() for item in block if item.strip().startswith('symbol:')), '')
+        location = next((item.split(':', 1)[1].strip() for item in block if item.strip().startswith('location:')), '')
+        if not symbol.startswith(('method ', 'variable ')) or not location:
+            continue
+        owner = location.rsplit(' of type ', 1)[1] if ' of type ' in location else location.split(' ', 1)[-1]
+        owner = owner.split('<', 1)[0].rsplit('.', 1)[-1].strip()
+        if owner and owner not in project_types:
+            errors.append(f'{Path(match.group(1)).name}:{match.group(2)} {symbol} is not a member of {owner}')
+    return errors
 
 
 class RepairStop(ValueError):
@@ -481,6 +512,7 @@ class Controller:
                     if stage == 'test-writing':
                         self._validate_generated_tests(output, requirements)
                         self._validate_test_references(output)
+                        self._compile_probe(output)
                         if not output['changes']:
                             raise ValueError('Test generation requires changes')
                     elif output['requirementTestMap'] or output['expectedFailures']:
@@ -582,6 +614,30 @@ class Controller:
                             + ', '.join(sorted(libraries)))
         if problems:
             raise ValueError('; '.join(problems))
+
+    def _compile_probe(self, output):
+        """Compile the proposed tests in a copy of the project; reject library members that do not exist."""
+        if not (self.project/'gradlew').is_file():
+            return
+        names = {path.stem for path in self.project.glob('src/*/java/**/*.java')}
+        names |= {Path(path).stem for path in self.scope['files']} | {Path(change['path']).stem for change in output['changes']}
+        with tempfile.TemporaryDirectory(prefix='code-risk-probe-') as directory:
+            copy = Path(directory)/'project'
+            shutil.copytree(self.project, copy, symlinks=True, ignore=shutil.ignore_patterns('build', '.gradle', '.git'))
+            for change in output['changes']:
+                target = copy/change['path']
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(change['content'])
+            (copy/'probe.init.gradle').write_text(PROBE_INIT)
+            try:
+                result = subprocess.run(['./gradlew', '-I', 'probe.init.gradle', 'compileTestJava', '--no-daemon', '-q'],
+                                        cwd=copy, capture_output=True, text=True, timeout=600)
+            except (OSError, subprocess.TimeoutExpired):
+                return  # The probe only adds feedback; verification still compiles everything.
+        errors = library_misuse(result.stdout + '\n' + result.stderr, names)
+        if errors:
+            raise ValueError('tests use members that do not exist in these library types (use a real API): '
+                             + '; '.join(errors[:10]))
 
     def _validate_generated_tests(self, output, requirements):
         expected = {(req, scenario) for req, data in requirements['requirements'].items() for scenario in data['scenarios']}

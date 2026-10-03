@@ -702,6 +702,32 @@ echo artifact > build/libs/service.jar
         self.assertEqual('COMPLETED', retried['status'])
         self.assertEqual('IMPLEMENTATION', controller.regression.read_json(self.state)['phase'])
 
+    def test_generated_tests_calling_a_missing_library_member_are_rejected_before_writing(self):
+        # given: compiling the proposed tests reports a missing project class (expected) and a missing AssertJ method
+        self.agent_input()
+        self.put('gradlew', '''#!/bin/sh
+case "$*" in *compileTestJava*)
+  test -f src/test/NewTest.java || exit 0
+  echo "$PWD/src/test/NewTest.java:3: error: cannot find symbol"
+  echo "  symbol:   class Service"
+  echo "  location: class NewTest"
+  echo "$PWD/src/test/NewTest.java:9: error: cannot find symbol"
+  echo "  symbol:   method isCompatibleWith(MediaType)"
+  echo "  location: class ObjectAssert<MediaType>"
+  exit 1;;
+esac
+''' + (self.project/'gradlew').read_text().split('\n', 1)[1])
+        self.run_stage('baseline')
+        # when
+        with patch.object(controller.agent, 'run', return_value=self.generated()), \
+                patch.object(controller.Controller, '_write') as write, self.assertRaises(ValueError):
+            self.run_stage('generate-tests')
+        # then
+        write.assert_not_called()
+        detail = controller.regression.read_json(self.project/'build/session/agent-test-writing.json')['detail']
+        self.assertIn('NewTest.java:9 method isCompatibleWith(MediaType) is not a member of ObjectAssert', detail)
+        self.assertNotIn('Service', detail)
+
     def test_test_writing_rejects_production_change_before_writer(self):
         self.run_stage('baseline')
         with patch.object(controller.Controller, '_write') as write:

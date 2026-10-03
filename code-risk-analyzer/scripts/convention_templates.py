@@ -49,6 +49,14 @@ REQUIRES = (
     (('jakarta.servlet.', 'org.springframework.web.', 'org.springframework.http.', 'org.springframework.mock.web.'),
      re.compile(r'starter-web(?:mvc)?\b(?!flux)')),
 )
+# Rules generated code broke in real runs although the templates show them.
+PITFALLS = (
+    '- final 필드를 주입받는 Spring 컴포넌트(Service, Adapter, Controller)는 생성자를 직접 쓰지 않고 `@RequiredArgsConstructor`를 붙인다.',
+    '- 도메인 record에서 원시 값(String, long 등)은 값 하나만 가진 VO(`Isbn(String value)`)에만 둔다. 값이 둘 이상이면 각각을 VO로 감싼다.',
+    '- String 값을 가진 도메인 record는 compact constructor에서 null과 blank를 모두 검사한다.',
+    '- 식별자 VO를 가진 Aggregate는 id로 `equals`와 `hashCode`를 재정의한다.',
+    '- AssertJ와 Spring 테스트 API는 실제로 있는 메서드만 쓴다(응답 Content-Type은 문자열로 `contains("application/json")`처럼 검사한다).',
+)
 PROPERTIES = (
     # Application Services are final classes, so transactions need interface (JDK) proxies.
     ('spring.aop.proxy-target-class', 'false', None),
@@ -70,7 +78,7 @@ def guidance(examples=True):
              f'`{BASE}`는 프로젝트의 기본 패키지, `book`/`Book`은 이번 Context 이름으로 바꿔 같은 모양으로 만든다. '
              'Production 클래스마다 테스트를 둔다. `global` 아래 타입은 프로젝트에 없으면 실행 전에 도구가 넣어 주므로 '
              '만들거나 바꿀 파일에 넣지 않고 그대로 사용한다.', '', '```text']
-    parts += paths + ['```']
+    parts += paths + ['```', '', '자주 걸리는 규칙 (틀에 이미 있는 모양):', *PITFALLS]
     if examples:
         for name in EXAMPLES:
             path = TEMPLATES/'src'/name

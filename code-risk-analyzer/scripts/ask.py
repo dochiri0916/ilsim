@@ -466,7 +466,7 @@ def execute(value, confirmed, run, options=None):
                 return code
         if code:
             print(f'{stage} 단계가 종료 코드 {code}로 멈췄습니다 (1 실패, 2 거부, 3 검토 필요)')
-            for line in stop_reason(state.parent, started):
+            for line in stop_reason(state.parent, started) + compile_errors(state.parent, started):
                 print(line)
             return code
     return 0
@@ -512,6 +512,25 @@ def stop_reason(directory, since):
     return []
 
 
+def compile_errors(directory, since, run=subprocess.run):
+    """When verification found no JUnit results, compile again and show the javac errors (to the person only)."""
+    try:
+        path = Path(directory)/'after.json'
+        if path.stat().st_mtime < since - 1:
+            return []
+        after = json.loads(path.read_text(encoding='utf-8'))
+        if not after.get('evidenceError'):
+            return []
+        project = Path(after['project'])
+        result = run(['./gradlew', 'compileTestJava', '--no-daemon', '-q'], cwd=project, capture_output=True, text=True,
+                     timeout=600)
+    except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired):
+        return []
+    errors = [line.strip().replace(str(project) + '/', '') for line in (result.stdout + '\n' + result.stderr).splitlines()
+              if re.search(r'\.java:\d+: error:', line)]
+    return ['컴파일 오류:'] + ['- ' + line for line in errors[:10]] if errors else []
+
+
 CONVENTION_FIX_ROUNDS = 2
 CONVENTION_SKIPPED = '컨벤션 검증을 실행하지 못해 건너뜁니다 (install.sh로 build-convention을 설치하면 함께 검사)'
 CONVENTION_STOP = ('컨벤션 검증에서 멈췄습니다. 남은 위반을 고친 뒤 "검증 다시 해줘"로 다시 확인하세요 '
@@ -534,8 +553,8 @@ def provide_globals(value):
 def _convention_gate(value, run):
     """Check every convention; fix the scope's production files and re-check up to CONVENTION_FIX_ROUNDS times.
 
-    Returns (exit code, recheck). Failing tests or compilation are verification's to report, so the gate steps
-    aside and asks for one final check once verification passes.
+    Returns (exit code, recheck). Failing tests or compilation are verification's to report, so once the other
+    violations are fixed (or cannot be) the gate steps aside and asks for one final check after verification passes.
     """
     session = Path(value['convention']['session'])
     for attempt in range(CONVENTION_FIX_ROUNDS + 1):
@@ -551,10 +570,14 @@ def _convention_gate(value, run):
             failing = {name for name, status in _read(session/f'convention-{label}.json')['checks'].items() if status == 'FAIL'}
         except (OSError, ValueError, KeyError, AttributeError):
             failing = set()
-        if failing & {'tests', 'compilation'}:
+        broken = bool(failing & {'tests', 'compilation'})
+        # Other violations (e.g. architecture) are still fixed while a test does not compile; they are unrelated.
+        if broken and (attempt == CONVENTION_FIX_ROUNDS or not failing - {'tests', 'compilation'}):
             return 0, True
         if attempt == CONVENTION_FIX_ROUNDS or run([sys.executable, str(SCRIPTS/'convention_fix.py'), '--session', str(session),
                                                     '--mode', 'implementation', '--report', str(session/f'convention-{label}.json')]):
+            if broken:
+                return 0, True
             break
     print(CONVENTION_STOP)
     return 1, False
