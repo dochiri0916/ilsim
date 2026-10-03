@@ -673,6 +673,40 @@ class ZeroConfigTests(unittest.TestCase):
             ask.main(['--project', str(self.project)])
 
 
+class UpdateTests(unittest.TestCase):
+    class Updated(Exception):
+        pass
+
+    def updated_with(self, argv):
+        seen = []
+
+        def update(arguments):
+            seen.append(arguments)
+            raise self.Updated()
+
+        def draft(*arguments, **options):
+            raise self.Updated()  # past the update point: stop before any model call
+        with tempfile.TemporaryDirectory() as folder, redirect_stdout(io.StringIO()):
+            try:
+                ask.main([*argv, '--project', folder, '--no-jev'], call=draft, update=update)
+            except self.Updated:
+                pass
+        return seen
+
+    def test_new_requests_update_first_with_the_same_arguments(self):
+        # given / when
+        seen = self.updated_with(['회원 가입 기능 추가해줘'])
+        # then: the restarted process gets exactly what was typed
+        self.assertEqual([['회원 가입 기능 추가해줘', '--project', seen[0][2], '--no-jev']], seen)
+        self.assertEqual(1, len(self.updated_with(['결제 코드 위험 분석해줘'])))
+        self.assertEqual(1, len(self.updated_with(['무슨 말인지 모를 문장'])))
+
+    def test_continuing_a_session_keeps_the_version_that_started_it(self):
+        for argv in (['--yes'], ['이어서 진행해'], ['검증 다시 해줘'], ['PR 올려줘'], ['기능 추가해줘', '--no-update']):
+            with self.subTest(argv=argv):
+                self.assertEqual([], self.updated_with(argv))
+
+
 class ExampleSettingsTests(unittest.TestCase):
     def test_example_settings_are_valid_and_free_of_forbidden_models(self):
         router_spec = importlib.util.spec_from_file_location('model_router', Path(__file__).resolve().parents[1]/'model_router.py')

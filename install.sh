@@ -42,6 +42,10 @@ echo "2/4 code-risk-analyzer 빌드"
 
 echo "3/4 build-convention 빌드 후 로컬 Maven 저장소(~/.m2)에 설치"
 (cd "$ROOT/build-convention" && ./gradlew clean publishToMavenLocal --no-daemon -q) || fail "build-convention 빌드 실패"
+# ask pulls and rebuilds on its own after this; record what was just built so the first request does not rebuild.
+if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  python3 "$ROOT/code-risk-analyzer/scripts/self_update.py" --mark-built || note "자동 업데이트 기록을 남기지 못했습니다"
+fi
 
 echo "4/4 ask, ask-remote 명령 설치: $BIN"
 mkdir -p "$BIN"
@@ -76,4 +80,5 @@ if [ "$AGENT_HINT" = true ]; then
   done
 fi
 
+echo "자동 업데이트: ask가 새 요청마다(최대 10분에 한 번) 이 폴더를 git pull하고 바뀐 쪽만 다시 빌드합니다 (끄기: --no-update 또는 ASK_NO_UPDATE=1)"
 echo "완료. Gradle 프로젝트 폴더에서: ask \"회원 가입 기능 추가해줘\" → 초안 확인 → ask --yes"
