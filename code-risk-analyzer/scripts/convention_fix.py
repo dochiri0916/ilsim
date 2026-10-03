@@ -1,7 +1,7 @@
 """Fix convention violations with a low-tier model, only in the files a convention report names (convention on).
 
 cleanup: before a change starts, existing files are fixed directly; the project's tests must still pass, otherwise
-every file is restored. This runs before the regression baseline, so the session plan is refreshed with the test
+every file is restored, the fix is kept as cleanup-rejected-<n>.json and the model gets one more try with the failure. This runs before the regression baseline, so the session plan is refreshed with the test
 names as they now stand (a fixed test may gain a @DisplayName).
 
 implementation: after generation, production files of the approved scope are fixed through the workflow's own
@@ -13,6 +13,7 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,9 @@ FIX_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['sta
                                            'properties': {'path': TEXT, 'content': TEXT}}},
     'unknowns': {'type': 'array', 'items': TEXT}}}
 TEST_COMMAND = ['./gradlew', 'cleanTest', 'test', '--no-daemon']
+# A cleanup that breaks the tests gets one more try with the failure, then stops.
+CLEANUP_ATTEMPTS = 2
+FAILURE_LINES = re.compile(r'error:|FAILED|Exception|Caused by|expected|but was', re.I)
 
 
 def _module(name):
@@ -65,9 +69,10 @@ def validator(files):
     return validate
 
 
-def prompt(project, report, files, guidance, production=False):
+def prompt(project, report, files, guidance, production=False, feedback=None):
     parts = ['Fix the listed convention violations in existing Java files. Change nothing else: keep behavior, public '
-             'APIs and what every test checks. A test may gain a Korean @DisplayName, given/when/then comments and an '
+             'APIs and what every test checks. Keep class names, packages, class-level annotations and modifiers as they '
+             'are (a Spring @Configuration or @SpringBootApplication class must not become final). A test may gain a Korean @DisplayName, given/when/then comments and an '
              'assertion on an observable result, but never lose an assertion. Use spaces, not tabs, for indentation. '
              'Return the complete new content of each file you change, only from the listed files. If a violation '
              'cannot be fixed without changing behavior, return NEEDS_REVIEW with the reason in unknowns. '
@@ -79,14 +84,16 @@ def prompt(project, report, files, guidance, production=False):
         parts += ['', 'Project conventions:', guidance]
     for path in files:
         parts += ['', f'--- {path} ---', (project/path).read_text(encoding='utf-8', errors='replace')]
+    if feedback:
+        parts += ['', 'Your previous fix was undone because: ' + feedback, 'Return a corrected fix of the original files above.']
     return '\n'.join(parts)
 
 
-def propose(project, report, files, model_configs, call, guidance, production=False):
+def propose(project, report, files, model_configs, call, guidance, production=False, feedback=None):
     """The first valid fix among the tier's routes, or a NEEDS_REVIEW/FAILED result dict."""
     for config in model_configs:
         with tempfile.TemporaryDirectory(prefix='code-risk-fix-') as workspace:
-            result = call(config, str(Path(workspace).resolve()), prompt(project, report, files, guidance, production),
+            result = call(config, str(Path(workspace).resolve()), prompt(project, report, files, guidance, production, feedback),
                           FIX_SCHEMA, validator(files))
         if result['status'] == 'NEEDS_REVIEW':
             return {'status': 'NEEDS_REVIEW', 'questions': result['output']['unknowns']}
@@ -121,6 +128,14 @@ def fix_change(project, session, report, model_configs, call, run=subprocess.run
     return {'status': 'COMPLETED', 'files': [change['path'] for change in changes['changes']], 'remaining': remaining}
 
 
+def failure(result, limit=4000):
+    """The lines of a failed Gradle run that say why: compiler errors and failed tests first, then the end."""
+    lines = [line for line in ((result.stdout or '') + '\n' + (result.stderr or '')).splitlines()
+             if line.strip() and 'JAVA_TOOL_OPTIONS' not in line]
+    picked = [line for line in lines if FAILURE_LINES.search(line)][:30] + ['...'] + lines[-30:]
+    return '\n'.join(picked)[-limit:]
+
+
 def restore(project, backup, files):
     for path in files:
         shutil.copyfile(backup/path, project/path)
@@ -138,28 +153,39 @@ def fix(project, session, model_configs, call, run=subprocess.run, guidance=None
     files = targets(project, report)
     if not files:
         return {'status': 'SKIPPED', 'reason': '정리할 기존 위반이 없습니다'}
-    proposal = propose(project, report, files, model_configs, call, guidance)
-    if proposal['status'] != 'COMPLETED':
-        return proposal
-    output = proposal['output']
-    backup = session/'cleanup-original'
-    changed = [change['path'] for change in output['changes']]
-    for path in changed:
-        (backup/path).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(project/path, backup/path)
-    for change in output['changes']:
-        (project/change['path']).write_text(change['content'], encoding='utf-8')
-    tests = run(TEST_COMMAND, cwd=project, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1800)
-    if tests.returncode:
+    feedback, reasons = None, []
+    for attempt in range(1, CLEANUP_ATTEMPTS + 1):
+        proposal = propose(project, report, files, model_configs, call, guidance, feedback=feedback)
+        if proposal['status'] != 'COMPLETED':
+            return proposal
+        output = proposal['output']
+        backup = session/'cleanup-original'
+        changed = [change['path'] for change in output['changes']]
+        for path in changed:
+            (backup/path).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(project/path, backup/path)
+        for change in output['changes']:
+            (project/change['path']).write_text(change['content'], encoding='utf-8')
+        tests = run(TEST_COMMAND, cwd=project, capture_output=True, text=True, timeout=1800)
+        plan_path = session/'plan.json'
+        plan = json.loads(plan_path.read_text(encoding='utf-8'))
+        before = (plan.get('features') or {}).get('existing-tests') or []
+        after = None if tests.returncode else _module('ask_draft').existing_tests(project)
+        if tests.returncode:
+            reason, feedback = '정리 후 기존 테스트가 실패해 원래 코드로 되돌렸습니다', 'the project tests failed:\n' + failure(tests)
+        elif len(after) < len(before):
+            reason = f'정리 후 찾은 기존 테스트가 {len(before)}개에서 {len(after)}개로 줄어 원래 코드로 되돌렸습니다'
+            feedback = f'the files now declare {len(after)} recognizable @Test methods instead of {len(before)}'
+        else:
+            break
         restore(project, backup, changed)
-        return {'status': 'FAILED', 'reason': '정리 후 기존 테스트가 실패해 원래 코드로 되돌렸습니다'}
-    plan_path = session/'plan.json'
-    plan = json.loads(plan_path.read_text(encoding='utf-8'))
-    before = (plan.get('features') or {}).get('existing-tests') or []
-    after = _module('ask_draft').existing_tests(project)
-    if len(after) < len(before):
-        restore(project, backup, changed)
-        return {'status': 'FAILED', 'reason': f'정리 후 찾은 기존 테스트가 {len(before)}개에서 {len(after)}개로 줄어 원래 코드로 되돌렸습니다'}
+        rejected = session/f'cleanup-rejected-{attempt}.json'
+        rejected.write_text(json.dumps({'reason': reason, 'feedback': feedback, 'changes': output['changes']},
+                                       ensure_ascii=False, indent=2), encoding='utf-8')
+        reasons.append(reason)
+    else:
+        return {'status': 'FAILED', 'reason': reasons[-1] + f' ({CLEANUP_ATTEMPTS}번 시도, 거부된 수정안: '
+                + session.relative_to(project).as_posix() + '/cleanup-rejected-*.json)'}
     plan['features'] = {'existing-tests': after}
     plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf-8')
     value = {'status': 'COMPLETED', 'files': changed, 'original': backup.relative_to(project).as_posix()}
