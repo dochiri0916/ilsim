@@ -754,8 +754,11 @@ class LintConventionPlugin implements Plugin<Project> {
     }
 
     private static boolean isTaskExcluded(Project project, String taskName) {
+        String taskPath = project.path == ':' ? ":${taskName}" : "${project.path}:${taskName}"
         boolean excludedByName = project.gradle.startParameter.excludedTaskNames.any { String excludedTaskName ->
-            excludedTaskName == taskName || excludedTaskName.endsWith(":${taskName}")
+            // A qualified -x path only excludes the task of the project it names, not same-named tasks elsewhere.
+            String qualifiedName = excludedTaskName.startsWith(':') ? excludedTaskName : ":${excludedTaskName}"
+            excludedTaskName == taskName || qualifiedName == taskPath
         }
         return excludedByName || isMissingFromTaskGraph(project, taskName)
     }
@@ -779,7 +782,8 @@ class LintConventionPlugin implements Plugin<Project> {
         try {
             return task.onlyIf.isSatisfiedBy(task)
         } catch (Exception ignored) {
-            return true
+            // An onlyIf spec that cannot be evaluated must not count as satisfied.
+            return false
         }
     }
 
@@ -905,7 +909,11 @@ class LintConventionPlugin implements Plugin<Project> {
                 return
             }
 
-            List<File> actualFiles = task.source.files.findAll { File file -> file.isFile() }.toList()
+            List<File> actualFiles = taskSourceFiles(task)
+            if (actualFiles == null) {
+                violations.add("${taskName}: source could not be resolved".toString())
+                return
+            }
             List<File> missingFiles = missingExpectedFiles(expectedFiles, actualFiles)
             if (!missingFiles.isEmpty()) {
                 violations.add("${taskName}: ${limitedRelativeFiles(project, missingFiles)}")
@@ -915,10 +923,16 @@ class LintConventionPlugin implements Plugin<Project> {
     }
 
     private static boolean hasTaskSourceFiles(def task) {
+        List<File> files = taskSourceFiles(task)
+        return files != null && !files.isEmpty()
+    }
+
+    /** Returns null when the task source cannot be resolved, so callers fail closed instead of skipping the check. */
+    private static List<File> taskSourceFiles(def task) {
         try {
-            return !task.source.files.findAll { File file -> file.isFile() }.isEmpty()
+            return task.source.files.findAll { File file -> file.isFile() }.toList()
         } catch (Exception ignored) {
-            return true
+            return null
         }
     }
 
@@ -940,7 +954,7 @@ class LintConventionPlugin implements Plugin<Project> {
                 return ['jacocoTestCoverageVerification']
             }
         } catch (Exception ignored) {
-            return []
+            return ['jacocoTestCoverageVerification']
         }
         return []
     }
