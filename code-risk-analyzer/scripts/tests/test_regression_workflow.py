@@ -216,6 +216,38 @@ echo '<testsuite><testcase classname="PriceTest" name="boundary()"/></testsuite>
             source.write_text('class Main { int changed; }')
             with self.assertRaises(ValueError): workflow.verified_snapshot(project, saved, plan)
 
+    def test_cli_completion_with_caller_service_evidence_needs_review(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory).resolve()
+            (project/'gradle/wrapper').mkdir(parents=True)
+            (project/'gradle/wrapper/gradle-wrapper.properties').write_text('version=9')
+            (project/'src/main').mkdir(parents=True)
+            (project/'src/main/Main.java').write_text('class Main {}')
+            wrapper = project/'gradlew'
+            wrapper.write_text('''#!/bin/sh
+mkdir -p build/test-results/test
+echo '<testsuite><testcase classname="PriceTest" name="boundary()"/></testsuite>' > build/test-results/test/TEST-PriceTest.xml
+''')
+            wrapper.chmod(0o700)
+            plan = {'mode': 'CODE_CHANGE', 'project': str(project), 'database': 'NOT_APPLICABLE', 'newFeatures': {},
+                    'approvedActions': ['BASELINE', 'REGRESSION', 'LOCAL_SERVICE', 'COMPLETE'],
+                    'features': {'price': ['PriceTest#boundary']}}
+            files = {name: project/'build'/(name + '.json') for name in ('plan', 'baseline', 'service', 'open', 'output')}
+            workflow.save(files['plan'], plan)
+            snapshot = workflow.snapshot(project, plan)
+            workflow.save(files['baseline'], snapshot)
+            workflow.save(files['service'], {'status': 'PASSED', 'sources': snapshot['sources'], 'processStopped': True,
+                                             'scenarios': dict.fromkeys(['normal', 'duplicate', 'concurrency', 'rollback'], 'PASSED')})
+            workflow.save(files['open'], [])
+            args = ['regression_workflow.py', 'complete', '--plan', str(files['plan']), '--requirements', '/unused',
+                    '--analyzer', '/unused', '--baseline', str(files['baseline']), '--service', str(files['service']),
+                    '--open-evidence', str(files['open']), '--output', str(files['output'])]
+            with patch('sys.argv', args), patch.object(workflow, 'validate_requirements'):
+                self.assertEqual(3, workflow.main())
+            completion = workflow.read_json(files['output'])['completion']
+            self.assertEqual('NEEDS_REVIEW', completion['status'])
+            self.assertIn('Service evidence was supplied by the caller, not executed by a controller adapter', completion['openEvidence'])
+
 
 if __name__ == '__main__':
     unittest.main()
