@@ -232,6 +232,31 @@ class LintConventionFunctionalTest {
     }
 
     @Test
+    @DisplayName('Java 25 프로젝트도 버전을 바꾸지 않고 전체 검증을 통과한다')
+    void passesCheckOnJava25ProjectWithoutDowngrading() {
+        // given
+        writeReportFixture()
+        new File(tempDir, 'build.gradle') << "\njava { toolchain { languageVersion = JavaLanguageVersion.of(25) } }\n"
+        ['git', '-C', tempDir.absolutePath, '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+         'commit', '-qam', 'java 25'].execute().waitFor()
+
+        // when
+        BuildResult result = runner('check', '-PchangedCoverageBaseRef=HEAD').build()
+
+        // then
+        assert result.task(':check').outcome == TaskOutcome.SUCCESS
+        File compiled = new File(tempDir, 'build/classes/java/main/com/example/GreetingApplication.class')
+        DataInputStream input = new DataInputStream(new FileInputStream(compiled))
+        try {
+            input.readInt()
+            input.readUnsignedShort()
+            assert input.readUnsignedShort() == 69
+        } finally {
+            input.close()
+        }
+    }
+
+    @Test
     void rejectsApplicationIoAndSuppressionComments() {
         writeReportFixture()
         writeJava('com/example/GreetingApplication.java', '''

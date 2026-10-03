@@ -33,7 +33,7 @@ import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
 class LintConventionPlugin implements Plugin<Project> {
-    private static final String LOMBOK_DEPENDENCY = 'org.projectlombok:lombok:1.18.36'
+    private static final String LOMBOK_DEPENDENCY = 'org.projectlombok:lombok:1.18.42'
     private static final List<String> REQUIRED_CHECK_TASK_NAMES = [
             'checkstyleDomain',
             'pmdDomain',
@@ -203,7 +203,7 @@ class LintConventionPlugin implements Plugin<Project> {
             def mainSourceSet = sourceSets.named('main')
 
             project.extensions.configure(JacocoPluginExtension) { JacocoPluginExtension extension ->
-                extension.toolVersion = '0.8.12'
+                extension.toolVersion = '0.8.14'
             }
 
             def jacocoTestReport = project.tasks.named('jacocoTestReport', JacocoReport) { JacocoReport task ->
@@ -1221,13 +1221,11 @@ class LintConventionPlugin implements Plugin<Project> {
     private static void configureJava21Convention(Project project) {
         project.pluginManager.withPlugin('java') {
             JavaPluginExtension javaExtension = project.extensions.findByType(JavaPluginExtension)
-            if (javaExtension != null) {
-                javaExtension.toolchain.languageVersion.set(JavaLanguageVersion.of(21))
-                javaExtension.sourceCompatibility = JavaVersion.VERSION_21
-                javaExtension.targetCompatibility = JavaVersion.VERSION_21
-            }
+            // Java 21 is only the default: a project that declares 21 or newer keeps its own version,
+            // and validateJavaVersionConvention still rejects anything below 21.
+            javaExtension.toolchain.languageVersion.convention(JavaLanguageVersion.of(21))
             project.tasks.withType(JavaCompile).configureEach { JavaCompile task ->
-                task.options.release.set(21)
+                task.options.release.convention(javaExtension.toolchain.languageVersion.map { it.asInt() })
             }
         }
     }
