@@ -4,6 +4,7 @@ import io
 import json
 import re
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -216,6 +217,44 @@ class StopReasonTests(unittest.TestCase):
             self.assertEqual(ask.RETRY_HINT, lines[-1])
             # given: the record is older than the stage
             self.assertEqual([], ask.stop_reason(directory, 10**12))
+
+
+class CompileErrorTests(unittest.TestCase):
+    def test_missing_junit_results_show_the_javac_errors(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            (directory/'after.json').write_text(json.dumps({'project': folder, 'evidenceError': 'No unambiguous fresh JUnit results'}))
+            output = f'{folder}/src/test/java/a/ATest.java:55: error: cannot find symbol\n  symbol: method x()\n'
+            run = lambda command, **kwargs: subprocess.CompletedProcess(command, 1, output, '')
+            self.assertEqual(['컴파일 오류:', '- src/test/java/a/ATest.java:55: error: cannot find symbol'],
+                             ask.compile_errors(directory, 0, run))
+            (directory/'after.json').write_text(json.dumps({'project': folder}))
+            self.assertEqual([], ask.compile_errors(directory, 0, run))
+
+
+class ConventionGateTests(unittest.TestCase):
+    def gate(self, *reports, fix_code=0):
+        with tempfile.TemporaryDirectory() as folder:
+            session, reports, calls = Path(folder), list(reports), []
+
+            def run(command):
+                calls.append(command)
+                if '--output' in command:
+                    checks = reports.pop(0)
+                    Path(command[command.index('--output') + 1]).write_text(json.dumps({'checks': checks}))
+                    return 0 if all(status != 'FAIL' for status in checks.values()) else 1
+                return fix_code
+            value = {'convention': {'session': folder, 'project': folder}}
+            result = ask._convention_gate(value, run)
+        return result, ['--mode' in command for command in calls]
+
+    def test_architecture_is_fixed_while_a_test_does_not_compile(self):
+        broken = {'architecture': 'FAIL', 'compilation': 'FAIL'}
+        self.assertEqual(((0, True), [False, True, False]), self.gate(broken, {'compilation': 'FAIL'}))
+        self.assertEqual(((0, True), [False, True]), self.gate(broken, fix_code=1))
+
+    def test_only_compilation_failing_steps_aside_at_once(self):
+        self.assertEqual(((0, True), [False]), self.gate({'compilation': 'FAIL', 'tests': 'FAIL'}))
 
 
 class SessionTests(unittest.TestCase):
