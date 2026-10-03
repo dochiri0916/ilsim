@@ -19,6 +19,7 @@ ask --yes                     # 실행
 ```
 
 자세한 동작은 [Agent 요약](code-risk-analyzer/docs/AGENT_BRIEF.md)의 "가장 쉬운 사용"을 본다.
+폰에서 상태 보기·요청·승인은 [폰에서 ask 쓰기](code-risk-analyzer/remote/README.md)를 본다 (실행은 PC에서만).
 
 ## 검증
 
