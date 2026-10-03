@@ -2,7 +2,7 @@
 
 `scripts/model_router.py`는 Tier와 Registry·Policy JSON으로 로컬 CLI 모델을 선택한다. Tier는 명시적으로 지정하거나 `scripts/jev_capability.py`의 JEV 판단으로 얻는다. JEV에는 모델 후보·Registry·Policy를 전달하지 않는다. 추가 Python dependency와 외부 ai-router 디렉터리는 사용하지 않는다.
 
-정책에 지정된 모델 선택, JEV의 Tier·위험도 판단, 제한된 생성 오류 escalation과 [검증 실패의 구현 수정 루프](code-change-workflow.md)를 제공한다. 성공 작업당 비용 최적화와 개발 모델 Golden Benchmark·Shadow·Canary 승격은 후속 범위다. 기존 `agent` 직접 선택과 수동 작성 경로도 유지한다.
+정책에 지정된 모델 선택, JEV의 Tier·위험도 판단, 제한된 생성 오류 escalation과 [검증 실패의 구현 수정 루프](code-change-workflow.md)를 제공한다. 성공 작업당 비용은 아래 `cost_report.py`로 측정한다. 측정값을 이용한 자동 비용 최적화와 개발 모델 Golden Benchmark·Shadow·Canary 승격은 후속 범위다. 기존 `agent` 직접 선택과 수동 작성 경로도 유지한다.
 
 ## Registry
 
@@ -210,3 +210,13 @@ python3 scripts/calibrate_jev.py \
 선택한 calibration receipt가 현재 질문·의미 입력 버전·JEV 도구·요청 context·corpus와 일치하지 않거나 기준을 충족하지 않으면 실행을 거부한다. workflow 입력에 receipt와 도구 해시를 포함한다. 운영 호출이 평가와 다른 JEV snapshot을 반환하면 CLI 실행을 차단한다. 초기 12개 작업은 운영 성공률이나 개발 모델의 200개 Golden Benchmark를 증명하는 데이터가 아니다.
 
 최종 의미 입력·위험 기준으로 `jev-1.13.0`을 12개 고정 작업에서 두 번 평가했다. 보정 split은 알려진 판단 14회 중 12회 수락(85.7%), holdout은 알려진 판단 6회 모두 수락했다. 수락한 18회 판단의 Tier·위험도 오판은 0건이며, 불명확한 4회 판단은 모두 차단됐다. 두 평가의 모든 관측을 `build/jev-calibration-current/summary.json`에 포함했다. 낮은 confidence로 중단된 나머지 작업을 자동 재요청하지 않는다. 이 소규모 결과를 일반 업무의 정확도 보장으로 해석하지 않는다.
+
+## 성공 작업당 비용 측정
+
+`agent_runner.py`는 CLI 호출마다 소요 시간과 토큰 사용량 숫자만 기록한다. Codex는 `turn.completed`의 `usage`, Claude는 결과 envelope의 `usage`와 `total_cost_usd`를 읽는다. 입력 토큰은 캐시 읽기·생성을 포함한 값이고 `cachedInputTokens`는 그중 캐시에서 읽은 양이다. provider 응답 본문은 저장하지 않는다. 각 시도 요약(`attempts`)에 provider·model·reasoning effort·usage·소요 시간이 함께 남는다.
+
+```bash
+python3 scripts/cost_report.py /absolute/project/build/change-001 /absolute/project/build/change-002
+```
+
+세션 디렉터리의 `agent-*.json`과 `repair-*/agent-*.json`을 `attemptId`로 중복 없이 모아 전체와 `provider/model/effort`별로 시도·수락·재시도 수, 토큰, 비용, 시간과 **COMPLETED 세션당 토큰·비용**을 출력한다. usage가 없는 과거 시도가 섞이면 세션당 토큰을 계산하지 않고 `attemptsWithoutUsage`로 표시한다. JEV 호출과 사람의 검토 시간은 포함하지 않는다. 비용은 provider가 금액을 보고한 경우(Claude)만 합산하며, 구독 플랜에서는 토큰 수를 사용량 지표로 본다.
