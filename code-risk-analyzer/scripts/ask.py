@@ -4,6 +4,10 @@ With TYPESAFE_API_KEY, JEV reads the request sentence (only the sentence) and mu
 a disagreement or a low-confidence answer stops instead of guessing. New sessions then let JEV capability judge the
 tier from the requirements and code context. Without a key both fall back to keywords and spend no tokens.
 Expensive models and the max reasoning effort are refused for every route a session could reach, including fallbacks.
+
+Run inside any Gradle project with no options and nothing configured there: a code change gets a new session under
+<project>/build/ask, a low-tier model drafts the requirements, plan and scope for approval, and `ask --yes` runs it.
+Models and routing come from config/ask in this checkout unless ~/.config/code-risk holds an override.
 """
 import argparse
 import importlib.util
@@ -13,15 +17,23 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 
 SCRIPTS = Path(__file__).resolve().parent
 WORKFLOW = SCRIPTS/'code_change_workflow.py'
 DEFAULT_JAR = SCRIPTS.parent/'build'/'libs'/'code-risk-analyzer-0.0.1-SNAPSHOT.jar'
 SESSION_CONFIG = 'ask-config.json'
 
-spec = importlib.util.spec_from_file_location('jev_capability', SCRIPTS/'jev_capability.py')
-jev = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(jev)
+
+
+def _module(name):
+    module_spec = importlib.util.spec_from_file_location(name, SCRIPTS/(name + '.py'))
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    return module
+
+
+jev = _module('jev_capability')
 
 FORBIDDEN_MODELS = ('astra', 'fable', 'opus')
 FORBIDDEN_EFFORTS = ('max',)
@@ -278,8 +290,9 @@ def models(config):
     return sorted({model for model, _ in routes})
 
 
-def plan(text, config=None, state=None, project=None, allowed_models=None, judge=None):
-    intent, reason = decide(text, judge)
+def plan(text, config=None, state=None, project=None, allowed_models=None, judge=None, decided=None, convention=False):
+    """decided=(intent, reason) skips classification; convention adds the build-convention check (zero-config runs)."""
+    intent, reason = decided or decide(text, judge)
     result = {'request': text, 'intent': intent, 'reason': reason, 'changesCode': intent not in READ_ONLY,
               'state': str(Path(state).absolute()) if state else None, 'stages': [], 'commands': []}
     loaded = resolve_paths(_read(config), Path(config).absolute().parent) if config else None
@@ -301,6 +314,9 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
         if not target:
             raise ValueError('--project 또는 --config로 대상 프로젝트를 지정하세요')
         result['commands'] = [['java', '-jar', jar, 'scan' if intent == 'ANALYZE' else 'mutation', target]]
+        if intent == 'ANALYZE' and convention:
+            report = Path(target)/'build'/'ask'/'convention-analyze.json'
+            result['commands'].append([sys.executable, str(SCRIPTS/'convention_check.py'), target, '--output', str(report)])
         return result
     if intent == 'RULES':
         result['commands'] = [['java', '-jar', jar, 'rules', *re.findall(r'[A-Z]+-\d{3}', text)[:1]]]
@@ -337,11 +353,13 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
     generator = 'agent' in loaded or 'routing' in loaded
     service = 'fixtureAdapter' in loaded or 'serviceAdapter' in loaded
     result['stages'] = stages(intent, phase, generator, service)
+    if convention:
+        result['convention'] = {'project': _read(loaded['plan'])['project'], 'session': str(state_path.parent)}
     return result
 
 
 def describe(value):
-    lines = [f"요청: {value['request']}", f"판단: {value['intent']} ({value['reason']})"]
+    lines = [f"요청: {value['request'] or '(없음)'}", f"판단: {value['intent']} ({value['reason']})"]
     if value.get('phase') is not None or value['intent'] == 'STATUS':
         lines.append(f"현재 단계: {value.get('phase')}")
     if value['intent'] == 'STATUS':
@@ -368,17 +386,16 @@ def execute(value, confirmed, run, options=None):
     options = options or {}
     print(describe(value))
     if not value['changesCode']:
-        code = 0
-        for command in value['commands']:
-            code = run(command)
-            if code:
-                return code
-        return code
+        # Every check runs even when an earlier one reports problems; the first failure decides the exit code.
+        codes = [run(command) for command in value['commands']]
+        return next((code for code in codes if code), 0)
     if not value['stages']:
         print('실행할 단계가 없습니다. 생성 단계는 config에 agent 또는 routing이 필요합니다')
         return 3
     if not confirmed:
-        print('코드를 바꾸는 단계라 실행하지 않았습니다. 위 계획대로 실행하려면 --yes를 붙이세요')
+        print('코드를 바꾸는 단계라 실행하지 않았습니다. '
+              + ('초안과 계획을 확인했으면 ask --yes로 실행하세요(요청은 다시 적지 않음)' if value.get('convention')
+                 else '위 계획대로 실행하려면 --yes를 붙이세요'))
         return 0
     state = Path(value['state'])
     if value['configSource'] == 'auto':
@@ -389,14 +406,35 @@ def execute(value, confirmed, run, options=None):
         if missing:
             print(f"{stage} 단계에는 {', '.join('--' + name for name in missing)} 파일이 필요해 여기서 멈춥니다")
             return 3
+        if stage == 'baseline' and value.get('convention'):
+            # Measured before any change so the later run can tell new convention failures from existing ones.
+            run(_convention(value, 'before'))
         code = run(_command(stage, value, options))
         if code == 1 and stage == 'verification' and 'repair' in value['config']:
             print('검증 실패: 설정된 repair 루프를 실행합니다')
             code = run(_command('repair', value, options))
+        if code == 0 and stage == 'verification' and value.get('convention'):
+            code = run(_convention(value, 'after'))
+            if code == 2:
+                # build-convention is optional for this tool: when it cannot run, say so and keep the verified result.
+                print('컨벤션 검증을 실행하지 못해 건너뜁니다 (install.sh로 build-convention을 설치하면 함께 검사)')
+                code = 0
+            if code:
+                print('컨벤션 검증에서 멈췄습니다. 위반을 고친 뒤 "검증 다시 해줘"로 다시 확인하세요')
+                return code
         if code:
             print(f'{stage} 단계가 종료 코드 {code}로 멈췄습니다 (1 실패, 2 거부, 3 검토 필요)')
             return code
     return 0
+
+
+def _convention(value, label):
+    session = Path(value['convention']['session'])
+    command = [sys.executable, str(SCRIPTS/'convention_check.py'), value['convention']['project'],
+               '--output', str(session/f'convention-{label}.json')]
+    if label == 'after':
+        command += ['--before', str(session/'convention-before.json')]
+    return command
 
 
 def _command(stage, value, options):
@@ -407,9 +445,115 @@ def _command(stage, value, options):
     return command
 
 
-def main(argv=None):
+DEFAULT_ROUTING = SCRIPTS.parent/'config'/'ask'
+ROUTING_FILES = {'registry': 'models.json', 'policy': 'routing-policy.json'}
+DRAFT_TIER = 'TIER_2'
+CONTINUE = ('CONTINUE', '요청 없이 --yes: 현재 세션 이어서 실행')
+
+
+def default_routing(environ=os.environ):
+    """config/ask in this checkout, each file replaceable from ~/.config/code-risk (or CODE_RISK_CONFIG_HOME)."""
+    home = Path(environ.get('CODE_RISK_CONFIG_HOME') or '~/.config/code-risk').expanduser()
+    return {key: str((home/name if (home/name).is_file() else DEFAULT_ROUTING/name).resolve()) for key, name in ROUTING_FILES.items()}
+
+
+def find_project(start):
+    """The nearest folder at or above start that holds a Gradle wrapper and build file."""
+    for folder in [start, *start.parents]:
+        if (folder/'gradlew').is_file() and any((folder/name).is_file() for name in
+                                                ('settings.gradle', 'settings.gradle.kts', 'build.gradle', 'build.gradle.kts')):
+            return folder
+    raise ValueError('Gradle 프로젝트 폴더(gradlew가 있는 곳)에서 실행하거나 --project로 지정하세요')
+
+
+def current_session(project):
+    pointer = project/'build'/'ask'/'current'
+    session = project/'build'/'ask'/pointer.read_text(encoding='utf-8').strip() if pointer.is_file() else None
+    if session is None or not (session/SESSION_CONFIG).is_file():
+        raise ValueError('진행 중인 작업이 없습니다. 먼저 바꿀 내용을 ask "..."로 요청하세요')
+    return session
+
+
+def new_session(project, now=None):
+    root = project/'build'/'ask'
+    name = time.strftime('%Y%m%d-%H%M%S', time.localtime(now))
+    session, number = root/name, 1
+    while session.exists():
+        number += 1
+        session = root/f'{name}-{number}'
+    session.mkdir(parents=True)
+    return session
+
+
+def draft_models(routing):
+    """The draft tier's route and its first fallback, after refusing forbidden models anywhere in that chain."""
+    router = _module('model_router')
+    registry = router.validate_registry(_read(routing['registry']))
+    policy = router.validate_policy(_read(routing['policy']), registry)
+    models({'routing': dict(routing, requiredTiers={'draft': DRAFT_TIER})})
+    chain = 1 + len(policy['tiers'][DRAFT_TIER].get('fallbacks', []))
+    return [router.select(registry, policy, DRAFT_TIER, 600, attempt)[0] for attempt in range(min(2, chain))]
+
+
+def describe_draft(project, session, value):
+    lines = [f"초안: {value['title']}"]
+    for requirement in value['requirements']:
+        lines.append(f"- {requirement['id']} {requirement['title']} (시나리오 {len(requirement['scenarios'])}개)")
+    if value['assumptions']:
+        lines.append('가정: ' + '; '.join(value['assumptions']))
+    lines.append('바꿀 파일: ' + ', '.join(value['files']))
+    lines.append(f'초안 위치: {session.relative_to(project).as_posix()}/ (request.md, requirements.json, plan.json, scope.json)')
+    return '\n'.join(lines)
+
+
+def start_change(text, project, decided, allowed, judge, call, check=None):
+    """Draft the inputs of a new zero-config session; returns (plan, session) or raises with the reason to stop."""
+    draft = _module('ask_draft')
+    conventions = _module('convention_check')
+    routing = default_routing()
+    configs = draft_models(routing)
+    if allowed is not None and not {config['model'] for config in configs} <= set(allowed):
+        raise ValueError('허용 목록 밖 모델로 초안을 쓰게 됩니다: ' + ', '.join(sorted({c['model'] for c in configs} - set(allowed))))
+    session = new_session(project)
+    print(f"요구사항 초안 작성 중 ({configs[0]['model']}, 프로젝트 파일은 읽기만 함)...")
+    options = {'guidance': conventions.guidance()}
+    if check is not None:
+        options['check'] = check
+    result = draft.draft(project, session, text, configs, routing, DEFAULT_JAR, call, **options)
+    if result['status'] == 'NEEDS_REVIEW':
+        raise LookupError('초안을 쓰기 전에 정해야 할 것이 있습니다. 답을 요청에 넣어 다시 실행하세요:\n'
+                          + '\n'.join('- ' + question for question in result['questions']))
+    if result['status'] != 'COMPLETED':
+        raise ValueError(result['reason'])
+    value = plan(text, str(result['config']), str(session/'state.json'), None, allowed, judge, decided, convention=True)
+    (session/SESSION_CONFIG).write_text(json.dumps(value['config'], ensure_ascii=False, indent=2), encoding='utf-8')
+    value['configSource'] = 'session'
+    (project/'build'/'ask'/'current').write_text(session.name, encoding='utf-8')
+    print(describe_draft(project, session, result['draft']))
+    return value
+
+
+def zero_config(text, project, allowed, judge, call):
+    """Plan a request against the project's own sessions; nothing is read from or written to its sources."""
+    if text is None:
+        session = current_session(project)
+        return plan('', str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, None, CONTINUE, convention=True)
+    decided = decide(text, judge)
+    intent = decided[0]
+    if intent == 'CODE_CHANGE':
+        return start_change(text, project, decided, allowed, judge, call)
+    if intent in ('ANALYZE', 'MUTATION'):
+        return plan(text, None, None, str(project), allowed, judge, decided, convention=True)
+    if intent == 'RULES':
+        return plan(text, None, None, None, allowed, judge, decided)
+    session = current_session(project)
+    convention = intent not in READ_ONLY
+    return plan(text, str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, judge, decided, convention=convention)
+
+
+def main(argv=None, call=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('request', help='자연어 요청')
+    parser.add_argument('request', nargs='?', help='자연어 요청 (생략하고 --yes만 주면 현재 세션을 이어서 실행)')
     parser.add_argument('--config')
     parser.add_argument('--state')
     parser.add_argument('--project')
@@ -423,6 +567,8 @@ def main(argv=None):
                ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request')
                if getattr(args, name.replace('-', '_')) is not None}
     allowed = args.allowed_models.split(',') if args.allowed_models else None
+    if args.request is None and not args.yes:
+        parser.error('요청 문장을 적거나, 확인한 계획을 실행하려면 --yes만 주세요')
     try:
         try:
             # Loaded even with --no-jev: a config that asks for JEV capability still needs it in workflow subprocesses.
@@ -430,7 +576,22 @@ def main(argv=None):
         except OSError:
             has_key = False
         judge = jev_intent if has_key and not args.no_jev else None
-        value = plan(args.request, args.config, args.state, args.project, allowed, judge)
+        if args.config or args.state:
+            value = plan(args.request or '', args.config, args.state, args.project, allowed, judge,
+                         None if args.request else CONTINUE)
+        else:
+            project = Path(args.project).expanduser().resolve() if args.project else None
+            if project is None:
+                try:
+                    project = find_project(Path.cwd().resolve())
+                except ValueError:
+                    # Rule questions need no project; everything else reports the missing project.
+                    if args.request is None or decide(args.request, None)[0] != 'RULES':
+                        raise
+            value = zero_config(args.request, project, allowed, judge, call or _module('agent_runner').run)
+    except LookupError as error:
+        print(error)
+        return 3
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(f'요청 거부: {error}')
         return 2
