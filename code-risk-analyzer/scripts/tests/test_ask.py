@@ -304,5 +304,40 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(['verification', 'repair'], [call[2] for call in self.calls])
 
 
+eval_spec = importlib.util.spec_from_file_location('eval_ask', Path(__file__).resolve().parents[1]/'eval_ask.py')
+evaluation = importlib.util.module_from_spec(eval_spec)
+eval_spec.loader.exec_module(evaluation)
+
+
+class EvaluationTests(unittest.TestCase):
+    def reply(self, choice):
+        value = IntentResponseTests.response(None, choice)
+        return json.dumps(value).encode()
+
+    def test_outcomes_separate_wrong_runs_from_safe_rejections(self):
+        # given
+        answers = {'재고 차감 버그 고쳐줘': 'CODE_CHANGE', '이 프로젝트 위험 분석해줘': 'CODE_CHANGE', '안녕': 'UNKNOWN'}
+        items = [{'text': text, 'expected': expected} for text, expected in
+                 (('재고 차감 버그 고쳐줘', 'CODE_CHANGE'), ('이 프로젝트 위험 분석해줘', 'ANALYZE'), ('안녕', 'REJECT'))]
+        # when
+        report = evaluation.evaluate(items, lambda text, timeout: self.reply(answers[text]))
+        # then
+        self.assertEqual({'CORRECT': 1, 'OVER_REJECT': 1, 'SAFE_REJECT': 1, 'JEV_FAILED': 0, 'JEV_ACCURACY': 0.667},
+                         report['summary'])
+
+    def test_invalid_response_keeps_raw_text_for_diagnosis(self):
+        # when
+        report = evaluation.evaluate([{'text': '검증 돌려줘', 'expected': 'VERIFY'}], lambda text, timeout: b'{"model": "x"}')
+        # then
+        row = report['rows'][0]
+        self.assertEqual('{"model": "x"}', row['raw'])
+        self.assertIn('ValueError', row['failure'])
+        self.assertEqual('OVER_REJECT', row['outcome'])
+
+    def test_labeled_set_covers_every_intent_and_rejections(self):
+        items = json.loads((Path(__file__).resolve().parents[1]/'eval'/'ask_intents.json').read_text(encoding='utf-8'))['items']
+        self.assertEqual(set(ask.INTENT_QUESTION['criteria']) - {'UNKNOWN'} | {'REJECT'}, {item['expected'] for item in items})
+
+
 if __name__ == '__main__':
     unittest.main()

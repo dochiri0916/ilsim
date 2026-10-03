@@ -1,0 +1,237 @@
+{
+ "version": 1,
+ "items": [
+  {
+   "text": "재고 차감 버그 고쳐줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "주문이 두 번 결제되는 문제 좀 없애줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "주문 취소 API에 중복 요청 방지 추가해줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "회원 탈퇴 기능 구현해줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "환불 금액 계산이 틀려, 바로잡아줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "쿠폰 적용 로직을 리팩터링해줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "로그인 실패 시 메시지를 바꿔줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "동시에 재고를 차감할 때 음수가 되는 문제 해결해줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "결제 승인 후 상태 전이가 누락되는 걸 수정해",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "배송지 변경 API 새로 만들어줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "NPE 나는 거 좀 잡아줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "주문 조회에 페이지네이션 넣어줘",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "Add idempotency key handling to the payment endpoint",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "Fix the race condition in stock deduction",
+   "expected": "CODE_CHANGE"
+  },
+  {
+   "text": "이 프로젝트 위험 분석해줘",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "보안 문제 있는지 점검해줘",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "코드에 트랜잭션 위험이 있는지 봐줘",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "동시성 문제가 숨어 있는지 진단해줘",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "이 저장소 스캔해서 위험한 곳 알려줘",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "고치지 말고 문제점만 찾아줘",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "Scan this project for security risks",
+   "expected": "ANALYZE"
+  },
+  {
+   "text": "어디까지 진행됐어?",
+   "expected": "STATUS"
+  },
+  {
+   "text": "지금 몇 단계야?",
+   "expected": "STATUS"
+  },
+  {
+   "text": "현재 상태 알려줘",
+   "expected": "STATUS"
+  },
+  {
+   "text": "작업 진행 상황 보여줘",
+   "expected": "STATUS"
+  },
+  {
+   "text": "What stage is the session at?",
+   "expected": "STATUS"
+  },
+  {
+   "text": "이어서 계속 진행해",
+   "expected": "CONTINUE"
+  },
+  {
+   "text": "멈춘 데서부터 다시 해줘",
+   "expected": "CONTINUE"
+  },
+  {
+   "text": "다음 단계 진행해",
+   "expected": "CONTINUE"
+  },
+  {
+   "text": "Resume where it stopped",
+   "expected": "CONTINUE"
+  },
+  {
+   "text": "검증 돌려줘",
+   "expected": "VERIFY"
+  },
+  {
+   "text": "구현한 거 검증해줘",
+   "expected": "VERIFY"
+  },
+  {
+   "text": "테스트랑 회귀 검증 다시 돌려",
+   "expected": "VERIFY"
+  },
+  {
+   "text": "Run verification again",
+   "expected": "VERIFY"
+  },
+  {
+   "text": "PR 올려줘",
+   "expected": "PULL_REQUEST"
+  },
+  {
+   "text": "PR 만들어줘",
+   "expected": "PULL_REQUEST"
+  },
+  {
+   "text": "풀리퀘스트 생성해줘",
+   "expected": "PULL_REQUEST"
+  },
+  {
+   "text": "작업 끝났으면 제출해줘",
+   "expected": "PULL_REQUEST"
+  },
+  {
+   "text": "Open a pull request",
+   "expected": "PULL_REQUEST"
+  },
+  {
+   "text": "토큰 사용량 보여줘",
+   "expected": "COST"
+  },
+  {
+   "text": "이번 작업 비용 얼마 나왔어?",
+   "expected": "COST"
+  },
+  {
+   "text": "모델별로 토큰 얼마나 썼는지 알려줘",
+   "expected": "COST"
+  },
+  {
+   "text": "How many tokens did this use?",
+   "expected": "COST"
+  },
+  {
+   "text": "SEC-001 규칙 설명해줘",
+   "expected": "RULES"
+  },
+  {
+   "text": "위험 규칙 목록 보여줘",
+   "expected": "RULES"
+  },
+  {
+   "text": "TX-002가 뭐야?",
+   "expected": "RULES"
+  },
+  {
+   "text": "What does rule CON-001 check?",
+   "expected": "RULES"
+  },
+  {
+   "text": "변이 테스트 해줘",
+   "expected": "MUTATION"
+  },
+  {
+   "text": "PIT로 변이 검증 돌려줘",
+   "expected": "MUTATION"
+  },
+  {
+   "text": "Run mutation testing",
+   "expected": "MUTATION"
+  },
+  {
+   "text": "점검하고 문제 있으면 고쳐줘",
+   "expected": "REJECT"
+  },
+  {
+   "text": "안녕",
+   "expected": "REJECT"
+  },
+  {
+   "text": "분석하고 PR까지 올려줘",
+   "expected": "REJECT"
+  },
+  {
+   "text": "알아서 잘 해줘",
+   "expected": "REJECT"
+  },
+  {
+   "text": "이거 어때?",
+   "expected": "REJECT"
+  },
+  {
+   "text": "배포해줘",
+   "expected": "REJECT"
+  },
+  {
+   "text": "오늘 점심 뭐 먹지",
+   "expected": "REJECT"
+  },
+  {
+   "text": "전부 다 해줘",
+   "expected": "REJECT"
+  }
+ ]
+}
