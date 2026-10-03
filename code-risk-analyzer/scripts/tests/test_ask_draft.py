@@ -126,8 +126,9 @@ class InputTests(unittest.TestCase):
     def setUp(self):
         self.project = Project(self)
 
-    def test_existing_tests_skip_display_names_and_keep_package(self):
-        self.assertEqual(['com.example.demo.DemoApplicationTests#contextLoads'], draft.existing_tests(self.project.root))
+    def test_existing_tests_use_display_names_as_the_report_does(self):
+        self.assertEqual(['com.example.demo.DemoApplicationTests#contextLoads', 'com.example.demo.DemoApplicationTests#표시 이름이 있는 테스트'],
+                         draft.existing_tests(self.project.root))
 
     def test_written_inputs_satisfy_the_workflow_contracts(self):
         # when
@@ -139,7 +140,8 @@ class InputTests(unittest.TestCase):
         self.assertEqual(['build/ask/s1/request.md', 'build/ask/s1/conventions.md'], config['documents'])
         self.assertEqual({'plan', 'requirements', 'scope', 'analyzer', 'documents', 'routing'}, set(config))
         plan = regression.validate_plan(json.loads((session/'plan.json').read_text()))
-        self.assertEqual({'existing-tests': ['com.example.demo.DemoApplicationTests#contextLoads']}, plan['features'])
+        self.assertEqual({'existing-tests': ['com.example.demo.DemoApplicationTests#contextLoads',
+                                             'com.example.demo.DemoApplicationTests#표시 이름이 있는 테스트']}, plan['features'])
         self.assertEqual('NOT_APPLICABLE', plan['database'])
         scope = json.loads((session/'scope.json').read_text())
         self.assertEqual(str(self.project.root), scope['project'])

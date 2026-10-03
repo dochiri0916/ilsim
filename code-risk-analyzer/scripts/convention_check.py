@@ -2,14 +2,12 @@
 
 A generated Gradle init script puts the plugin (published to mavenLocal by install.sh) on the build classpath and
 applies it to every Java project that does not apply it already. `check --continue` then writes the plugin's
-report, which is copied into the session. Comparing a run before the change with one after it separates checks the
-change broke from checks that were already failing.
+report, which is saved into the session with the violations Gradle printed. Any failing check fails the run.
 """
 import argparse
 import json
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 
@@ -61,27 +59,53 @@ def guidance():
     return GUIDANCE.read_text(encoding='utf-8') if GUIDANCE.is_file() else None
 
 
-def run(project, output, process=subprocess.run):
-    """Run check once and copy the plugin report to `output`; returns the report."""
-    project, output = Path(project), Path(output)
+CHECKSTYLE = re.compile(r'\[ant:checkstyle\] \[(?:ERROR|WARN)\] (.+?):(\d+)(?::\d+)?: (.+)')
+LISTED = re.compile(r'\s+- \[([A-Z][A-Z0-9-]*)\] (\S+) (.+)')
+NO_BASE = 'changedCodeCoverage'
+
+
+def violations(project, output):
+    """file/message pairs Gradle printed, so a fixer knows what to change; checks still decide pass or fail."""
+    result = []
+    for line in output.splitlines():
+        match = CHECKSTYLE.fullmatch(line.strip())
+        if match:
+            path = Path(match.group(1))
+            relative = path.relative_to(project).as_posix() if path.is_absolute() and path.is_relative_to(project) else match.group(1)
+            result.append({'file': relative, 'line': int(match.group(2)), 'message': match.group(3)})
+            continue
+        match = LISTED.fullmatch(line.rstrip())
+        if match:
+            result.append({'file': match.group(2), 'rule': match.group(1), 'message': match.group(3)})
+    unique = {json.dumps(item, sort_keys=True, ensure_ascii=False): item for item in result}
+    return list(unique.values())
+
+
+def run(project, output, base_ref=None, process=subprocess.run):
+    """Run check once, copy the plugin report to `output` with the printed violations; returns the report."""
+    project, output = Path(project).resolve(), Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     script = output.with_suffix('.init.gradle')
     script.write_text(init_script(version()), encoding='utf-8')
     report = project/REPORT
     report.unlink(missing_ok=True)
-    result = process(['./gradlew', 'check', '--continue', '--init-script', str(script)], cwd=project,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=1800)
+    command = ['./gradlew', 'check', '--continue', '--init-script', str(script)]
+    if base_ref:
+        command.append('-PchangedCoverageBaseRef=' + base_ref)
+    result = process(command, cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=1800)
+    lines = (result.stdout or '').splitlines()
     if not report.is_file():
-        lines = (result.stderr or '').splitlines()
         # Gradle's own failure headline says why check aborted before the plugin wrote its report.
         start = next((index + 1 for index, line in enumerate(lines) if line.strip() == '* What went wrong:'), None)
         cause = '\n'.join(line for line in lines[start:start + 3] if line.strip()) if start is not None else ''
         raise ValueError('build-convention 리포트가 만들어지지 않았습니다 (install.sh 설치 여부를 확인하세요)'
                          + (f'\n{cause}' if cause else ''))
-    shutil.copyfile(report, output)
-    value = json.loads(output.read_text(encoding='utf-8'))
+    value = json.loads(report.read_text(encoding='utf-8'))
     if not isinstance(value, dict) or value.get('status') not in ('PASS', 'FAIL') or not isinstance(value.get('checks'), dict):
         raise ValueError('컨벤션 검증 리포트 형식이 올바르지 않습니다')
+    value['violations'] = violations(project, '\n'.join(lines))
+    value['baseRef'] = base_ref
+    output.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
     return value
 
 
@@ -89,10 +113,9 @@ def failing(report):
     return sorted(name for name, status in report['checks'].items() if status == 'FAIL')
 
 
-def compare(before, after):
-    """Checks failing now that passed (or did not run) before are the change's; the rest were already failing."""
-    old = set(failing(before)) if before else set()
-    return {'new': [name for name in failing(after) if name not in old], 'existing': [name for name in failing(after) if name in old]}
+def blocking(report):
+    """Every failing check, except changed-code coverage when there was no Git revision to compare against."""
+    return [name for name in failing(report) if name != NO_BASE or report.get('baseRef')]
 
 
 def label(names):
@@ -100,27 +123,30 @@ def label(names):
 
 
 def summary(report, before=None):
-    if report['status'] == 'PASS':
-        return '컨벤션 검증: 통과'
-    if before is None:
-        return '컨벤션 검증: 실패 - ' + label(failing(report))
-    result = compare(before, report)
-    lines = []
-    if result['new']:
-        lines.append('컨벤션 검증: 이번 변경으로 실패 - ' + label(result['new']))
-    if result['existing']:
-        lines.append('컨벤션 검증: 변경 전부터 실패(참고) - ' + label(result['existing']))
-    return '\n'.join(lines) or '컨벤션 검증: 통과'
+    names = blocking(report)
+    lines = ['컨벤션 검증: ' + ('통과' if not names else '실패 - ' + label(names))]
+    if before is not None and names:
+        existing = [name for name in names if name in failing(before)]
+        if existing:
+            lines.append('그중 변경 전부터 실패하던 검사: ' + label(existing))
+    if NO_BASE in failing(report) and not report.get('baseRef'):
+        lines.append('Git 저장소가 아니어서 변경 코드 커버리지는 확인하지 못했습니다')
+    for item in report.get('violations', [])[:10]:
+        lines.append(f"- {item['file']}{':' + str(item['line']) if 'line' in item else ''} {item['message']}")
+    if len(report.get('violations', [])) > 10:
+        lines.append(f"- 외 {len(report['violations']) - 10}건")
+    return '\n'.join(lines)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('project')
-    parser.add_argument('--output', required=True, help='리포트를 복사할 파일')
-    parser.add_argument('--before', help='변경 전 리포트; 주면 이번 변경으로 새로 실패한 검사만 실패로 본다')
+    parser.add_argument('--output', required=True, help='리포트를 저장할 파일')
+    parser.add_argument('--base-ref', help='변경 코드 커버리지의 비교 기준 커밋')
+    parser.add_argument('--before', help='변경 전 리포트; 실패 중 원래부터 실패하던 검사를 알려준다')
     args = parser.parse_args(argv)
     try:
-        report = run(args.project, args.output)
+        report = run(args.project, args.output, args.base_ref)
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
         print(f'컨벤션 검증 불가: {error}')
         return 2
@@ -128,17 +154,12 @@ def main(argv=None):
     if args.before:
         try:
             before = json.loads(Path(args.before).read_text(encoding='utf-8'))
-            if before.get('status') not in ('PASS', 'FAIL') or not isinstance(before.get('checks'), dict):
-                raise ValueError
-        except (ValueError, OSError, AttributeError):
-            # Without a usable earlier report every failure counts as this change's, never as pre-existing.
+            failing(before)
+        except (ValueError, OSError, AttributeError, KeyError, TypeError):
             before = None
-            print('변경 전 컨벤션 상태가 없어 모든 실패를 이번 결과로 봅니다')
     print(summary(report, before))
     print(f'리포트: {Path(args.output).resolve()}')
-    if before is not None:
-        return 1 if compare(before, report)['new'] else 0
-    return 1 if report['status'] == 'FAIL' else 0
+    return 1 if blocking(report) else 0
 
 
 if __name__ == '__main__':
