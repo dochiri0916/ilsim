@@ -33,6 +33,14 @@
 
 ## 단계별 요약
 
+### 2026-10-03 후속 보강
+
+- Test Obligation ID: 한 메서드 안에서 반복되는 조건·예외·저장 호출의 ID 중복을 제거했다. 중복이 없던 ID는 유지한다.
+- 7단계 `pull-request`: COMPLETED 세션의 근거로 PR 본문을 결정적으로 만들고, plan의 `PULL_REQUEST` 승인과 커밋·푸시 확인 후 draft PR만 연다.
+- 일반 서비스 adapter: fixture 외 프로젝트도 `serviceAdapter`로 검증된 JAR를 기동하고 선언한 네 시나리오 명령을 실행한다.
+- 위험 규칙: 객체 단위 권한 `SEC-006`, Tenant 격리 `SEC-007`을 추가했다(REVIEW·LOW confidence).
+- 성공 작업당 비용: CLI 호출별 토큰·시간을 기록하고 `cost_report.py`로 COMPLETED 세션당 토큰·비용을 집계한다.
+
 ### Capability Tier 기반 모델 라우팅 추가 (2026-10-03)
 
 [Capability Tier 기반 모델 라우팅](../requirements-analysis/model-routing.md)을 추가했다. 단계별 Tier를 명시적으로 받아 Registry·Policy의 ACTIVE profile과 지원 reasoning 조합을 선택하고 Codex·Claude CLI에 전달한다. 선택 결과와 Registry/Policy 해시를 기존 생성 artifact에 기록하며 파일·설정·Router 코드 변경과 생성 중 정책 변경은 과거 검증·완료 재사용 및 적용을 차단한다. 직접 provider 선택은 유지한다. 이후 같은 날 JEV 판단과 제한된 생성 오류 escalation을 아래와 같이 추가했다. 평가 기반 비용 최적화·Shadow/Canary는 구현하지 않았다.
@@ -85,8 +93,8 @@ MySQL fixture에는 `fixtureAdapter=MYSQL`과 `local-service` 단계를 연결�
 | 3. 테스트 코드 우선 작성 | 부분 구현 | TEST_WRITING phase의 승인된 테스트 파일 교체, 별도 runner의 기준선 실행·테스트 보호·변경 후 비교 | 요구사항 기반 생성·예상 원인의 실패 확인·assertion 의미 자동 증명 |
 | 4. 1차 Test Adequacy 검증 | 부분 구현 | 코드 기반 Obligation 추출, 정적 적정성 분석, 네 가지 상태 보고 | 구현 전 테스트 검증의 한계, 적정성 JEV 검토·테스트 보완 |
 | 5. 동작 코드 구현 | 부분 구현 | IMPLEMENTATION phase의 승인된 파일 교체와 명시적 TEST/BUILD, 별도 runner의 회귀 비교 | 최소 구현 자동 생성·assertion 의미 증명·전체 개발 반복 절차 |
-| 6. 2차 Production Risk 검증 | 부분 구현 | 19개 위험 규칙, 제한된 JEV 연계 | 권한·Tenant·정합성 검증 확대, 수정·재검증 반복 |
-| 7. PR 생성 및 최종 검증 | 부분 구현 | 전체/지정 파일 스캔, 보고서·실패 정책·변이 검증, 회귀·서비스·미해결 근거 완료 판정 | 다른 서비스 adapter·전 영역 의미 검토·미신고 근거 탐지·PR 제출 |
+| 6. 2차 Production Risk 검증 | 부분 구현 | 21개 위험 규칙(권한 SEC-006·Tenant SEC-007 포함), 제한된 JEV 연계 | 호출 경로 전체의 소유권 확인·정합성 검증 확대 |
+| 7. PR 생성 및 최종 검증 | 부분 구현 | 전체/지정 파일 스캔, 보고서·실패 정책·변이 검증, 회귀·서비스·미해결 근거 완료 판정, COMPLETED 세션의 PR 본문 생성과 승인된 draft PR 제출, 일반 프로젝트의 JAR 기동·선언 시나리오 실행 adapter | 전 영역 의미 검토·미신고 근거 탐지. 일반 서비스 adapter는 시나리오 명령의 종료 코드만 판정 |
 
 ## 1. 요구사항 및 정의서 분석
 
@@ -226,7 +234,7 @@ requirements의 WRITE_TESTS는 TEST_WRITING phase 및 승인된 src/test/ 경로
 | 경계값 | 일부 비교 조건과 정수 리터럴 인자로 경계 미만/동일/초과 등의 사례 식별 | 자동 생성 없음 |
 | 상태 변경 | 필드 대입·일부 변경 호출·저장 호출 식별 | 자동 생성 없음 |
 | 권한 | 일부 annotation에서 허용/거부 항목 추출 | 실제 인증·인가 테스트 생성 없음 |
-| Tenant | 전용 추출/검증 기능 없음 | 자동 생성 없음 |
+| Tenant | SEC-007 위험을 `RISK` 항목으로 연결 | 자동 생성 없음 |
 | 트랜잭션 | 일부 다중 쓰기·예외 경로의 롤백 항목 추출 | 실제 DB 롤백 테스트 생성 없음 |
 | 동시성·멱등성 | 위험 후보를 `RISK` 항목으로 연결 | 병렬 실행·중복 처리·재시도 테스트 생성 없음 |
 
@@ -279,17 +287,17 @@ requirements의 IMPLEMENT action은 IMPLEMENTATION phase와 별도로 승인된 
 
 ## 6. 2차 Production Risk 검증
 
-**판정: 부분 구현 — 19개 정적 위험 규칙과 제한된 의미 검토를 제공한다.**
+**판정: 부분 구현 — 21개 정적 위험 규칙과 제한된 의미 검토를 제공한다.**
 
 | 영역 | 현재 범위 | 미지원 또는 제한 |
 |---|---|---|
 | Security | `SEC-001~005`: SQL/Command Injection, Path Traversal, SSRF, 하드코딩 비밀값 | 메서드 간 전체 데이터 흐름 및 미지원 제어 흐름은 검증하지 못함. SEC-003/004의 블록·분기에서는 호출별 검증 선행·값 일치를 확인 |
-| Authorization | 일부 권한 Test Obligation 추출 | 소유권·리소스 접근 제어 전용 생산 위험 규칙 없음 |
+| Authorization | `SEC-006`: 요청 식별자(`@PathVariable`/`@RequestParam`의 id)로 조회하지만 호출자 식별 정보(Principal·`@AuthenticationPrincipal`·SecurityContextHolder)나 접근 annotation이 entry point에 없음. 일부 권한 Test Obligation 추출 | 하위 서비스에서 수행하는 소유권 확인은 정적으로 증명하지 않으며 REVIEW·LOW confidence로만 보고 |
 | Transaction | `TX-001~005`: self-invocation, async 경계, 외부 호출, 다중 쓰기, 예외 삼키기 | 실제 Spring proxy·propagation·커밋/롤백 실행 결과 미검증 |
 | Concurrency | `CON-001~004`: check-then-act, lost update, singleton 상태, async 컨텍스트 | 실제 경쟁 실행·다중 인스턴스 안전성 미검증 |
 | Data Integrity | check-then-act에서 연결된 엔티티의 UNIQUE/PK 선언 일부 확인 | 운영 DB 제약 적용, FK/CHECK/NULL 정책, 충돌 처리 등을 포괄 검증하지 않음 |
 | Idempotency | `IDEM-001~004`: 메시지 부수 효과, 멱등키, 재시도, 비즈니스 키 | 키의 원자적 저장·전달·실제 중복 방지 계약 미검증 |
-| Tenant Isolation | 전용 생산 위험 규칙 없음 | 교차 Tenant 조회·변경 및 접근 권한 미검증 |
+| Tenant Isolation | `SEC-007`: tenant 필드가 있는 엔티티의 Repository 쿼리와 상속 조회(`findById` 등)에 tenant 조건이 보이지 않음. Hibernate `@TenantId`·`@Filter`는 보호로 인정 | 쿼리 인자의 tenant 값 출처와 실제 교차 Tenant 접근은 실행 검증 필요 |
 | Partial Failure | `REL-001`: DB와 외부 부수 효과 불일치 후보 | 실제 실패 주입·보상·outbox 실행 결과 미검증 |
 
 `REVIEW.md`의 1순위 개선은 실제 코드와 테스트에 반영되어 있다. 조회/변경 저장소와 엔티티를 연결해 관련 제약만 확인하고, JVM 잠금만으로 DB 경쟁 경고를 숨기지 않는 개선이다. 2순위 개선도 반영되어 SEC-003/004에서 호출에 도달하는 모든 지원 경로의 검증 선행 여부와 값 일치를 확인한다. 미지원 제어 흐름은 보수적으로 경고를 유지한다. 3순위 타입 기반 부수 효과·클래스패스와 4순위 분석 완전성·선택형 CI 정책도 반영되었다. 5순위는 JUnit·JaCoCo 및 명시적 DB/assertion 검토를 연결하는 선택형 import로 반영되었다. 전체 위험 검증 완료와 구분해야 한다.
@@ -407,7 +415,7 @@ JSON/SARIF, baseline, suppression과 종료 코드 정책은 CI에서 활용할 
 - `repair`는 수락한 테스트·빌드 계약을 고정하고 승인된 production 파일만 수정한다. 수정 반복, JEV/CLI 호출, 전체 시간과 명시적 fallback을 제한하며 세션 재개가 예산을 초기화하지 않는다. 검증·생성 이력은 해시 보호 사본으로 남긴다. 별도 서비스·review·complete 단계는 계속 필요하다.
 - `qualityGates`를 켜면 최종 전체 테스트 실행의 JaCoCo와 새 PIT 실행을 목표 클래스별로 검사한다. 소스·테스트·정책·JAR/JUnit snapshot·XML/exec·mutation 응답·main/test 바이트코드가 같아야 review/complete를 통과한다. 누락·변조·살아남은/미커버 변이·미완료 실행을 통과시키지 않는다. `repair`에는 명시적 품질 설정이 필수다. 기존 수동 경로의 계약과 public API는 유지한다.
 
-소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 개발 모델의 Golden Benchmark·Cost per Successful Task·Shadow·Canary·승격과 일반 서비스 adapter, 선택형 아키텍처·컨벤션 검증은 다음 구현 범위다.
+소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 개발 모델의 Golden Benchmark·Shadow·Canary·승격과 일반 서비스 adapter, 선택형 아키텍처·컨벤션 검증은 다음 구현 범위다.
 
 ### 최종 실제 연결 검증
 
@@ -417,4 +425,4 @@ JSON/SARIF, baseline, suppression과 종료 코드 정책은 CI에서 활용할 
 
 공식 Java 25 `bash ./gradlew build --no-daemon`은 PASS이며 Python 149개를 실행했다. 기존 Java 233개 결과는 UP-TO-DATE로 재사용했다. timeout 시 자식 소켓 해제의 race를 보강하고 기존 종료·취소 테스트도 통과했다.
 
-복잡한 HTTP fixture의 단일 메서드에서는 정적 Obligation ID 중복을 발견했다. 현재는 EVIDENCE/NEEDS_REVIEW로 차단하고 자동 수정이나 완료에 사용하지 않는다. ID 생성·중복 원인 보강은 다음 수정 대상이다. 이 시험의 성공 범위는 순수 계산 클래스와 별도 서비스 harness로 선언된 검증이며, 모든 Spring 업무의 자동 완료를 보장하지 않는다.
+복잡한 HTTP fixture의 단일 메서드에서는 정적 Obligation ID 중복을 발견했다. 원인은 한 메서드 안에서 같은 조건·예외·저장 호출이 반복될 때 메서드 위치만으로 ID를 만든 것이었다. 2026-10-03에 반복되는 키에만 AST 노드 위치를 더해 고유 ID를 부여하도록 보강했다. 중복이 없는 기존 ID는 바뀌지 않는다. 중복 ID 입력을 EVIDENCE/NEEDS_REVIEW로 차단하는 기존 검사는 유지한다. 이 시험의 성공 범위는 순수 계산 클래스와 별도 서비스 harness로 선언된 검증이며, 모든 Spring 업무의 자동 완료를 보장하지 않는다.

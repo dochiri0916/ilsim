@@ -142,7 +142,44 @@ def stop(process):
         time.sleep(0.01)
 
 
+def usage(provider, stream):
+    """Numeric token counters only; provider text never leaves this function."""
+    try:
+        stream.seek(0)
+        text = stream.read().decode('utf-8')
+        if provider == 'codex':
+            events = [parse_json(line) for line in text.splitlines() if line.strip()]
+            raw = next((e.get('usage') for e in reversed(events) if isinstance(e, dict) and e.get('type') == 'turn.completed'), None)
+            if not isinstance(raw, dict):
+                return {}
+            values = {'inputTokens': raw.get('input_tokens'), 'cachedInputTokens': raw.get('cached_input_tokens', 0),
+                      'outputTokens': raw.get('output_tokens')}
+        else:
+            envelope = parse_json(text)
+            raw = envelope.get('usage') if isinstance(envelope, dict) else None
+            if not isinstance(raw, dict):
+                return {}
+            cached = raw.get('cache_read_input_tokens', 0)
+            values = {'inputTokens': sum(raw.get(k, 0) for k in ('input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens')),
+                      'cachedInputTokens': cached, 'outputTokens': raw.get('output_tokens')}
+            if isinstance(envelope.get('total_cost_usd'), (int, float)) and not isinstance(envelope['total_cost_usd'], bool):
+                values['costUsd'] = envelope['total_cost_usd']
+        if any(type(values[k]) is not int or values[k] < 0 for k in ('inputTokens', 'cachedInputTokens', 'outputTokens')):
+            return {}
+        return values
+    except (ValueError, TypeError, UnicodeError, OSError):
+        return {}
+
+
 def run(config, workspace, prompt):
+    started = time.monotonic()
+    result = _run(config, workspace, prompt)
+    result.setdefault('usage', {})
+    result['durationSeconds'] = round(time.monotonic() - started, 3)
+    return result
+
+
+def _run(config, workspace, prompt):
     config = settings(config)
     root = Path(workspace)
     if not root.is_absolute() or root.is_symlink() or root.resolve() != root or not root.is_dir() or not isinstance(prompt, str) or not prompt.strip():
@@ -206,6 +243,7 @@ def run(config, workspace, prompt):
             return dict(result, exitCode=process.returncode)
         if stdout.tell() > MAX_OUTPUT_BYTES or (final.exists() and final.stat().st_size > MAX_OUTPUT_BYTES):
             return dict(result, status='INVALID_OUTPUT', failureKind='OUTPUT_LIMIT', reason='Provider output exceeds size limit')
+        result['usage'] = usage(config['provider'], stdout)
         failure = 'PROVIDER_FAILURE'
         payload = None
         try:

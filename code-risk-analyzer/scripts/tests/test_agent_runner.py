@@ -70,6 +70,25 @@ class AgentRunnerTests(unittest.TestCase):
                     self.assertIn('--no-session-persistence', recorded['args'])
                     self.assertEqual('', recorded['args'][recorded['args'].index('--tools') + 1])
 
+    def test_token_usage_and_duration_are_recorded_without_provider_text(self):
+        trailers = {'codex': {'type': 'turn.completed', 'usage': {'input_tokens': 1200, 'cached_input_tokens': 800,
+                                                                   'output_tokens': 90, 'note': 'secret'}},
+                    'claude': {'type': 'result', 'subtype': 'success', 'is_error': False, 'structured_output': self.payload,
+                               'total_cost_usd': 0.0123, 'usage': {'input_tokens': 300, 'cache_read_input_tokens': 700,
+                                                                   'cache_creation_input_tokens': 50, 'output_tokens': 40}}}
+        expected = {'codex': {'inputTokens': 1200, 'cachedInputTokens': 800, 'outputTokens': 90},
+                    'claude': {'inputTokens': 1050, 'cachedInputTokens': 700, 'outputTokens': 40, 'costUsd': 0.0123}}
+        for provider in ('codex', 'claude'):
+            with self.subTest(provider=provider):
+                self.provider(provider, trailer=trailers[provider])
+                result = agent.run({'provider': provider, 'model': 'm', 'allowedModels': ['m']}, self.workspace, 'prompt')
+                self.assertEqual('COMPLETED', result['status'])
+                self.assertEqual(expected[provider], result['usage'])
+                self.assertGreaterEqual(result['durationSeconds'], 0)
+                self.provider(provider, trailer={'type': 'turn.completed'} if provider == 'codex' else None)
+                self.assertEqual({}, agent.run({'provider': provider, 'model': 'm', 'allowedModels': ['m']},
+                                               self.workspace, 'prompt')['usage'])
+
     def test_config_rejects_flag_injection_unknown_options_and_unapproved_models(self):
         for config in ({'provider': 'unknown'}, {'provider': 'codex', 'model': '--unsafe', 'allowedModels': ['--unsafe']},
                        {'provider': 'codex', 'model': 'unapproved'}, {'provider': 'codex', 'timeoutSeconds': True},
