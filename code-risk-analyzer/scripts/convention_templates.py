@@ -34,6 +34,7 @@ EXAMPLES = (
     'main/java/com/example/demo/book/adapter/out/persistence/BookMapper.java',
     'main/java/com/example/demo/book/adapter/out/persistence/BookPersistenceAdapter.java',
     'main/java/com/example/demo/book/adapter/out/event/BookEventAdapter.java',
+    'test/java/com/example/demo/DemoApplicationTests.java',
     'test/java/com/example/demo/book/domain/BookTest.java',
     'test/java/com/example/demo/book/domain/vo/IsbnTest.java',
     'test/java/com/example/demo/book/application/service/FakeBookRepository.java',

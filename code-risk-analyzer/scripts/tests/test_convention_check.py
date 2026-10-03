@@ -182,12 +182,29 @@ class CleanupTests(Temp):
         self.assertIn('\t@Test', (self.session/'cleanup-original'/self.TEST).read_text())
         self.assertEqual(result, cleanup.fix(self.project, self.session, [], None))
 
-    def test_fix_is_undone_when_existing_tests_fail(self):
+    def test_fix_is_undone_when_existing_tests_fail_and_retried_once_with_the_failure(self):
+        # given
         original = (self.project/self.TEST).read_text()
-        result = cleanup.fix(self.project, self.session, [{'m': 1}], self.call(self.change()), self.exit_code(1))
+        failed = lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 1, stdout='> Task :compileTestJava FAILED\nDemoApplicationTests.java:3: error: cannot find symbol\nBUILD FAILED', stderr='')
+        # when
+        result = cleanup.fix(self.project, self.session, [{'m': 1}], self.call(self.change(), self.change()), failed)
+        # then
         self.assertEqual('FAILED', result['status'])
+        self.assertIn('cleanup-rejected-*.json', result['reason'])
         self.assertEqual(original, (self.project/self.TEST).read_text())
         self.assertFalse((self.session/'cleanup.json').exists())
+        self.assertIn('error: cannot find symbol', self.commands[1])
+        rejected = json.loads((self.session/'cleanup-rejected-2.json').read_text())
+        self.assertEqual(self.fixed, rejected['changes'][0]['content'])
+
+    def test_second_cleanup_attempt_can_pass(self):
+        codes = [1, 0]
+        run = lambda command, **kwargs: subprocess.CompletedProcess(command, codes.pop(0), stdout='', stderr='')
+        result = cleanup.fix(self.project, self.session, [{'m': 1}], self.call(self.change(), self.change()), run)
+        self.assertEqual('COMPLETED', result['status'])
+        self.assertEqual(self.fixed, (self.project/self.TEST).read_text())
+        self.assertTrue((self.session/'cleanup-rejected-1.json').is_file())
 
     def test_full_annotation_names_keep_the_test_and_losing_tests_undoes_the_fix(self):
         # given: the model wrote fully qualified annotations
@@ -203,7 +220,7 @@ class CleanupTests(Temp):
     def test_fix_that_hides_existing_tests_is_undone(self):
         original = (self.project/self.TEST).read_text()
         self.fixed = 'package com.example.demo;\nclass DemoApplicationTests {\n}\n'
-        result = cleanup.fix(self.project, self.session, [{'m': 1}], self.call(self.change()), self.exit_code(0))
+        result = cleanup.fix(self.project, self.session, [{'m': 1}], self.call(self.change(), self.change()), self.exit_code(0))
         self.assertEqual('FAILED', result['status'])
         self.assertIn('1개에서 0개로', result['reason'])
         self.assertEqual(original, (self.project/self.TEST).read_text())
