@@ -1,0 +1,228 @@
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+spec = importlib.util.spec_from_file_location('ask', Path(__file__).resolve().parents[1]/'ask.py')
+ask = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ask)
+
+
+class ClassifyTests(unittest.TestCase):
+    def test_intents_from_natural_language(self):
+        cases = {
+            '주문 취소 API에 중복 요청 방지 추가해줘': 'CODE_CHANGE',
+            '재고 차감 버그 고쳐줘': 'CODE_CHANGE',
+            '이 프로젝트 위험 분석해줘': 'ANALYZE',
+            '보안 문제 있는지 점검해줘': 'ANALYZE',
+            '어디까지 진행됐어?': 'STATUS',
+            '이어서 계속 진행해': 'CONTINUE',
+            '검증 돌려줘': 'VERIFY',
+            'PR 올려줘': 'PULL_REQUEST',
+            '토큰 사용량 보여줘': 'COST',
+            'SEC-001 규칙 설명해줘': 'RULES',
+            '변이 테스트 해줘': 'MUTATION',
+        }
+        for text, intent in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(intent, ask.classify(text)[0])
+
+    def test_change_verb_wins_over_analysis_and_status_words(self):
+        # given: words like "상태" or "점검" appear inside a change request
+        # when / then
+        self.assertEqual('CODE_CHANGE', ask.classify('주문 상태 전이 버그 고쳐줘')[0])
+        self.assertEqual('CODE_CHANGE', ask.classify('점검 결과대로 결제 로직 수정해줘')[0])
+
+    def test_unrecognized_request_is_rejected_instead_of_guessed(self):
+        with self.assertRaises(ValueError):
+            ask.classify('안녕')
+
+    def test_pr_word_is_not_matched_inside_other_words(self):
+        self.assertNotEqual('PULL_REQUEST', ask.classify('price 계산 분석해줘')[0])
+        self.assertEqual('PULL_REQUEST', ask.classify('PR을 만들어줘')[0])
+
+
+class TierTests(unittest.TestCase):
+    def test_high_risk_areas_use_tier_3(self):
+        for text in ('결제 금액 수정', '재고 동시성 수정', '트랜잭션 롤백 추가', '권한 검사 추가', 'retry 로직 수정'):
+            with self.subTest(text=text):
+                self.assertEqual('TIER_3', ask.tier(text)[0])
+
+    def test_low_risk_change_uses_tier_2_and_never_tier_4(self):
+        self.assertEqual('TIER_2', ask.tier('버튼 문구 변경')[0])
+        self.assertNotIn('TIER_4', {ask.tier(t)[0] for t in ('결제 보안 동시성 트랜잭션', '문구')})
+
+
+class StageTests(unittest.TestCase):
+    def test_change_runs_from_baseline_to_verification(self):
+        self.assertEqual(['baseline', 'generate-tests', 'generate-implementation', 'verification'],
+                         ask.stages('CODE_CHANGE', None, generator=True, service=False))
+
+    def test_continue_picks_up_from_recorded_phase(self):
+        self.assertEqual(['generate-implementation', 'verification'],
+                         ask.stages('CONTINUE', 'TEST_WRITING', generator=True, service=False))
+        self.assertEqual(['local-service', 'review'], ask.stages('CONTINUE', 'VERIFIED', generator=True, service=True))
+        self.assertEqual(['review'], ask.stages('CONTINUE', 'VERIFIED', generator=True, service=False))
+        self.assertEqual(['complete', 'pull-request'], ask.stages('PULL_REQUEST', 'REVIEWED', generator=True, service=False))
+
+    def test_verify_stops_after_verification_until_reviewed(self):
+        self.assertEqual(['verification'], ask.stages('VERIFY', 'IMPLEMENTATION', generator=True, service=False))
+
+    def test_writing_without_agent_stops_before_generation(self):
+        self.assertEqual(['baseline'], ask.stages('CODE_CHANGE', None, generator=False, service=False))
+
+    def test_stale_or_finished_session_needs_a_person(self):
+        with self.assertRaises(ValueError):
+            ask.stages('CONTINUE', 'STALE', generator=True, service=False)
+        with self.assertRaises(ValueError):
+            ask.stages('VERIFY', None, generator=True, service=False)
+
+
+class SessionTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.project = self.root/'project'
+        (self.project/'build').mkdir(parents=True)
+        self.state = self.project/'build'/'s1'/'state.json'
+        self.write('plan.json', {'project': str(self.project)})
+        self.write('models.json', {'version': 1, 'models': {
+            'cheap': {'adapter': 'codex', 'model': 'gpt-6-luna', 'status': 'ACTIVE',
+                      'supportedTiers': ['TIER_1', 'TIER_2', 'TIER_3', 'TIER_4'], 'reasoningEfforts': ['medium', 'high', 'max']},
+            'pricey': {'adapter': 'claude', 'model': 'claude-fable-5-1', 'status': 'ACTIVE',
+                       'supportedTiers': ['TIER_3', 'TIER_4'], 'reasoningEfforts': ['high']}}})
+        self.policy({'TIER_1': 'cheap', 'TIER_2': 'cheap', 'TIER_3': 'cheap', 'TIER_4': 'cheap'})
+        self.config = {'plan': str(self.root/'plan.json'), 'requirements': 'r', 'analyzer': 'a', 'scope': 's', 'documents': ['d'],
+                       'routing': {'registry': str(self.root/'models.json'), 'policy': str(self.root/'policy.json')}}
+        self.calls = []
+
+    def write(self, name, value):
+        (self.root/name).write_text(json.dumps(value))
+
+    def policy(self, tiers, fallback=None):
+        value = {tier: {'modelId': model, 'reasoningEffort': 'high'} for tier, model in tiers.items()}
+        if fallback:
+            value['TIER_3']['fallbacks'] = [{'modelId': fallback, 'reasoningEffort': 'high'}]
+        self.write('policy.json', {'version': 1, 'tiers': value})
+
+    def runner(self, results=None):
+        results = list(results or [])
+
+        def run(command):
+            self.calls.append(command)
+            return results.pop(0) if results else 0
+        return run
+
+    def plan(self, text='재고 동시성 버그 고쳐줘'):
+        self.write('config.json', self.config)
+        return ask.plan(text, config=str(self.root/'config.json'), state=str(self.state))
+
+    def test_plan_fixes_tier_for_new_session_and_shows_model(self):
+        # when
+        plan = self.plan()
+        # then
+        self.assertEqual('CODE_CHANGE', plan['intent'])
+        self.assertEqual({'test-writing': 'TIER_3', 'implementation': 'TIER_3'}, plan['config']['routing']['requiredTiers'])
+        self.assertEqual(['gpt-6-luna'], plan['models'])
+        self.assertTrue(plan['changesCode'])
+
+    def test_expensive_model_anywhere_in_reachable_routes_is_refused(self):
+        # given: the cheap primary falls back to a forbidden model
+        self.policy({'TIER_2': 'cheap', 'TIER_3': 'cheap'}, fallback='pricey')
+        # when / then
+        with self.assertRaisesRegex(ValueError, 'claude-fable-5-1'):
+            self.plan()
+
+    def test_capability_routing_checks_every_tier(self):
+        # given: JEV may pick TIER_4 which routes to a forbidden model
+        self.policy({'TIER_1': 'cheap', 'TIER_2': 'cheap', 'TIER_3': 'cheap', 'TIER_4': 'pricey'})
+        self.config['routing']['capability'] = {}
+        # when / then
+        with self.assertRaises(ValueError):
+            self.plan()
+
+    def test_max_reasoning_effort_is_refused(self):
+        # given
+        self.write('policy.json', {'version': 1, 'tiers': {tier: {'modelId': 'cheap', 'reasoningEffort': 'max'}
+                                                           for tier in ('TIER_2', 'TIER_3')}})
+        # when / then
+        with self.assertRaisesRegex(ValueError, 'max'):
+            self.plan()
+
+    def test_direct_agent_model_is_checked(self):
+        # given
+        del self.config['routing']
+        self.config['agent'] = {'provider': 'claude', 'model': 'astra-2', 'allowedModels': ['astra-2']}
+        # when / then
+        with self.assertRaisesRegex(ValueError, 'astra-2'):
+            self.plan()
+
+    def test_code_change_is_not_executed_without_confirmation(self):
+        # given
+        plan = self.plan()
+        # when
+        code = ask.execute(plan, confirmed=False, run=self.runner())
+        # then
+        self.assertEqual(0, code)
+        self.assertEqual([], self.calls)
+        self.assertFalse(self.state.parent.exists())
+
+    def test_confirmed_run_uses_saved_session_config_and_stops_on_failure(self):
+        # given
+        plan = self.plan()
+        # when
+        code = ask.execute(plan, confirmed=True, run=self.runner([0, 1]))
+        # then
+        self.assertEqual(1, code)
+        self.assertEqual(['baseline', 'generate-tests'], [call[2] for call in self.calls])
+        saved = self.state.parent/'ask-config.json'
+        self.assertEqual(plan['config'], json.loads(saved.read_text()))
+        self.assertEqual(str(saved), self.calls[0][self.calls[0].index('--config') + 1])
+
+    def test_later_requests_reuse_session_config_instead_of_rerouting(self):
+        # given: a low-risk session already fixed TIER_2
+        ask.execute(self.plan('문구 변경해줘'), confirmed=True, run=self.runner([0, 0, 0, 0]))
+        self.state.write_text(json.dumps({'phase': 'IMPLEMENTATION', 'history': []}))
+        # when: the follow-up mentions a high-risk word
+        plan = self.plan('결제 검증 돌려줘')
+        # then
+        self.assertEqual('TIER_2', plan['config']['routing']['requiredTiers']['implementation'])
+        self.assertEqual(['verification'], plan['stages'])
+
+    def test_explicit_tiers_in_config_are_kept(self):
+        # given
+        self.config['routing']['requiredTiers'] = {'test-writing': 'TIER_2', 'implementation': 'TIER_2'}
+        # when
+        plan = self.plan()
+        # then
+        self.assertEqual('TIER_2', plan['config']['routing']['requiredTiers']['test-writing'])
+
+    def test_status_is_read_only_and_needs_no_confirmation(self):
+        # given
+        self.state.parent.mkdir(parents=True)
+        self.state.write_text(json.dumps({'phase': 'VERIFIED', 'history': []}))
+        plan = self.plan('어디까지 진행됐어?')
+        # when
+        code = ask.execute(plan, confirmed=False, run=self.runner())
+        # then
+        self.assertEqual(0, code)
+        self.assertFalse(plan['changesCode'])
+        self.assertEqual([], self.calls)
+
+    def test_failed_verification_runs_configured_repair(self):
+        # given
+        self.config['repair'] = {}
+        self.state.parent.mkdir(parents=True)
+        self.state.write_text(json.dumps({'phase': 'IMPLEMENTATION', 'history': []}))
+        plan = self.plan('검증해줘')
+        # when
+        code = ask.execute(plan, confirmed=True, run=self.runner([1, 0]))
+        # then
+        self.assertEqual(0, code)
+        self.assertEqual(['verification', 'repair'], [call[2] for call in self.calls])
+
+
+if __name__ == '__main__':
+    unittest.main()

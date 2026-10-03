@@ -2,6 +2,8 @@
 
 [실행기](../../scripts/code_change_workflow.py)는 기존 requirements 작성 실행기와 회귀·근거 검토 실행기를 한 세션으로 연결한다. `SPEC_ONLY`·`SPEC_CODE_REVIEW`는 대상 코드 해시·탐색·빌드 전에 거부한다. 기존 독립 CLI는 유지하며, 이 세션을 거치지 않는 외부 편집기·명령까지 제한하는 OS sandbox는 아니다.
 
+단계 이름과 옵션을 직접 고르지 않으려면 [`scripts/ask.py`](../../scripts/ask.py)에 자연어 요청을 넘긴다. 같은 단계를 같은 검사로 실행하며, 판단 규칙은 [AGENT_BRIEF](../AGENT_BRIEF.md)의 "가장 쉬운 사용"에 정리했다.
+
 ## 순서와 완료 조건
 
 | 명령 | 선행 조건 | 수행과 차단 조건 |
