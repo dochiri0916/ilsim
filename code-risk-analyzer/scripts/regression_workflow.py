@@ -58,7 +58,7 @@ def validate_plan(plan):
     if not isinstance(plan['project'], str) or not Path(plan['project']).is_absolute():
         raise ValueError('An absolute approved project is required')
     actions = plan['approvedActions']
-    if not isinstance(actions, list) or len(actions) != len(set(actions)) or not set(actions) <= {'BASELINE', 'REGRESSION', 'LOCAL_SERVICE', 'COMPLETE'}:
+    if not isinstance(actions, list) or len(actions) != len(set(actions)) or not set(actions) <= {'BASELINE', 'REGRESSION', 'LOCAL_SERVICE', 'COMPLETE', 'PULL_REQUEST'}:
         raise ValueError('Invalid approved actions')
     if not isinstance(plan['database'], str) or not plan['database'].strip():
         raise ValueError('Record actual database version or NOT_APPLICABLE')

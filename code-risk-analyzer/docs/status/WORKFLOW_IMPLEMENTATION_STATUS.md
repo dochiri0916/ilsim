@@ -86,7 +86,7 @@ MySQL fixture에는 `fixtureAdapter=MYSQL`과 `local-service` 단계를 연결�
 | 4. 1차 Test Adequacy 검증 | 부분 구현 | 코드 기반 Obligation 추출, 정적 적정성 분석, 네 가지 상태 보고 | 구현 전 테스트 검증의 한계, 적정성 JEV 검토·테스트 보완 |
 | 5. 동작 코드 구현 | 부분 구현 | IMPLEMENTATION phase의 승인된 파일 교체와 명시적 TEST/BUILD, 별도 runner의 회귀 비교 | 최소 구현 자동 생성·assertion 의미 증명·전체 개발 반복 절차 |
 | 6. 2차 Production Risk 검증 | 부분 구현 | 19개 위험 규칙, 제한된 JEV 연계 | 권한·Tenant·정합성 검증 확대, 수정·재검증 반복 |
-| 7. PR 생성 및 최종 검증 | 부분 구현 | 전체/지정 파일 스캔, 보고서·실패 정책·변이 검증, 회귀·서비스·미해결 근거 완료 판정 | 다른 서비스 adapter·전 영역 의미 검토·미신고 근거 탐지·PR 제출 |
+| 7. PR 생성 및 최종 검증 | 부분 구현 | 전체/지정 파일 스캔, 보고서·실패 정책·변이 검증, 회귀·서비스·미해결 근거 완료 판정, COMPLETED 세션의 PR 본문 생성과 승인된 draft PR 제출 | 다른 서비스 adapter·전 영역 의미 검토·미신고 근거 탐지 |
 
 ## 1. 요구사항 및 정의서 분석
 
