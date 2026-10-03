@@ -193,6 +193,21 @@ def tier(text):
     return 'TIER_2', '고위험 영역 단어 없음'
 
 
+# A generation stage the model did not finish leaves the session STALE with nothing written; it resumes at that stage.
+AGENT_STOP = 'Agent did not produce an accepted change'
+RESUME = {'test-writing': 'BASELINED', 'implementation': 'TEST_WRITING'}
+
+
+def resume_phase(state):
+    """The phase to continue from: a STALE session whose only problem is an unfinished model call resumes there."""
+    phase = state.get('phase')
+    invalidations = state.get('invalidations') or [{}]
+    if phase == 'STALE' and state.get('staleKind') == 'SOURCES' and state.get('generationStage') in RESUME \
+            and invalidations[-1].get('reason') == AGENT_STOP:
+        return RESUME[state['generationStage']]
+    return phase
+
+
 def stages(intent, phase, generator, service):
     if phase not in NEXT:
         raise ValueError(f'세션 상태 {phase}: 자동 진행할 수 없습니다. state.json의 invalidations를 확인하고 새 세션을 시작하세요')
@@ -302,7 +317,10 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
     state_path = Path(result['state']) if state else None
     phase = None
     if state_path and state_path.exists():
-        phase = _read(state_path).get('phase')
+        recorded = _read(state_path)
+        phase = resume_phase(recorded)
+        if phase != recorded.get('phase'):
+            result['resume'] = recorded['generationStage']
     result['phase'] = phase
     jar = loaded['analyzer'] if loaded else str(DEFAULT_JAR)
     target = project or (_read(loaded['plan'])['project'] if loaded else None)
@@ -365,6 +383,8 @@ def describe(value):
     lines = [f"요청: {value['request'] or '(없음)'}", f"판단: {value['intent']} ({value['reason']})"]
     if value.get('phase') is not None or value['intent'] == 'STATUS':
         lines.append(f"현재 단계: {value.get('phase')}")
+    if value.get('resume'):
+        lines.append('모델이 끝내지 못한 단계부터 다시 합니다 (초안·정리·baseline은 그대로 사용)')
     if value['intent'] == 'STATUS':
         try:
             lines.append('다음 실행: ' + ' → '.join(stages('CONTINUE', value['phase'], True, True)))
@@ -460,6 +480,9 @@ CAPABILITY_REASONS = {
 }
 
 
+RETRY_HINT = '같은 초안으로 이 단계만 다시 하려면 ask --yes를 실행하세요'
+
+
 def stop_reason(directory, since):
     """Why a generation stage stopped, from the agent record it wrote: the model's questions or the gate that refused."""
     records = sorted((path for path in Path(directory).glob('agent-*.json') if path.stat().st_mtime >= since - 1),
@@ -474,7 +497,7 @@ def stop_reason(directory, since):
     unknowns = (record.get('output') or {}).get('unknowns') or []
     if unknowns:
         lines = ['모델이 정해지지 않은 내용이 있어 멈췄습니다:'] + ['- ' + str(text) for text in unknowns]
-        return lines + ['빠진 내용을 요청 문장에 넣어 새로 요청하세요']
+        return lines + ['빠진 내용을 요청 문장에 넣어 새로 요청하거나, ' + RETRY_HINT]
     if capability.get('status') not in (None, 'COMPLETED'):
         kind = capability.get('failureKind', '')
         detail = f" ({capability['detail']})" if capability.get('detail') else ''
@@ -485,7 +508,7 @@ def stop_reason(directory, since):
             lines.append('검사 내용: ' + record['detail'])
         if record.get('rejectedOutput') is not None:
             lines.append(f'거부된 답은 {Path(records[-1]).name}의 rejectedOutput에 남아 있습니다')
-        return lines
+        return lines + [RETRY_HINT]
     return []
 
 
