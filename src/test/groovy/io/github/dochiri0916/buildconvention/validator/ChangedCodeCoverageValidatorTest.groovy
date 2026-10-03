@@ -312,6 +312,28 @@ class ChangedCodeCoverageValidatorTest {
         assert violations.any { it.contains('no merge base found') }
     }
 
+    @Test
+    @DisplayName('저장소 루트가 아닌 하위 모듈의 변경도 변경 코드 커버리지에 포함한다')
+    void validatesChangedFilesInSubprojectOfRepository() {
+        // given
+        Project root = gitProject('multi-module')
+        File moduleDir = new File(root.projectDir, 'order')
+        moduleDir.mkdirs()
+        Project module = ProjectBuilder.builder().withProjectDir(moduleDir).build()
+        writeJava(module, sampleSource('1'))
+        commitAll(root.projectDir, 'baseline')
+        writeJava(module, sampleSource('2'))
+        File report = writeCoverageReport(module, 'Sample.java', 5, false)
+
+        // when
+        List<String> violations = ChangedCodeCoverageValidator.validate(
+                module, new HexagonalConventionExtension(), report, 'HEAD')
+
+        // then
+        assert violations.any { it.contains('Changed production line coverage') }
+        assert violations.any { it.contains('Uncovered changed line: src/main/java/com/example/Sample.java:5') }
+    }
+
     private Project gitProject(String name) {
         File projectDir = new File(tempDir, name)
         projectDir.mkdirs()

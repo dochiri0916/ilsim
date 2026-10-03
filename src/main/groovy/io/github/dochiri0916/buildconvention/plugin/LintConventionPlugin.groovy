@@ -25,6 +25,7 @@ import org.gradle.api.plugins.quality.PmdExtension
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.junitplatform.JUnitPlatformOptions
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.testing.jacoco.plugins.JacocoPluginExtension
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
@@ -49,6 +50,7 @@ class LintConventionPlugin implements Plugin<Project> {
             'validateJavaVersionConvention',
             'validatePitMutationGate'
     ].asImmutable()
+    private static final List<String> PIT_TARGET_TESTS = ['*Test', '*Tests'].asImmutable()
     // Convention tasks registered with exactly one action; extra or missing actions mean the task was tampered with.
     private static final Map<String, Integer> EXPECTED_ACTION_COUNTS = [
             validateArchUnitArchitecture      : 1,
@@ -708,7 +710,10 @@ class LintConventionPlugin implements Plugin<Project> {
             return []
         }
         List<String> violations = []
-        ['excludedClasses', 'excludedMethods', 'excludedTestClasses', 'avoidCallsTo'].each { String name ->
+        [
+                'excludedClasses', 'excludedMethods', 'excludedTestClasses', 'avoidCallsTo',
+                'excludedGroups', 'includedGroups', 'includedTestMethods'
+        ].each { String name ->
             def value = providerValue(pitest."${name}")
             if (value != null && !value.isEmpty()) {
                 violations.add("pitest.${name}=${value}")
@@ -717,6 +722,13 @@ class LintConventionPlugin implements Plugin<Project> {
         def mutators = providerValue(pitest.mutators)
         if (mutators != null && !mutators.isEmpty() && !ALLOWED_PIT_MUTATORS.containsAll(mutators)) {
             violations.add("pitest.mutators=${mutators}")
+        }
+        def targetTests = providerValue(pitest.targetTests)
+        if (targetTests == null || targetTests.toSet() != PIT_TARGET_TESTS.toSet()) {
+            violations.add("pitest.targetTests=${targetTests}")
+        }
+        if (providerValue(pitest.skipFailingTests) == true) {
+            violations.add('pitest.skipFailingTests=true')
         }
         Set<String> expectedTargets = pitTargetClasses(convention).toSet()
         def targets = providerValue(pitest.targetClasses)
@@ -802,12 +814,39 @@ class LintConventionPlugin implements Plugin<Project> {
             if (task.filter.excludePatterns != null && !task.filter.excludePatterns.isEmpty()) {
                 violations.add("${task.name}.filter.excludePatterns=${task.filter.excludePatterns}")
             }
+            if (!task.scanForTestClasses) {
+                violations.add("${task.name}.scanForTestClasses=false")
+            }
+            def options = task.options
+            if (options instanceof JUnitPlatformOptions) {
+                ['includeTags', 'excludeTags', 'includeEngines', 'excludeEngines'].each { String name ->
+                    Set<String> values = options."${name}"
+                    if (values != null && !values.isEmpty()) {
+                        violations.add("${task.name}.options.${name}=${values}")
+                    }
+                }
+            }
             JacocoTaskExtension jacoco = task.extensions.findByType(JacocoTaskExtension)
             if (jacoco != null && !jacoco.enabled) {
                 violations.add("${task.name}.jacoco.enabled=false")
             }
         }
+        violations.addAll(findNarrowedTestClassesDirs(project))
         return violations.sort()
+    }
+
+    private static List<String> findNarrowedTestClassesDirs(Project project) {
+        def testSourceSet = project.extensions.findByType(SourceSetContainer)?.findByName('test')
+        def task = project.tasks.findByName('test')
+        if (testSourceSet == null || !(task instanceof Test)) {
+            return []
+        }
+        List<File> missingDirs = missingExpectedFiles(
+                testSourceSet.output.classesDirs.files, task.testClassesDirs.files)
+        if (missingDirs.isEmpty()) {
+            return []
+        }
+        return ["test.testClassesDirs missing ${limitedRelativeFiles(project, missingDirs)}".toString()]
     }
 
     private static List<String> findEmptySourceTasks(Project project, HexagonalConventionExtension convention) {
@@ -1342,7 +1381,7 @@ class LintConventionPlugin implements Plugin<Project> {
             return
         }
         pitestExtension.targetClasses = pitTargetClasses(convention)
-        pitestExtension.targetTests = ['*Test', '*Tests']
+        pitestExtension.targetTests = PIT_TARGET_TESTS
         pitestExtension.junit5PluginVersion = '1.2.1'
         pitestExtension.failWhenNoMutations = false
         pitestExtension.mutationThreshold = minimumInt(convention.mutationScoreMinimum, 80)
