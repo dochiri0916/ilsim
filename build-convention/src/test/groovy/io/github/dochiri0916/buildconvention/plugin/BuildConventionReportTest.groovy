@@ -30,7 +30,7 @@ class BuildConventionReportTest {
         Map report = readReport()
 
         assert report.schemaVersion == '1.0'
-        assert report.pluginVersion == '1.0.1'
+        assert report.pluginVersion == '1.2.0'
         assert report.status == 'PASS'
         assert report.checks.architecture == 'PASS'
         assert report.checks.coverageReport == 'PASS'

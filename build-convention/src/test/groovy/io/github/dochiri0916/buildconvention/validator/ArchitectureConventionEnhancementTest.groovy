@@ -317,14 +317,15 @@ class ArchitectureConventionEnhancementTest {
     }
 
     @Test
-    @DisplayName('Mapper는 변환 방향 이름을 사용하고 비결정 값을 생성하지 않는다')
-    void rejectsMapperWithAmbiguousMethodAndUuidGeneration() {
+    @DisplayName('Mapper는 변환 방향 이름을 사용하고 시간 값을 만들지 않는다 (자식 행 키 UUID는 허용)')
+    void rejectsMapperWithAmbiguousMethodAndTimeGeneration() {
         // given
         Project project = sampleProject('mapper-responsibility')
         writeApplication(project)
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderMapper.java', '''
                 package com.example.order.adapter.out.persistence;
 
+                import java.time.Instant;
                 import java.util.UUID;
 
                 public final class OrderMapper {
@@ -333,7 +334,11 @@ class ArchitectureConventionEnhancementTest {
                     }
 
                     static String map(final String value) {
-                        return value + UUID.randomUUID();
+                        return value + Instant.now();
+                    }
+
+                    static String toLineEntityKey() {
+                        return UUID.randomUUID().toString();
                     }
                 }
                 ''')
@@ -346,7 +351,8 @@ class ArchitectureConventionEnhancementTest {
 
         // then
         assert violations.any { it.contains("mapper 'OrderMapper' method 'map' must reveal conversion direction") }
-        assert violations.any { it.contains("mapper 'OrderMapper' must not generate time or UUID values") }
+        assert violations.any { it.contains("mapper 'OrderMapper' must not generate time values") }
+        assert !violations.any { it.contains('toLineEntityKey') }
     }
 
     @Test

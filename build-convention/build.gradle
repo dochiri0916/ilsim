@@ -21,7 +21,7 @@ tasks.withType(CodeNarc).configureEach {
 }
 
 group = 'io.github.dochiri0916'
-version = '1.1.0'
+version = '1.2.0'
 
 repositories {
     mavenCentral()
