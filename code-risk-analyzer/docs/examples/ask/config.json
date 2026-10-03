@@ -1,0 +1,7 @@
+{
+  "plan": "plan.json",
+  "requirements": "requirements.json",
+  "scope": "scope.json",
+  "documents": ["docs/requirements.md"],
+  "routing": {"registry": "models.json", "policy": "routing-policy.json"}
+}
