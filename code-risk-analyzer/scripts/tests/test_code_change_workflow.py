@@ -650,6 +650,26 @@ echo artifact > build/libs/service.jar
         with patch.object(controller.regression, 'snapshot', return_value=snapshot):
             self.assertEqual('FAILED', self.run_stage('verification')['status'])
 
+    def test_generated_tests_may_not_use_unapproved_project_types_or_undeclared_libraries(self):
+        # given
+        self.put('src/main/java/com/acme/App.java', 'package com.acme;\n@SpringBootApplication\nclass App {}\n')
+        self.agent_input()
+        self.run_stage('baseline')
+        result = self.generated()
+        result['output']['changes'][0]['content'] = ('package com.acme;\nimport com.acme.App;\nimport com.acme.member.PasswordPort;\n'
+                                                     'import static com.acme.member.Clocks.FIXED;\n'
+                                                     'import org.springframework.security.crypto.bcrypt.BCrypt;\nclass NewTest {}\n')
+        # when
+        with patch.object(controller.agent, 'run', return_value=result), \
+                patch.object(controller.Controller, '_write') as write, self.assertRaises(ValueError):
+            self.run_stage('generate-tests')
+        # then
+        write.assert_not_called()
+        detail = controller.regression.read_json(self.project/'build/session/agent-test-writing.json')['detail']
+        self.assertIn('com.acme.member.Clocks, com.acme.member.PasswordPort', detail)
+        self.assertNotIn('com.acme.App', detail)
+        self.assertIn('org.springframework.security', detail)
+
     def test_test_writing_rejects_production_change_before_writer(self):
         self.run_stage('baseline')
         with patch.object(controller.Controller, '_write') as write:
