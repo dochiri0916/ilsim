@@ -189,6 +189,13 @@ class StopReasonTests(unittest.TestCase):
                 {'status': 'NEEDS_REVIEW', 'failureKind': 'CAPABILITY',
                  'capability': {'status': 'NEEDS_REVIEW', 'failureKind': 'LOW_CONFIDENCE'}}))
             self.assertIn('JEV', ask.stop_reason(directory, 0)[0])
+            # given: the answer broke the output contract
+            (directory/'agent-test-writing.json').write_text(json.dumps(
+                {'status': 'INVALID_OUTPUT', 'failureKind': 'OUTPUT_CONTRACT', 'reason': 'r', 'detail': 'ValueError: x',
+                 'rejectedOutput': {'changes': []}}))
+            lines = ask.stop_reason(directory, 0)
+            self.assertIn('검사 내용: ValueError: x', lines)
+            self.assertIn('rejectedOutput', lines[-1])
             # given: the record is older than the stage
             self.assertEqual([], ask.stop_reason(directory, 10**12))
 

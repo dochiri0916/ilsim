@@ -4,5 +4,5 @@
   "scope": "scope.json",
   "documents": ["docs/requirements.md"],
   "routing": {"registry": "../../../config/ask/models.json", "policy": "../../../config/ask/routing-policy.json",
-              "timeoutSeconds": 1200}
+              "timeoutSeconds": 1200, "maxAttempts": 2}
 }
