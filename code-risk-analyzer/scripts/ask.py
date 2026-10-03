@@ -382,8 +382,8 @@ def describe(value):
         steps = list(value['stages'])
         if value.get('convention'):
             # Shown where it runs: cleanup ahead of the baseline, the full convention check after verification.
-            steps = [('기존 코드 컨벤션 정리 → ' if step == 'baseline' else '') + step
-                     + (' → 컨벤션 검사' if step == 'verification' else '') for step in steps]
+            steps = [('기존 코드 컨벤션 정리 → ' if step == 'baseline' else '')
+                     + ('컨벤션 검사·수정 → ' if step == 'verification' else '') + step for step in steps]
         lines.append('실행 단계: ' + ' → '.join(steps))
     for command in value['commands']:
         lines.append('실행: ' + ' '.join(command))
@@ -421,24 +421,63 @@ def execute(value, confirmed, run, options=None):
             code = run([sys.executable, str(SCRIPTS/'convention_fix.py'), '--session', value['convention']['session']])
             if code:
                 return code
+        recheck = False
+        if stage == 'verification' and value.get('convention'):
+            # Before verification, while the workflow still accepts implementation writes for the fixes.
+            code, recheck = _convention_gate(value, run)
+            if code:
+                return code
         code = run(_command(stage, value, options))
         if code == 1 and stage == 'verification' and 'repair' in value['config']:
             print('검증 실패: 설정된 repair 루프를 실행합니다')
             code = run(_command('repair', value, options))
-        if code == 0 and stage == 'verification' and value.get('convention'):
-            code = run(_convention(value, 'after'))
+        if code == 0 and recheck:
+            code = run(_convention(value, 'final'))
             if code == 2:
-                # build-convention is optional for this tool: when it cannot run, say so and keep the verified result.
-                print('컨벤션 검증을 실행하지 못해 건너뜁니다 (install.sh로 build-convention을 설치하면 함께 검사)')
+                print(CONVENTION_SKIPPED)
                 code = 0
             if code:
-                print('컨벤션 검증에서 멈췄습니다. 위반을 고친 뒤 "검증 다시 해줘"로 다시 확인하세요 '
-                      '(컨벤션 없이 진행하려면 새 요청에 "컨벤션 없이"를 넣으세요)')
+                print(CONVENTION_STOP)
                 return code
         if code:
             print(f'{stage} 단계가 종료 코드 {code}로 멈췄습니다 (1 실패, 2 거부, 3 검토 필요)')
             return code
     return 0
+
+
+CONVENTION_FIX_ROUNDS = 2
+CONVENTION_SKIPPED = '컨벤션 검증을 실행하지 못해 건너뜁니다 (install.sh로 build-convention을 설치하면 함께 검사)'
+CONVENTION_STOP = ('컨벤션 검증에서 멈췄습니다. 남은 위반을 고친 뒤 "검증 다시 해줘"로 다시 확인하세요 '
+                   '(컨벤션 없이 진행하려면 새 요청에 "컨벤션 없이"를 넣으세요)')
+
+
+def _convention_gate(value, run):
+    """Check every convention; fix the scope's production files and re-check up to CONVENTION_FIX_ROUNDS times.
+
+    Returns (exit code, recheck). Failing tests or compilation are verification's to report, so the gate steps
+    aside and asks for one final check once verification passes.
+    """
+    session = Path(value['convention']['session'])
+    for attempt in range(CONVENTION_FIX_ROUNDS + 1):
+        label = 'after' if attempt == 0 else f'after-{attempt}'
+        code = run(_convention(value, label))
+        if code == 2:
+            # build-convention is optional for this tool: when it cannot run, say so and keep going.
+            print(CONVENTION_SKIPPED)
+            return 0, False
+        if code == 0:
+            return 0, False
+        try:
+            failing = {name for name, status in _read(session/f'convention-{label}.json')['checks'].items() if status == 'FAIL'}
+        except (OSError, ValueError, KeyError, AttributeError):
+            failing = set()
+        if failing & {'tests', 'compilation'}:
+            return 0, True
+        if attempt == CONVENTION_FIX_ROUNDS or run([sys.executable, str(SCRIPTS/'convention_fix.py'), '--session', str(session),
+                                                    '--mode', 'implementation', '--report', str(session/f'convention-{label}.json')]):
+            break
+    print(CONVENTION_STOP)
+    return 1, False
 
 
 def _convention(value, label):

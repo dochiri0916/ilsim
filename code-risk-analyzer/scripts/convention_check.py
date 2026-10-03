@@ -62,6 +62,11 @@ def guidance():
 CHECKSTYLE = re.compile(r'\[ant:checkstyle\] \[(?:ERROR|WARN)\] (.+?):(\d+)(?::\d+)?: (.+)')
 LISTED = re.compile(r'\s+- \[([A-Z][A-Z0-9-]*)\] (\S+) (.+)')
 NO_BASE = 'changedCodeCoverage'
+COMPILE = ['./gradlew', 'testClasses']
+
+
+class Unavailable(ValueError):
+    """build-convention itself could not be loaded (not installed), as opposed to a check that failed."""
 
 
 def violations(project, output):
@@ -89,6 +94,9 @@ def run(project, output, base_ref=None, process=subprocess.run):
     script.write_text(init_script(version()), encoding='utf-8')
     report = project/REPORT
     report.unlink(missing_ok=True)
+    if (project/'build/classes/java/main').is_dir():
+        # Earlier class files may predate new sources; compile so the plugin's coverage-input guard sees current ones.
+        process(COMPILE, cwd=project, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1800)
     command = ['./gradlew', 'check', '--continue', '--init-script', str(script)]
     if base_ref:
         command.append('-PchangedCoverageBaseRef=' + base_ref)
@@ -98,8 +106,9 @@ def run(project, output, base_ref=None, process=subprocess.run):
         # Gradle's own failure headline says why check aborted before the plugin wrote its report.
         start = next((index + 1 for index, line in enumerate(lines) if line.strip() == '* What went wrong:'), None)
         cause = '\n'.join(line for line in lines[start:start + 3] if line.strip()) if start is not None else ''
-        raise ValueError('build-convention 리포트가 만들어지지 않았습니다 (install.sh 설치 여부를 확인하세요)'
-                         + (f'\n{cause}' if cause else ''))
+        if any('build-convention' in line and ('Could not find' in line or 'Could not resolve' in line) for line in lines):
+            raise Unavailable('build-convention을 찾지 못했습니다. install.sh로 설치하세요')
+        raise ValueError('컨벤션 검사가 리포트를 만들기 전에 실패했습니다' + (f'\n{cause}' if cause else ''))
     value = json.loads(report.read_text(encoding='utf-8'))
     if not isinstance(value, dict) or value.get('status') not in ('PASS', 'FAIL') or not isinstance(value.get('checks'), dict):
         raise ValueError('컨벤션 검증 리포트 형식이 올바르지 않습니다')
@@ -147,9 +156,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         report = run(args.project, args.output, args.base_ref)
-    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+    except (Unavailable, OSError) as error:
         print(f'컨벤션 검증 불가: {error}')
         return 2
+    except (ValueError, subprocess.TimeoutExpired) as error:
+        # The plugin ran and stopped the build: that is a failed convention check, never a skipped one.
+        print(f'컨벤션 검증 실패: {error}')
+        return 1
     before = None
     if args.before:
         try:
