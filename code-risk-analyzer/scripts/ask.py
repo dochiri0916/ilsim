@@ -568,7 +568,8 @@ def _convention_gate(value, run):
         if code == 0:
             return 0, False
         try:
-            failing = {name for name, status in _read(session/f'convention-{label}.json')['checks'].items() if status == 'FAIL'}
+            # Checks a validators setting switched off are recorded as skipped and never count here.
+            failing = set(_module('convention_check').failing(_read(session/f'convention-{label}.json')))
         except (OSError, ValueError, KeyError, AttributeError):
             failing = set()
         broken = bool(failing & {'tests', 'compilation'})
@@ -676,13 +677,26 @@ CONVENTION_ON = re.compile(r'컨벤션\s*(검사|검증)?\s*(적용|켜|지켜|�
 CONVENTION_MARKER = 'convention.json'
 
 
-def convention_choice(text):
-    """True/False when the request says to use or skip the conventions, else the default."""
+def convention_request(text):
+    """True/False when the request says to use or skip the conventions, else None."""
     if CONVENTION_OFF.search(text):
         return False
     if CONVENTION_ON.search(text):
         return True
-    return CONVENTION_DEFAULT
+    return None
+
+
+def convention_choice(text):
+    """True/False when the request says to use or skip the conventions, else the default."""
+    requested = convention_request(text)
+    return CONVENTION_DEFAULT if requested is None else requested
+
+
+def convention_selection(text, project):
+    """Groups to check from the sentence and the project's .code-risk.yml validators; raises on an invalid setting."""
+    conventions = _module('convention_check')
+    configured = conventions.settings(project)
+    return dict(conventions.selection(configured, convention_request(text)), validators=configured)
 
 
 def convention_enabled(session):
@@ -692,17 +706,37 @@ def convention_enabled(session):
         return False
 
 
+def check_validators(project, session):
+    """A session keeps the validators setting it started with: a change would mix evidence from both settings."""
+    try:
+        started = _read(session/CONVENTION_MARKER)['validators']
+    except (OSError, ValueError, KeyError, TypeError):
+        return  # sessions from before the setting existed
+    if _module('convention_check').settings(project) != started:
+        raise ValueError('.code-risk.yml의 validators 설정이 이 세션을 시작한 뒤 바뀌었습니다. '
+                         '이전 검증 근거를 쓸 수 없으니 바꿀 내용을 ask "..."로 다시 요청해 새 세션을 만드세요')
+
+
+def describe_selection(chosen):
+    lines = []
+    for name, reason in chosen['off'].items():
+        if reason != '요청 문장에서 끔':
+            lines.append(f"컨벤션: {_module('convention_check').GROUPS[name]} 검사 건너뜀(SKIP) - {reason}")
+    return lines
+
+
 def start_change(text, project, decided, allowed, judge, call, check=None, measure=None):
     """Draft the inputs of a new zero-config session; returns its plan or raises with the reason to stop."""
     draft = _module('ask_draft')
     conventions = _module('convention_check')
-    enabled = convention_choice(text)
+    chosen = convention_selection(text, project)
+    enabled = bool(chosen['enabled'])
     routing = default_routing()
     configs = draft_models(routing)
     if allowed is not None and not {config['model'] for config in configs} <= set(allowed):
         raise ValueError('허용 목록 밖 모델로 초안을 쓰게 됩니다: ' + ', '.join(sorted({c['model'] for c in configs} - set(allowed))))
     session = new_session(project)
-    (session/CONVENTION_MARKER).write_text(json.dumps({'enabled': enabled}), encoding='utf-8')
+    (session/CONVENTION_MARKER).write_text(json.dumps(dict(chosen, enabled=enabled), ensure_ascii=False), encoding='utf-8')
     print(f"요구사항 초안 작성 중 ({configs[0]['model']}, 프로젝트 파일은 읽기만 함)...")
     # The draft only places files, so it gets the template tree; the code writers also get the example files.
     options = {'guidance': conventions.guidance(examples=False), 'rules': conventions.guidance()} if enabled else {}
@@ -720,12 +754,15 @@ def start_change(text, project, decided, allowed, judge, call, check=None, measu
     value['configSource'] = 'session'
     (project/'build'/'ask'/'current').write_text(session.name, encoding='utf-8')
     print(describe_draft(project, session, result['draft']))
+    for line in describe_selection(chosen):
+        print(line)
     if not enabled:
         print('컨벤션: 끔 (기존 코드 스타일을 따르고 컨벤션 검사는 하지 않음)')
         return value
     print('컨벤션: 켬 - 기존 코드 위반 확인 중 (Gradle check)...')
     try:
-        report = (measure or conventions.run)(project, session/'convention-before.json', value['convention']['baseRef'])
+        off = {'off': chosen['off']} if chosen['off'] else {}
+        report = (measure or conventions.run)(project, session/'convention-before.json', value['convention']['baseRef'], **off)
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
         print(f'컨벤션: 기존 코드를 검사하지 못해 정리 대상 없이 진행합니다 ({error})')
         return value
@@ -741,6 +778,7 @@ def zero_config(text, project, allowed, judge, call):
     """Plan a request against the project's own sessions; nothing is read from or written to its sources."""
     if text is None:
         session = current_session(project)
+        check_validators(project, session)
         value = plan('', str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, None, CONTINUE,
                      convention=convention_enabled(session))
         return dict(value, zeroConfig=True)
@@ -749,10 +787,15 @@ def zero_config(text, project, allowed, judge, call):
     if intent == 'CODE_CHANGE':
         return start_change(text, project, decided, allowed, judge, call)
     if intent in ('ANALYZE', 'MUTATION'):
-        return plan(text, None, None, str(project), allowed, judge, decided, convention=convention_choice(text))
+        chosen = convention_selection(text, project)
+        for line in describe_selection(chosen):
+            print(line)
+        return plan(text, None, None, str(project), allowed, judge, decided, convention=bool(chosen['enabled']))
     if intent == 'RULES':
         return plan(text, None, None, None, allowed, judge, decided)
     session = current_session(project)
+    if intent not in READ_ONLY:
+        check_validators(project, session)
     convention = intent not in READ_ONLY and convention_enabled(session)
     value = plan(text, str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, judge, decided, convention=convention)
     return dict(value, zeroConfig=True)

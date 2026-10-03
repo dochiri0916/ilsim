@@ -41,29 +41,15 @@ public class AnalyzerConfigLoader {
     }
 
     private AnalyzerConfig parse(Map<String, Object> root, Path projectRoot) {
-        validateKeys(root, Set.of("analysis", "rules", "suppressions", "report", "fail", "jev"), "configuration");
+        validateKeys(root, Set.of("analysis", "rules", "suppressions", "report", "fail", "jev", "validators"), "configuration");
         Map<String, Object> analysis = map(root.get("analysis"), "analysis");
         validateKeys(analysis, Set.of("source-roots", "excludes", "classpath"), "analysis");
         List<String> sourceRoots = strings(analysis.get("source-roots"), "analysis.source-roots");
         validateRelativePaths(sourceRoots, "analysis.source-roots");
         List<String> excludes = strings(analysis.get("excludes"), "analysis.excludes");
-        List<String> classpath = strings(analysis.get("classpath"), "analysis.classpath");
-        validateRelativePaths(classpath, "analysis.classpath");
-        for (String entry : classpath) {
-            Path jar = projectRoot.resolve(entry).normalize();
-            Path current = projectRoot;
-            for (Path part : projectRoot.relativize(jar)) {
-                current = current.resolve(part);
-                if (Files.isSymbolicLink(current)) throw invalid("analysis.classpath may not traverse symbolic links");
-            }
-            if (!Files.isRegularFile(jar) || !Files.isReadable(jar) || !entry.endsWith(".jar"))
-                throw invalid("analysis.classpath entries must be readable JAR files inside the project root");
-            try (var ignored = new java.util.jar.JarFile(jar.toFile())) {
-                // Validate before analysis or baseline output starts.
-            } catch (java.io.IOException exception) {
-                throw invalid("analysis.classpath contains an unreadable or invalid JAR");
-            }
-        }
+        List<String> configuredClasspath = strings(analysis.get("classpath"), "analysis.classpath");
+        validateRelativePaths(configuredClasspath, "analysis.classpath");
+        List<String> classpath = expandClasspath(configuredClasspath, projectRoot);
         Map<String, AnalyzerConfig.RuleSettings> rules = new LinkedHashMap<>();
         for (var entry : map(root.get("rules"), "rules").entrySet()) {
             Map<String, Object> settings = asMap(entry.getValue(), "rules." + entry.getKey());
@@ -145,8 +131,99 @@ public class AnalyzerConfigLoader {
                 booleanValue(fail.get("new-test-gaps"), false, "fail.new-test-gaps"), maxSurvived, exceptions,
                 booleanValue(fail.get("include-review"), false, "fail.include-review"),
                 booleanValue(fail.get("on-jev-failure"), false, "fail.on-jev-failure"), maxJevCalls);
+        Map<String, Object> validators = map(root.get("validators"), "validators");
+        validateKeys(validators, Set.of("architecture", "convention"), "validators");
+        var validatorSettings = new AnalyzerConfig.Validators(validator(validators, "architecture"),
+                validator(validators, "convention"));
         return new AnalyzerConfig(sourceRoots, excludes, classpath, rules, suppressions, reportFormat,
-                failSeverity, failConfidence, policy);
+                failSeverity, failConfidence, policy, validatorSettings);
+    }
+
+    private Boolean validator(Map<String, Object> validators, String name) {
+        if (!validators.containsKey(name)) return null;
+        Map<String, Object> settings = asMap(validators.get(name), "validators." + name);
+        validateKeys(settings, Set.of("enabled"), "validators." + name);
+        if (!settings.containsKey("enabled")) throw invalid("validators." + name + ".enabled is required");
+        return booleanValue(settings.get("enabled"), false, "validators." + name + ".enabled");
+    }
+
+    /**
+     * JAR files, class directories and JAR glob patterns (e.g. {@code libs/*.jar}), expanded in a stable order to the
+     * entries that exist. Nothing is followed through symbolic links and nothing outside the project root is read.
+     */
+    private List<String> expandClasspath(List<String> entries, Path projectRoot) {
+        var expanded = new java.util.LinkedHashSet<String>();
+        for (String entry : entries) {
+            if (entry.chars().anyMatch(c -> "*?[{".indexOf(c) >= 0)) {
+                List<String> matches = matchJars(entry, projectRoot);
+                if (matches.isEmpty()) throw invalid("analysis.classpath pattern matched no JAR files: " + entry);
+                for (String match : matches) {
+                    validateJar(projectRoot.resolve(match));
+                    expanded.add(match);
+                }
+                continue;
+            }
+            Path path = projectRoot.resolve(entry).normalize();
+            rejectSymbolicLinks(projectRoot, path);
+            if (Files.isDirectory(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                validateClassDirectory(path);
+            } else if (!Files.isRegularFile(path) || !Files.isReadable(path) || !entry.endsWith(".jar")) {
+                throw invalid("analysis.classpath entries must be readable JAR files, class directories or JAR patterns inside the project root");
+            } else {
+                validateJar(path);
+            }
+            expanded.add(projectRoot.relativize(path).toString());
+        }
+        return List.copyOf(expanded);
+    }
+
+    private List<String> matchJars(String pattern, Path projectRoot) {
+        if (!pattern.endsWith(".jar")) throw invalid("analysis.classpath patterns must match JAR files (end with .jar)");
+        Path prefix = projectRoot;
+        for (String part : pattern.split("/")) {
+            if (part.chars().anyMatch(c -> "*?[{".indexOf(c) >= 0)) break;
+            prefix = prefix.resolve(part);
+        }
+        prefix = prefix.normalize();
+        rejectSymbolicLinks(projectRoot, prefix);
+        if (!Files.isDirectory(prefix, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return List.of();
+        var matcher = java.nio.file.FileSystems.getDefault().getPathMatcher("glob:" + pattern);
+        try (var files = Files.walk(prefix)) {
+            return files.filter(file -> Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                    .map(projectRoot::relativize)
+                    .filter(matcher::matches)
+                    .map(Path::toString)
+                    .sorted()
+                    .toList();
+        } catch (java.io.IOException | java.io.UncheckedIOException exception) {
+            throw invalid("analysis.classpath pattern could not be read: " + pattern);
+        }
+    }
+
+    private void rejectSymbolicLinks(Path projectRoot, Path path) {
+        Path current = projectRoot;
+        for (Path part : projectRoot.relativize(path)) {
+            current = current.resolve(part);
+            if (Files.isSymbolicLink(current)) throw invalid("analysis.classpath may not traverse symbolic links");
+        }
+    }
+
+    private void validateJar(Path jar) {
+        try (var ignored = new java.util.jar.JarFile(jar.toFile())) {
+            // Validate before analysis or baseline output starts.
+        } catch (java.io.IOException exception) {
+            throw invalid("analysis.classpath contains an unreadable or invalid JAR");
+        }
+    }
+
+    private void validateClassDirectory(Path directory) {
+        try (var files = Files.walk(directory)) {
+            if (files.noneMatch(file -> file.toString().endsWith(".class")
+                    && Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)))
+                throw invalid("analysis.classpath class directory contains no .class files: " + directory.getFileName());
+        } catch (java.io.IOException | java.io.UncheckedIOException exception) {
+            throw invalid("analysis.classpath class directory could not be read");
+        }
     }
 
     private Map<String, Object> map(Object value, String key) {

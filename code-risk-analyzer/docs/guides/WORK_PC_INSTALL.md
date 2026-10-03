@@ -64,7 +64,7 @@ cd ~/tools/ai-orchestration && ./install.sh
 
 지금 바로 확인하려면 `python3 code-risk-analyzer/scripts/self_update.py`를 실행한다(10분 제한 없이 확인). 기록은 `.git/ask-update.json`에 있어 작업 트리를 바꾸지 않는다.
 
-업데이트 후 진행 중이던 세션을 이어가면 도구 해시가 달라 STALE이 될 수 있다. 그때는 새 요청으로 새 세션을 만든다. `ask-remote`는 계속 켜 두는 프로세스라 자기 코드는 다시 켜야 반영된다(그것이 실행하는 `ask`는 위대로 업데이트된다).
+업데이트 후 진행 중이던 세션을 이어가면 도구 해시가 달라 STALE이 될 수 있다. 그때는 새 요청으로 새 세션을 만든다. `ask-remote`는 자기 코드가 바뀐 것을 보면 다음 명령 확인 사이에 새 코드로 다시 시작하고, 승인 대기 중이던 세션도 이어 받는다.
 
 ## SSH가 막힌 경우
 

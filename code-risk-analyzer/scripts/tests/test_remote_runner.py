@@ -1,3 +1,5 @@
+from contextlib import redirect_stdout
+import io
 import importlib.util
 import json
 from pathlib import Path
@@ -189,6 +191,32 @@ class TelegramTests(unittest.TestCase):
             remote.Runner(project, link, run).step()
         self.assertEqual('추가해줘', runs[0][-1])
         self.assertIn('요청: 추가해줘: 완료', self.sent[-1][1])
+
+
+class RestartTests(unittest.TestCase):
+    def restart(self, current, awaiting=None, environ=None):
+        calls = []
+        runner = remote.Runner(Path('/tmp'), lambda status: [])
+        runner.awaiting = awaiting
+        with redirect_stdout(io.StringIO()):
+            restarted = remote.restart_if_changed('old', runner, ['--project', '/p'], environ or {}, lambda: current,
+                                                  lambda *args: calls.append(args))
+        return restarted, calls
+
+    def test_unchanged_code_keeps_running(self):
+        self.assertEqual((False, []), self.restart('old'))
+
+    def test_new_code_restarts_with_the_same_arguments_and_the_awaited_session(self):
+        restarted, calls = self.restart('new', awaiting='20261003-101010', environ={'PATH': '/bin'})
+        self.assertTrue(restarted)
+        executable, arguments, environment = calls[0]
+        self.assertEqual(['--project', '/p'], arguments[2:])
+        self.assertTrue(arguments[1].endswith('remote_runner.py'))
+        self.assertEqual({'PATH': '/bin', remote.RESUME: '20261003-101010'}, environment)
+
+    def test_nothing_awaited_carries_nothing_over(self):
+        _, calls = self.restart('new', environ={remote.RESUME: 'stale'})
+        self.assertNotIn(remote.RESUME, calls[0][2])
 
 
 class SettingTests(unittest.TestCase):

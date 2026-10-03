@@ -45,7 +45,7 @@ JEV 확률은 문서 충돌·시나리오 누락·구현 불일치의 검토 후
 | 재시도·중복 처리 안전성 | 멱등키의 저장·전달·원자적 사용 및 외부 서비스의 중복 방지 계약까지 증명하지 못함 |
 | 여러 메서드에 걸친 보안 흐름 | 현재 오염 데이터 분석은 메서드 내부 중심. Controller → Service → Repository 흐름을 완전하게 추적하지 못함 |
 | 테스트의 업무적 정확성 | assertion이 특정 분기 결과·상태 변화·롤백을 검증하는지 일반적으로 판정하지 못함 |
-| 권한·테넌트 격리 | 관련 테스트 항목 추출은 있으나, 실제 소유권·테넌트 접근 제어를 검증하는 전용 위험 규칙은 없음 |
+| 권한·테넌트 격리 | 전용 위험 규칙 `SEC-006`(객체 단위 권한)·`SEC-007`(Tenant 격리)은 REVIEW·LOW confidence 후보만 낸다. 호출 경로 전체의 실제 소유권·테넌트 접근 제어는 증명하지 못함 |
 | 언어·빌드 지원 | Java 중심이며, 변이 검증은 Gradle만 지원 |
 
 `--fail-on`은 기본적으로 `CONFIRMED` 결과만 대상으로 한다(`fail.include-review`로 `REVIEW` 포함 가능). 테스트 부족이 남아 있어도 종료 코드가 성공일 수 있다. 새 선택형 정책은 UNKNOWN 비율·신규 테스트 부족·변이 생존도 실패시킬 수 있다. 기본 정책은 기존과 같으며 설정과 예외 처리는 [CI_POLICY.md](../guides/CI_POLICY.md)를 참고한다.
@@ -120,7 +120,7 @@ JEV 확률은 문서 충돌·시나리오 누락·구현 불일치의 검토 후
 
 - 지원 API 목록 밖의 해석 성공 호출은 이름으로 다시 추정하지 않으므로 커스텀 wrapper·미지원 라이브러리 후보가 누락될 수 있다. 상속·전이 의존 타입 연결이 실패하는 경우도 보호나 부수 효과를 증명하지 않는다.
 - JAR은 심볼 해석용이며 내부 구현을 분석하지 않는다. JDBC execute·HTTP retrieve 등의 후보는 실제 변경·전송이 실행되었다는 보장이 아니다.
-- 클래스패스는 JAR 목록만 지원한다. glob·클래스 디렉터리·자동 의존성 수집은 지원하지 않으며 필요한 전이 의존 JAR도 직접 지정해야 한다.
+- 클래스패스는 JAR·JAR glob 패턴·클래스 디렉터리를 지원한다(2026-10-03). 자동 의존성 수집은 지원하지 않으며 필요한 전이 의존 JAR도 직접 지정해야 한다.
 - 실제 동시성·트랜잭션·멱등성·재시도·부분 실패의 실행 안전성을 검증하는 기능은 아니다.
 
 근거: [SideEffectDetector.java](../../src/main/java/com/example/coderiskanalyzer/production/analysis/sideeffect/SideEffectDetector.java), [SymbolSolverFactory.java](../../src/main/java/com/example/coderiskanalyzer/production/parser/SymbolSolverFactory.java), [SideEffectDetectorTests.java](../../src/test/java/com/example/coderiskanalyzer/analysis/sideeffect/SideEffectDetectorTests.java)

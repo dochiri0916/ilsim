@@ -9,8 +9,12 @@ phone was showing, after that session's plan printed that it waits for confirmat
                                Telegram: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in env or ~/.secrets
                                Vercel:   ASK_REMOTE_URL and ASK_RUNNER_TOKEN in env or ~/.secrets
     ask-remote --once          one exchange, for a quick connection check
+
+When a request's `ask` pulled new code for this runner too, the runner starts again on it between exchanges and keeps
+the session that was waiting for approval.
 """
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -30,6 +34,8 @@ SUMMARY_LIMIT = 4000
 TELEGRAM_LIMIT = 4000
 TELEGRAM_POLL = 25
 RUN_TIMEOUT = 3 * 3600
+# Carries the session awaiting approval into the restarted runner.
+RESUME = 'ASK_REMOTE_AWAITING'
 
 
 def _module(name):
@@ -278,6 +284,26 @@ class Runner:
             self.exchange()
 
 
+def fingerprint(path=Path(__file__).resolve()):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def restart_if_changed(started, runner, argv, environ=os.environ, current=fingerprint, execve=os.execve):
+    """Run the runner's new code after an update replaced it; only between exchanges, never during an `ask` run."""
+    try:
+        if current() == started:
+            return False
+    except OSError:
+        return False
+    print('ask-remote 코드가 업데이트되어 새 코드로 다시 시작합니다')
+    environment = {key: value for key, value in environ.items() if key != RESUME}
+    if runner.awaiting:
+        environment[RESUME] = runner.awaiting
+    sys.stdout.flush()
+    execve(sys.executable, [sys.executable, str(Path(__file__).resolve()), *argv], environment)
+    return True
+
+
 def main(argv=None, sleep=time.sleep):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--project')
@@ -307,6 +333,9 @@ def main(argv=None, sleep=time.sleep):
         print(f'시작할 수 없습니다: {error}')
         return 2
     runner = Runner(project, post)
+    # Set only by restart_if_changed; the approval still has to match the current session.
+    runner.awaiting = os.environ.pop(RESUME, None) or None
+    started = fingerprint()
     if telegram:
         link.send(f'연결됐습니다: {project.name}\n\n{HELP}')
     print(f'폰 연결 시작: {project.name} → {target} (Ctrl+C로 종료)')
@@ -327,6 +356,7 @@ def main(argv=None, sleep=time.sleep):
             print(f'연결 오류, 다시 시도합니다: {error}')
         if args.once:
             return 0
+        restart_if_changed(started, runner, sys.argv[1:] if argv is None else argv)
         sleep(wait)
 
 

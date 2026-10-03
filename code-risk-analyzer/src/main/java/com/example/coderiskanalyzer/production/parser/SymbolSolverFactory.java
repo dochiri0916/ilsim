@@ -1,7 +1,12 @@
 package com.example.coderiskanalyzer.production.parser;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
@@ -24,13 +29,32 @@ public class SymbolSolverFactory {
                 // and are handled conservatively. Source discovery reports the unreadable path as SOURCE-002.
             }
         }
-        for (Path jar : classpath.stream().distinct().toList()) {
+        for (Path entry : classpath.stream().distinct().toList()) {
             try {
+                Path jar = Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS) ? packClasses(entry) : entry;
                 solver.add(new com.github.javaparser.symbolsolver.resolution.typesolvers.JarTypeSolver(jar));
-            } catch (java.io.IOException exception) {
-                throw new IllegalArgumentException("Could not read classpath JAR: " + jar, exception);
+            } catch (java.io.IOException | java.io.UncheckedIOException exception) {
+                throw new IllegalArgumentException("Could not read classpath entry: " + entry, exception);
             }
         }
         return solver;
+    }
+
+    /**
+     * Copies a class directory's .class files into a temporary JAR so the same bytecode reader resolves them; the
+     * classes are read, never loaded or run.
+     */
+    private Path packClasses(Path directory) throws IOException {
+        Path jar = Files.createTempFile("code-risk-classes-", ".jar");
+        jar.toFile().deleteOnExit();
+        try (var output = new JarOutputStream(Files.newOutputStream(jar)); var files = Files.walk(directory)) {
+            for (Path file : files.filter(path -> path.toString().endsWith(".class")
+                    && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)).sorted().toList()) {
+                output.putNextEntry(new JarEntry(directory.relativize(file).toString().replace('\\', '/')));
+                Files.copy(file, output);
+                output.closeEntry();
+            }
+        }
+        return jar;
     }
 }

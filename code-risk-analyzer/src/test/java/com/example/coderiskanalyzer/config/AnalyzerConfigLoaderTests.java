@@ -124,6 +124,32 @@ class AnalyzerConfigLoaderTests {
     }
 
     @Test
+    void expandsJarPatternsAndAcceptsClassDirectories() throws Exception {
+        Path libs = Files.createDirectories(tempDir.resolve("libs/nested"));
+        for (Path jar : java.util.List.of(tempDir.resolve("libs/b.jar"), tempDir.resolve("libs/a.jar"), libs.resolve("c.jar"))) {
+            try (var ignored = new java.util.jar.JarOutputStream(Files.newOutputStream(jar))) {
+                // an empty, valid JAR
+            }
+        }
+        Path classes = Files.createDirectories(tempDir.resolve("build/classes/java/main/com/acme"));
+        Files.write(classes.resolve("Api.class"), new byte[] {(byte) 0xCA, (byte) 0xFE});
+        Files.writeString(tempDir.resolve(".code-risk.yml"),
+                "analysis:\n  classpath: ['libs/*.jar', 'libs/**/*.jar', libs/a.jar, build/classes/java/main]\n");
+        assertThat(new AnalyzerConfigLoader().load(tempDir).classpath())
+                .containsExactly("libs/a.jar", "libs/b.jar", "libs/nested/c.jar", "build/classes/java/main");
+        Files.createDirectories(tempDir.resolve("empty-classes"));
+        for (String invalid : java.util.List.of("'none/*.jar'", "'libs/*.zip'", "empty-classes", "'../*.jar'")) {
+            Files.writeString(tempDir.resolve(".code-risk.yml"), "analysis:\n  classpath: [" + invalid + "]\n");
+            assertThatThrownBy(() -> new AnalyzerConfigLoader().load(tempDir))
+                    .as(invalid).isInstanceOf(AnalyzerConfigException.class).hasMessageContaining("classpath");
+        }
+        Files.createSymbolicLink(tempDir.resolve("linked"), tempDir.resolve("libs"));
+        Files.writeString(tempDir.resolve(".code-risk.yml"), "analysis:\n  classpath: ['linked/*.jar']\n");
+        assertThatThrownBy(() -> new AnalyzerConfigLoader().load(tempDir))
+                .isInstanceOf(AnalyzerConfigException.class).hasMessageContaining("symbolic links");
+    }
+
+    @Test
     void rejectsMissingSuppressionReasonAndRootsEscapingProject() throws Exception {
         Files.writeString(tempDir.resolve(".code-risk.yml"), """
                 suppressions:
@@ -137,5 +163,30 @@ class AnalyzerConfigLoaderTests {
         Files.writeString(tempDir.resolve(".code-risk.yml"), "analysis:\n  source-roots: [../outside]\n");
         assertThatThrownBy(() -> new AnalyzerConfigLoader().load(tempDir))
                 .isInstanceOf(AnalyzerConfigException.class).hasMessageContaining("project root");
+    }
+
+    @Test
+    void validatorsAreUnsetByDefaultAndAcceptOnlyAnExplicitEnabledFlag() throws Exception {
+        assertThat(new AnalyzerConfigLoader().load(tempDir).validators())
+                .isEqualTo(new AnalyzerConfig.Validators(null, null));
+        Files.writeString(tempDir.resolve(".code-risk.yml"), """
+                validators:
+                  architecture:
+                    enabled: false
+                """);
+        assertThat(new AnalyzerConfigLoader().load(tempDir).validators())
+                .isEqualTo(new AnalyzerConfig.Validators(false, null));
+        Files.writeString(tempDir.resolve(".code-risk.yml"),
+                "validators:\n  architecture: {enabled: true}\n  convention: {enabled: false}\n");
+        assertThat(new AnalyzerConfigLoader().load(tempDir).validators())
+                .isEqualTo(new AnalyzerConfig.Validators(true, false));
+        for (String invalid : java.util.List.of("validators:\n  style: {enabled: true}\n",
+                "validators:\n  architecture: {}\n", "validators:\n  architecture:\n",
+                "validators:\n  architecture: {enabled: 'no'}\n", "validators:\n  convention: {enabled: true, strict: true}\n",
+                "validators: false\n")) {
+            Files.writeString(tempDir.resolve(".code-risk.yml"), invalid);
+            assertThatThrownBy(() -> new AnalyzerConfigLoader().load(tempDir))
+                    .as(invalid).isInstanceOf(AnalyzerConfigException.class);
+        }
     }
 }
