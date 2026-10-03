@@ -21,7 +21,7 @@ tasks.withType(CodeNarc).configureEach {
 }
 
 group = 'io.github.dochiri0916'
-version = '1.0.1'
+version = '1.2.0'
 
 repositories {
     mavenCentral()
@@ -33,8 +33,8 @@ dependencies {
     implementation localGroovy()
     implementation 'com.github.spotbugs.snom:spotbugs-gradle-plugin:6.0.26'
     implementation 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:1.19.0'
-    implementation 'com.tngtech.archunit:archunit:1.3.0'
-    implementation 'org.ow2.asm:asm:9.7.1'
+    implementation 'com.tngtech.archunit:archunit:1.4.1'
+    implementation 'org.ow2.asm:asm:9.8'
 
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'

@@ -44,7 +44,8 @@ final class DomainModelConventionValidator {
 
     private static boolean isAggregate(String packageName, JavaSourceAstInspector.TypeModel type) {
         type.kind == 'CLASS'
-                && (packageName.endsWith('.domain.model') || packageName.contains('.domain.model.'))
+                && (packageName.endsWith('.domain.model') || packageName.contains('.domain.model.')
+                || packageName.endsWith('.domain'))
                 && !type.simpleName.endsWith('Exception')
                 && type.fields.any { field -> !field.staticField }
     }

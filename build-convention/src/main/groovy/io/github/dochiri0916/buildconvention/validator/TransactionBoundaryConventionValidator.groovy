@@ -248,13 +248,15 @@ class TransactionBoundaryConventionValidator {
 
     private static boolean isStateChangingOperation(MethodBody method, String typeName, Set<String> useCaseNames) {
         return isStateChangingName(method.methodName)
-                || method.parameterTypes.any { String parameterType -> simplifyTypeName(parameterType).endsWith('Command') }
+                || (!isQueryName(method.methodName)
+                && method.parameterTypes.any { String parameterType -> simplifyTypeName(parameterType).endsWith('Command') })
                 || isStateChangingName(typeName.replaceFirst(/Service$/, ''))
                 || useCaseNames.any { String useCaseName -> isStateChangingName(useCaseName.replaceFirst(/UseCase$/, '')) }
     }
 
     private static boolean isQueryName(String name) {
-        return name ==~ /^(?:get|list|find|search|count|exists|load|read).*/
+        // Authentication only reads the member and checks the password.
+        return name ==~ /^(?:get|list|find|search|count|exists|load|read|login|authenticate).*/
     }
 
     private static boolean isStateChangingName(String name) {

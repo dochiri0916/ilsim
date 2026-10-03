@@ -264,8 +264,10 @@ def judge(config, state, decode):
             raise ValueError('Response too large')
         value = decode(raw.decode('utf-8'))
         answers = validate_response(value, version)
-    except (ValueError, TypeError, KeyError, UnicodeError):
-        return dict(result, failureKind='INVALID_OUTPUT', reason='Jev returned an invalid capability judgment')
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        # The check that failed, so an intermittent rejection can be told from a too-strict validator.
+        return dict(result, failureKind='INVALID_OUTPUT', reason='Jev returned an invalid capability judgment',
+                    detail=f'{type(error).__name__}: {error}'[:300])
     result.update(modelSnapshot=value['model'], answers=answers,
                   usage={name: value['usage'][name] for name in ('input_tokens', 'output_tokens')})
     if any(answer.get('choice') == 'UNKNOWN' for answer in answers.values()):
@@ -274,7 +276,10 @@ def judge(config, state, decode):
     threshold = max(config['minConfidence'], 0.9 if risk == 'HIGH' else 0.85 if risk == 'MEDIUM' else 0.0)
     floor = {'LOW': 'TIER_1', 'MEDIUM': 'TIER_3', 'HIGH': 'TIER_4'}[risk]
     raw_confidence = min(min(answer['confidence'], confidence_bounds(answer)[0]) for answer in answers.values())
-    confidence = raw_confidence if version == 1 else min(
+    # A HIGH risk routes to the top tier whatever tier was judged, so only the other answers must be confident.
+    confidence = (raw_confidence if floor != TIERS[-1] else min(
+        min(answer['confidence'], confidence_bounds(answer)[0]) for name, answer in answers.items() if name != 'requiredTier')
+    ) if version == 1 else min(
         routed_tier_confidence(answers['requiredTier'], TIERS.index(floor)),
         *(min(answers[name]['confidence'], confidence_bounds(answers[name])[0]) for name in ('risk', 'sufficiency')))
     result.update(confidence=confidence, rawConfidence=raw_confidence, confidenceThreshold=threshold, riskFloor=floor)

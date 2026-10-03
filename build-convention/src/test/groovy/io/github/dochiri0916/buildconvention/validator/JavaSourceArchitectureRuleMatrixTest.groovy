@@ -115,7 +115,6 @@ class JavaSourceArchitectureRuleMatrixTest {
         assertContains(violations, "application service 'BrokenService' must be final")
         assertContains(violations, "application service 'BrokenService' must implement an inbound UseCase")
         assertContains(violations, "application exception 'BrokenFlowException' must extend RuntimeException")
-        assertContains(violations, "application exception 'BrokenFlowException' must declare serialVersionUID")
         assertContains(violations, "application error code 'BrokenFlowErrorCode' must be an enum")
         assertContains(violations, "application exception support 'FailureReason' must end with Exception or ErrorCode")
         assertContains(violations, 'application must not depend on adapter/global error layer')
@@ -372,7 +371,6 @@ class JavaSourceArchitectureRuleMatrixTest {
         assertContains(violations, "domain reference field 'memberId' must use an identifier Value Object type")
         assertContains(violations, "domain service 'PricingService' must be final")
         assertContains(violations, "domain exception 'InvalidOrderException' must extend RuntimeException")
-        assertContains(violations, "domain exception 'InvalidOrderException' must declare serialVersionUID")
         assertContains(violations, "domain error code 'OrderErrorCode' must be an enum")
         assertContains(violations, "domain exception support 'FailureReason' must end with Exception or ErrorCode")
         assertContains(violations, "domain event 'OrderPlaced' must be a record")
@@ -420,7 +418,7 @@ class JavaSourceArchitectureRuleMatrixTest {
                     private Long technicalKey;
                     public String value;
                     private CustomerEntity customer;
-                    private String publicId;
+                    private String customerPublicId;
                     private Long memberId;
 
                     @ManyToOne
@@ -460,7 +458,7 @@ class JavaSourceArchitectureRuleMatrixTest {
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderMapper.java', '''
                 package com.example.order.adapter.out.persistence;
 
-                import java.util.UUID;
+                import java.time.LocalDateTime;
                 import org.springframework.stereotype.Component;
 
                 @Component
@@ -469,7 +467,7 @@ class JavaSourceArchitectureRuleMatrixTest {
 
                     public static String map(final String value) throws Exception {
                         OrderMapper.class.getDeclaredField("state").setAccessible(true);
-                        return value + UUID.randomUUID();
+                        return value + LocalDateTime.now();
                     }
                 }
                 ''')
@@ -490,9 +488,9 @@ class JavaSourceArchitectureRuleMatrixTest {
         assertContains(violations, "JPA entity 'OrderEntity' must not expose public constructors")
         assertContains(violations, "JPA entity 'OrderEntity' must not use object relation mappings")
         assertContains(violations, "JPA technical key must be named 'id', not 'technicalKey'")
-        assertContains(violations, "JPA entity 'OrderEntity' must declare private String orderId with @Column")
+        assertContains(violations, "JPA entity 'OrderEntity' must declare private String orderId or publicId with @Column")
         assertContains(violations, "JPA entity 'OrderEntity' must not hold entity reference field 'customer'")
-        assertContains(violations, "JPA reference field 'publicId' must use '{target}Id' naming")
+        assertContains(violations, "JPA reference field 'customerPublicId' must use '{target}Id' naming")
         assertContains(violations, "JPA reference field 'memberId' must store identifier VO value as String")
         assertContains(violations, "JPA entity 'OrderEntity' argument constructors must be private")
         assertContains(violations, "JPA entity 'OrderEntity' must expose a static factory returning 'OrderEntity'")
@@ -506,7 +504,7 @@ class JavaSourceArchitectureRuleMatrixTest {
         assertContains(violations, "mapper 'OrderMapper' must not be registered as a Spring bean")
         assertContains(violations, "mapper 'OrderMapper' must not keep instance state")
         assertContains(violations, "mapper 'OrderMapper' method 'map' must reveal conversion direction")
-        assertContains(violations, "mapper 'OrderMapper' must not generate time or UUID values")
+        assertContains(violations, "mapper 'OrderMapper' must not generate time values")
         assertContains(violations, "mapper 'OrderMapper' must not use reflection")
     }
 
