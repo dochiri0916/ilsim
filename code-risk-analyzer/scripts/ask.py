@@ -116,19 +116,23 @@ def intent_answer(value):
     return {'intent': answer['choice'], 'confidence': min(answer['confidence'], low), 'model': value['model']}
 
 
-def jev_intent(text, timeout=30):
+def jev_request(text, timeout=30):
     """Send only the request sentence to the fixed JEV endpoint; no redirects, no ambient proxy, no retry."""
     key = os.environ.get('TYPESAFE_API_KEY', '').strip()
     body = json.dumps({'model': 'jev-latest', 'state': {'request': text}, 'questions': {'intent': INTENT_QUESTION}},
                       ensure_ascii=False, sort_keys=True).encode('utf-8')
     request = jev.Request(jev.ENDPOINT, data=body, method='POST',
                           headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key})
+    with jev.build_opener(jev.ProxyHandler({}), jev.NoRedirect()).open(request, timeout=timeout) as response:
+        raw = response.read(jev.MAX_BYTES + 1)
+    if len(raw) > jev.MAX_BYTES:
+        raise ValueError('Response too large')
+    return raw
+
+
+def jev_intent(text, timeout=30, request=jev_request):
     try:
-        with jev.build_opener(jev.ProxyHandler({}), jev.NoRedirect()).open(request, timeout=timeout) as response:
-            raw = response.read(jev.MAX_BYTES + 1)
-        if len(raw) > jev.MAX_BYTES:
-            raise ValueError('Response too large')
-        return dict(intent_answer(json.loads(raw.decode('utf-8'))), status='COMPLETED')
+        return dict(intent_answer(json.loads(request(text, timeout).decode('utf-8'))), status='COMPLETED')
     except (OSError, ValueError, TypeError, KeyError, UnicodeError) as error:
         return {'status': 'FAILED', 'reason': f'{type(error).__name__}: {error}'[:200]}
 
