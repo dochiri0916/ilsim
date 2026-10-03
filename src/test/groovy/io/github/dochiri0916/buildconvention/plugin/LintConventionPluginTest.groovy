@@ -356,6 +356,54 @@ class LintConventionPluginTest {
     }
 
     @Test
+    void 'check fails when JUnit Platform tags or engines skip tests'() {
+        Project project = sampleProject()
+        project.tasks.named('test').configure { task ->
+            task.useJUnitPlatform { options ->
+                options.excludeTags 'slow'
+                options.includeTags 'fast'
+                options.excludeEngines 'junit-jupiter'
+                options.includeEngines 'junit-vintage'
+            }
+        }
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('Build convention verification must not be disabled')
+        ['excludeTags', 'includeTags', 'excludeEngines', 'includeEngines'].each { String name ->
+            assert exception.message.contains("test.options.${name}")
+        }
+    }
+
+    @Test
+    void 'check fails when test class scanning is disabled'() {
+        Project project = sampleProject()
+        project.tasks.named('test').configure { task -> task.scanForTestClasses = false }
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('test.scanForTestClasses=false')
+    }
+
+    @Test
+    void 'check fails when test classes dirs are replaced'() {
+        Project project = sampleProject()
+        project.tasks.named('test').configure { task ->
+            task.testClassesDirs = project.files('build/empty-test-classes')
+        }
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        assert exception.message.contains('test.testClassesDirs missing')
+    }
+
+    @Test
     void 'check fails when test jacoco is disabled'() {
         Project project = sampleProject()
         project.tasks.named('test').get().extensions.getByType(JacocoTaskExtension).enabled = false
@@ -473,6 +521,25 @@ class LintConventionPluginTest {
         assert exception.message.contains('failOnViolation=false')
         assert exception.message.contains('violationRules.rule.enabled=false')
         ['excludedClasses', 'excludedMethods', 'mutators', 'targetClasses', 'mutationThreshold', 'testStrengthThreshold']
+                .each { String name -> assert exception.message.contains("pitest.${name}") }
+    }
+
+    @Test
+    void 'check fails when mutation test selection is narrowed after evaluation'() {
+        Project project = sampleProject()
+        ((org.gradle.api.internal.project.ProjectInternal) project).evaluate()
+        def pitest = project.extensions.getByName('pitest')
+        pitest.targetTests.set(['com.example.NothingTest'])
+        pitest.excludedGroups.set(['slow'])
+        pitest.includedGroups.set(['fast'])
+        pitest.includedTestMethods.set(['nothing'])
+        pitest.skipFailingTests.set(true)
+
+        GradleException exception = assertThrows(GradleException) {
+            executeCheckActions(project)
+        }
+
+        ['targetTests', 'excludedGroups', 'includedGroups', 'includedTestMethods', 'skipFailingTests']
                 .each { String name -> assert exception.message.contains("pitest.${name}") }
     }
 

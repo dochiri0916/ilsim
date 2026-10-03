@@ -137,6 +137,8 @@ class ChangedCodeCoverageValidator {
                 '-C',
                 project.projectDir.absolutePath,
                 'diff',
+                // Subproject paths must match the project-relative source roots, not the repository root.
+                '--relative',
                 '--unified=0',
                 '--no-ext-diff',
                 '--diff-filter=ACMRT',
