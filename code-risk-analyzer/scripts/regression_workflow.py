@@ -434,7 +434,9 @@ def main():
                         if policy and isinstance(policy.get('project'), str):
                             policy['project'] = str((Path(args.fixture_policy).resolve().parent / policy['project']).resolve())
                         evidence = review_module().review_evidence(project, after, args.static_report, read_json(args.evidence_review), policy)
-                    result['completion'] = completion(regression, after, read_json(args.service), open_evidence, evidence)
+                    # This CLI never runs the service itself, so the supplied result stays an open claim.
+                    questions = open_evidence + ['Service evidence was supplied by the caller, not executed by a controller adapter']
+                    result['completion'] = completion(regression, after, read_json(args.service), questions, evidence)
                 save(output, result)
             status = result.get('completion', result['regression'])['status']
             print(json.dumps({'status': status, 'output': str(output)}))

@@ -43,16 +43,23 @@ def settings(value):
     for command in scenarios.values():
         if not isinstance(command, list) or len(command) < 2 or any(not isinstance(a, str) or not a for a in command):
             raise ValueError('Each scenario must be a program and its arguments')
+    if len({tuple(command) for command in scenarios.values()}) != len(SCENARIOS):
+        raise ValueError('Each scenario needs a distinct check command')
     return result
 
 
 def scenario_files(project, config):
+    # The program and its script arguments are hashed so a check cannot change after the session starts.
     files = {}
     for command in config['scenarios'].values():
-        for argument in command[1:]:
+        referenced = False
+        for argument in command:
             path = Path(argument)
             if not path.is_absolute() and '..' not in path.parts and (project/path).is_file():
                 files[path.as_posix()] = digest(project/path)
+                referenced = True
+        if not referenced:
+            raise ValueError('Each scenario must run a check script inside the project')
     return files
 
 
