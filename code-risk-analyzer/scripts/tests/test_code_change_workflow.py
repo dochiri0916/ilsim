@@ -1047,5 +1047,39 @@ esac
         self.assertEqual(self.state.parent/'service-running.json', tools.verify_service.call_args.args[2])
 
 
+class LibraryMisuseTests(unittest.TestCase):
+    """Real javac output: a missing library member is rejected, a project type that does not exist yet is expected."""
+
+    def test_unknown_library_method_is_reported_and_missing_project_code_is_not(self):
+        import shutil
+        import subprocess
+        if shutil.which('javac') is None:
+            self.skipTest('javac not installed')
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'Assertions.java').write_text(
+                'class Assertions { static Assertions assertThat(String v) { return new Assertions(); } '
+                'Assertions contains(String v) { return this; } }')
+            (root/'OrderTest.java').write_text(
+                'class OrderTest { void test() {\n'
+                '  Assertions.assertThat("x").containsJson("y");\n'  # library type: method does not exist
+                '  Order order = Order.create();\n'                  # project type: written in implementation
+                '} }')
+            result = subprocess.run(['javac', '-d', str(root/'out'), str(root/'Assertions.java'), str(root/'OrderTest.java')],
+                                    capture_output=True, text=True)
+            output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode)
+        errors = controller.library_misuse(output, {'Order', 'OrderTest'})
+        self.assertEqual(1, len(errors), output)
+        self.assertIn('OrderTest.java:2', errors[0])
+        self.assertIn('containsJson', errors[0])
+        self.assertIn('Assertions', errors[0])
+
+    def test_no_errors_when_only_project_types_are_missing(self):
+        output = ('/p/src/test/java/OrderTest.java:5: error: cannot find symbol\n'
+                  '    Order.create();\n    ^\n  symbol:   method create()\n  location: class Order\n')
+        self.assertEqual([], controller.library_misuse(output, {'Order'}))
+
+
 if __name__ == '__main__':
     unittest.main()
