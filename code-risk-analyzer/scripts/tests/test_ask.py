@@ -43,6 +43,70 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual('PULL_REQUEST', ask.classify('PR을 만들어줘')[0])
 
 
+def jev(intent, confidence=0.95, status='COMPLETED'):
+    return lambda text: {'status': status, 'intent': intent, 'confidence': confidence, 'reason': 'test'}
+
+
+class DecideTests(unittest.TestCase):
+    def test_agreeing_jev_and_keywords_decide_together(self):
+        intent, reason = ask.decide('재고 차감 버그 고쳐줘', jev('CODE_CHANGE'))
+        self.assertEqual('CODE_CHANGE', intent)
+        self.assertIn('JEV', reason)
+
+    def test_jev_understands_requests_without_keywords(self):
+        self.assertEqual('CODE_CHANGE', ask.decide('주문이 두 번 결제되는 문제 좀 없애줘', jev('CODE_CHANGE'))[0])
+
+    def test_disagreement_stops_instead_of_guessing(self):
+        with self.assertRaisesRegex(ValueError, 'ANALYZE'):
+            ask.decide('재고 차감 버그 고쳐줘', jev('ANALYZE'))
+
+    def test_low_confidence_or_unknown_jev_answer_stops(self):
+        for judge in (jev('CODE_CHANGE', confidence=0.5), jev('UNKNOWN')):
+            with self.subTest(judge=judge):
+                with self.assertRaises(ValueError):
+                    ask.decide('재고 차감 버그 고쳐줘', judge)
+
+    def test_without_jev_keywords_decide_and_say_so(self):
+        intent, reason = ask.decide('재고 차감 버그 고쳐줘', None)
+        self.assertEqual('CODE_CHANGE', intent)
+        self.assertIn('keyword', reason)
+
+    def test_failed_jev_call_falls_back_to_keywords_with_warning(self):
+        intent, reason = ask.decide('재고 차감 버그 고쳐줘', jev(None, status='FAILED'))
+        self.assertEqual('CODE_CHANGE', intent)
+        self.assertIn('JEV 실패', reason)
+
+    def test_failed_jev_call_without_keyword_match_is_rejected(self):
+        with self.assertRaises(ValueError):
+            ask.decide('주문이 두 번 결제되는 문제 좀 없애줘', jev(None, status='FAILED'))
+
+
+class IntentResponseTests(unittest.TestCase):
+    def response(self, choice='CODE_CHANGE', top=0.9):
+        labels = list(ask.INTENT_QUESTION['criteria'])
+        rest = (1 - top) / (len(labels) - 1)
+        probabilities = {label: (top if label == choice else rest) for label in labels}
+        confidence = (top - 1/len(labels)) / (1 - 1/len(labels))
+        return {'model': 'jev-1.13.0', 'usage': {'input_tokens': 10, 'output_tokens': 1},
+                'answers': {'intent': {'type': 'choice', 'choice': choice, 'probabilities': probabilities, 'confidence': confidence}}}
+
+    def test_valid_response_yields_intent_and_confidence(self):
+        result = ask.intent_answer(self.response())
+        self.assertEqual('CODE_CHANGE', result['intent'])
+        self.assertGreater(result['confidence'], 0.8)
+
+    def test_malformed_responses_are_rejected(self):
+        broken = [self.response(), self.response(), self.response(), self.response()]
+        broken[0]['answers']['intent']['choice'] = 'DEPLOY'
+        del broken[1]['answers']['intent']['probabilities']['STATUS']
+        broken[2]['answers']['intent']['confidence'] = 0.99
+        broken[3]['model'] = 'gpt-6'
+        for value in broken:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    ask.intent_answer(value)
+
+
 class TierTests(unittest.TestCase):
     def test_high_risk_areas_use_tier_3(self):
         for text in ('결제 금액 수정', '재고 동시성 수정', '트랜잭션 롤백 추가', '권한 검사 추가', 'retry 로직 수정'):
@@ -190,6 +254,15 @@ class SessionTests(unittest.TestCase):
         # then
         self.assertEqual('TIER_2', plan['config']['routing']['requiredTiers']['implementation'])
         self.assertEqual(['verification'], plan['stages'])
+
+    def test_with_jev_new_session_uses_capability_judgment_for_tiers(self):
+        # given
+        self.write('config.json', self.config)
+        # when
+        plan = ask.plan('재고 동시성 버그 고쳐줘', config=str(self.root/'config.json'), state=str(self.state), judge=jev('CODE_CHANGE'))
+        # then
+        self.assertEqual({}, plan['config']['routing']['capability'])
+        self.assertNotIn('requiredTiers', plan['config']['routing'])
 
     def test_explicit_tiers_in_config_are_kept(self):
         # given

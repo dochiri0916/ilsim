@@ -12,10 +12,10 @@ Java 25 Spring Boot CLI(`code-risk-analyzer`)와 Python 단계 실행기(`script
 python3 scripts/ask.py "주문 취소에 중복 요청 방지 추가해줘" --config c.json --state <project>/build/<id>/state.json
 ```
 
-- 요청을 키워드로 분류해(모델 호출 없음, 토큰 0) 작업·단계·모델 Tier를 정하고 계획을 출력한다. 코드를 바꾸는 단계는 `--yes`를 붙여야 실행한다.
-- 분류: 변경(추가·수정·고쳐…) / 분석(분석·점검) / 상태(어디까지) / 이어서 / 검증 / PR / 비용 / 규칙 / 변이. 모르는 요청은 추측하지 않고 거부한다.
+- 작업 판단: `TYPESAFE_API_KEY`가 있으면 JEV가 요청 문장만 보고 작업을 고르고, 키워드 규칙과 결과가 같아야 진행한다. 둘이 다르거나 JEV 신뢰도가 0.8 미만이거나 UNKNOWN이면 실행하지 않고 다시 묻는다. JEV 호출이 실패하면 키워드로만 판단하고 그 사실을 출력한다. 키가 없거나 `--no-jev`면 키워드만 쓴다(토큰 0). 코드를 바꾸는 단계는 `--yes`를 붙여야 실행한다.
+- 작업 종류: 변경 / 분석 / 상태 / 이어서 / 검증 / PR / 비용 / 규칙 / 변이.
 - 단계: 세션 `phase`에서 다음 사람 확인 지점(verification → review → pull-request)까지만 실행한다. 검증 실패 시 `repair` 설정이 있으면 repair를 한 번 실행한다.
-- 모델: `routing`에 Tier·capability가 없으면 새 세션에서 결제·재고·동시성·트랜잭션·보안 등 고위험 단어가 있을 때 TIER_3, 아니면 TIER_2로 고정해 `<session>/ask-config.json`에 저장하고 이후 재사용한다. TIER_4는 자동 선택하지 않는다.
+- 모델: `routing`에 Tier·capability가 없으면 새 세션 설정을 `<session>/ask-config.json`에 저장하고 이후 재사용한다. JEV 키가 있으면 `capability: {}`로 단계마다 JEV가 요구사항·코드 범위를 보고 Tier를 정한다(해당 내용이 TypeSafe로 전송된다). 키가 없으면 고위험 단어(결제·재고·동시성·트랜잭션·보안 등)가 있을 때 TIER_3, 아니면 TIER_2이며 TIER_4는 고르지 않는다.
 - 금지: 도달 가능한 모든 경로(fallback 포함)에 이름에 `astra`·`fable`·`opus`가 든 모델이나 `max` effort가 있으면 실행 전에 거부한다. `--allowed-models a,b`로 허용 목록을 더 좁힐 수 있다.
 - 요구사항 내용 자체는 여전히 config의 requirements JSON이 기준이다. 자연어 요청은 작업 판단과 Tier에만 쓴다.
 
