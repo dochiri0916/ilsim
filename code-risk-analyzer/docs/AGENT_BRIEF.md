@@ -6,6 +6,19 @@
 
 Java 25 Spring Boot CLI(`code-risk-analyzer`)와 Python 단계 실행기(`scripts/`)다. Java/Spring/JPA 대상 프로젝트의 위험 분석, 테스트 적정성, 변이 검증과 CODE_CHANGE 7단계 실행을 제공한다. `build-convention` 적용은 필요하지 않다.
 
+## 가장 쉬운 사용: 자연어 한 줄 (`scripts/ask.py`)
+
+```bash
+python3 scripts/ask.py "주문 취소에 중복 요청 방지 추가해줘" --config c.json --state <project>/build/<id>/state.json
+```
+
+- 요청을 키워드로 분류해(모델 호출 없음, 토큰 0) 작업·단계·모델 Tier를 정하고 계획을 출력한다. 코드를 바꾸는 단계는 `--yes`를 붙여야 실행한다.
+- 분류: 변경(추가·수정·고쳐…) / 분석(분석·점검) / 상태(어디까지) / 이어서 / 검증 / PR / 비용 / 규칙 / 변이. 모르는 요청은 추측하지 않고 거부한다.
+- 단계: 세션 `phase`에서 다음 사람 확인 지점(verification → review → pull-request)까지만 실행한다. 검증 실패 시 `repair` 설정이 있으면 repair를 한 번 실행한다.
+- 모델: `routing`에 Tier·capability가 없으면 새 세션에서 결제·재고·동시성·트랜잭션·보안 등 고위험 단어가 있을 때 TIER_3, 아니면 TIER_2로 고정해 `<session>/ask-config.json`에 저장하고 이후 재사용한다. TIER_4는 자동 선택하지 않는다.
+- 금지: 도달 가능한 모든 경로(fallback 포함)에 이름에 `astra`·`fable`·`opus`가 든 모델이나 `max` effort가 있으면 실행 전에 거부한다. `--allowed-models a,b`로 허용 목록을 더 좁힐 수 있다.
+- 요구사항 내용 자체는 여전히 config의 requirements JSON이 기준이다. 자연어 요청은 작업 판단과 Tier에만 쓴다.
+
 ## 분석기 명령
 
 `CRA` = `java -jar build/libs/code-risk-analyzer-0.0.1-SNAPSHOT.jar` (`./gradlew bootJar`로 생성)
