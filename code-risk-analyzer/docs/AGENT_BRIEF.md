@@ -51,7 +51,7 @@ ask "결제 코드 위험 분석해줘"    # 분석 + 컨벤션 검사, 코드 �
 
 `baseline` → `test-writing`(또는 `generate-tests`) → `implementation`(또는 `generate-implementation`) → `verification`(또는 `repair`) → `local-service` → `review` → `complete` → `pull-request`
 
-- 각 단계는 이전 단계 성공과 입력·소스 해시가 그대로일 때만 실행된다. 바뀌면 STALE이 되고 다시 실행해야 한다.
+- 각 단계는 이전 단계 성공과 입력·소스 해시가 그대로일 때만 실행된다. 바뀌면 STALE이 되고 다시 실행해야 한다. 단, 테스트·구현 생성 모델이 답을 내지 못하거나 답이 거부돼 아무것도 쓰지 않고 STALE이 된 경우는 `ask --yes`가 그 생성 단계부터 같은 세션에서 다시 한다(2026-10-03 사용자 결정). 입력·소스가 바뀐 STALE은 여전히 새 세션이 필요하다.
 - 최종 검증: 회귀 비교 → HIGH/CRITICAL 정적 위험 → 품질 게이트(LINE 90%·BRANCH 80%·변이 90%·생존 0, `qualityGates` 설정 시) → 별도 서비스 4개 시나리오(normal·duplicate·concurrency·rollback) → 근거 검토.
 - 서비스: MySQL fixture는 `fixtureAdapter`, 그 외 프로젝트는 `serviceAdapter`.
 - PR: `pull-request`는 본문 초안만 만든다. `submit: true`는 plan의 `PULL_REQUEST` 승인과 커밋·푸시가 끝난 경우에만 draft PR을 연다.

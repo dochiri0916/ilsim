@@ -173,6 +173,23 @@ class StageTests(unittest.TestCase):
             ask.stages('VERIFY', None, generator=True, service=False)
 
 
+class ResumeTests(unittest.TestCase):
+    def stale(self, stage, reason=None, kind='SOURCES'):
+        return {'phase': 'STALE', 'staleKind': kind, 'generationStage': stage,
+                'invalidations': [{'reason': reason or ask.AGENT_STOP, 'kind': kind}]}
+
+    def test_unfinished_model_stage_resumes_there(self):
+        self.assertEqual(['generate-tests', 'generate-implementation', 'verification'],
+                         ask.stages('CONTINUE', ask.resume_phase(self.stale('test-writing')), True, False))
+        self.assertEqual(['generate-implementation', 'verification'],
+                         ask.stages('CONTINUE', ask.resume_phase(self.stale('implementation')), True, False))
+
+    def test_other_invalidations_still_need_a_new_session(self):
+        for state in (self.stale('test-writing', 'Source or test changed outside the recorded operation'),
+                      self.stale('test-writing', kind='INPUTS'), dict(self.stale(None))):
+            self.assertEqual('STALE', ask.resume_phase(state))
+
+
 class StopReasonTests(unittest.TestCase):
     def test_model_questions_and_gate_refusals_are_explained(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -195,7 +212,8 @@ class StopReasonTests(unittest.TestCase):
                  'rejectedOutput': {'changes': []}}))
             lines = ask.stop_reason(directory, 0)
             self.assertIn('검사 내용: ValueError: x', lines)
-            self.assertIn('rejectedOutput', lines[-1])
+            self.assertIn('rejectedOutput', lines[-2])
+            self.assertEqual(ask.RETRY_HINT, lines[-1])
             # given: the record is older than the stage
             self.assertEqual([], ask.stop_reason(directory, 10**12))
 

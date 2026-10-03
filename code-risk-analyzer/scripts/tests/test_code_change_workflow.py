@@ -681,6 +681,27 @@ echo artifact > build/libs/service.jar
         self.assertEqual([path for path in scope if path.startswith('src/main/')], task['approvedProductionFiles'])
         self.assertTrue(task['approvedProductionFiles'])
 
+    def test_unfinished_implementation_call_can_be_retried_in_the_same_session(self):
+        # given: tests accepted, then the implementation model stops with a question
+        self.agent_input()
+        self.run_stage('baseline')
+        with patch.object(controller.agent, 'run', return_value=self.generated()), \
+                patch.object(controller.Controller, '_write', side_effect=self.writer):
+            self.run_stage('generate-tests')
+        question = {'version': 1, 'status': 'NEEDS_REVIEW', 'failureKind': 'AMBIGUITY'}
+        with patch.object(controller.agent, 'run', return_value=question):
+            self.assertEqual('NEEDS_REVIEW', self.run_stage('generate-implementation')['status'])
+        state = controller.regression.read_json(self.state)
+        self.assertEqual(('STALE', 'implementation'), (state['phase'], state['generationStage']))
+        # when
+        result = self.generated('src/main/Service.java')
+        result['output'].update(changes=[], requirementTestMap=[], expectedFailures=[])
+        with patch.object(controller.agent, 'run', return_value=result):
+            retried = self.run_stage('generate-implementation')
+        # then
+        self.assertEqual('COMPLETED', retried['status'])
+        self.assertEqual('IMPLEMENTATION', controller.regression.read_json(self.state)['phase'])
+
     def test_test_writing_rejects_production_change_before_writer(self):
         self.run_stage('baseline')
         with patch.object(controller.Controller, '_write') as write:
