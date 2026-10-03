@@ -155,7 +155,12 @@ def fix(project, session, model_configs, call, run=subprocess.run, guidance=None
         return {'status': 'FAILED', 'reason': '정리 후 기존 테스트가 실패해 원래 코드로 되돌렸습니다'}
     plan_path = session/'plan.json'
     plan = json.loads(plan_path.read_text(encoding='utf-8'))
-    plan['features'] = {'existing-tests': _module('ask_draft').existing_tests(project)}
+    before = (plan.get('features') or {}).get('existing-tests') or []
+    after = _module('ask_draft').existing_tests(project)
+    if len(after) < len(before):
+        restore(project, backup, changed)
+        return {'status': 'FAILED', 'reason': f'정리 후 찾은 기존 테스트가 {len(before)}개에서 {len(after)}개로 줄어 원래 코드로 되돌렸습니다'}
+    plan['features'] = {'existing-tests': after}
     plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf-8')
     value = {'status': 'COMPLETED', 'files': changed, 'original': backup.relative_to(project).as_posix()}
     record.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')

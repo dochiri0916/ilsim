@@ -189,6 +189,25 @@ class CleanupTests(Temp):
         self.assertEqual(original, (self.project/self.TEST).read_text())
         self.assertFalse((self.session/'cleanup.json').exists())
 
+    def test_full_annotation_names_keep_the_test_and_losing_tests_undoes_the_fix(self):
+        # given: the model wrote fully qualified annotations
+        self.fixed = self.fixed.replace('@Test', '@org.junit.jupiter.api.Test').replace(
+            '@DisplayName', '@org.junit.jupiter.api.DisplayName')
+        # when
+        result = cleanup.fix(self.project, self.session, [{'m': 1}], self.call(self.change()), self.exit_code(0))
+        # then
+        self.assertEqual('COMPLETED', result['status'])
+        self.assertEqual({'existing-tests': ['com.example.demo.DemoApplicationTests#애플리케이션이 뜬다']},
+                         json.loads((self.session/'plan.json').read_text())['features'])
+
+    def test_fix_that_hides_existing_tests_is_undone(self):
+        original = (self.project/self.TEST).read_text()
+        self.fixed = 'package com.example.demo;\nclass DemoApplicationTests {\n}\n'
+        result = cleanup.fix(self.project, self.session, [{'m': 1}], self.call(self.change()), self.exit_code(0))
+        self.assertEqual('FAILED', result['status'])
+        self.assertIn('1개에서 0개로', result['reason'])
+        self.assertEqual(original, (self.project/self.TEST).read_text())
+
     def test_nothing_reported_or_no_report_skips_without_a_model_call(self):
         (self.session/'convention-before.json').write_text(json.dumps(report()))
         self.assertEqual('SKIPPED', cleanup.fix(self.project, self.session, [{'m': 1}], self.call())['status'])
