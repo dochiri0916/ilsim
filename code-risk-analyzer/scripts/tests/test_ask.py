@@ -484,25 +484,58 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertEqual(started['config'], value['config'])
         self.assertEqual(started['stages'], value['stages'])
 
-    def test_existing_violations_are_fixed_before_baseline_and_every_check_gates_after_verification(self):
-        # given
-        value, _ = self.start()
-        commands = []
+    def gate_runner(self, checks, commands):
+        """Convention checks fail with the next entry of `checks` (a set of failing check names) until it is empty."""
+        checks = list(checks)
 
         def run(command):
             commands.append(command)
-            return 1 if command[1].endswith('convention_check.py') else 0
+            if command[1].endswith('convention_check.py'):
+                failing = checks.pop(0) if checks else set()
+                output = Path(command[command.index('--output') + 1])
+                output.write_text(json.dumps({'status': 'FAIL' if failing else 'PASS',
+                                              'checks': {name: 'FAIL' for name in failing}}))
+                return 1 if failing else 0
+            return 0
+        return run
+
+    def names(self, commands):
+        return [Path(c[1]).name + (':' + c[c.index('--mode') + 1] if '--mode' in c else '') if 'convention' in c[1] else c[2]
+                for c in commands]
+
+    def test_new_code_violations_are_fixed_through_the_workflow_before_verification(self):
+        # given
+        value, _ = self.start()
+        commands = []
         # when
         with redirect_stdout(io.StringIO()):
-            code = ask.execute(value, True, run)
+            code = ask.execute(value, True, self.gate_runner([{'architecture'}, {'checkstyle'}], commands))
         # then
-        self.assertEqual(1, code)
-        names = [Path(command[1]).name if 'convention' in command[1] else command[2] for command in commands]
-        self.assertEqual(['convention_fix.py', 'baseline', 'generate-tests', 'generate-implementation', 'verification',
-                          'convention_check.py'], names)
+        self.assertEqual(0, code)
+        self.assertEqual(['convention_fix.py', 'baseline', 'generate-tests', 'generate-implementation',
+                          'convention_check.py', 'convention_fix.py:implementation', 'convention_check.py',
+                          'convention_fix.py:implementation', 'convention_check.py', 'verification'], self.names(commands))
         session = Path(value['state']).parent
-        self.assertEqual(['--session', str(session)], commands[0][2:])
-        self.assertEqual(str(session/'convention-before.json'), commands[-1][commands[-1].index('--before') + 1])
+        self.assertEqual(str(session/'convention-after.json'), commands[5][commands[5].index('--report') + 1])
+        self.assertEqual(str(session/'convention-before.json'), commands[4][commands[4].index('--before') + 1])
+
+    def test_violations_left_after_the_fix_rounds_stop_before_verification(self):
+        value, _ = self.start()
+        commands = []
+        with redirect_stdout(io.StringIO()) as output:
+            code = ask.execute(value, True, self.gate_runner([{'architecture'}] * 3, commands))
+        self.assertEqual(1, code)
+        self.assertNotIn('verification', self.names(commands))
+        self.assertEqual(2, self.names(commands).count('convention_fix.py:implementation'))
+        self.assertIn('남은 위반', output.getvalue())
+
+    def test_failing_tests_are_left_to_verification_then_checked_once_more(self):
+        value, _ = self.start()
+        commands = []
+        with redirect_stdout(io.StringIO()):
+            code = ask.execute(value, True, self.gate_runner([{'tests'}, {'checkstyle'}], commands))
+        self.assertEqual(1, code)
+        self.assertEqual(['convention_check.py', 'verification', 'convention_check.py'], self.names(commands)[4:])
 
     def test_failed_cleanup_stops_before_the_baseline(self):
         value, _ = self.start()
@@ -528,9 +561,11 @@ class ZeroConfigTests(unittest.TestCase):
 
     def test_convention_that_cannot_run_never_blocks_the_verified_change(self):
         value, _ = self.start()
-        run = lambda command: 2 if command[1].endswith('convention_check.py') else 0
+        commands = []
+        run = lambda command: commands.append(command) or (2 if command[1].endswith('convention_check.py') else 0)
         with redirect_stdout(io.StringIO()) as output:
             self.assertEqual(0, ask.execute(value, True, run))
+        self.assertEqual('verification', commands[-1][2])
         self.assertIn('건너뜁니다', output.getvalue())
 
     def test_analysis_also_checks_conventions_and_runs_every_check(self):

@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import io
 import json
@@ -72,10 +73,12 @@ class ConventionTests(Temp):
     def test_run_saves_report_with_printed_violations_and_base_ref(self):
         # given
         output = self.root/'session'/'convention-after.json'
+        (self.project/'build/classes/java/main').mkdir(parents=True)
         # when
         value = convention.run(self.project, output, 'abc123', self.process(report(checkstyle='FAIL'), GRADLE_OUTPUT))
         # then
-        command, cwd = self.commands[0]
+        self.assertEqual((['./gradlew', 'testClasses'], self.project), self.commands[0])
+        command, cwd = self.commands[1]
         self.assertEqual(['./gradlew', 'check', '--continue', '--init-script'], command[:4])
         self.assertEqual('-PchangedCoverageBaseRef=abc123', command[-1])
         self.assertEqual(self.project, cwd)
@@ -87,6 +90,10 @@ class ConventionTests(Temp):
             {'file': 'src/test/java/com/example/demo/DemoApplicationTests.java', 'rule': 'ARCH-TEST-CONVENTION',
              'message': "test method 'contextLoads' must declare @DisplayName in Korean"}], value['violations'])
 
+    def test_never_built_project_is_not_compiled_first(self):
+        convention.run(self.project, self.root/'out.json', None, self.process(report()))
+        self.assertEqual(['./gradlew', 'check'], self.commands[0][0][:2])
+
     def test_stale_report_is_never_reused(self):
         path = self.project/convention.REPORT
         path.parent.mkdir(parents=True)
@@ -94,6 +101,18 @@ class ConventionTests(Temp):
         output = 'FAILURE: Build failed\n\n* What went wrong:\nBuild convention verification must not be disabled.\n\n* Try:'
         with self.assertRaisesRegex(ValueError, 'must not be disabled'):
             convention.run(self.project, self.root/'out.json', None, self.process(None, output))
+
+    def test_aborted_check_fails_but_a_missing_plugin_is_only_unavailable(self):
+        aborted = '* What went wrong:\nBuild convention verification must not be disabled.\n'
+        missing = '* What went wrong:\nCould not resolve all dependencies.\n> Could not find io.github.dochiri0916:build-convention:1.1.0.\n'
+        for output, code in ((aborted, 1), (missing, 2)):
+            with self.subTest(code=code):
+                original = convention.run
+                convention.run = lambda project, out, base, text=output: original(project, out, base, self.process(None, text))
+                self.addCleanup(setattr, convention, 'run', original)
+                with redirect_stdout(io.StringIO()):
+                    self.assertEqual(code, convention.main([str(self.project), '--output', str(self.root/'a.json')]))
+                convention.run = original
 
     def test_every_failing_check_blocks_and_earlier_failures_are_named(self):
         before = self.root/'before.json'
@@ -182,6 +201,60 @@ class CleanupTests(Temp):
         result = cleanup.fix(self.project, self.session, [{'m': 1}], self.call(question), self.exit_code(0))
         self.assertEqual(('NEEDS_REVIEW', ['동작이 바뀝니다']), (result['status'], result['questions']))
         self.assertIn('\t@Test', (self.project/self.TEST).read_text())
+
+
+class ChangeFixTests(Temp):
+    MAIN = 'src/main/java/com/example/demo/member/Member.java'
+    TEST = 'src/test/java/com/example/demo/member/MemberTest.java'
+
+    def setUp(self):
+        super().setUp()
+        self.session = self.project/'build/ask/s1'
+        self.session.mkdir(parents=True)
+        for path in (self.MAIN, self.TEST, 'src/main/java/com/example/demo/Other.java'):
+            (self.project/path).parent.mkdir(parents=True, exist_ok=True)
+            (self.project/path).write_text('class X {}\n')
+        (self.session/'scope.json').write_text(json.dumps({'files': [self.MAIN, self.TEST]}))
+        self.report = {'checks': {'architecture': 'FAIL'}, 'violations': [
+            {'file': self.MAIN, 'message': 'domain must use ErrorCode-based exceptions'},
+            {'file': self.TEST, 'message': "must include '// then'"},
+            {'file': 'src/main/java/com/example/demo/Other.java', 'message': 'outside scope'}]}
+
+    def call(self, value):
+        def run(config, workspace, prompt, schema, validate):
+            self.commands.append(prompt)
+            return {'status': validate(value)['status'], 'output': value}
+        return run
+
+    def test_scope_production_files_are_fixed_through_the_workflow_implementation_stage(self):
+        # given
+        fixed = {'status': 'COMPLETED', 'changes': [{'path': self.MAIN, 'content': 'final class X {}\n'}], 'unknowns': []}
+
+        def workflow(command, **kwargs):
+            self.commands.append(command)
+            return subprocess.CompletedProcess(command, 0)
+        # when
+        result = cleanup.fix_change(self.project, self.session, self.report, [{'m': 1}], self.call(fixed), workflow)
+        # then
+        self.assertEqual(('COMPLETED', [self.MAIN]), (result['status'], result['files']))
+        self.assertEqual(['src/main/java/com/example/demo/Other.java', self.TEST], result['remaining'])
+        self.assertIn('ErrorCode-based', self.commands[0])
+        self.assertNotIn('outside scope', self.commands[0])
+        command = self.commands[1]
+        self.assertEqual(['implementation', '--config', str(self.session/'ask-config.json'), '--state',
+                          str(self.session/'state.json'), '--changes'], command[2:8])
+        changes = json.loads(Path(command[8]).read_text())['changes']
+        self.assertEqual([{'path': self.MAIN, 'content': 'final class X {}\n',
+                           'expectedSha256': hashlib.sha256(b'class X {}\n').hexdigest()}], changes)
+        self.assertEqual('class X {}\n', (self.project/self.MAIN).read_text())
+
+    def test_tests_and_files_outside_scope_are_never_offered(self):
+        report = dict(self.report, violations=self.report['violations'][1:])
+        result = cleanup.fix_change(self.project, self.session, report, [{'m': 1}], self.call(None))
+        self.assertEqual('UNFIXABLE', result['status'])
+        self.assertEqual([], self.commands)
+        with self.assertRaises(ValueError):
+            cleanup.validator([self.MAIN])({'status': 'COMPLETED', 'changes': [{'path': self.TEST, 'content': 'x'}], 'unknowns': []})
 
 
 if __name__ == '__main__':
