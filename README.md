@@ -9,6 +9,18 @@
 
 `build-convention`은 필요한 대상 프로젝트에서 선택적으로 적용한다. `code-risk-analyzer`는 플러그인 적용 여부와 관계없이 독립적으로 사용할 수 있다. 현재 두 프로젝트의 빌드·배포와 보고서 형식은 각각 유지한다.
 
+## 빠른 시작
+
+```bash
+./install.sh                  # 한 번만: 도구 확인, 빌드, ~/.local/bin/ask 설치
+cd ~/work/my-spring-project   # start.spring.io 프로젝트 그대로, 설정 파일 없음
+ask "회원 가입 기능 추가해줘"  # 초안·계획 확인
+ask --yes                     # 실행
+```
+
+자세한 동작은 [Agent 요약](code-risk-analyzer/docs/AGENT_BRIEF.md)의 "가장 쉬운 사용"을 본다.
+폰에서 상태 보기·요청·승인은 [폰에서 ask 쓰기](code-risk-analyzer/remote/README.md)를 본다 (텔레그램 봇, 실행은 PC에서만).
+
 ## 검증
 
 각 프로젝트의 Gradle Wrapper를 해당 디렉터리에서 실행한다.

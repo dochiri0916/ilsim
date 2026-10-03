@@ -1,6 +1,7 @@
 package io.github.dochiri0916.buildconvention.validator
 
 import io.github.dochiri0916.buildconvention.extension.HexagonalConventionExtension
+import io.github.dochiri0916.buildconvention.support.BoundedContexts
 import io.github.dochiri0916.buildconvention.support.JavaSourceAstInspector
 import io.github.dochiri0916.buildconvention.support.SourceInspector
 import io.github.dochiri0916.buildconvention.support.TechnicalDependencyCatalog
@@ -124,6 +125,12 @@ class JavaSourceArchitectureValidator {
             'org.springframework.stereotype.Service',
             'org.springframework.transaction.annotation.Transactional'
     ] as Set
+    // JPA mappings and Spring Web annotations may be star-imported; project packages never are.
+    private static final Set<String> ALLOWED_WILDCARD_IMPORTS = [
+            'jakarta.persistence.*',
+            'org.springframework.web.bind.annotation.*'
+    ] as Set
+    private static final List<String> WEB_ADVICE_SUFFIXES = ['ExceptionHandler', 'ControllerAdvice'].asImmutable()
     private static final Set<String> SHARED_EXCEPTION_CONTRACT_TYPES = [
             'ApplicationException',
             'BusinessException',
@@ -132,10 +139,21 @@ class JavaSourceArchitectureValidator {
             'ErrorKind'
     ] as Set
     static List<String> validate(Project project, HexagonalConventionExtension convention) {
-        List<String> violations = []
         List<File> mainSourceFiles = SourceInspector.collectMainSourceFiles(project).findAll { File file ->
             file.name.endsWith('.java')
         }
+        Set<String> roots = PackageTopologyConventionValidator.rootPackages(mainSourceFiles, convention)
+        return BoundedContexts.withRoots(roots) {
+            validateSources(project, convention, mainSourceFiles)
+        }
+    }
+
+    private static List<String> validateSources(
+            Project project,
+            HexagonalConventionExtension convention,
+            List<File> mainSourceFiles
+    ) {
+        List<String> violations = []
         AggregateBoundaryConventionValidator.Analysis aggregateAnalysis =
                 AggregateBoundaryConventionValidator.analyze(project, convention)
         violations.addAll(aggregateAnalysis.violations)
@@ -258,7 +276,7 @@ class JavaSourceArchitectureValidator {
 
     private static void validateNoWildcardImports(Project project, File file, String source, List<String> violations) {
         SourceInspector.extractImports(source).each { String imported ->
-            if (imported.endsWith('.*')) {
+            if (imported.endsWith('.*') && !ALLOWED_WILDCARD_IMPORTS.contains(imported)) {
                 violations.add("${project.relativePath(file)} must not use wildcard import '${imported}'")
             }
         }
@@ -743,14 +761,18 @@ class JavaSourceArchitectureValidator {
                 violations.add("${path} controller '${type.name}' must live directly in adapter.in.web package, not in request or response")
             }
         }
+        boolean webAdvice = WEB_ADVICE_SUFFIXES.any { String suffix -> type.name.endsWith(suffix) }
         if (packageName.contains('.adapter.in.web') && !type.name.endsWith('Controller')
                 && !isGlobalExceptionPackage(packageName)) {
             if (isRequestPackage(packageName, convention) && !type.name.endsWith('Request')) {
                 violations.add("${path} adapter.in.web.request type '${type.name}' must end with Request")
             } else if (isResponsePackage(packageName, convention) && !type.name.endsWith('Response')) {
                 violations.add("${path} adapter.in.web.response type '${type.name}' must end with Response")
-            } else if (!isWebAdapterSubPackage(packageName)) {
-                violations.add("${path} adapter.in.web package may contain only Controller types; place '${type.name}' in request or response")
+            } else if (packageName.endsWith('.adapter.in.web.exception') && !webAdvice) {
+                violations.add("${path} adapter.in.web.exception type '${type.name}' must end with ExceptionHandler or ControllerAdvice")
+            } else if (!isWebAdapterSubPackage(packageName) && !webAdvice
+                    && !(type.kind == 'interface' && type.name.endsWith('WebAdapter'))) {
+                violations.add("${path} adapter.in.web package may contain only Controller, ExceptionHandler, or ControllerAdvice types; place '${type.name}' in request or response")
             }
         }
 
@@ -799,8 +821,9 @@ class JavaSourceArchitectureValidator {
                 }
             } else if (packageName.contains('.exception')) {
                 violations.add("${path} domain exception support '${type.name}' must end with Exception or ErrorCode")
-            } else if (!packageName.contains('.model') && !packageName.contains('.vo')) {
-                violations.add("${path} domain model '${type.name}' must live in domain.model or domain.vo package")
+            } else if (!packageName.contains('.model') && !packageName.contains('.vo')
+                    && !packageName.endsWith(".${convention.domainPackageSegment}")) {
+                violations.add("${path} domain model '${type.name}' must live in domain, domain.model, or domain.vo package")
             } else if (packageName.contains('.vo') && !['record', 'enum'].contains(type.kind)) {
                 violations.add("${path} domain value object '${type.name}' in domain.vo package must be a record or enum")
             }
@@ -870,20 +893,7 @@ class JavaSourceArchitectureValidator {
             violations.add("${path} application service must create a VO and pass normalized vo.value() to repository exists/find calls")
         }
         if (type.name.endsWith('Exception')) {
-            if (!extendsApplicationExceptionBase(type)) {
-                violations.add("${path} application exception '${type.name}' must extend RuntimeException")
-            }
-            if (!hasSerialVersionUid(type)) {
-                violations.add("${path} application exception '${type.name}' must declare serialVersionUID")
-            }
-            validateExceptionFactoryPolicy(path, 'application', type, source, violations)
-        } else {
-            if (throwsDirectExceptionConstruction(source)) {
-                violations.add("${path} application must raise exceptions through static factory methods, not direct constructors")
-            }
-            if (constructsExceptionWithStringLiteral(source)) {
-                violations.add("${path} application must use ErrorCode-based exceptions, not string message constructors")
-            }
+            validateExceptionContract(path, 'application', 'ApplicationException', type, violations)
         }
 
         if (type.name.endsWith('UseCase') && !packageName.contains('.port.in')) {
@@ -894,14 +904,15 @@ class JavaSourceArchitectureValidator {
             violations.add("${path} application DTO '${type.name}' must live in application..port.in package")
         }
         if (packageName.contains('.port.in')) {
-            String expectedInboundPackage = inboundPortPackageFor(type.name)
-            if (expectedInboundPackage != null && !packageName.endsWith(".port.in.${expectedInboundPackage}")) {
-                violations.add("${path} inbound port type '${type.name}' must live in application..port.in.${expectedInboundPackage} package")
-            }
-            ['usecase': 'UseCase', 'command': 'Command', 'query': 'Query', 'result': 'Result'].each { String child, String suffix ->
-                if (packageName.endsWith(".port.in.${child}") && !type.name.endsWith(suffix)) {
-                    violations.add("${path} application..port.in.${child} type '${type.name}' must end with ${suffix}")
-                }
+            String child = packageName.endsWith('.port.in') ? null : packageName.substring(packageName.lastIndexOf('.') + 1)
+            String expectedChild = inboundPortPackageFor(type.name)
+            if (type.name.endsWith('UseCase') && child != null) {
+                violations.add("${path} inbound port '${type.name}' must live directly in application..port.in package")
+            } else if (child in ['command', 'result'] && expectedChild != child
+                    && !(child == 'result' && type.name.endsWith('Summary'))) {
+                violations.add("${path} application..port.in.${child} type '${type.name}' must end with ${child == 'command' ? 'Command' : 'Result or Summary'}")
+            } else if (child == null && expectedChild == null) {
+                violations.add("${path} application..port.in type '${type.name}' must end with UseCase, Command, or Result")
             }
         }
         if ((type.name.endsWith('Port') || type.name.endsWith('RepositoryPort'))
@@ -971,10 +982,10 @@ class JavaSourceArchitectureValidator {
             List<String> violations
     ) {
         type.astType.methods.findAll { method ->
-            !method.constructor && (method.name ==~ /(?:save|upsert)[A-Za-z0-9_]*/)
+            !method.constructor && (method.name ==~ /upsert[A-Za-z0-9_]*/)
         }.each { method ->
             violations.add(
-                    "${path} repository port '${type.name}' must not declare ${method.name}; use create or update"
+                    "${path} repository port '${type.name}' must not declare ${method.name}; use save, create, or update"
             )
         }
     }
@@ -991,6 +1002,9 @@ class JavaSourceArchitectureValidator {
             return
         }
 
+        if (isGlobalSharedKernelType(dependency)) {
+            return
+        }
         String referencedContext = boundedContextName(dependency)
         boolean crossContextDependency = currentContext != null
                 && referencedContext != null
@@ -1027,6 +1041,11 @@ class JavaSourceArchitectureValidator {
                             + 'or the explicitly allowed component annotations'
             )
         }
+    }
+
+    /** global.domain value objects and global.application.exception are shared by every context. */
+    private static boolean isGlobalSharedKernelType(String dependency) {
+        return dependency.contains('.global.domain.') || dependency.contains('.global.application.exception.')
     }
 
     private static boolean isAllowedApplicationDependency(String imported, String currentContext) {
@@ -1159,13 +1178,7 @@ class JavaSourceArchitectureValidator {
         }
 
         if (type.name.endsWith('Exception')) {
-            if (!extendsDomainExceptionBase(type)) {
-                violations.add("${path} domain exception '${type.name}' must extend RuntimeException")
-            }
-            if (!hasSerialVersionUid(type)) {
-                violations.add("${path} domain exception '${type.name}' must declare serialVersionUID")
-            }
-            validateExceptionFactoryPolicy(path, 'domain', type, source, violations)
+            validateExceptionContract(path, 'domain', 'DomainException', type, violations)
             return
         }
 
@@ -1187,13 +1200,7 @@ class JavaSourceArchitectureValidator {
             violations.add("${path} domain must use domain-specific exceptions instead of JDK basic exceptions")
         }
         if (usesRequireNonNullOutsidePrivateAggregateConstructor(type)) {
-            violations.add("${path} requireNonNull is only allowed for structural guards in a private aggregate constructor")
-        }
-        if (throwsDirectExceptionConstruction(source)) {
-            violations.add("${path} domain must raise exceptions through static factory methods, not direct constructors")
-        }
-        if (constructsExceptionWithStringLiteral(source)) {
-            violations.add("${path} domain must use ErrorCode-based exceptions, not string message constructors")
+            violations.add("${path} requireNonNull is only allowed for structural guards in a private aggregate constructor or value object methods")
         }
 
         if (type.fields.any { field ->
@@ -1213,7 +1220,7 @@ class JavaSourceArchitectureValidator {
             if (isRawCollectionType(field.type)) {
                 validateDirectDomainCollection(path, source, type, field, violations)
             }
-            if (isRawScalarType(field.type)) {
+            if (isRawScalarType(field.type) && !field.staticField) {
                 violations.add("${path} domain field '${field.name}' must use a Value Object instead of raw scalar '${field.type}'")
             } else if (type.kind == 'class' && isJdkValueType(field.type)) {
                 violations.add("${path} domain aggregate field '${field.name}' must use a Value Object instead of JDK value type '${field.type}'")
@@ -1363,7 +1370,8 @@ class JavaSourceArchitectureValidator {
                 && (!hasNullGuard(source) || !hasBlankCheck(source))) {
             violations.add("${path} domain record '${type.name}' must null-check and blank-check String components")
         }
-        if (type.name.endsWith('Id')
+        // A *ReferenceId points at another context's identity, so only the owning context generates it.
+        if (type.name.endsWith('Id') && !type.name.endsWith('ReferenceId')
                 && components.size() == 1
                 && normalizeType(components.first().type) == 'String'
                 && !hasGenerateFactory(type)) {
@@ -1410,7 +1418,7 @@ class JavaSourceArchitectureValidator {
               }
 
               String referencedContext = boundedContextName(dependency)
-              if (referencedContext == null || referencedContext == currentContext) {
+              if (referencedContext == null || referencedContext == currentContext || isGlobalSharedKernelType(dependency)) {
                   return
               }
 
@@ -1534,25 +1542,37 @@ class JavaSourceArchitectureValidator {
             List<String> violations
     ) {
         String path = project.relativePath(file)
-        String identifierField = domainIdentifierFieldName(type.name)
+        String targetIdentifierField = domainIdentifierFieldName(type.name)
+        // The domain identity column is either {target}Id or publicId.
         JavaSourceAstInspector.FieldModel domainIdField = type.astType.fields.find { field ->
-            field.name == identifierField
-        }
+            field.name == targetIdentifierField
+        } ?: type.astType.fields.find { field -> field.name == 'publicId' }
+        String identifierField = domainIdField?.name ?: targetIdentifierField
         JavaSourceAstInspector.AnnotationModel column = domainIdField?.annotation('Column')
         if (domainIdField == null
                 || column == null
                 || !domainIdField.modifiers.contains('PRIVATE')
                 || simplifyTypeName(domainIdField.type) != 'String') {
-            violations.add("${path} JPA entity '${type.name}' must declare private String ${identifierField} with @Column")
+            violations.add("${path} JPA entity '${type.name}' must declare private String ${targetIdentifierField} or publicId with @Column")
             return
         }
 
-        if (normalizedAnnotationArgument(column, 'unique') != 'true') {
+        if (normalizedAnnotationArgument(column, 'unique') != 'true' && !hasTableUniqueConstraint(type, column, identifierField)) {
             violations.add("${path} JPA domain identifier column '${identifierField}' must be unique")
         }
         if (normalizedAnnotationArgument(column, 'length') != '32') {
             violations.add("${path} JPA domain identifier column '${identifierField}' must have length = 32")
         }
+    }
+
+    private static boolean hasTableUniqueConstraint(
+            TypeDeclaration type,
+            JavaSourceAstInspector.AnnotationModel column,
+            String fieldName
+    ) {
+        String columnName = (normalizedAnnotationArgument(column, 'name') ?: fieldName).replaceAll(/^"|"$/, '')
+        String table = type.astType.annotation('Table')?.arguments?.get('uniqueConstraints')
+        return table != null && (table =~ /columnNames\s*=\s*\{?\s*"${Pattern.quote(columnName)}"\s*}?/).find()
     }
 
     private static void validateJpaReferenceFields(
@@ -1568,12 +1588,13 @@ class JavaSourceArchitectureValidator {
             if (field.type.endsWith('Entity')) {
                 violations.add("${path} JPA entity '${type.name}' must not hold entity reference field '${field.name}'")
             }
-            if (isPublicIdName(field.name)) {
-                violations.add("${path} JPA reference field '${field.name}' must use '{target}Id' naming, not 'publicId' or '*PublicId'")
+            if (isPublicIdName(field.name) && field.name != 'publicId' && !field.name.endsWith('PublicIds')) {
+                violations.add("${path} JPA reference field '${field.name}' must use '{target}Id' naming, not '*PublicId'")
             }
             if (looksLikeIdReference(field.name)
-                    && !(field.name in ['id', primaryIdentifierField])
-                    && field.type != 'String') {
+                    && !(field.name in ['id', 'publicId', primaryIdentifierField])
+                    && field.type != 'String'
+                    && !(field.type ==~ /(?:Set|List|Collection)<\s*String\s*>/)) {
                 violations.add("${path} JPA reference field '${field.name}' must store identifier VO value as String")
             }
         }
@@ -1605,8 +1626,9 @@ class JavaSourceArchitectureValidator {
             violations.add("${path} mapper '${type.name}' method '${methodName}' must reveal conversion direction with toDomain, toEntity, or updateEntity")
         }
         String searchableSource = stripCommentsAndStrings(source)
-        if ((searchableSource =~ /(?m)\b(?:UUID\s*\.\s*randomUUID|(?:Instant|LocalDate|LocalDateTime|OffsetDateTime|ZonedDateTime)\s*\.\s*now|System\s*\.\s*currentTimeMillis)\s*\(/).find()) {
-            violations.add("${path} mapper '${type.name}' must not generate time or UUID values")
+        // Row keys of child entities may be generated here; time always comes from the domain or an injected Clock.
+        if ((searchableSource =~ /(?m)\b(?:(?:Instant|LocalDate|LocalDateTime|OffsetDateTime|ZonedDateTime)\s*\.\s*now|System\s*\.\s*currentTimeMillis)\s*\(/).find()) {
+            violations.add("${path} mapper '${type.name}' must not generate time values")
         }
         if ((searchableSource =~ /(?m)\b(?:setAccessible|getDeclaredField|getDeclaredFields|getDeclaredConstructor|getDeclaredConstructors)\s*\(/).find()) {
             violations.add("${path} mapper '${type.name}' must not use reflection to access private state")
@@ -1680,52 +1702,49 @@ class JavaSourceArchitectureValidator {
         return (source =~ /(?m)\bthrow\s+new\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*(?:IllegalArgumentException|IllegalStateException|NullPointerException|UnsupportedOperationException|IndexOutOfBoundsException|ArithmeticException|NumberFormatException|ClassCastException|AssertionError)\b/).find()
     }
 
-    private static void validateExceptionFactoryPolicy(
+    /**
+     * Each context raises its own exception types: a concrete, final exception per failure that extends the
+     * context's abstract sealed {Context}DomainException / {Context}ApplicationException (or RuntimeException
+     * directly) and passes its message to the base. Shared ErrorCode/BusinessException style bases are not used.
+     */
+    private static void validateExceptionContract(
             String path,
             String layer,
-            TypeDeclaration type,
-            String source,
-            List<String> violations
-    ) {
-        if (!type.isAbstract()) {
-            if (hasNonPrivateConstructor(type)) {
-                violations.add("${path} ${layer} exception '${type.name}' must keep constructors private and expose static factory methods")
-            }
-            if (!hasAnyStaticFactoryReturning(type)) {
-                violations.add("${path} ${layer} exception '${type.name}' must expose at least one static factory returning '${type.name}'")
-            }
-        }
-        if (constructsSameExceptionWithStringLiteral(source, type.name)) {
-            violations.add("${path} ${layer} exception '${type.name}' must use ErrorCode-based constructors, not string messages")
-        }
-        validateExceptionDetailFieldNames(path, layer, type, violations)
-    }
-
-    private static boolean extendsDomainExceptionBase(TypeDeclaration type) {
-        return type.extendsType('RuntimeException') || type.extendsType('DomainException')
-    }
-
-    private static boolean extendsApplicationExceptionBase(TypeDeclaration type) {
-        return type.extendsType('RuntimeException') || type.extendsType('ApplicationException')
-    }
-
-    private static void validateExceptionDetailFieldNames(
-            String path,
-            String layer,
+            String baseSuffix,
             TypeDeclaration type,
             List<String> violations
     ) {
-        Set<String> methodNames = type.astType.methods.findAll { method ->
-            !method.constructor
-                    && method.parameterTypes.isEmpty()
-                    && method.modifiers.contains('PUBLIC')
-                    && !method.modifiers.contains('STATIC')
-        }.collect { method -> method.name }.toSet()
-        extractInstanceFieldDeclarations(type)
-                .findAll { FieldDeclaration field -> methodNames.contains(field.name) }
-                .each { FieldDeclaration field ->
-                    violations.add("${path} ${layer} exception detail field '${field.name}' must use a context-specific internal name instead of matching accessor '${field.name}()'")
-                }
+        if (type.kind != 'class') {
+            violations.add("${path} ${layer} exception '${type.name}' must be a class")
+            return
+        }
+        boolean contextBase = type.name.endsWith(baseSuffix) && type.name != baseSuffix
+        if (type.isAbstract()) {
+            if (!contextBase) {
+                violations.add("${path} abstract ${layer} exception '${type.name}' must be the context base named '{Context}${baseSuffix}'")
+            }
+            if (!type.astType.modifiers.contains('SEALED')) {
+                violations.add("${path} ${layer} exception base '${type.name}' must be sealed and permit the context's concrete exceptions")
+            }
+            if (!type.extendsType('RuntimeException')) {
+                violations.add("${path} ${layer} exception base '${type.name}' must extend RuntimeException")
+            }
+            if (hasPublicConstructor(type)) {
+                violations.add("${path} ${layer} exception base '${type.name}' must keep constructors protected")
+            }
+            return
+        }
+        if (!type.finalType) {
+            violations.add("${path} ${layer} exception '${type.name}' must be final")
+        }
+        if (!type.extendsType('RuntimeException') && !extendsContextExceptionBase(type, baseSuffix)) {
+            violations.add("${path} ${layer} exception '${type.name}' must extend RuntimeException or its context's sealed '{Context}${baseSuffix}'")
+        }
+    }
+
+    private static boolean extendsContextExceptionBase(TypeDeclaration type, String baseSuffix) {
+        String superType = type.astType.superType == null ? null : simplifyTypeName(type.astType.superType)
+        return superType != null && superType.endsWith(baseSuffix) && superType != baseSuffix
     }
 
     private static boolean usesRequireNonNullOutsidePrivateAggregateConstructor(TypeDeclaration type) {
@@ -1740,6 +1759,7 @@ class JavaSourceArchitectureValidator {
                     && type.finalType
                     && method.constructor
                     && method.modifiers.contains('PRIVATE'))
+                    && !(type.kind == 'record' && !method.constructor)
         }
     }
 
@@ -1749,45 +1769,11 @@ class JavaSourceArchitectureValidator {
                 || (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_.]*\.)?SuppressFBWarnings\b/).find()
     }
 
-    private static boolean throwsDirectExceptionConstruction(String source) {
-        def matcher = source =~ /(?m)\bthrow\s+new\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*Exception)\s*\(/
-        while (matcher.find()) {
-            if (!(matcher.group(1) in ['IllegalArgumentException', 'IllegalStateException', 'NullPointerException'])) {
-                return true
-            }
-        }
-        return false
-    }
-
-    private static boolean constructsExceptionWithStringLiteral(String source) {
-        return (source =~ /(?m)\bnew\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*Exception\s*\(\s*"/).find()
-    }
-
-    private static boolean constructsSameExceptionWithStringLiteral(String source, String typeName) {
-        return (source =~ /(?m)\bnew\s+${typeName}\s*\(\s*"/).find()
-    }
-
     private static boolean dependsOnSpringSecurity(String source) {
         String searchableSource = stripCommentsAndStrings(source)
         return SourceInspector.extractImports(source).any { String imported ->
             imported.startsWith('org.springframework.security.')
         } || (searchableSource =~ /\borg\.springframework\.security\./).find()
-    }
-
-    private static boolean hasNonPrivateConstructor(TypeDeclaration type) {
-        return type.astType.methods.any { method ->
-            method.constructor && !method.modifiers.contains('PRIVATE')
-        }
-    }
-
-    private static boolean hasAnyStaticFactoryReturning(TypeDeclaration type) {
-        return type.astType.methods.any { method ->
-            !method.constructor
-                    && method.modifiers.contains('STATIC')
-                    && !method.modifiers.contains('PRIVATE')
-                    && !method.modifiers.contains('PROTECTED')
-                    && simplifyTypeName(method.returnType) == type.name
-        }
     }
 
     private static boolean hasNullGuard(String source) {
@@ -1797,7 +1783,7 @@ class JavaSourceArchitectureValidator {
     }
 
     private static boolean hasBlankCheck(String source) {
-        return (source =~ /\.isBlank\s*\(/).find()
+        return (source =~ /\.isBlank\s*\(|\.length\s*\(\s*\)\s*<\s*[A-Z_0-9]/).find()
     }
 
     private static boolean hasJpaRelationAnnotation(TypeDeclaration type) {
@@ -1954,10 +1940,6 @@ class JavaSourceArchitectureValidator {
                     && !method.modifiers.contains('PROTECTED')
                     && simplifyTypeName(method.returnType) == type.name
         }
-    }
-
-    private static boolean hasSerialVersionUid(TypeDeclaration type) {
-        return type.astType.fields.any { field -> field.name == 'serialVersionUID' }
     }
 
     private static boolean hasPublicField(TypeDeclaration type) {
@@ -2189,27 +2171,7 @@ class JavaSourceArchitectureValidator {
     }
 
     private static String boundedContextName(String packageName) {
-        if (packageName == null || packageName.isBlank()) {
-            return null
-        }
-
-        List<String> segments = packageName.split('\\.').toList()
-        int adapterIndex = segments.indexOf('adapter')
-        if (adapterIndex > 0) {
-            return segments[adapterIndex - 1]
-        }
-
-        int domainIndex = segments.indexOf('domain')
-        if (domainIndex > 0) {
-            return segments[domainIndex - 1]
-        }
-
-        int applicationIndex = segments.indexOf('application')
-        if (applicationIndex > 0) {
-            return segments[applicationIndex - 1]
-        }
-
-        return null
+        return BoundedContexts.contextOf(packageName)
     }
 
     private static String capitalizeAscii(String value) {
@@ -2255,15 +2217,13 @@ class JavaSourceArchitectureValidator {
         return SHARED_EXCEPTION_CONTRACT_TYPES.contains(simpleTypeName)
     }
 
+    /** The optional port.in child package a type may use; UseCases have none and stay directly in port.in. */
     private static String inboundPortPackageFor(String typeName) {
         if (typeName.endsWith('UseCase')) {
             return 'usecase'
         }
         if (typeName.endsWith('Command')) {
             return 'command'
-        }
-        if (typeName.endsWith('Query')) {
-            return 'query'
         }
         if (typeName.endsWith('Result')) {
             return 'result'
@@ -2272,7 +2232,7 @@ class JavaSourceArchitectureValidator {
     }
 
     private static boolean isWebAdapterSubPackage(String packageName) {
-        return packageName.endsWith('.request') || packageName.endsWith('.response')
+        return packageName.endsWith('.request') || packageName.endsWith('.response') || packageName.endsWith('.exception')
     }
 
     private static boolean isRequestPackage(String packageName, HexagonalConventionExtension convention) {
@@ -2329,7 +2289,8 @@ class JavaSourceArchitectureValidator {
 
     private static boolean isDomainModelType(String dependency, String domainSegment = 'domain') {
         return dependency != null
-                && (dependency.contains(".${domainSegment}.model.") || dependency.contains(".${domainSegment}.vo."))
+                && (dependency.contains(".${domainSegment}.model.") || dependency.contains(".${domainSegment}.vo.")
+                || dependency ==~ /.*\.${Pattern.quote(domainSegment)}\.[A-Z][A-Za-z0-9_]*/)
     }
 
     private static boolean isIdentifierVoType(String type) {

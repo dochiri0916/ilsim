@@ -34,15 +34,15 @@ class PackageTopologyConventionValidator {
             'in',
             'out'
     ] as Set
+    // UseCases live directly in port.in; Commands and Results either beside them or in these children.
     private static final Set<String> APPLICATION_PORT_IN_CHILD_SEGMENTS = [
-            'usecase',
             'command',
-            'query',
             'result'
     ] as Set
     private static final Set<String> WEB_ADAPTER_CHILD_SEGMENTS = [
             'request',
-            'response'
+            'response',
+            'exception'
     ] as Set
     private static final Set<String> ADAPTER_CHILD_SEGMENTS = [
             'in',
@@ -50,11 +50,15 @@ class PackageTopologyConventionValidator {
     ] as Set
     private static final Set<String> ADAPTER_IN_CHILD_SEGMENTS = [
             'bootstrap',
-            'event',
-            'messaging',
-            'scheduler',
             'web'
     ] as Set
+    // Packages that may hold their own subpackages, and shared-kernel packages that may not.
+    private static final Set<String> GLOBAL_TREE_PACKAGES = ['exception', 'persistence', 'configuration'] as Set
+    private static final List<List<String>> GLOBAL_EXACT_PACKAGES = [
+            ['domain'],
+            ['domain', 'exception'],
+            ['application', 'exception']
+    ].asImmutable()
 
     static List<String> validate(Project project) {
         return validate(project, new HexagonalConventionExtension())
@@ -175,15 +179,29 @@ class PackageTopologyConventionValidator {
             return
         }
 
+        if (!CONTEXT_LAYER_SEGMENTS.contains(segments[1]) && segments.size() >= 3
+                && CONTEXT_LAYER_SEGMENTS.contains(segments[2])) {
+            // A grouped context: {group}/{module}/{layer}..., such as catalog/product/domain.
+            String moduleName = segments[1]
+            if (RESERVED_CONTEXT_NAMES.contains(moduleName)) {
+                violations.add("${path} package '${moduleName}' is not a bounded context module; use a real module name")
+                return
+            }
+            segments = ["${segments[0]}.${moduleName}".toString()] + segments.drop(2)
+        }
+
         String contextName = segments[0]
         String layerName = segments[1]
         if (!CONTEXT_LAYER_SEGMENTS.contains(layerName)) {
-            violations.add("${path} package must follow {context}/domain, {context}/application, or {context}/adapter structure")
+            violations.add("${path} package must follow {context}/domain, {context}/application, or {context}/adapter structure (a grouped context may add one module: {context}/{module}/domain)")
             return
         }
 
         if (segments.size() < 3) {
-            violations.add("${path} ${contextName}.${layerName} package must declare a valid child package")
+            // An aggregate root may sit directly in the domain package, beside its vo/model/exception packages.
+            if (layerName != 'domain') {
+                violations.add("${path} ${contextName}.${layerName} package must declare a valid child package")
+            }
             return
         }
 
@@ -197,18 +215,13 @@ class PackageTopologyConventionValidator {
             List<String> violations
     ) {
         if (!isAllowedGlobalPackage(segments)) {
-            violations.add("${project.relativePath(file)} global package must be limited to global.exception, global.web, global.persistence, or global.configuration.properties")
+            violations.add("${project.relativePath(file)} global package must be limited to global.exception, global.persistence, global.configuration, global.domain(.exception), or global.application.exception")
         }
     }
 
     private static boolean isAllowedGlobalPackage(List<String> segments) {
-        if (segments.size() < 2) {
-            return false
-        }
-        if (['exception', 'web', 'persistence'].contains(segments[1])) {
-            return true
-        }
-        return segments[1] == 'configuration' && segments.size() >= 3 && segments[2] == 'properties'
+        return segments.size() >= 2 && GLOBAL_TREE_PACKAGES.contains(segments[1])
+                || GLOBAL_EXACT_PACKAGES.contains(segments.drop(1))
     }
 
     private static void validateLayerChildPackage(
@@ -234,8 +247,8 @@ class PackageTopologyConventionValidator {
             }
         }
         if (layerName == 'application' && childName == 'port' && segments.size() >= 4 && segments[3] == 'in') {
-            if (segments.size() < 5 || !APPLICATION_PORT_IN_CHILD_SEGMENTS.contains(segments[4])) {
-                violations.add("${path} ${contextName}.application.port.in package must use usecase, command, query, or result")
+            if (segments.size() > 5 || (segments.size() == 5 && !APPLICATION_PORT_IN_CHILD_SEGMENTS.contains(segments[4]))) {
+                violations.add("${path} ${contextName}.application.port.in package may only add command or result")
             }
         }
         if (layerName == 'adapter' && !ADAPTER_CHILD_SEGMENTS.contains(childName)) {
@@ -243,7 +256,7 @@ class PackageTopologyConventionValidator {
         }
         if (layerName == 'adapter' && childName == 'in') {
             if (segments.size() < 4 || !ADAPTER_IN_CHILD_SEGMENTS.contains(segments[3])) {
-                violations.add("${path} ${contextName}.adapter.in package must use bootstrap, event, messaging, scheduler, or web")
+                violations.add("${path} ${contextName}.adapter.in package must use bootstrap or web")
             } else if (segments[3] == 'web') {
                 validateWebAdapterChildPackage(path, contextName, segments, convention, violations)
             }
@@ -263,8 +276,19 @@ class PackageTopologyConventionValidator {
             children = children.drop(1)
         }
         if (!children.isEmpty() && (children.size() > 1 || !WEB_ADAPTER_CHILD_SEGMENTS.contains(children.first()))) {
-            violations.add("${path} ${contextName}.adapter.in.web package must use request or response")
+            violations.add("${path} ${contextName}.adapter.in.web package must use request, response, or exception")
         }
+    }
+
+    /** Root packages from the configured base package or the *Application bootstrap classes, read without parsing. */
+    static Set<String> rootPackages(List<File> sourceFiles, HexagonalConventionExtension convention) {
+        if (convention.basePackage != null && !convention.basePackage.isBlank()) {
+            return [convention.basePackage.strip()] as Set
+        }
+        return sourceFiles.findAll { File file -> file.name.endsWith('Application.java') }
+                .collect { File file -> SourceInspector.extractPackageName(file.getText('UTF-8')) }
+                .findAll { String packageName -> !packageName.isBlank() }
+                .toSet()
     }
 
     private static Set<String> collectApplicationRootPackages(

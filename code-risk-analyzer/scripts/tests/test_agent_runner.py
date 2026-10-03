@@ -192,6 +192,8 @@ class AgentRunnerTests(unittest.TestCase):
                 result = agent.run({'provider': provider}, self.workspace, 'prompt')
                 # then
                 self.assertEqual('OUTPUT_CONTRACT', result['failureKind'])
+                self.assertIn('Unresolved unknowns', result['detail'])
+                self.assertEqual(['unresolved'], result['rejectedOutput']['unknowns'])
                 trailer = {'type': 'turn.failed'} if provider == 'codex' else {'type': 'result', 'is_error': True}
                 self.provider(provider, trailer=trailer)
                 result = agent.run({'provider': provider}, self.workspace, 'prompt')

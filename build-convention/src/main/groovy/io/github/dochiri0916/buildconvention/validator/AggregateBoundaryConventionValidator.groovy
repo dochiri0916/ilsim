@@ -1,6 +1,7 @@
 package io.github.dochiri0916.buildconvention.validator
 
 import io.github.dochiri0916.buildconvention.extension.HexagonalConventionExtension
+import io.github.dochiri0916.buildconvention.support.BoundedContexts
 import io.github.dochiri0916.buildconvention.support.JavaSourceAstInspector
 import io.github.dochiri0916.buildconvention.support.SourceInspector
 import org.gradle.api.Project
@@ -85,12 +86,13 @@ class AggregateBoundaryConventionValidator {
     ) {
         Map<String, TypeEntry> domainTypes = new LinkedHashMap<>()
         inspections.findAll { inspection ->
-            inspection.valid && ['model', 'vo'].any { String child ->
+            inspection.valid && (inspection.packageName.endsWith(".${convention.domainPackageSegment}")
+                    || ['model', 'vo'].any { String child ->
                 SourceInspector.isInLayer(
                         inspection.packageName,
                         "${convention.domainPackageSegment}.${child}"
                 )
-            }
+            })
         }.each { inspection ->
             inspection.types.each { type ->
                 domainTypes.put(type.qualifiedName, new TypeEntry(inspection, type))
@@ -178,10 +180,7 @@ class AggregateBoundaryConventionValidator {
     }
 
     private static String boundedContextName(String qualifiedType, String layerSegment) {
-        List<String> typeSegments = qualifiedType.tokenize('.')
-        String firstLayerSegment = layerSegment.tokenize('.').first()
-        int layerIndex = typeSegments.indexOf(firstLayerSegment)
-        return layerIndex > 0 ? typeSegments.get(layerIndex - 1) : null
+        return BoundedContexts.contextOf(qualifiedType, layerSegment)
     }
 
     private static boolean isIdentifierValueObject(String qualifiedType) {
