@@ -272,4 +272,7 @@ def _run(config, workspace, prompt, output_schema, validate):
                 failure = 'SCOPE'
             elif isinstance(payload, dict) and payload.get('status') == 'NEEDS_REVIEW':
                 failure = 'AMBIGUITY'
-            return dict(result, status='INVALID_OUTPUT', failureKind=failure, reason='Provider returned an invalid or incomplete result')
+            # Keep the failed check and the rejected answer, so a long generation is never lost without a reason.
+            rejected = {'rejectedOutput': payload} if isinstance(payload, dict) else {}
+            return dict(result, status='INVALID_OUTPUT', failureKind=failure, reason='Provider returned an invalid or incomplete result',
+                        detail=f'{type(error).__name__}: {error}'[:500], **rejected)

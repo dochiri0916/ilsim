@@ -432,8 +432,8 @@ class Controller:
             current_prompt = prompt
             if attempts:
                 current_prompt += '\nPrior output failed its response contract. Correct the reported contract failure while preserving the requirements, tests and scope.\n'
-                current_prompt += json.dumps({'failureHistory': [{key: item[key] for key in ('number', 'status', 'failureKind')}
-                                                                 for item in attempts]})
+                current_prompt += json.dumps({'failureHistory': [{key: item[key] for key in ('number', 'status', 'failureKind', 'detail')
+                                                                  if key in item} for item in attempts]})
             if len(current_prompt.encode()) > agent.MAX_OUTPUT_BYTES:
                 self._invalidate('Retry context exceeds size limit', 'SOURCES')
                 return {'status': 'NEEDS_REVIEW', 'agentStatus': 'INPUT_LIMIT'}
@@ -471,12 +471,14 @@ class Controller:
                 except (ValueError, KeyError, TypeError) as error:
                     rejected = True
                     scope_rejected = scope_rejected or isinstance(error, agent.OutputScopeError)
-                    result.pop('output', None)
+                    result['rejectedOutput'] = result.pop('output', None)
                     result.update(status='INVALID_OUTPUT', failureKind='SCOPE' if scope_rejected else 'OUTPUT_CONTRACT',
-                                  reason='Agent change contract rejected')
+                                  reason='Agent change contract rejected', detail=f'{type(error).__name__}: {error}'[:500])
             prompt_hash = hashlib.sha256(current_prompt.encode()).hexdigest()
             summary = {'number': attempt + 1, 'status': result['status'], 'failureKind': result.get('failureKind', ''),
                        'promptSha256': prompt_hash}
+            if result.get('detail'):
+                summary['detail'] = result['detail']
             for key in ('attemptId', 'provider', 'model', 'reasoningEffort', 'usage', 'durationSeconds'):
                 if key in result:
                     summary[key] = result[key]

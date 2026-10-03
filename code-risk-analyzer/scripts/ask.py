@@ -479,7 +479,12 @@ def stop_reason(directory, since):
         detail = f" ({capability['detail']})" if capability.get('detail') else ''
         return ['이유: ' + CAPABILITY_REASONS.get(kind, f"JEV 판단 실패 ({kind}: {capability.get('reason', '')})") + detail]
     if record.get('failureKind'):
-        return [f"이유: {record['failureKind']} {record.get('reason', '')}".rstrip()]
+        lines = [f"이유: {record['failureKind']} {record.get('reason', '')}".rstrip()]
+        if record.get('detail'):
+            lines.append('검사 내용: ' + record['detail'])
+        if record.get('rejectedOutput') is not None:
+            lines.append(f'거부된 답은 {Path(records[-1]).name}의 rejectedOutput에 남아 있습니다')
+        return lines
     return []
 
 
@@ -549,7 +554,8 @@ def default_routing(environ=os.environ):
     home = Path(environ.get('CODE_RISK_CONFIG_HOME') or '~/.config/code-risk').expanduser()
     files = {key: str((home/name if (home/name).is_file() else DEFAULT_ROUTING/name).resolve()) for key, name in ROUTING_FILES.items()}
     # Test writing for a whole feature on the top tier takes longer than the 300-second workflow default.
-    return dict(files, timeoutSeconds=GENERATION_TIMEOUT)
+    # A second attempt gets the failed check as feedback instead of discarding the session.
+    return dict(files, timeoutSeconds=GENERATION_TIMEOUT, maxAttempts=2)
 
 
 def find_project(start):
