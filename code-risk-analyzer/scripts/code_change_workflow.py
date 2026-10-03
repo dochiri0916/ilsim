@@ -32,6 +32,7 @@ jev = module('jev_capability')
 failure = module('validation_failure')
 quality = module('quality_gate')
 calibration = module('calibrate_jev')
+service_adapter = module('service_adapter')
 FIXTURE_PROJECT = Path(__file__).resolve().parents[1]/'integration-fixtures/spring-risk-sample'
 
 
@@ -66,7 +67,7 @@ def fixture_tools():
 class Controller:
     def __init__(self, config, state_path):
         required = {'plan', 'requirements', 'analyzer', 'scope', 'documents'}
-        if not isinstance(config, dict) or not required <= set(config) or not set(config) <= required | {'fixtureAdapter', 'agent', 'routing', 'qualityGates', 'repair'}:
+        if not isinstance(config, dict) or not required <= set(config) or not set(config) <= required | {'fixtureAdapter', 'serviceAdapter', 'agent', 'routing', 'qualityGates', 'repair'}:
             raise ValueError('Explicit plan, requirements, analyzer, scope and documents required')
         if 'agent' in config and 'routing' in config:
             raise ValueError('Choose direct agent configuration or tier routing')
@@ -80,6 +81,9 @@ class Controller:
         self.fixture_adapter = config.get('fixtureAdapter')
         if 'fixtureAdapter' in config and (self.fixture_adapter != 'MYSQL' or self.project != FIXTURE_PROJECT):
             raise ValueError('MYSQL adapter is restricted to the repository fixture')
+        if 'fixtureAdapter' in config and 'serviceAdapter' in config:
+            raise ValueError('Choose the fixture adapter or the general service adapter')
+        self.service_adapter = service_adapter.settings(config['serviceAdapter']) if 'serviceAdapter' in config else None
         if self.project.is_symlink() or self.project.resolve() != self.project or not (self.project/'gradlew').is_file():
             raise ValueError('Canonical Gradle project required')
         self.state_path = Path(state_path).absolute()
@@ -163,6 +167,9 @@ class Controller:
                                    for path in self._agent_context_paths() if path not in self.scope['files']}
         if 'routing' in self.config:
             result['routing'] = {name: regression.digest(path) for name, path in self.routing_paths.items()}
+        if self.service_adapter:
+            result['serviceFiles'] = service_adapter.scenario_files(self.project, self.service_adapter)
+            result['serviceAdapterSha256'] = regression.digest(Path(__file__).with_name('service_adapter.py'))
         return result
 
     def _save(self):
@@ -239,7 +246,7 @@ class Controller:
                 return self._repair(kwargs.get('approvals', []))
             self._fresh_execution()
             if stage == 'local-service':
-                return self._local_service(kwargs['container'])
+                return self._local_service(kwargs.get('container'))
             if stage == 'review':
                 return self._review(**kwargs)
             if stage == 'pull-request':
@@ -808,13 +815,21 @@ class Controller:
         return fixture_tools().verify_service(dict(os.environ), container, self.directory/'service-running.json')
 
     def _local_service(self, container):
-        if not self.fixture_adapter:
-            raise ValueError('Select the fixed MYSQL fixture adapter')
+        if not self.fixture_adapter and not self.service_adapter:
+            raise ValueError('Select the MYSQL fixture adapter or a general service adapter')
+        if self.service_adapter and container is not None:
+            raise ValueError('The general service adapter does not use a fixture container')
         for key in ('reviewed', 'completion', 'serviceSha256'):
             self.state.pop(key, None)
         self._record('VERIFIED', 'SERVICE_RUNNING')
         try:
-            result = self._service(container)
+            if self.service_adapter:
+                if self.service_adapter['jar'] not in ('build/libs/' + name for name in regression.read_json(self.directory/'after.json').get('artifactSha256', {})):
+                    raise ValueError('Service JAR must be a verified build artifact')
+                result = service_adapter.verify(self.project, self.service_adapter, regression.source_hashes(self.project),
+                                                launcher=service_adapter.java_launcher)
+            else:
+                result = self._service(container)
             regression.save(self.directory/'service.json', result)
             self._fresh_execution()
             if self._inputs() != self.state['inputs']:
@@ -839,7 +854,7 @@ class Controller:
         for key in ('reviewed', 'completion'):
             self.state.pop(key, None)
         self._record('VERIFIED', 'REVIEWING')
-        if self.fixture_adapter:
+        if self.fixture_adapter or self.service_adapter:
             if not self.state.get('serviceSha256'):
                 raise ValueError('Successful local-service stage required')
             if regression.digest(self.directory/'service.json') != self.state['serviceSha256']:
@@ -984,13 +999,13 @@ def main():
                    'generate-tests': set(), 'generate-implementation': set(),
                    'verification': {'approvals'}, 'repair': {'approvals'}, 'local-service': {'container'}, 'review': {'bundle', 'service', 'open_evidence', 'fixture_policy'}, 'complete': set(),
                    'pull-request': {'pull_request'}}[args.stage]
-        required = {'test-writing': {'changes'}, 'implementation': {'changes'}, 'local-service': {'container'}, 'review': {'bundle', 'open_evidence'},
+        required = {'test-writing': {'changes'}, 'implementation': {'changes'}, 'review': {'bundle', 'open_evidence'},
                     'pull-request': {'pull_request'}}.get(args.stage, set())
         if not set(supplied) <= allowed or not required <= set(supplied):
             raise ValueError('Missing or inappropriate stage options')
         config = regression.read_json(args.config)
         runner = Controller(config, args.state)
-        if args.stage == 'review' and not runner.fixture_adapter and not args.service:
+        if args.stage == 'review' and not runner.fixture_adapter and not runner.service_adapter and not args.service:
             raise ValueError('Explicit service evidence required')
         data = {key: path if key == 'container' else regression.read_json(path) for key, path in supplied.items()}
         if data.get('fixture_policy'):

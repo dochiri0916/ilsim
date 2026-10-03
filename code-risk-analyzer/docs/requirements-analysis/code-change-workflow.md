@@ -12,7 +12,7 @@
 | generate-tests / generate-implementation | 해당 작성 단계의 선행 조건과 명시적 agent 또는 routing 설정 | 독립 CLI 세션으로 변경을 생성하고 기존 작성 실행기로 적용. [로컬 Agent 생성 연결](agent-generation.md)과 [모델 라우팅](model-routing.md) 참고 |
 | verification | 구현 단계 완료 | 같은 기존 테스트·새 기능 테스트를 전체 재실행, 기준선 비교, 최종 정적 scan. 실패·skip·삭제·검토 없는 기존 테스트/빌드 변경은 후속 검토 차단 |
 | repair | 구현 단계 완료, 명시적 repair·qualityGates 설정 | 실제 검증 → 실패 분류 → 승인된 production 구현 수정 → 재검증. 수락한 테스트·빌드 입력 고정, 반복·시간·모델 호출 한도 유지 |
-| local-service | 성공한 verification, MYSQL fixture adapter | 최종 JAR를 별도 JVM으로 기동하고 HTTP·독립 MySQL 조회·종료 검증. 실패·중단·소스 변경 시 과거 서비스/검토 수락 제거 |
+| local-service | 성공한 verification, MYSQL fixture adapter 또는 `serviceAdapter` | 최종 JAR를 별도 JVM으로 기동하고 HTTP·독립 MySQL 조회·종료 검증(fixture) 또는 선언한 네 시나리오 명령 실행(일반). 실패·중단·소스 변경 시 과거 서비스/검토 수락 제거 |
 | review | 성공한 verification | 최종 실행에 연결된 assertion·요구사항·소스·실행 해시 검토, 별도 서비스 검증 결과 확인. 미해결 위험과 실패는 완료 차단 |
 | complete | 성공한 review | 현재 소스·문서·환경·JUnit·JAR·scan·검토 파일을 다시 확인하고 요구사항/assertion 근거 재검토 |
 | pull-request | COMPLETED 세션 | 검토 파일을 다시 확인하고 완료 근거로 `pull-request.md` 본문 작성. `submit: true`는 plan의 `PULL_REQUEST` 승인, 커밋·푸시된 feature 브랜치, 검증 소스 일치를 확인한 뒤 `gh pr create --draft`만 호출 |
@@ -75,6 +75,25 @@ python3 scripts/code_change_workflow.py pull-request \
 ```
 
 `pull-request.json`은 `{"title": "...", "base": "main", "submit": false}` 형식이다. `submit`을 생략하거나 `false`로 두면 본문 초안만 만들고 외부 호출을 하지 않는다. 실행기는 커밋·푸시를 하지 않으며 PR은 항상 draft로 연다. 본문은 모델 호출 없이 세션 근거에서 결정적으로 생성한다.
+
+### 일반 서비스 adapter
+
+fixture가 아닌 프로젝트는 config에 `serviceAdapter`를 두면 `local-service`를 실행할 수 있다.
+
+```json
+"serviceAdapter": {
+  "jar": "build/libs/app.jar",
+  "readyPath": "/actuator/health",
+  "scenarios": {
+    "normal": ["python3", "checks/normal.py"],
+    "duplicate": ["python3", "checks/duplicate.py"],
+    "concurrency": ["python3", "checks/concurrency.py"],
+    "rollback": ["python3", "checks/rollback.py"]
+  }
+}
+```
+
+실행기는 verification에서 기록한 JAR를 `127.0.0.1`의 빈 포트로 기동하고, 준비 경로가 200을 반환하면 각 시나리오 명령을 `SERVICE_BASE_URL` 환경변수와 함께 실행한다. 종료 코드 0만 PASSED로 기록하고 프로세스 출력은 저장하지 않는다. 마지막에 프로세스 종료와 포트 반환을 확인한다. 시나리오가 참조하는 프로젝트 파일은 해시로 고정되어 바뀌면 세션이 무효화된다. 이 adapter를 쓰면 `review`에 외부 `--service` 결과를 대신 넣을 수 없다. 시나리오 명령의 assertion과 DB 상태 확인은 프로젝트가 책임진다. `serviceAdapter`의 선택 항목은 `arguments`, `readyTimeoutSeconds`(기본 60), `scenarioTimeoutSeconds`(기본 120)이며 `--server.port`·`--server.address`는 지정할 수 없다.
 
 일반 프로젝트에는 fixture 정책을 전달하지 않는다. fixture만 별도 승인한 정확한 예외 목록을 `review --fixture-policy`로 전달한다. production 위험은 일반 프로젝트에서 계속 차단한다. fixture의 승인된 결함을 재현해 COMPLETED가 되더라도 `targetRiskStatus=UNRESOLVED`를 유지한다.
 
