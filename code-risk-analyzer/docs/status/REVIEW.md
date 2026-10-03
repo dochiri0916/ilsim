@@ -23,7 +23,7 @@ README, 구현 코드, 관련 테스트 소스를 기준으로 현재 분석 기
 | 요구사항 실행 경로 | JSON Schema·중복 키 검증, SPEC_ONLY/SPEC_CODE_REVIEW/CODE_CHANGE 실행 제한, 명시적 메서드의 TX/CON/IDEM 연결, 분리된 문서/코드 JEV 후보 검토 |
 | 회귀·최종 검증 | CODE_CHANGE 전용 별도 runner의 실행 기준선·기존 테스트 보호·결과 비교·서비스 증거·미해결 근거 완료 판정. fixture는 별도 JVM HTTP/MySQL 검증 지원 |
 
-위험 규칙은 총 19개이며, 테스트 적정성은 별도 `TEST-001`이다. 규칙 정의는 [RuleRegistry.java](../../src/main/java/com/example/coderiskanalyzer/production/rule/RuleRegistry.java)에 있다.
+위험 규칙은 총 21개(2026-10-03 SEC-006·SEC-007 추가)이며, 테스트 적정성은 별도 `TEST-001`이다. 규칙 정의는 [RuleRegistry.java](../../src/main/java/com/example/coderiskanalyzer/production/rule/RuleRegistry.java)에 있다.
 
 기준선 기록과 최종 완료 판정의 실행 방법·지원 제한은 [회귀 검증 실행 절차](../requirements-analysis/regression-workflow.md)를 따른다. 테스트 assertion 의미와 전이적인 변경 영향은 자동 증명하지 않으며, SPEC_ONLY에는 코드 검증을 적용하지 않는다.
 

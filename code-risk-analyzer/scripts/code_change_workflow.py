@@ -32,6 +32,7 @@ jev = module('jev_capability')
 failure = module('validation_failure')
 quality = module('quality_gate')
 calibration = module('calibrate_jev')
+service_adapter = module('service_adapter')
 FIXTURE_PROJECT = Path(__file__).resolve().parents[1]/'integration-fixtures/spring-risk-sample'
 
 
@@ -66,7 +67,7 @@ def fixture_tools():
 class Controller:
     def __init__(self, config, state_path):
         required = {'plan', 'requirements', 'analyzer', 'scope', 'documents'}
-        if not isinstance(config, dict) or not required <= set(config) or not set(config) <= required | {'fixtureAdapter', 'agent', 'routing', 'qualityGates', 'repair'}:
+        if not isinstance(config, dict) or not required <= set(config) or not set(config) <= required | {'fixtureAdapter', 'serviceAdapter', 'agent', 'routing', 'qualityGates', 'repair'}:
             raise ValueError('Explicit plan, requirements, analyzer, scope and documents required')
         if 'agent' in config and 'routing' in config:
             raise ValueError('Choose direct agent configuration or tier routing')
@@ -80,6 +81,9 @@ class Controller:
         self.fixture_adapter = config.get('fixtureAdapter')
         if 'fixtureAdapter' in config and (self.fixture_adapter != 'MYSQL' or self.project != FIXTURE_PROJECT):
             raise ValueError('MYSQL adapter is restricted to the repository fixture')
+        if 'fixtureAdapter' in config and 'serviceAdapter' in config:
+            raise ValueError('Choose the fixture adapter or the general service adapter')
+        self.service_adapter = service_adapter.settings(config['serviceAdapter']) if 'serviceAdapter' in config else None
         if self.project.is_symlink() or self.project.resolve() != self.project or not (self.project/'gradlew').is_file():
             raise ValueError('Canonical Gradle project required')
         self.state_path = Path(state_path).absolute()
@@ -163,6 +167,9 @@ class Controller:
                                    for path in self._agent_context_paths() if path not in self.scope['files']}
         if 'routing' in self.config:
             result['routing'] = {name: regression.digest(path) for name, path in self.routing_paths.items()}
+        if self.service_adapter:
+            result['serviceFiles'] = service_adapter.scenario_files(self.project, self.service_adapter)
+            result['serviceAdapterSha256'] = regression.digest(Path(__file__).with_name('service_adapter.py'))
         return result
 
     def _save(self):
@@ -221,6 +228,7 @@ class Controller:
                 'repair': {'IMPLEMENTATION', 'VERIFIED'},
                 'review': {'VERIFIED', 'REVIEWED'}, 'complete': {'REVIEWED'},
                 'local-service': {'VERIFIED', 'REVIEWED', 'COMPLETED'},
+                'pull-request': {'COMPLETED'},
             }
             if generation and self.state['phase'] == 'STALE' and self.state.get('generationStage') == stage:
                 allowed[stage].add('STALE')
@@ -238,9 +246,11 @@ class Controller:
                 return self._repair(kwargs.get('approvals', []))
             self._fresh_execution()
             if stage == 'local-service':
-                return self._local_service(kwargs['container'])
+                return self._local_service(kwargs.get('container'))
             if stage == 'review':
                 return self._review(**kwargs)
+            if stage == 'pull-request':
+                return self._pull_request(kwargs.get('pull_request'))
             return self._complete()
 
     def _baseline(self):
@@ -460,8 +470,9 @@ class Controller:
             prompt_hash = hashlib.sha256(current_prompt.encode()).hexdigest()
             summary = {'number': attempt + 1, 'status': result['status'], 'failureKind': result.get('failureKind', ''),
                        'promptSha256': prompt_hash}
-            if 'attemptId' in result:
-                summary['attemptId'] = result['attemptId']
+            for key in ('attemptId', 'provider', 'model', 'reasoningEffort', 'usage', 'durationSeconds'):
+                if key in result:
+                    summary[key] = result[key]
             if decision is not None:
                 summary['routing'] = dict(decision)
                 result['routing'] = decision
@@ -805,13 +816,21 @@ class Controller:
         return fixture_tools().verify_service(dict(os.environ), container, self.directory/'service-running.json')
 
     def _local_service(self, container):
-        if not self.fixture_adapter:
-            raise ValueError('Select the fixed MYSQL fixture adapter')
+        if not self.fixture_adapter and not self.service_adapter:
+            raise ValueError('Select the MYSQL fixture adapter or a general service adapter')
+        if self.service_adapter and container is not None:
+            raise ValueError('The general service adapter does not use a fixture container')
         for key in ('reviewed', 'completion', 'serviceSha256'):
             self.state.pop(key, None)
         self._record('VERIFIED', 'SERVICE_RUNNING')
         try:
-            result = self._service(container)
+            if self.service_adapter:
+                if self.service_adapter['jar'] not in ('build/libs/' + name for name in regression.read_json(self.directory/'after.json').get('artifactSha256', {})):
+                    raise ValueError('Service JAR must be a verified build artifact')
+                result = service_adapter.verify(self.project, self.service_adapter, regression.source_hashes(self.project),
+                                                launcher=service_adapter.java_launcher)
+            else:
+                result = self._service(container)
             regression.save(self.directory/'service.json', result)
             self._fresh_execution()
             if self._inputs() != self.state['inputs']:
@@ -836,7 +855,7 @@ class Controller:
         for key in ('reviewed', 'completion'):
             self.state.pop(key, None)
         self._record('VERIFIED', 'REVIEWING')
-        if self.fixture_adapter:
+        if self.fixture_adapter or self.service_adapter:
             if not self.state.get('serviceSha256'):
                 raise ValueError('Successful local-service stage required')
             if regression.digest(self.directory/'service.json') != self.state['serviceSha256']:
@@ -875,13 +894,103 @@ class Controller:
         return result
 
 
+    def _command(self, args):
+        completed = subprocess.run(args, cwd=self.project, capture_output=True, text=True, timeout=120)
+        if completed.returncode:
+            raise ValueError('Command failed: ' + ' '.join(args[:3]))
+        return completed.stdout
+
+    def _pull_request(self, options):
+        import re
+        if not isinstance(options, dict) or not set(options) <= {'title', 'base', 'submit'}:
+            raise ValueError('Pull request options must be title, base and submit')
+        title, base, submit = options.get('title'), options.get('base', 'main'), options.get('submit', False)
+        if not isinstance(title, str) or not title.strip() or len(title) > 120 or '\n' in title or '\r' in title:
+            raise ValueError('Single-line pull request title required')
+        if not isinstance(base, str) or not re.fullmatch(r'[A-Za-z0-9._][A-Za-z0-9._/-]{0,199}', base):
+            raise ValueError('Invalid base branch')
+        if type(submit) is not bool:
+            raise ValueError('Explicit boolean submit required')
+        if submit and 'PULL_REQUEST' not in self.plan['approvedActions']:
+            raise ValueError('Submitting requires PULL_REQUEST in approved plan actions')
+        completion = self.state.get('completion')
+        if not completion or completion.get('status') != 'COMPLETED':
+            raise ValueError('Completed session required')
+        for name, sha in self.state['reviewed'].items():
+            if regression.digest(self.directory/name) != sha:
+                self._invalidate('Review inputs or acceptance changed', 'ARTIFACTS')
+                raise ValueError('Review artifact changed')
+        body_path = self.directory/'pull-request.md'
+        body_path.write_text(self._pull_request_body(completion))
+        record = {'title': title, 'base': base, 'bodySha256': regression.digest(body_path),
+                  'completionSha256': evidence.fingerprint(completion), 'status': 'DRAFTED'}
+        if submit:
+            # Only the committed, pushed tree that matches the verified sources may be proposed.
+            if self._command(['git', 'status', '--porcelain', '--untracked-files=all', '--', '.']).strip():
+                raise ValueError('Commit the verified sources before submitting')
+            head = self._command(['git', 'rev-parse', 'HEAD']).strip()
+            if self._command(['git', 'rev-parse', '@{upstream}']).strip() != head:
+                raise ValueError('Push the verified commit before submitting')
+            branch = self._command(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).strip()
+            if branch in ('HEAD', base):
+                raise ValueError('Submit from a feature branch')
+            if regression.source_hashes(self.project) != self.state['sources']:
+                self._invalidate('Sources changed before pull request', 'SOURCES')
+                raise ValueError('Source drift before pull request')
+            url = self._command(['gh', 'pr', 'create', '--draft', '--base', base, '--head', branch,
+                                 '--title', title, '--body-file', str(body_path)]).strip().splitlines()[-1]
+            if not re.fullmatch(r'https://\S+/pull/\d+', url):
+                raise ValueError('Unexpected pull request response')
+            record.update(status='SUBMITTED', url=url, head=head, branch=branch)
+        regression.save(self.directory/'pull-request.json', record)
+        self.state['pullRequest'] = record
+        self._record('COMPLETED', 'PULL_REQUEST_' + record['status'])
+        return record
+
+    def _pull_request_body(self, completion):
+        after = regression.read_json(self.directory/'after.json')
+        result = regression.read_json(self.directory/'regression.json')
+        inputs = regression.read_json(self.directory/'review-inputs.json')
+        tests = after.get('tests', {})
+        passed = sorted(test for test, state in tests.items() if state == 'PASSED')
+        lines = ['## 요약', '', '- 요구사항 문서: ' + ', '.join('`%s`' % d for d in self.config['documents']),
+                 '- 승인된 변경 범위: ' + ', '.join('`%s`' % f for f in self.scope['files']), '',
+                 '## 검증 결과', '',
+                 '- 회귀 비교: %s, 테스트 %d개 중 %d개 PASSED' % (result['status'], len(tests), len(passed))]
+        lines += ['  - `%s`' % test for test in passed[:50]]
+        if len(passed) > 50:
+            lines.append('  - 외 %d개' % (len(passed) - 50))
+        for change in result.get('protectedChanges', []):
+            lines.append('- 보호 파일 변경: `%s` (%s)' % (change['path'], '해시 기반 검토 완료' if change['reviewed'] else '검토 필요'))
+        lines.append('- 정적 위험: ' + completion.get('targetRiskStatus', 'NOT_ASSESSED'))
+        if self.quality:
+            receipt = regression.read_json(self.directory/'quality.json')
+            for target, counters in receipt.get('coverage', {}).items():
+                score = receipt.get('mutation', {}).get(target, {}).get('score')
+                lines.append('- 품질 게이트 `%s`: LINE %.0f%%, BRANCH %.0f%%, 변이 점수 %s' % (
+                    target, counters['LINE']['ratio']*100, counters['BRANCH']['ratio']*100,
+                    'N/A' if score is None else '%.0f%%' % (score*100)))
+        else:
+            lines.append('- 품질 게이트: 미적용')
+        service = inputs.get('service') or {}
+        scenarios = service.get('scenarios', {})
+        lines.append('- 별도 서비스 실행: %s (%s)' % (service.get('status', 'NOT_PERFORMED'),
+                     ', '.join('%s=%s' % item for item in sorted(scenarios.items())) or '시나리오 없음'))
+        lines.append('- 근거 검토: ' + completion.get('evidenceReviewStatus', 'NOT_PERFORMED'))
+        lines += ['', '## 한계', '', '- ' + completion.get('meaning', '')]
+        lines += ['- ' + item for item in result.get('limitations', [])]
+        lines += ['', '_`code_change_workflow.py pull-request`가 완료된 세션의 근거로 생성했다. snapshot `%s`_'
+                  % evidence.fingerprint(after)[:12], '']
+        return '\n'.join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('stage', choices=('baseline', 'test-writing', 'implementation', 'generate-tests', 'generate-implementation',
-                                         'verification', 'repair', 'local-service', 'review', 'complete'))
+                                         'verification', 'repair', 'local-service', 'review', 'complete', 'pull-request'))
     parser.add_argument('--config', required=True)
     parser.add_argument('--state', required=True)
-    for name in ('changes', 'approvals', 'bundle', 'service', 'open-evidence', 'fixture-policy'):
+    for name in ('changes', 'approvals', 'bundle', 'service', 'open-evidence', 'fixture-policy', 'pull-request'):
         parser.add_argument('--' + name)
     parser.add_argument('--container')
     args = parser.parse_args()
@@ -889,13 +998,15 @@ def main():
         supplied = {key: value for key, value in vars(args).items() if key not in ('stage', 'config', 'state') and value is not None}
         allowed = {'baseline': set(), 'test-writing': {'changes'}, 'implementation': {'changes'},
                    'generate-tests': set(), 'generate-implementation': set(),
-                   'verification': {'approvals'}, 'repair': {'approvals'}, 'local-service': {'container'}, 'review': {'bundle', 'service', 'open_evidence', 'fixture_policy'}, 'complete': set()}[args.stage]
-        required = {'test-writing': {'changes'}, 'implementation': {'changes'}, 'local-service': {'container'}, 'review': {'bundle', 'open_evidence'}}.get(args.stage, set())
+                   'verification': {'approvals'}, 'repair': {'approvals'}, 'local-service': {'container'}, 'review': {'bundle', 'service', 'open_evidence', 'fixture_policy'}, 'complete': set(),
+                   'pull-request': {'pull_request'}}[args.stage]
+        required = {'test-writing': {'changes'}, 'implementation': {'changes'}, 'review': {'bundle', 'open_evidence'},
+                    'pull-request': {'pull_request'}}.get(args.stage, set())
         if not set(supplied) <= allowed or not required <= set(supplied):
             raise ValueError('Missing or inappropriate stage options')
         config = regression.read_json(args.config)
         runner = Controller(config, args.state)
-        if args.stage == 'review' and not runner.fixture_adapter and not args.service:
+        if args.stage == 'review' and not runner.fixture_adapter and not runner.service_adapter and not args.service:
             raise ValueError('Explicit service evidence required')
         data = {key: path if key == 'container' else regression.read_json(path) for key, path in supplied.items()}
         if data.get('fixture_policy'):
@@ -904,7 +1015,7 @@ def main():
                 policy['project'] = str((Path(args.fixture_policy).resolve().parent/policy['project']).resolve())
         result = runner.execute(args.stage, **data)
         print(json.dumps({'status': result['status'], 'state': str(runner.state_path)}))
-        return 0 if result['status'] in ('PASSED', 'COMPLETED') else 1 if result['status'] == 'FAILED' else 3
+        return 0 if result['status'] in ('PASSED', 'COMPLETED', 'DRAFTED', 'SUBMITTED') else 1 if result['status'] == 'FAILED' else 3
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
         print('CODE_CHANGE stage rejected or failed; inspect session phase and approved evidence')
         return 2

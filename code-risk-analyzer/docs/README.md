@@ -2,6 +2,7 @@
 
 | 분류 | 문서 | 내용 |
 |---|---|---|
+| 시작 | [AGENT_BRIEF](AGENT_BRIEF.md) | 에이전트용 한 장 요약: 명령, 단계, 금지 사항, 토큰 절약 |
 | 사용 가이드 | [CI_POLICY](guides/CI_POLICY.md) | 분석 완전성 지표, `fail.*` 통과 정책, 변이 예외 |
 | | [CLASSPATH](guides/CLASSPATH.md) | 클래스패스 설정과 타입 기반 호출 판정 범위 |
 | | [EXECUTION_EVIDENCE](guides/EXECUTION_EVIDENCE.md) | JUnit·JaCoCo·DB 시나리오 실행 증거 연결 |

@@ -102,7 +102,7 @@ validators:
 
 JEV의 실제 작업 보정, 실패 분류, 제한된 구현 수정·재검증, 최종 JaCoCo/PIT 완료 게이트를 연결했다. 동작 계약과 관련 코드만 JEV에 전달하고, 코드 생성기에는 전체 작성 규칙을 전달한다. 기존 confidence 최소 기준을 유지하며 독립 반올림의 가능한 최저 신뢰도로 수락을 판단한다. 설정과 근거는 [모델 라우팅](docs/requirements-analysis/model-routing.md)과 [단계 실행기](docs/requirements-analysis/code-change-workflow.md)에 기록한다.
 
-복잡한 HTTP fixture에서 발견한 정적 Obligation ID 중복을 우선 보강한다. 현재는 모호한 정적 근거를 EVIDENCE로 분류해 실행을 차단한다. 이후 개발 모델의 Golden Benchmark와 Quality Baseline, 성공 작업당 비용·retry·latency를 측정하고 Shadow·Canary·회귀 시 rollback과 Registry 승격을 연결한다. JEV Capability 보정 데이터는 개발 모델의 구현 품질 benchmark를 대신하지 않는다. 일반 프로젝트의 서비스 adapter와 선택형 아키텍처·컨벤션 검증도 남아 있다.
+복잡한 HTTP fixture에서 발견한 정적 Obligation ID 중복은 반복 키에 AST 위치를 더하는 방식으로 보강했다. 이후 개발 모델의 Golden Benchmark와 Quality Baseline, 성공 작업당 비용·retry·latency를 측정하고 Shadow·Canary·회귀 시 rollback과 Registry 승격을 연결한다. JEV Capability 보정 데이터는 개발 모델의 구현 품질 benchmark를 대신하지 않는다. 일반 프로젝트의 서비스 adapter와 선택형 아키텍처·컨벤션 검증도 남아 있다.
 
 ## 구현 기록
 

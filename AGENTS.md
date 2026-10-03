@@ -7,6 +7,7 @@
 
 ## 작업 원칙
 
+- `code-risk-analyzer` 작업은 먼저 [`docs/AGENT_BRIEF.md`](code-risk-analyzer/docs/AGENT_BRIEF.md)를 읽고, 긴 현황·리서치 문서는 필요한 절만 연다.
 - 각 프로젝트의 기존 구조, 문서, 빌드와 배포 계약을 따른다.
 - `code-risk-analyzer` 사용에 `build-convention` 적용을 필수 조건으로 추가하지 않는다.
 - 각 프로젝트의 Gradle Wrapper를 해당 디렉터리에서 실행한다.
