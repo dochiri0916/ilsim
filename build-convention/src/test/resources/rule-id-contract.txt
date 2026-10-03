@@ -1,0 +1,220 @@
+ARCH-APPLICATION-DEPENDENCY	X application must depend on a password port, not Spring Security types
+ARCH-APPLICATION-DEPENDENCY	X application must not depend directly on another context application type 'X'; use an integration Port
+ARCH-APPLICATION-DEPENDENCY	X application must not depend on adapter/global error layer 'X'
+ARCH-APPLICATION-DEPENDENCY	X application must not depend on technical framework type 'X'
+ARCH-DOMAIN-AGGREGATE	X application must not depend on another context domain model 'X'; use an integration Port or identifier Value Object
+ARCH-DOMAIN-AGGREGATE	X application service method 'X' must not modify multiple aggregate repositories in one transaction: X
+ARCH-DOMAIN-AGGREGATE	X domain aggregate 'X' must be a final class, not a record
+ARCH-DOMAIN-AGGREGATE	X domain aggregate equals and hashCode must use identifier field 'id' only
+ARCH-DOMAIN-AGGREGATE	X domain aggregate field 'X' must use a Value Object instead of JDK value type 'X'
+ARCH-DOMAIN-AGGREGATE	X domain aggregate must declare identifier field 'id' of an identifier VO type
+ARCH-DOMAIN-AGGREGATE	X domain aggregate restore must not create a new id, time, UUID, or domain event
+ARCH-DOMAIN-AGGREGATE	X domain aggregate state changes must return a new aggregate instead of mutating this
+ARCH-DOMAIN-AGGREGATE	X domain aggregate state must use private final fields
+ARCH-DOMAIN-AGGREGATE	X domain aggregate with identifier VO must override equals and hashCode using id
+ARCH-DOMAIN-AGGREGATE	X domain class 'X' must be a record or final aggregate root
+ARCH-DOMAIN-AGGREGATE	X domain collection field 'X' must contain domain Value Objects or enums, not raw scalar values
+ARCH-DOMAIN-AGGREGATE	X domain collection field 'X' must use List, Set, Map, or a first-class collection record instead of an array
+ARCH-DOMAIN-AGGREGATE	X domain field 'X' must use a Value Object instead of raw scalar 'X'
+ARCH-DOMAIN-AGGREGATE	X domain field 'X' must use a first-class collection record instead of 'X'
+ARCH-DOMAIN-AGGREGATE	X domain record component 'X' must be wrapped in a first-class collection record
+ARCH-DOMAIN-AGGREGATE	X domain record component 'X' must use a Value Object instead of raw scalar 'X'
+ARCH-DOMAIN-AGGREGATE	X domain reference component 'X' must use an identifier Value Object type
+ARCH-DOMAIN-AGGREGATE	X domain reference field 'X' must use an identifier Value Object type
+ARCH-DOMAIN-AGGREGATE	X first-class collection record 'X' must defensively copy its collection
+ARCH-DOMAIN-AGGREGATE	X first-class collection record 'X' must reject null elements
+ARCH-DOMAIN-AGGREGATE	X first-class collection record 'X' must use a domain-specific name
+ARCH-DOMAIN-AGGREGATE	X requireNonNull is only allowed for structural guards in a private aggregate constructor
+ARCH-DOMAIN-AGGREGATE	X value object 'X' must be created with X.of(...), not new
+ARCH-DOMAIN-AGGREGATE	X value object 'X' must declare a public static 'of' factory method returning 'X'
+ARCH-DOMAIN-DEPENDENCY	X domain must not declare DB technical id fields
+ARCH-DOMAIN-DEPENDENCY	X domain must not depend directly on another context model 'X'; translate it into a context-owned type or Published Language contract
+ARCH-DOMAIN-DEPENDENCY	X domain must not depend on global.exception 'X'
+ARCH-DOMAIN-DEPENDENCY	X domain must not use Spring/JPA/QueryDSL/Lombok annotations
+ARCH-EXCEPTION-CONTRACT	X @AuthenticatedMember resolver must throw an authentication exception instead of returning null
+ARCH-EXCEPTION-CONTRACT	X @X is only allowed in adapter.in.web or global.exception
+ARCH-EXCEPTION-CONTRACT	X GlobalExceptionHandler must declare @RestControllerAdvice
+ARCH-EXCEPTION-CONTRACT	X GlobalExceptionHandler must extend ResponseEntityExceptionHandler
+ARCH-EXCEPTION-CONTRACT	X GlobalExceptionHandler must handle BusinessException with @ExceptionHandler and return ProblemDetail
+ARCH-EXCEPTION-CONTRACT	X GlobalExceptionHandler must handle BusinessException without importing context exceptions
+ARCH-EXCEPTION-CONTRACT	X GlobalExceptionHandler must map ErrorCode kind, code, and detail to ProblemDetail
+ARCH-EXCEPTION-CONTRACT	X Spring Web error types are only allowed in adapter.in.web or global.exception
+ARCH-EXCEPTION-CONTRACT	X X exception 'X' must expose at least one static factory returning 'X'
+ARCH-EXCEPTION-CONTRACT	X X exception 'X' must keep constructors private and expose static factory methods
+ARCH-EXCEPTION-CONTRACT	X X exception 'X' must use ErrorCode-based constructors, not string messages
+ARCH-EXCEPTION-CONTRACT	X X exception detail field 'X' must use a context-specific internal name instead of matching accessor 'X()'
+ARCH-EXCEPTION-CONTRACT	X application exception 'X' must declare serialVersionUID
+ARCH-EXCEPTION-CONTRACT	X application exception 'X' must extend RuntimeException
+ARCH-EXCEPTION-CONTRACT	X application must raise exceptions through static factory methods, not direct constructors
+ARCH-EXCEPTION-CONTRACT	X application must use ErrorCode-based exceptions, not string message constructors
+ARCH-EXCEPTION-CONTRACT	X controller must not create or return ProblemDetail directly
+ARCH-EXCEPTION-CONTRACT	X domain exception 'X' must declare serialVersionUID
+ARCH-EXCEPTION-CONTRACT	X domain exception 'X' must extend RuntimeException
+ARCH-EXCEPTION-CONTRACT	X domain must raise exceptions through static factory methods, not direct constructors
+ARCH-EXCEPTION-CONTRACT	X domain must use ErrorCode-based exceptions, not string message constructors
+ARCH-EXCEPTION-CONTRACT	X domain must use domain-specific exceptions instead of JDK basic exceptions
+ARCH-EXCEPTION-CONTRACT	X must not expose exception.getMessage() as ProblemDetail detail
+ARCH-EXCEPTION-CONTRACT	X must resolve ProblemDetail title/detail from ErrorCode or MessageSource
+ARCH-EXCEPTION-CONTRACT	X shared exception contract 'X' must extend BusinessException
+ARCH-EXCEPTION-CONTRACT	X shared exception contract 'X' must remain framework-independent
+ARCH-EXCEPTION-CONTRACT	X test method 'X' must assert observable result, state, stored value, event, or exception
+ARCH-EXCEPTION-CONTRACT	X test method 'X' must not rely only on no-exception assertions
+ARCH-EXCEPTION-CONTRACT	X test method 'X' must not verify mocks without result/state/exception assertions
+ARCH-GENERAL	X @X is only allowed in adapter.out
+ARCH-GENERAL	X Spring component 'X' dependencies must be private final fields
+ARCH-GENERAL	X Spring component 'X' must use final fields with @RequiredArgsConstructor instead of @Autowired injection
+ARCH-GENERAL	X Spring component 'X' with final dependencies must declare @RequiredArgsConstructor
+ARCH-GENERAL	X adapter 'X' must implement only one outbound Port for SRP
+ARCH-GENERAL	X application DTO 'X' must be a record
+ARCH-GENERAL	X application error code 'X' must be an enum
+ARCH-GENERAL	X application service 'X' must be a class ending with Service
+ARCH-GENERAL	X application service 'X' must be final
+ARCH-GENERAL	X application service 'X' must declare @Service
+ARCH-GENERAL	X application service collaborator 'X' must be an outbound Port or Domain service
+ARCH-GENERAL	X application service must create a VO and pass normalized vo.value() to repository exists/find calls
+ARCH-GENERAL	X class 'X' must declare a private constructor
+ARCH-GENERAL	X class 'X' must declare at least one public static factory method returning 'X'
+ARCH-GENERAL	X class 'X' must not expose public/protected constructor (use static factory)
+ARCH-GENERAL	X context-specific ContextConfig is not allowed; register application services and adapters as Spring components
+ARCH-GENERAL	X domain collection field 'X' must be private final
+ARCH-GENERAL	X domain collection field 'X' must defensively copy with X.copyOf
+ARCH-GENERAL	X domain error code 'X' must be an enum
+ARCH-GENERAL	X domain event 'X' must be a record
+ARCH-GENERAL	X domain record 'X' must declare a compact constructor for invariants
+ARCH-GENERAL	X domain record 'X' must null-check and blank-check String components
+ARCH-GENERAL	X domain service 'X' must be final
+ARCH-GENERAL	X foreign keys must reference a domain identifier column, not DB technical id
+ARCH-GENERAL	X identifier VO 'X' must expose a generate factory
+ARCH-GENERAL	X imports X (adapter.in -> adapter.out forbidden)
+ARCH-GENERAL	X imports X (adapter.out -> adapter.in forbidden)
+ARCH-GENERAL	X imports X (application -> adapter forbidden)
+ARCH-GENERAL	X imports X (domain -> application/adapter forbidden)
+ARCH-GENERAL	X more uncovered changed lines
+ARCH-GENERAL	X must mark public APIs with @PublicApi instead of hard-coded /api excludePathPatterns
+ARCH-GENERAL	X must not use @Value; bind configuration with record @ConfigurationProperties
+ARCH-GENERAL	X must not use wildcard import 'X'
+ARCH-GENERAL	X outbound DTO 'X' must be a record
+ARCH-GENERAL	X outbound adapter 'X' must declare @Component or @Repository instead of being wired by ContextConfig
+ARCH-GENERAL	X reference column 'X' must have an explicit foreign key
+ARCH-GENERAL	X reference column 'X' must have an index
+ARCH-GENERAL	X state-changing application service method 'X' must not use readOnly = true
+ARCH-GENERAL	X table 'X' domain identifier column 'X' must have a unique constraint
+ARCH-GENERAL	X table 'X' identifier column 'X' must be char/varchar(32)
+ARCH-GENERAL	X table 'X' reference column 'X' must store identifier value as char/varchar(32), not DB technical id
+ARCH-GENERAL	X web configuration must inject Interceptor/ArgumentResolver components instead of creating them with new
+ARCH-NAMING	X adapter.in.web.request type 'X' must end with Request
+ARCH-NAMING	X adapter.in.web.response type 'X' must end with Response
+ARCH-NAMING	X application..port.in.X type 'X' must end with X
+ARCH-NAMING	X domain event 'X' must use a past-tense name without Event suffix
+ARCH-NAMING	X domain reference component 'X' must use '{Target}Id' naming, not 'publicId' or '*PublicId'
+ARCH-NAMING	X domain reference field 'X' must use '{Target}Id' naming, not 'publicId' or '*PublicId'
+ARCH-PACKAGE-TOPOLOGY	X API DTO 'X' must live in adapter.in.web package
+ARCH-PACKAGE-TOPOLOGY	X JPA entity 'X' must be in adapter.out package
+ARCH-PACKAGE-TOPOLOGY	X JPA entity 'X' must live in a persistence package
+ARCH-PACKAGE-TOPOLOGY	X JPA repository 'X' should live in a persistence/repository package
+ARCH-PACKAGE-TOPOLOGY	X MSA web adapter package must go through adapter.in.web.external or adapter.in.web.internal
+ARCH-PACKAGE-TOPOLOGY	X X.X package must declare a valid child package
+ARCH-PACKAGE-TOPOLOGY	X X.adapter package must use in or out
+ARCH-PACKAGE-TOPOLOGY	X X.adapter.in package must use bootstrap, event, messaging, scheduler, or web
+ARCH-PACKAGE-TOPOLOGY	X X.adapter.in.web package must use request or response
+ARCH-PACKAGE-TOPOLOGY	X X.application package must use port, exception, or service
+ARCH-PACKAGE-TOPOLOGY	X X.application.port package must use in or out
+ARCH-PACKAGE-TOPOLOGY	X X.application.port.in package must use usecase, command, query, or result
+ARCH-PACKAGE-TOPOLOGY	X X.domain package must use model, vo, event, or exception
+ARCH-PACKAGE-TOPOLOGY	X adapter.in.web package may contain only Controller types; place 'X' in request or response
+ARCH-PACKAGE-TOPOLOGY	X application DTO 'X' must live in application..port.in package
+ARCH-PACKAGE-TOPOLOGY	X application exception support 'X' must live in application.exception package
+ARCH-PACKAGE-TOPOLOGY	X application service 'X' must live in application..service package
+ARCH-PACKAGE-TOPOLOGY	X bounded context package 'X' must contain domain, application, or adapter
+ARCH-PACKAGE-TOPOLOGY	X common package is not allowed; use a shared module or context-local package
+ARCH-PACKAGE-TOPOLOGY	X controller 'X' must live directly in adapter.in.web package, not in request or response
+ARCH-PACKAGE-TOPOLOGY	X controller 'X' must live in adapter.in.web package
+ARCH-PACKAGE-TOPOLOGY	X domain event 'X' must live in domain.event package
+ARCH-PACKAGE-TOPOLOGY	X domain exception support 'X' must live in domain.exception package
+ARCH-PACKAGE-TOPOLOGY	X domain model 'X' must live in domain.model or domain.vo package
+ARCH-PACKAGE-TOPOLOGY	X domain value object 'X' in domain.vo package must be a record or enum
+ARCH-PACKAGE-TOPOLOGY	X global package must be limited to global.exception, global.web, global.persistence, or global.configuration.properties
+ARCH-PACKAGE-TOPOLOGY	X global package must not depend on bounded context package 'X'
+ARCH-PACKAGE-TOPOLOGY	X inbound port 'X' must live in application..port.in package
+ARCH-PACKAGE-TOPOLOGY	X inbound port type 'X' must live in application..port.in.X package
+ARCH-PACKAGE-TOPOLOGY	X must not import common package 'X'
+ARCH-PACKAGE-TOPOLOGY	X outbound adapter entity 'X' must live in a persistence package
+ARCH-PACKAGE-TOPOLOGY	X outbound port 'X' must live in application..port.out package
+ARCH-PACKAGE-TOPOLOGY	X package 'X' is not a bounded context; use a real context name before domain, application, or adapter
+ARCH-PACKAGE-TOPOLOGY	X package 'X' must be under application root package 'X'
+ARCH-PACKAGE-TOPOLOGY	X package must be context-first: use {context}/X..., not X/{context}...
+ARCH-PACKAGE-TOPOLOGY	X package must follow {context}/domain, {context}/application, or {context}/adapter structure
+ARCH-PACKAGE-TOPOLOGY	X request DTO 'X' must live in adapter.in.web.request package
+ARCH-PACKAGE-TOPOLOGY	X response DTO 'X' must live in adapter.in.web.response package
+ARCH-PACKAGE-TOPOLOGY	X root package may contain only the application bootstrap class
+ARCH-PACKAGE-TOPOLOGY	X uses @Entity in domain package (separate domain model from persistence entity)
+ARCH-PERSISTENCE-ADAPTER	X JPA domain identifier column 'X' must be unique
+ARCH-PERSISTENCE-ADAPTER	X JPA domain identifier column 'X' must have length = 32
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' argument constructors must be private
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must declare @Getter
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must declare @NoArgsConstructor(access = AccessLevel.PROTECTED)
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must declare private Long id with @Id
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must declare private String X with @Column
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must end with Entity
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must expose a static factory returning 'X'
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must not be final
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must not declare public fields
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must not expose public constructors
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must not hold entity reference field 'X'
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must not use @Setter, @Data, or @Builder
+ARCH-PERSISTENCE-ADAPTER	X JPA entity 'X' must not use object relation mappings
+ARCH-PERSISTENCE-ADAPTER	X JPA reference field 'X' must store identifier VO value as String
+ARCH-PERSISTENCE-ADAPTER	X JPA reference field 'X' must use '{target}Id' naming, not 'publicId' or '*PublicId'
+ARCH-PERSISTENCE-ADAPTER	X JPA repository 'X' must be an interface
+ARCH-PERSISTENCE-ADAPTER	X JPA technical key 'id' must declare @Getter(AccessLevel.NONE)
+ARCH-PERSISTENCE-ADAPTER	X JPA technical key must be named 'id', not 'X'
+ARCH-PERSISTENCE-ADAPTER	X entity 'X' must declare @Table(name = \"...\")
+ARCH-PERSISTENCE-ADAPTER	X mapper 'X' method 'X' must reveal conversion direction with toDomain, toEntity, or updateEntity
+ARCH-PERSISTENCE-ADAPTER	X mapper 'X' must be final
+ARCH-PERSISTENCE-ADAPTER	X mapper 'X' must declare a private constructor
+ARCH-PERSISTENCE-ADAPTER	X mapper 'X' must not be registered as a Spring bean
+ARCH-PERSISTENCE-ADAPTER	X mapper 'X' must not generate time or UUID values
+ARCH-PERSISTENCE-ADAPTER	X mapper 'X' must not keep instance state
+ARCH-PERSISTENCE-ADAPTER	X mapper 'X' must not use reflection to access private state
+ARCH-PERSISTENCE-ADAPTER	X persistence adapter 'X' must declare @Repository
+ARCH-PERSISTENCE-ADAPTER	X persistence adapter 'X' must implement an outbound Port
+ARCH-PERSISTENCE-ADAPTER	X type 'X' has an ambiguous responsibility name; use a specific domain, use case, port, adapter, mapper, or factory name
+ARCH-PORT-CONTRACT	X application exception support 'X' must end with Exception or ErrorCode
+ARCH-PORT-CONTRACT	X application service 'X' must implement an inbound UseCase
+ARCH-PORT-CONTRACT	X application service 'X' must implement exactly one UseCase for SRP
+ARCH-PORT-CONTRACT	X controller collaborator 'X' must be an inbound UseCase
+ARCH-PORT-CONTRACT	X controller must depend on inbound UseCase ports only, not 'X'
+ARCH-PORT-CONTRACT	X domain exception support 'X' must end with Exception or ErrorCode
+ARCH-PORT-CONTRACT	X domain/application/outbound port must not expose DB/HTTP/SDK/Spring technical exception types
+ARCH-PORT-CONTRACT	X inbound port 'X' must be an interface
+ARCH-PORT-CONTRACT	X outbound port 'X' must end with Port or RepositoryPort
+ARCH-PORT-CONTRACT	X repository port 'X' must not declare X; use create or update
+ARCH-QUALITY-GATE	X must not suppress PMD/Checkstyle/SpotBugs warnings; fix the violation or convention rule
+ARCH-SOURCE-SYNTAX	X could not be parsed as Java source: X
+ARCH-TEST-CONVENTION	X test method 'X' // X section must contain code; do not leave placeholder comments
+ARCH-TEST-CONVENTION	X test method 'X' // then section must assert observable result
+ARCH-TEST-CONVENTION	X test method 'X' // when & then section must assert observable result
+ARCH-TEST-CONVENTION	X test method 'X' @DisplayName must be written in Korean
+ARCH-TEST-CONVENTION	X test method 'X' must declare @DisplayName in Korean
+ARCH-TEST-CONVENTION	X test method 'X' must include '// given'
+ARCH-TEST-CONVENTION	X test method 'X' must include '// then' or '// when & then'
+ARCH-TEST-CONVENTION	X test method 'X' must include '// when' or '// when & then'
+ARCH-TEST-CONVENTION	X test method 'X' must not use JUnit assumptions to skip execution
+ARCH-TEST-CONVENTION	X test method 'X' must order comments as // given, // when & then
+ARCH-TEST-CONVENTION	X test method 'X' must order comments as // given, // when, // then
+ARCH-TEST-CONVENTION	X tests must not use @Disabled; fix or delete skipped tests
+ARCH-TRANSACTION-BOUNDARY	X @Transactional is only allowed on concrete application services
+ARCH-TRANSACTION-BOUNDARY	X @Transactional must be declared on public application service methods, not on the class
+ARCH-TRANSACTION-BOUNDARY	X must not use REQUIRES_NEW, NESTED, NOT_SUPPORTED, or TransactionTemplate
+ARCH-TRANSACTION-BOUNDARY	X non-public method 'X' must not declare @Transactional
+ARCH-TRANSACTION-BOUNDARY	X public application service method 'X' must declare @Transactional
+ARCH-TRANSACTION-BOUNDARY	X query application service method 'X' must declare @Transactional(readOnly = true)
+ARCH-TRANSACTION-BOUNDARY	X read-only transaction method 'X' must not call repository mutation methods
+ARCH-TRANSACTION-BOUNDARY	X transaction method 'X' must not call external side effects inside the transaction
+ARCH-TRANSACTION-BOUNDARY	X transactional method 'X' must not be called through self-invocation
+ARCH-WEB-ADAPTER	X API DTO 'X' must be a record
+ARCH-WEB-ADAPTER	X API DTO 'X' must be responsibility-specific, not context-wide or generic
+ARCH-WEB-ADAPTER	X API DTO 'X' must not expose domain/application types directly
+ARCH-WEB-ADAPTER	X controller must not expose application types as response return values
+ARCH-WEB-ADAPTER	X controller must not expose domain types as response return values
+ARCH-WEB-ADAPTER	X inbound web adapter must not import outbound adapter type 'X'
