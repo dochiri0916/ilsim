@@ -41,7 +41,7 @@ class ServiceAdapterTests(unittest.TestCase):
         (self.project/'checks/ok.py').write_text(CHECK)
         (self.project/'checks/fail.py').write_text('import sys; sys.exit(3)')
         self.settings = {'jar': 'build/libs/app.jar', 'readyPath': '/ready', 'readyTimeoutSeconds': 20,
-                         'scenarios': {name: ['python3', 'checks/ok.py'] for name in adapter.SCENARIOS}}
+                         'scenarios': {name: ['python3', 'checks/ok.py', name] for name in adapter.SCENARIOS}}
 
     def test_runs_every_scenario_against_a_started_process_and_stops_it(self):
         settings = adapter.settings(self.settings)
@@ -82,6 +82,20 @@ class ServiceAdapterTests(unittest.TestCase):
     def test_referenced_scenario_files_are_hashed_for_drift_detection(self):
         files = adapter.scenario_files(self.project, adapter.settings(self.settings))
         self.assertEqual({'checks/ok.py': adapter.digest(self.project/'checks/ok.py')}, files)
+
+    def test_scenario_program_itself_is_hashed(self):
+        (self.project/'checks/run.sh').write_text('exit 0')
+        self.settings['scenarios'] = {name: ['checks/run.sh', name] for name in adapter.SCENARIOS}
+        files = adapter.scenario_files(self.project, adapter.settings(self.settings))
+        self.assertEqual({'checks/run.sh': adapter.digest(self.project/'checks/run.sh')}, files)
+
+    def test_scenarios_without_project_check_or_identical_commands_are_rejected(self):
+        self.settings['scenarios'] = {name: ['true', 'noop-' + name] for name in adapter.SCENARIOS}
+        with self.assertRaisesRegex(ValueError, 'project'):
+            adapter.scenario_files(self.project, adapter.settings(self.settings))
+        self.settings['scenarios'] = {name: ['python3', 'checks/ok.py'] for name in adapter.SCENARIOS}
+        with self.assertRaisesRegex(ValueError, 'distinct'):
+            adapter.settings(self.settings)
 
 
 if __name__ == '__main__':

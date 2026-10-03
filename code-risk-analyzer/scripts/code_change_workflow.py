@@ -310,7 +310,7 @@ class Controller:
         self._record('BASELINED' if check['status'] == 'PASSED' else 'BLOCKED', check['status'])
         return check
 
-    def _writing(self, stage, changes):
+    def _writing(self, stage, changes, expected_failures=()):
         action = 'WRITE_TESTS' if stage == 'test-writing' else 'IMPLEMENT'
         if action not in self.scope['actions']:
             raise ValueError('Write action outside approved scope')
@@ -328,8 +328,8 @@ class Controller:
             target = self.project/relative
             if relative.is_absolute() or '..' in relative.parts or relative.as_posix() != path or '\\' in path or any(p.is_symlink() for p in [target, *target.parents]):
                 raise ValueError('Unsafe change path')
-            if not path.startswith('src/') or (action == 'WRITE_TESTS' and not path.startswith('src/test/')):
-                raise ValueError('Test writing may modify only src/test; implementation requires src')
+            if not path.startswith('src/test/' if action == 'WRITE_TESTS' else 'src/main/'):
+                raise ValueError('Test writing may modify only src/test; implementation only src/main')
             actual = regression.digest(target) if target.is_file() else 'ABSENT'
             if actual != change['expectedSha256']:
                 raise ValueError('Change source hash mismatch')
@@ -356,9 +356,33 @@ class Controller:
         phase = 'TEST_WRITING' if action == 'WRITE_TESTS' else 'IMPLEMENTATION'
         if result.get('status') != 'COMPLETED':
             self._invalidate('Writer did not complete; later stages blocked', 'SOURCES')
-        else:
-            self._record(phase, 'COMPLETED')
+            return result
+        if action == 'WRITE_TESTS':
+            red = self._red_phase(expected_failures)
+            if red['status'] != 'PASSED':
+                self._invalidate('New tests passed before implementation', 'SOURCES')
+                return {'status': 'NEEDS_REVIEW', 'failures': red['failures']}
+            # Later stages may not change the accepted tests or build inputs; only test-writing re-accepts them.
+            self.state['lockedTests'] = regression.protected_sources(self.state['sources'])
+        self._record(phase, 'COMPLETED')
         return result
+
+    def _red_phase(self, expected_failures):
+        # Tests first: every new-feature or expected-failure test must not pass before implementation.
+        tests = sorted({test for data in self.plan['newFeatures'].values() for test in data['domain'] + data['mysql']}
+                       | set(expected_failures))
+        snapshot = regression.snapshot(self.project, self.plan)
+        if snapshot['observedSources'] != self.state['sources']:
+            self._invalidate('Source changed during pre-implementation run', 'SOURCES')
+            raise ValueError('Source drift during pre-implementation run')
+        observed = {test: 'PASSED' if regression.successful(snapshot['tests'], test) else 'NOT_PASSED' for test in tests}
+        failures = ['Passed before implementation: ' + test for test, state in observed.items() if state == 'PASSED']
+        red = {'version': 1, 'status': 'NEEDS_REVIEW' if failures else 'PASSED', 'tests': observed, 'failures': failures,
+               'sources': snapshot['sources'], 'buildExitCode': snapshot['buildExitCode'],
+               'meaning': 'NOT_PASSED covers failed, skipped, missing or uncompiled tests; a passing test describes existing behavior'}
+        regression.save(self.directory/'red.json', red)
+        self.state['redSha256'] = regression.digest(self.directory/'red.json')
+        return red
 
     def _generate(self, stage):
         if 'agent' not in self.config and 'routing' not in self.config:
@@ -558,7 +582,8 @@ class Controller:
             self._record('IMPLEMENTATION', 'COMPLETED')
             return {'status': 'COMPLETED', 'files': []}
         changes = {'changes': [dict(change, expectedSha256=sources.get(change['path'], 'ABSENT')) for change in output['changes']]}
-        result = self._writing(stage, changes)
+        expected = [entry['test'] for entry in output['expectedFailures']] if stage == 'test-writing' else []
+        result = self._writing(stage, changes, expected)
         if result['status'] == 'COMPLETED':
             self.state.pop('generationStage', None)
             self._save()
@@ -700,6 +725,9 @@ class Controller:
     def _verification(self, approvals):
         if not isinstance(approvals, list) or any(not isinstance(a, dict) for a in approvals):
             raise ValueError('Approvals must be review records')
+        if 'lockedTests' in self.state and regression.protected_sources(self.state['sources']) != self.state['lockedTests']:
+            self._invalidate('Accepted tests or build inputs changed after test-writing', 'ARTIFACTS')
+            raise ValueError('Accepted tests changed; rerun test-writing to accept them again')
         for name, sha in self.state.get('agentArtifacts', {}).items():
             if regression.digest(self.directory/name) != sha:
                 self._invalidate('Agent contract changed', 'ARTIFACTS')
@@ -990,7 +1018,11 @@ class Controller:
             raise ValueError('Explicit open-evidence array required')
         snapshot = regression.read_json(self.directory/'after.json')
         reviewed = evidence.review_evidence(self.project, snapshot, (self.directory/'scan.json').relative_to(self.project).as_posix(), bundle, fixture_policy)
-        result = regression.completion(regression.read_json(self.directory/'regression.json'), snapshot, service, open_evidence, reviewed)
+        questions = list(open_evidence)
+        if not (self.fixture_adapter or self.service_adapter):
+            # A caller-supplied service result is a claim, not controller execution; it can never complete the session.
+            questions.append('Service evidence was supplied by the caller, not executed by a controller adapter')
+        result = regression.completion(regression.read_json(self.directory/'regression.json'), snapshot, service, questions, reviewed)
         regression.save(self.directory/'review-inputs.json', {'bundle': bundle, 'service': service, 'openEvidence': open_evidence, 'fixturePolicy': fixture_policy})
         regression.save(self.directory/'review-result.json', result)
         self.state['reviewed'] = {name: regression.digest(self.directory/name) for name in ('review-inputs.json', 'review-result.json')}

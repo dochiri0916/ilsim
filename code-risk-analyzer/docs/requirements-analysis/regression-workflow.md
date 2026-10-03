@@ -85,7 +85,7 @@ python3 scripts/regression_workflow.py complete \
   --output /absolute/approved/project/build/completion.json
 ```
 
-완료 직전에 전체 테스트·빌드를 다시 실행하고 기준선 비교, 서비스 소스·JAR 일치, 종료, 미해결 근거를 모은다. 검증 실패는 `FAILED`, 미해결 근거는 `NEEDS_REVIEW`, 선언된 검증 범위가 모두 충족되면 `COMPLETED`다. 종료 코드는 각각 1, 3, 0이며 입력·계획 거부는 2다. 기존 `requirements` 출력의 action 실행 완료와 이 완료 판정을 구분한다.
+완료 직전에 전체 테스트·빌드를 다시 실행하고 기준선 비교, 서비스 소스·JAR 일치, 종료, 미해결 근거를 모은다. 검증 실패는 `FAILED`, 미해결 근거는 `NEEDS_REVIEW`다. 이 CLI는 서비스를 직접 실행하지 않으므로 `--service` 결과는 항상 미해결 근거로 남아 최선이 `NEEDS_REVIEW`다. `COMPLETED`가 필요하면 서비스 adapter를 실행하는 `code_change_workflow.py`를 쓴다. 종료 코드는 각각 1, 3, 0이며 입력·계획 거부는 2다. 기존 `requirements` 출력의 action 실행 완료와 이 완료 판정을 구분한다.
 
 ## 지원 범위
 
