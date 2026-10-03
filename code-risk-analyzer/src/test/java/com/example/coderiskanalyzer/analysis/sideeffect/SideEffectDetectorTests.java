@@ -152,6 +152,29 @@ class SideEffectDetectorTests {
                 .exitCode()).isEqualTo(2);
     }
 
+    @Test
+    void classDirectoryAndJarPatternResolveTheSameCallsInAScan() throws Exception {
+        // given: the library both as compiled classes and as a JAR found by a pattern
+        createJar();
+        Path root = tempDir.resolve("src/main/java");
+        write(root, "Calls.java", """
+                class Calls { org.springframework.web.client.RestOperations transport;
+                    @Transactional void run() { transport.postForObject("https://example.test"); }
+                }
+                """);
+        var command = new ScanCommand(new SourceDiscoveryService(new SourceRootDetector()), new JavaSourceParser(),
+                new ProgramModelBuilder(), new RuleEngine(List.of(new RemoteCallInsideTransactionRule(detector))),
+                List.of(new JsonReporter()));
+        for (String classpath : List.of("[library-classes]", "['libs/*.jar']", "['**/api.jar', libs/api.jar]")) {
+            // when
+            Files.writeString(tempDir.resolve(".code-risk.yml"), "analysis:\n  classpath: " + classpath + "\n");
+            var response = command.scanForCli(new ScanRequest(tempDir.toString(), "json", "", "false", "", "", "", false));
+            // then
+            assertThat(response.exitCode()).as(classpath).isZero();
+            assertThat(response.output()).as(classpath).contains("TX-003", "RESOLVED_TYPE", "RestOperations.postForObject");
+        }
+    }
+
     private ParsedSource parse(Path root, String text, List<Path> jars) throws Exception {
         Path file = write(root, "Calls.java", text);
         return new JavaSourceParser().parse(List.of(new SourceFile(root, file)), List.of(root), jars).getFirst();
