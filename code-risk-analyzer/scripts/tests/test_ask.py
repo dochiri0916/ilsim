@@ -71,10 +71,17 @@ class DecideTests(unittest.TestCase):
         self.assertEqual('CODE_CHANGE', intent)
         self.assertIn('keyword', reason)
 
-    def test_failed_jev_call_falls_back_to_keywords_with_warning(self):
-        intent, reason = ask.decide('재고 차감 버그 고쳐줘', jev(None, status='FAILED'))
-        self.assertEqual('CODE_CHANGE', intent)
+    def test_failed_jev_call_falls_back_to_keywords_only_for_read_only_tasks(self):
+        intent, reason = ask.decide('이 프로젝트 위험 분석해줘', jev(None, status='FAILED'))
+        self.assertEqual('ANALYZE', intent)
         self.assertIn('JEV 실패', reason)
+
+    def test_failed_jev_call_never_lets_keywords_alone_change_code(self):
+        # given: JEV would answer UNKNOWN for this sentence when the call succeeds
+        for text in ('점검하고 문제 있으면 고쳐줘', '검증 돌려줘', 'PR 올려줘', '이어서 계속 진행해'):
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(ValueError, '--no-jev'):
+                    ask.decide(text, jev(None, status='FAILED'))
 
     def test_failed_jev_call_without_keyword_match_is_rejected(self):
         with self.assertRaises(ValueError):

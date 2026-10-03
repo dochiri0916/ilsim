@@ -12,7 +12,7 @@ Java 25 Spring Boot CLI(`code-risk-analyzer`)와 Python 단계 실행기(`script
 python3 scripts/ask.py "주문 취소에 중복 요청 방지 추가해줘" --config c.json --state <project>/build/<id>/state.json
 ```
 
-- 작업 판단: `TYPESAFE_API_KEY`가 있으면 JEV가 요청 문장만 보고 작업을 고르고, 키워드 규칙과 결과가 같아야 진행한다. 둘이 다르거나 JEV 신뢰도가 0.8 미만이거나 UNKNOWN이면 실행하지 않고 다시 묻는다. JEV 호출이 실패하면 키워드로만 판단하고 그 사실을 출력한다. 키가 없거나 `--no-jev`면 키워드만 쓴다(토큰 0). 코드를 바꾸는 단계는 `--yes`를 붙여야 실행한다.
+- 작업 판단: `TYPESAFE_API_KEY`가 있으면 JEV가 요청 문장만 보고 작업을 고르고, 키워드 규칙과 결과가 같아야 진행한다. 둘이 다르거나 JEV 신뢰도가 0.8 미만이거나 UNKNOWN이면 실행하지 않고 다시 묻는다. JEV 호출이 실패하면 읽기 전용 작업(분석·상태·비용·규칙·변이)만 키워드로 진행하고, 코드 변경·검증·PR·이어서는 거부한다(재시도하거나 `--no-jev`). 키가 없거나 `--no-jev`면 키워드만 쓴다(토큰 0). 코드를 바꾸는 단계는 `--yes`를 붙여야 실행한다.
 - 작업 종류: 변경 / 분석 / 상태 / 이어서 / 검증 / PR / 비용 / 규칙 / 변이.
 - 단계: 세션 `phase`에서 다음 사람 확인 지점(verification → review → pull-request)까지만 실행한다. 검증 실패 시 `repair` 설정이 있으면 repair를 한 번 실행한다.
 - 모델: `routing`에 Tier·capability가 없으면 새 세션 설정을 `<session>/ask-config.json`에 저장하고 이후 재사용한다. JEV 키가 있으면 `capability: {}`로 단계마다 JEV가 요구사항·코드 범위를 보고 Tier를 정한다(해당 내용이 TypeSafe로 전송된다). 키가 없으면 고위험 단어(결제·재고·동시성·트랜잭션·보안 등)가 있을 때 TIER_3, 아니면 TIER_2이며 TIER_4는 고르지 않는다.
