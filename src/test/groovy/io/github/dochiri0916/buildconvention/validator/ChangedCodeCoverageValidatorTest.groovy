@@ -5,6 +5,7 @@ import org.gradle.api.Project
 import org.gradle.testfixtures.ProjectBuilder
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 
 class ChangedCodeCoverageValidatorTest {
@@ -310,6 +311,44 @@ class ChangedCodeCoverageValidatorTest {
 
         // then
         assert violations.any { it.contains('no merge base found') }
+    }
+
+    @Test
+    @DisplayName('저장소 루트가 아닌 하위 모듈의 변경도 변경 코드 커버리지에 포함한다')
+    void validatesChangedFilesInSubprojectOfRepository() {
+        // given
+        Project root = gitProject('multi-module')
+        File moduleDir = new File(root.projectDir, 'order')
+        moduleDir.mkdirs()
+        Project module = ProjectBuilder.builder().withProjectDir(moduleDir).build()
+        writeJava(module, sampleSource('1'))
+        commitAll(root.projectDir, 'baseline')
+        writeJava(module, sampleSource('2'))
+        File report = writeCoverageReport(module, 'Sample.java', 5, false)
+
+        // when
+        List<String> violations = ChangedCodeCoverageValidator.validate(
+                module, new HexagonalConventionExtension(), report, 'HEAD')
+
+        // then
+        assert violations.any { it.contains('Changed production line coverage') }
+        assert violations.any { it.contains('Uncovered changed line: src/main/java/com/example/Sample.java:5') }
+    }
+
+    @Test
+    @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    @DisplayName('stderr 출력이 파이프 버퍼보다 커도 프로세스 실행이 멈추지 않는다')
+    void drainsLargeStderrWithoutBlocking() {
+        // given
+        List<String> command = ['sh', '-c', 'head -c 1000000 /dev/zero | tr "\\0" x >&2; echo done']
+
+        // when
+        ChangedCodeCoverageValidator.ProcessResult result = ChangedCodeCoverageValidator.runProcess(command, tempDir)
+
+        // then
+        assert result.exitValue == 0
+        assert result.stdout.trim() == 'done'
+        assert result.stderr.length() == 1000000
     }
 
     private Project gitProject(String name) {

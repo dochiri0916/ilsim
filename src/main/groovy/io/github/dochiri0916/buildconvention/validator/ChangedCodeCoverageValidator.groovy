@@ -111,12 +111,25 @@ class ChangedCodeCoverageValidator {
     }
 
     private static String resolveMergeBase(Project project, String baseRef) {
-        Process process = new ProcessBuilder(['git', '-C', project.projectDir.absolutePath, 'merge-base', baseRef, 'HEAD'])
-                .directory(project.projectDir)
+        ProcessResult result = runProcess(
+                ['git', '-C', project.projectDir.absolutePath, 'merge-base', baseRef, 'HEAD'], project.projectDir)
+        String stdout = result.stdout.trim()
+        return result.exitValue == 0 && !stdout.isEmpty() ? stdout : null
+    }
+
+    /** Drains stdout and stderr concurrently so a full stderr pipe cannot block the child process. */
+    static ProcessResult runProcess(List<String> command, File workingDir) {
+        Process process = new ProcessBuilder(command)
+                .directory(workingDir)
                 .start()
-        String stdout = process.inputStream.getText('UTF-8').trim()
-        process.errorStream.getText('UTF-8')
-        return process.waitFor() == 0 && !stdout.isEmpty() ? stdout : null
+        process.outputStream.close()
+        StringBuilder stderr = new StringBuilder()
+        Thread stderrReader = Thread.start {
+            stderr.append(process.errorStream.getText('UTF-8'))
+        }
+        String stdout = process.inputStream.getText('UTF-8')
+        stderrReader.join()
+        return new ProcessResult(process.waitFor(), stdout, stderr.toString())
     }
 
     private static List<String> sourceRoots(Project project) {
@@ -137,18 +150,18 @@ class ChangedCodeCoverageValidator {
                 '-C',
                 project.projectDir.absolutePath,
                 'diff',
+                // Subproject paths must match the project-relative source roots, not the repository root.
+                '--relative',
                 '--unified=0',
                 '--no-ext-diff',
                 '--diff-filter=ACMRT',
                 revision,
                 '--'
         ] + sourceRoots(project)
-        Process process = new ProcessBuilder(command)
-                .directory(project.projectDir)
-                .start()
-        String stdout = process.inputStream.getText('UTF-8')
-        String stderr = process.errorStream.getText('UTF-8')
-        int exitValue = process.waitFor()
+        ProcessResult result = runProcess(command, project.projectDir)
+        String stdout = result.stdout
+        String stderr = result.stderr
+        int exitValue = result.exitValue
 
         if (exitValue != 0) {
             String message = stderr.trim()
@@ -190,12 +203,10 @@ class ChangedCodeCoverageValidator {
                 '--exclude-standard',
                 '--'
         ] + sourceRoots(project)
-        Process process = new ProcessBuilder(command)
-                .directory(project.projectDir)
-                .start()
-        String stdout = process.inputStream.getText('UTF-8')
-        String stderr = process.errorStream.getText('UTF-8')
-        int exitValue = process.waitFor()
+        ProcessResult result = runProcess(command, project.projectDir)
+        String stdout = result.stdout
+        String stderr = result.stderr
+        int exitValue = result.exitValue
         if (exitValue != 0) {
             return new DiffResult([:], "Cannot find untracked Java files: ${stderr.trim()}")
         }
@@ -314,6 +325,18 @@ class ChangedCodeCoverageValidator {
 
     private static String formatRatio(BigDecimal ratio) {
         return String.format(Locale.ROOT, '%.2f%%', ratio * 100)
+    }
+
+    static final class ProcessResult {
+        final int exitValue
+        final String stdout
+        final String stderr
+
+        ProcessResult(int exitValue, String stdout, String stderr) {
+            this.exitValue = exitValue
+            this.stdout = stdout
+            this.stderr = stderr
+        }
     }
 
     private static final class DiffResult {

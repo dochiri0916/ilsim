@@ -45,3 +45,11 @@ Production, 테스트, build 설정, migration을 변경한 경우 완료 전에
 ```
 
 검증 실패를 해결하기 위해 품질 태스크, 테스트, 커버리지 기준, 입력 범위를 비활성화하거나 제외하지 않는다.
+
+멀티 모듈 저장소에서도 변경 코드 커버리지는 각 모듈의 source root 기준으로 계산한다.
+
+다음과 같은 테스트 선택 축소도 우회로 간주되어 `check`가 실패한다.
+
+- `test` 태스크의 JUnit Platform `includeTags` / `excludeTags` / `includeEngines` / `excludeEngines`
+- `scanForTestClasses = false`, `testClassesDirs`에서 test source set 출력 제거
+- PIT `targetTests` 변경, `excludedGroups` / `includedGroups` / `includedTestMethods` 지정, `skipFailingTests = true`
