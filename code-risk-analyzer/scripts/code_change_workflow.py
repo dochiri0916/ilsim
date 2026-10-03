@@ -354,8 +354,15 @@ class Controller:
             accepted = regression.read_json(path)['output']['requirementTestMap']
         instructions = ('Create implementation-independent tests for every requirement scenario. Include expected pre-implementation failures. '
                         'Test IDs must be class#exact JUnit XML reported name: use the literal @DisplayName text if present, otherwise the method name. '
-                        'Return requirementTestMap and expectedFailures. Do not change production code.' if stage == 'test-writing' else
+                        'Return requirementTestMap and expectedFailures. Do not change production code. '
+                        # Tests come first, so they define the shape of code that does not exist yet.
+                        'You decide the public API of production types that do not exist yet: their package (from the approved '
+                        'files), constructors or factories, method signatures, accessors, exception types and messages. Follow '
+                        'the repository rules and existing code, choose conventional names, and use them consistently. This is '
+                        'not ambiguity; return NEEDS_REVIEW only when a business rule or observable outcome (input rules, '
+                        'status codes, results) is undecided by the requirements.' if stage == 'test-writing' else
                         'Implement the minimum change satisfying the accepted tests and requirements. Do not change any test. '
+                        'Production types must match exactly the packages, signatures, exception types and messages the tests use. '
                         'Return empty requirementTestMap and expectedFailures; empty changes are allowed if no fix is needed.')
         task = {'stage': stage, 'requirements': requirements, 'allowedFiles': allowed,
                 'contextFiles': context, 'acceptedTests': accepted}
