@@ -43,13 +43,18 @@ echo "2/4 code-risk-analyzer 빌드"
 echo "3/4 build-convention 빌드 후 로컬 Maven 저장소(~/.m2)에 설치"
 (cd "$ROOT/build-convention" && ./gradlew clean publishToMavenLocal --no-daemon -q) || fail "build-convention 빌드 실패"
 
-echo "4/4 ask 명령 설치: $BIN/ask"
+echo "4/4 ask, ask-remote 명령 설치: $BIN"
 mkdir -p "$BIN"
 cat > "$BIN/ask" <<EOF
 #!/bin/sh
 exec python3 "$ROOT/code-risk-analyzer/scripts/ask.py" "\$@"
 EOF
 chmod +x "$BIN/ask"
+cat > "$BIN/ask-remote" <<EOF
+#!/bin/sh
+exec python3 "$ROOT/code-risk-analyzer/scripts/remote_runner.py" "\$@"
+EOF
+chmod +x "$BIN/ask-remote"
 case ":$PATH:" in
   *":$BIN:"*) ;;
   *) note "$BIN 이 PATH에 없습니다. ~/.zshrc에 다음 줄을 추가하세요: export PATH=\"$BIN:\$PATH\"" ;;

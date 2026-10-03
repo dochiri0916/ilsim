@@ -390,6 +390,9 @@ def describe(value):
     return '\n'.join(lines)
 
 
+NOT_CONFIRMED = '코드를 바꾸는 단계라 실행하지 않았습니다.'
+
+
 def execute(value, confirmed, run, options=None):
     options = options or {}
     print(describe(value))
@@ -401,7 +404,7 @@ def execute(value, confirmed, run, options=None):
         print('실행할 단계가 없습니다. 생성 단계는 config에 agent 또는 routing이 필요합니다')
         return 3
     if not confirmed:
-        print('코드를 바꾸는 단계라 실행하지 않았습니다. '
+        print(NOT_CONFIRMED + ' '
               + ('초안과 계획을 확인했으면 ask --yes로 실행하세요(요청은 다시 적지 않음)' if value.get('zeroConfig')
                  else '위 계획대로 실행하려면 --yes를 붙이세요'))
         return 0
