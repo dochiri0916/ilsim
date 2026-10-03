@@ -292,6 +292,23 @@ class SessionTests(unittest.TestCase):
         self.assertEqual({}, plan['config']['routing']['capability'])
         self.assertNotIn('requiredTiers', plan['config']['routing'])
 
+    def test_new_session_saves_config_with_absolute_paths_from_any_working_directory(self):
+        # given: a config written with paths relative to itself
+        self.config['plan'] = 'plan.json'
+        self.config['routing'] = {'registry': 'models.json', 'policy': 'policy.json',
+                                  'requiredTiers': {'test-writing': 'TIER_2', 'implementation': 'TIER_2'}}
+        # when
+        plan = self.plan()
+        # then
+        self.assertEqual('auto', plan['configSource'])
+        self.assertEqual(str(self.root/'plan.json'), plan['config']['plan'])
+        self.assertEqual(str(self.root/'models.json'), plan['config']['routing']['registry'])
+        self.assertEqual(str(self.state.parent/'ask-config.json'), plan['configPath'])
+
+    def test_missing_analyzer_defaults_to_this_checkouts_jar(self):
+        del self.config['analyzer']
+        self.assertEqual(str(ask.DEFAULT_JAR), self.plan()['config']['analyzer'])
+
     def test_explicit_tiers_in_config_are_kept(self):
         # given
         self.config['routing']['requiredTiers'] = {'test-writing': 'TIER_2', 'implementation': 'TIER_2'}
@@ -323,6 +340,63 @@ class SessionTests(unittest.TestCase):
         # then
         self.assertEqual(0, code)
         self.assertEqual(['verification', 'repair'], [call[2] for call in self.calls])
+
+
+class SetupTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+
+    def test_key_from_secrets_file_with_export_lines(self):
+        # given
+        (self.root/'secrets').write_text('export OTHER=1\nexport TYPESAFE_API_KEY="abc123"\n')
+        environ = {'CODE_RISK_SECRETS': str(self.root/'secrets')}
+        # when / then
+        self.assertTrue(ask.load_key(environ))
+        self.assertEqual('abc123', environ['TYPESAFE_API_KEY'])
+
+    def test_key_from_secrets_directory(self):
+        # given
+        (self.root/'TYPESAFE_API_KEY').write_text('xyz789\n')
+        environ = {'CODE_RISK_SECRETS': str(self.root)}
+        # when / then
+        self.assertTrue(ask.load_key(environ))
+        self.assertEqual('xyz789', environ['TYPESAFE_API_KEY'])
+
+    def test_exported_key_wins_and_missing_secrets_mean_no_jev(self):
+        environ = {'TYPESAFE_API_KEY': 'shell', 'CODE_RISK_SECRETS': str(self.root/'none')}
+        self.assertTrue(ask.load_key(environ))
+        self.assertEqual('shell', environ['TYPESAFE_API_KEY'])
+        self.assertFalse(ask.load_key({'CODE_RISK_SECRETS': str(self.root/'none')}))
+
+    def test_relative_config_paths_resolve_from_config_directory(self):
+        # given
+        config = {'plan': 'plans/p.json', 'analyzer': '/abs/a.jar', 'documents': ['docs/spec.md'],
+                  'routing': {'registry': 'models.json', 'policy': '~/policy.json', 'capability': {'calibration': 'cal.json'}}}
+        # when
+        result = ask.resolve_paths(config, self.root)
+        # then
+        self.assertEqual(str((self.root/'plans/p.json').resolve()), result['plan'])
+        self.assertEqual('/abs/a.jar', result['analyzer'])
+        self.assertEqual(['docs/spec.md'], result['documents'])
+        self.assertEqual(str((self.root/'models.json').resolve()), result['routing']['registry'])
+        self.assertEqual(str(Path('~/policy.json').expanduser()), result['routing']['policy'])
+        self.assertEqual(str((self.root/'cal.json').resolve()), result['routing']['capability']['calibration'])
+        self.assertEqual('plans/p.json', config['plan'])
+
+
+class ExampleSettingsTests(unittest.TestCase):
+    def test_example_settings_are_valid_and_free_of_forbidden_models(self):
+        router_spec = importlib.util.spec_from_file_location('model_router', Path(__file__).resolve().parents[1]/'model_router.py')
+        router = importlib.util.module_from_spec(router_spec)
+        router_spec.loader.exec_module(router)
+        base = Path(__file__).resolve().parents[2]/'docs'/'examples'/'ask'
+        config = ask.resolve_paths(json.loads((base/'config.json').read_text()), base)
+        registry = router.validate_registry(json.loads((base/'models.json').read_text()))
+        router.validate_policy(json.loads((base/'routing-policy.json').read_text()), registry)
+        self.assertTrue(router.settings(dict(config['routing'], capability={})))
+        self.assertTrue(ask.models(dict(config, routing=dict(config['routing'], capability={}))))
 
 
 eval_spec = importlib.util.spec_from_file_location('eval_ask', Path(__file__).resolve().parents[1]/'eval_ask.py')

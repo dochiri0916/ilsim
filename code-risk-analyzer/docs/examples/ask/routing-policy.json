@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "tiers": {
+    "TIER_1": {"modelId": "focused", "reasoningEffort": "low"},
+    "TIER_2": {"modelId": "focused", "reasoningEffort": "medium",
+               "fallbacks": [{"modelId": "general", "reasoningEffort": "medium"}]},
+    "TIER_3": {"modelId": "general", "reasoningEffort": "medium",
+               "fallbacks": [{"modelId": "general", "reasoningEffort": "high"}, {"modelId": "review", "reasoningEffort": "high"}]},
+    "TIER_4": {"modelId": "general", "reasoningEffort": "high",
+               "fallbacks": [{"modelId": "general", "reasoningEffort": "xhigh"}]}
+  }
+}

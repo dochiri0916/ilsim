@@ -131,7 +131,7 @@ def intent_answer(value):
 
 def jev_request(text, timeout=30):
     """Send only the request sentence to the fixed JEV endpoint; no redirects, no ambient proxy, no retry."""
-    key = os.environ.get('TYPESAFE_API_KEY', '').strip()
+    key = os.environ.get(KEY, '').strip()
     body = json.dumps({'model': 'jev-latest', 'state': {'request': text}, 'questions': {'intent': INTENT_QUESTION}},
                       ensure_ascii=False, sort_keys=True).encode('utf-8')
     request = jev.Request(jev.ENDPOINT, data=body, method='POST',
@@ -203,6 +203,53 @@ def stages(intent, phase, generator, service):
     return result
 
 
+KEY = 'TYPESAFE_API_KEY'
+KEY_LINE = re.compile(r'\s*(?:export\s+)?' + KEY + r'\s*=\s*(.*?)\s*')
+
+
+def load_key(environ=os.environ):
+    """Fill TYPESAFE_API_KEY from ~/.secrets (or CODE_RISK_SECRETS) when the shell did not export it.
+
+    A file is read as KEY=value lines; a directory as such files plus a file named TYPESAFE_API_KEY holding only the
+    value. The value goes into the environment so workflow subprocesses see it too; it is never printed.
+    """
+    if environ.get(KEY, '').strip():
+        return True
+    path = Path(environ.get('CODE_RISK_SECRETS') or '~/.secrets').expanduser()
+    files = [path] if path.is_file() else sorted(p for p in path.iterdir() if p.is_file()) if path.is_dir() else []
+    for file in files:
+        if file.stat().st_size > 65536:
+            continue
+        text = file.read_text(encoding='utf-8', errors='replace')
+        if file.name == KEY and '=' not in text:
+            values = [text.strip()]
+        else:
+            values = [match.group(1) for match in map(KEY_LINE.fullmatch, text.splitlines()) if match]
+        for value in values:
+            value = value.strip().strip('"\'')
+            if value:
+                environ[KEY] = value
+                return True
+    return False
+
+
+# Config paths, resolved against the config file's directory so one config works from any folder and on any PC.
+PATH_FIELDS = (('plan',), ('requirements',), ('analyzer',), ('scope',), ('routing', 'registry'), ('routing', 'policy'),
+               ('routing', 'capability', 'calibration'))
+
+
+def resolve_paths(config, base):
+    result = json.loads(json.dumps(config))
+    for field in PATH_FIELDS:
+        holder = result
+        for name in field[:-1]:
+            holder = holder.get(name) if isinstance(holder, dict) else None
+        if isinstance(holder, dict) and isinstance(holder.get(field[-1]), str):
+            path = Path(holder[field[-1]]).expanduser()
+            holder[field[-1]] = str(path if path.is_absolute() else (base/path).resolve())
+    return result
+
+
 def _read(path):
     return json.loads(Path(path).read_text(encoding='utf-8'))
 
@@ -235,7 +282,10 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
     intent, reason = decide(text, judge)
     result = {'request': text, 'intent': intent, 'reason': reason, 'changesCode': intent not in READ_ONLY,
               'state': str(Path(state).absolute()) if state else None, 'stages': [], 'commands': []}
-    loaded = _read(config) if config else None
+    loaded = resolve_paths(_read(config), Path(config).absolute().parent) if config else None
+    if loaded is not None and 'analyzer' not in loaded:
+        # Default to this checkout's jar so the same config works wherever ai-orchestration is cloned.
+        loaded['analyzer'] = str(DEFAULT_JAR)
     state_path = Path(result['state']) if state else None
     phase = None
     if state_path and state_path.exists():
@@ -265,15 +315,18 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
     saved = state_path.parent/SESSION_CONFIG
     if saved.exists():
         loaded, result['configSource'] = _read(saved), 'session'
-    elif phase is None and 'routing' in loaded and not {'requiredTiers', 'capability'} & set(loaded['routing']):
-        if judge is not None:
+    elif phase is None:
+        # A new session always runs from a saved copy with absolute paths and its tiers fixed.
+        result['configSource'] = 'auto'
+        if 'routing' not in loaded or {'requiredTiers', 'capability'} & set(loaded['routing']):
+            pass
+        elif judge is not None:
             # JEV capability judges each generation stage from requirements and code context, not from this sentence.
             loaded = dict(loaded, routing=dict(loaded['routing'], capability={}))
         else:
             chosen, why = tier(text)
             loaded = dict(loaded, routing=dict(loaded['routing'], requiredTiers={'test-writing': chosen, 'implementation': chosen}))
             result['tierReason'] = why
-        result['configSource'] = 'auto'
     else:
         result['configSource'] = 'given'
     result['config'] = loaded
@@ -371,7 +424,12 @@ def main(argv=None):
                if getattr(args, name.replace('-', '_')) is not None}
     allowed = args.allowed_models.split(',') if args.allowed_models else None
     try:
-        judge = None if args.no_jev or not os.environ.get('TYPESAFE_API_KEY', '').strip() else jev_intent
+        try:
+            # Loaded even with --no-jev: a config that asks for JEV capability still needs it in workflow subprocesses.
+            has_key = load_key()
+        except OSError:
+            has_key = False
+        judge = jev_intent if has_key and not args.no_jev else None
         value = plan(args.request, args.config, args.state, args.project, allowed, judge)
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(f'요청 거부: {error}')

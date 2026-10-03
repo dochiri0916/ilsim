@@ -17,6 +17,8 @@ python3 scripts/ask.py "주문 취소에 중복 요청 방지 추가해줘" --co
 - 단계: 세션 `phase`에서 다음 사람 확인 지점(verification → review → pull-request)까지만 실행한다. 검증 실패 시 `repair` 설정이 있으면 repair를 한 번 실행한다.
 - 모델: `routing`에 Tier·capability가 없으면 새 세션 설정을 `<session>/ask-config.json`에 저장하고 이후 재사용한다. JEV 키가 있으면 `capability: {}`로 단계마다 JEV가 요구사항·코드 범위를 보고 Tier를 정한다(해당 내용이 TypeSafe로 전송된다). 키가 없으면 고위험 단어(결제·재고·동시성·트랜잭션·보안 등)가 있을 때 TIER_3, 아니면 TIER_2이며 TIER_4는 고르지 않는다.
 - 금지: 도달 가능한 모든 경로(fallback 포함)에 이름에 `astra`·`fable`·`opus`가 든 모델이나 `max` effort가 있으면 실행 전에 거부한다. `--allowed-models a,b`로 허용 목록을 더 좁힐 수 있다.
+- 설정: [`docs/examples/ask/`](examples/ask/)의 config·models·routing-policy를 대상 프로젝트 쪽에 복사해 쓴다. config 안의 경로는 config 파일 위치 기준 상대경로(또는 `~`)로 적을 수 있어 여러 PC에서 같은 파일을 쓴다. `analyzer`를 빼면 이 checkout의 `build/libs` jar를 쓴다. plan의 `project`만 PC별 절대경로다.
+- 인증: codex·claude는 각 CLI에 한 번 로그인한다(API 키를 넣으면 종량제 과금이 될 수 있다). JEV 키는 환경변수가 없으면 `~/.secrets`(파일의 `TYPESAFE_API_KEY=` 줄, 또는 디렉터리 안 같은 이름의 파일, 경로는 `CODE_RISK_SECRETS`로 변경)에서 읽어 하위 단계에도 전달한다. 키를 저장소에 커밋하지 않는다.
 - 판단 품질: `python3 scripts/eval_ask.py scripts/eval/ask_intents.json --repeat 2 --output r.json`(키 필요, 문장만 전송). 2026-10-03 jev-1.13.0 기준 조정 세트 116/116, 조정에 쓰지 않은 holdout 40/44(나머지 4건은 키워드 불일치로 안전하게 거부), 다른 작업 실행 0건. 판단 기준·키워드를 바꾸면 두 세트를 다시 돌리고 holdout 문장으로 조정하지 않는다.
 - 요구사항 내용 자체는 여전히 config의 requirements JSON이 기준이다. 자연어 요청은 작업 판단과 Tier에만 쓴다.
 

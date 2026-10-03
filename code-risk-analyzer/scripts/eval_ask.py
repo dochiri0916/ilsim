@@ -60,6 +60,8 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.repeat <= 3:
         raise SystemExit('repeat must be 1..3')
+    if not ask.load_key():
+        raise SystemExit('TYPESAFE_API_KEY not found in the environment or ~/.secrets')
     report = evaluate(json.loads(Path(args.cases).read_text(encoding='utf-8'))['items'], ask.jev_request, args.repeat)
     Path(args.output).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding='utf-8')
     print(json.dumps(report['summary'], ensure_ascii=False))
