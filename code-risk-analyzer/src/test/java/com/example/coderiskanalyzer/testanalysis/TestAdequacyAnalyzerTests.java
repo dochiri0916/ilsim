@@ -244,4 +244,43 @@ class TestAdequacyAnalyzerTests {
                 });
     }
 
+    @Test
+    void assignsDistinctIdsToRepeatedObligationsWithoutChangingUniqueIds() throws Exception {
+        Path main = temp.resolve("src/main/java/sample");
+        Files.createDirectories(main);
+        Path production = main.resolve("Handler.java");
+        String single = """
+                    int single(Integer value) {
+                        if (value == null) throw new IllegalArgumentException();
+                        return value;
+                    }
+                """;
+        Files.writeString(production, "package sample;\nclass Handler {\n" + single + "}\n");
+        var parsed = new JavaSourceParser().parse(List.of(new SourceFile(temp.resolve("src/main/java"), production)));
+        Map<String, String> before = new java.util.HashMap<>();
+        new TestAdequacyAnalyzer().analyze(parsed, List.of()).forEach(result ->
+                before.put(result.obligation().type() + "|" + result.obligation().condition(), result.obligation().id()));
+
+        Files.writeString(production, "package sample;\nclass Handler {\n" + single + """
+                    int repeated(Integer first, Integer second) {
+                        if (first == null) throw new IllegalArgumentException();
+                        if (first == null) throw new IllegalArgumentException();
+                        return first + second;
+                    }
+                }
+                """);
+        parsed = new JavaSourceParser().parse(List.of(new SourceFile(temp.resolve("src/main/java"), production)));
+        List<TestAdequacyResult> results = new TestAdequacyAnalyzer().analyze(parsed, List.of());
+
+        assertThat(results).extracting(result -> result.obligation().id()).doesNotHaveDuplicates();
+        assertThat(results).filteredOn(result -> result.obligation().method().equals("repeated")
+                        && result.obligation().type().equals("EXCEPTION_PATH")).hasSize(2);
+        assertThat(results).filteredOn(result -> result.obligation().method().equals("single"))
+                .hasSize(before.size()).allSatisfy(result -> assertThat(result.obligation().id())
+                        .isEqualTo(before.get(result.obligation().type() + "|" + result.obligation().condition())));
+        assertThat(new TestAdequacyAnalyzer().analyze(parsed, List.of()))
+                .extracting(result -> result.obligation().id())
+                .containsExactlyElementsOf(results.stream().map(result -> result.obligation().id()).toList());
+    }
+
 }
