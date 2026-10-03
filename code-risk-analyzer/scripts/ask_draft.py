@@ -255,8 +255,11 @@ def check_requirements(path, analyzer, run=subprocess.run):
         raise ValueError(message)
 
 
-def draft(project, session, request, model_configs, routing, analyzer, call, check=check_requirements, guidance=None):
-    """One model call per entry of model_configs (the tier's route, then its fallback); call is agent_runner.run."""
+def draft(project, session, request, model_configs, routing, analyzer, call, check=check_requirements, guidance=None, rules=None):
+    """One model call per entry of model_configs (the tier's route, then its fallback); call is agent_runner.run.
+
+    guidance goes into the draft prompt; rules (default: guidance) become the document the code writers follow.
+    """
     feedback, usage = None, []
     for model_config in model_configs:
         with tempfile.TemporaryDirectory(prefix='code-risk-draft-') as workspace:
@@ -270,7 +273,7 @@ def draft(project, session, request, model_configs, routing, analyzer, call, che
             if result.get('failureKind') not in ('OUTPUT_CONTRACT', 'SCOPE'):
                 return {'status': 'FAILED', 'reason': result.get('reason', 'model call failed'), 'usage': usage}
             continue
-        config = write_inputs(project, session, request, result['output'], analyzer, routing, guidance)
+        config = write_inputs(project, session, request, result['output'], analyzer, routing, rules or guidance)
         try:
             check(session/'requirements.json', analyzer)
         except ValueError as error:

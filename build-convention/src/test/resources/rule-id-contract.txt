@@ -114,7 +114,7 @@ ARCH-PACKAGE-TOPOLOGY	X X.adapter.in.web package must use request, response, or 
 ARCH-PACKAGE-TOPOLOGY	X X.application package must use port, exception, or service
 ARCH-PACKAGE-TOPOLOGY	X X.application.port package must use in or out
 ARCH-PACKAGE-TOPOLOGY	X X.application.port.in package may only add command or result
-ARCH-PACKAGE-TOPOLOGY	X X.domain package must use model, vo, or exception
+ARCH-PACKAGE-TOPOLOGY	X X.domain package must use model, vo, event, or exception
 ARCH-PACKAGE-TOPOLOGY	X adapter.in.web package may contain only Controller, ExceptionHandler, or ControllerAdvice types; place 'X' in request or response
 ARCH-PACKAGE-TOPOLOGY	X application DTO 'X' must live in application..port.in package
 ARCH-PACKAGE-TOPOLOGY	X application exception support 'X' must live in application.exception package

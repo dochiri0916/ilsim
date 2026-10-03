@@ -27,7 +27,7 @@ com.example.project/
 │   ├── exception/              # GlobalApiControllerAdvice, ProblemDetails
 │   └── persistence/            # BaseEntity, RepositoryExceptionTranslator
 └── {context}/ 또는 {context}/{module}/
-    ├── domain/                 # Aggregate Root, model/, vo/, exception/
+    ├── domain/                 # Aggregate Root, model/, vo/, event/, exception/
     ├── application/
     │   ├── port/in/            # UseCase, Command, Result, command/, result/
     │   ├── port/out/
@@ -40,7 +40,7 @@ com.example.project/
 ```
 
 - `global`은 어떤 `{context}` 패키지도 import하지 않는다. `global.web`, `common` 패키지는 쓰지 않는다.
-- `domain.event`, `port.in.usecase`, `port.in.query`, `adapter.in.scheduler/messaging/event`는 쓰지 않는다.
+- `port.in.usecase`, `port.in.query`, `adapter.in.scheduler/messaging/event`는 쓰지 않는다.
 - `port.in` 바로 아래 타입은 `UseCase`, `Command`, `Result`로 끝난다. `result/`에는 `*Summary`도 둘 수 있다.
 - 와일드카드 import는 `jakarta.persistence.*`, `org.springframework.web.bind.annotation.*`만 허용한다.
 
@@ -49,6 +49,7 @@ com.example.project/
 - Aggregate Root는 `domain` 바로 아래 또는 `domain.model`에 둔다. Value Object와 First-class Collection은 `domain.vo`의 `record` 또는 `enum`이다.
 - Entity와 Aggregate Root는 불변 `final class`다. 상태는 Value Object·enum·First-class Collection 타입의 `private final` 필드에 두고, 값을 받는 constructor는 `private`이다.
 - 신규 상태는 `create`, 영속 상태 복원은 `restore`로 만든다. 상태 변경은 새 Aggregate를 반환한다.
+- 도메인 이벤트는 `domain.event`의 `record`다. 과거형 이름에 `Event` 접미사가 없고, compact constructor에서 검증한다.
 - Value Object는 compact constructor에서 검증한다. `new`로 만들어도 되고 필요하면 `of`를 둔다.
 - 식별자는 `{Domain}Id` record이고 `generate()`를 제공한다. 다른 Context를 가리키는 `*ReferenceId`는 `generate()`가 없어도 된다.
 - `private static final` 상수를 둘 수 있다. 길이 검증은 `isBlank()` 또는 `.length() < 상수` 비교로 한다.

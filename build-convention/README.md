@@ -24,6 +24,7 @@ com.example.project/
     ├── domain/                # aggregate root may sit here directly
     │   ├── model/
     │   ├── vo/                # Value Objects and First-class Collections
+    │   ├── event/             # domain events: past-tense records without an Event suffix
     │   └── exception/
     ├── application/
     │   ├── port/in/           # UseCase, Command, Result, command/, result/
@@ -34,6 +35,8 @@ com.example.project/
         ├── in/web/            # Controller, {Context}ExceptionHandler, request/, response/
         └── out/persistence/   # repository adapters, JPA entities, and mappers
 ```
+
+`docs/templates` holds one complete context (`book` in `com.example.demo`) whose every file passes `check`; copy its shape for new code.
 
 ### Request and persistence flow
 
