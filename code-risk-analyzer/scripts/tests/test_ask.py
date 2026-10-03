@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -33,6 +34,17 @@ class ClassifyTests(unittest.TestCase):
         # when / then
         self.assertEqual('CODE_CHANGE', ask.classify('주문 상태 전이 버그 고쳐줘')[0])
         self.assertEqual('CODE_CHANGE', ask.classify('점검 결과대로 결제 로직 수정해줘')[0])
+
+    def test_described_or_forbidden_changes_are_not_change_requests(self):
+        self.assertEqual('ANALYZE', ask.classify('고치지 말고 문제점만 찾아줘')[0])
+        self.assertEqual('ANALYZE', ask.classify('수정하지 말고 분석만 해줘')[0])
+        self.assertEqual('VERIFY', ask.classify('구현한 거 검증해줘')[0])
+        self.assertEqual('VERIFY', ask.classify('수정된 코드 검증해줘')[0])
+        self.assertEqual('CODE_CHANGE', ask.classify('결제 검증 로직 수정해줘')[0])
+
+    def test_rule_id_alone_asks_about_rules(self):
+        self.assertEqual('RULES', ask.classify('TX-002가 뭐야?')[0])
+        self.assertEqual('RULES', ask.classify('IDEM-003 설명해줘')[0])
 
     def test_unrecognized_request_is_rejected_instead_of_guessed(self):
         with self.assertRaises(ValueError):
@@ -101,6 +113,15 @@ class IntentResponseTests(unittest.TestCase):
         result = ask.intent_answer(self.response())
         self.assertEqual('CODE_CHANGE', result['intent'])
         self.assertGreater(result['confidence'], 0.8)
+
+    def test_understated_api_confidence_is_accepted_and_used(self):
+        # given: live JEV reported 0.82 for a 0.85 choice probability
+        value = self.response('PULL_REQUEST', top=0.85)
+        value['answers']['intent']['confidence'] = 0.82
+        # when
+        result = ask.intent_answer(value)
+        # then
+        self.assertEqual(0.82, result['confidence'])
 
     def test_malformed_responses_are_rejected(self):
         broken = [self.response(), self.response(), self.response(), self.response()]
@@ -334,9 +355,17 @@ class EvaluationTests(unittest.TestCase):
         self.assertIn('ValueError', row['failure'])
         self.assertEqual('OVER_REJECT', row['outcome'])
 
-    def test_labeled_set_covers_every_intent_and_rejections(self):
-        items = json.loads((Path(__file__).resolve().parents[1]/'eval'/'ask_intents.json').read_text(encoding='utf-8'))['items']
-        self.assertEqual(set(ask.INTENT_QUESTION['criteria']) - {'UNKNOWN'} | {'REJECT'}, {item['expected'] for item in items})
+    def test_labeled_sets_cover_every_intent_and_rejections_without_overlap(self):
+        directory = Path(__file__).resolve().parents[1]/'eval'
+        sets = [json.loads((directory/name).read_text(encoding='utf-8'))['items']
+                for name in ('ask_intents.json', 'ask_intents_holdout.json')]
+        for items in sets:
+            self.assertEqual(set(ask.INTENT_QUESTION['criteria']) - {'UNKNOWN'} | {'REJECT'}, {item['expected'] for item in items})
+        texts = [item['text'] for items in sets for item in items]
+        self.assertEqual(len(texts), len(set(texts)))
+        examples = {example for criterion in ask.INTENT_QUESTION['criteria'].values() for example in re.findall(r'"([^"]+)"', criterion)}
+        self.assertGreater(len(examples), 10)
+        self.assertFalse(set(texts) & examples)
 
 
 if __name__ == '__main__':
