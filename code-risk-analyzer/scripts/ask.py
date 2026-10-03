@@ -354,7 +354,10 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
     service = 'fixtureAdapter' in loaded or 'serviceAdapter' in loaded
     result['stages'] = stages(intent, phase, generator, service)
     if convention:
-        result['convention'] = {'project': _read(loaded['plan'])['project'], 'session': str(state_path.parent)}
+        session = state_path.parent
+        revision = _read(loaded['requirements']).get('codeRevision')
+        result['convention'] = {'project': _read(loaded['plan'])['project'], 'session': str(session),
+                                'baseRef': revision if revision and revision != 'NO_GIT_REVISION' else None}
     return result
 
 
@@ -376,7 +379,12 @@ def describe(value):
     if value.get('models'):
         lines.append('사용 가능 모델: ' + ', '.join(value['models']))
     if value['stages']:
-        lines.append('실행 단계: ' + ' → '.join(value['stages']))
+        steps = list(value['stages'])
+        if value.get('convention'):
+            # Shown where it runs: cleanup ahead of the baseline, the full convention check after verification.
+            steps = [('기존 코드 컨벤션 정리 → ' if step == 'baseline' else '') + step
+                     + (' → 컨벤션 검사' if step == 'verification' else '') for step in steps]
+        lines.append('실행 단계: ' + ' → '.join(steps))
     for command in value['commands']:
         lines.append('실행: ' + ' '.join(command))
     return '\n'.join(lines)
@@ -394,7 +402,7 @@ def execute(value, confirmed, run, options=None):
         return 3
     if not confirmed:
         print('코드를 바꾸는 단계라 실행하지 않았습니다. '
-              + ('초안과 계획을 확인했으면 ask --yes로 실행하세요(요청은 다시 적지 않음)' if value.get('convention')
+              + ('초안과 계획을 확인했으면 ask --yes로 실행하세요(요청은 다시 적지 않음)' if value.get('zeroConfig')
                  else '위 계획대로 실행하려면 --yes를 붙이세요'))
         return 0
     state = Path(value['state'])
@@ -407,8 +415,12 @@ def execute(value, confirmed, run, options=None):
             print(f"{stage} 단계에는 {', '.join('--' + name for name in missing)} 파일이 필요해 여기서 멈춥니다")
             return 3
         if stage == 'baseline' and value.get('convention'):
-            # Measured before any change so the later run can tell new convention failures from existing ones.
-            run(_convention(value, 'before'))
+            # Existing violations are fixed first, so the baseline and the change start from a convention-clean project.
+            if not (Path(value['convention']['session'])/'convention-before.json').is_file():
+                run(_convention(value, 'before'))
+            code = run([sys.executable, str(SCRIPTS/'convention_fix.py'), '--session', value['convention']['session']])
+            if code:
+                return code
         code = run(_command(stage, value, options))
         if code == 1 and stage == 'verification' and 'repair' in value['config']:
             print('검증 실패: 설정된 repair 루프를 실행합니다')
@@ -420,7 +432,8 @@ def execute(value, confirmed, run, options=None):
                 print('컨벤션 검증을 실행하지 못해 건너뜁니다 (install.sh로 build-convention을 설치하면 함께 검사)')
                 code = 0
             if code:
-                print('컨벤션 검증에서 멈췄습니다. 위반을 고친 뒤 "검증 다시 해줘"로 다시 확인하세요')
+                print('컨벤션 검증에서 멈췄습니다. 위반을 고친 뒤 "검증 다시 해줘"로 다시 확인하세요 '
+                      '(컨벤션 없이 진행하려면 새 요청에 "컨벤션 없이"를 넣으세요)')
                 return code
         if code:
             print(f'{stage} 단계가 종료 코드 {code}로 멈췄습니다 (1 실패, 2 거부, 3 검토 필요)')
@@ -432,6 +445,8 @@ def _convention(value, label):
     session = Path(value['convention']['session'])
     command = [sys.executable, str(SCRIPTS/'convention_check.py'), value['convention']['project'],
                '--output', str(session/f'convention-{label}.json')]
+    if value['convention'].get('baseRef'):
+        command += ['--base-ref', value['convention']['baseRef']]
     if label == 'after':
         command += ['--before', str(session/'convention-before.json')]
     return command
@@ -506,17 +521,43 @@ def describe_draft(project, session, value):
     return '\n'.join(lines)
 
 
-def start_change(text, project, decided, allowed, judge, call, check=None):
-    """Draft the inputs of a new zero-config session; returns (plan, session) or raises with the reason to stop."""
+# Convention on: existing violations are fixed first and every check must pass. Off: follow the existing style unchecked.
+CONVENTION_DEFAULT = True
+CONVENTION_OFF = re.compile(r'(컨벤션|코드\s*스타일|스타일\s*검사)\s*(검사|검증|확인)?\s*(없이|빼고|끄고|무시|안\s*지키|하지\s*말|말고)'
+                            r'|no[-\s]?convention', re.I)
+CONVENTION_ON = re.compile(r'컨벤션\s*(검사|검증)?\s*(적용|켜|지켜|맞춰|대로|포함)|with[-\s]?convention', re.I)
+CONVENTION_MARKER = 'convention.json'
+
+
+def convention_choice(text):
+    """True/False when the request says to use or skip the conventions, else the default."""
+    if CONVENTION_OFF.search(text):
+        return False
+    if CONVENTION_ON.search(text):
+        return True
+    return CONVENTION_DEFAULT
+
+
+def convention_enabled(session):
+    try:
+        return _read(session/CONVENTION_MARKER)['enabled'] is True
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def start_change(text, project, decided, allowed, judge, call, check=None, measure=None):
+    """Draft the inputs of a new zero-config session; returns its plan or raises with the reason to stop."""
     draft = _module('ask_draft')
     conventions = _module('convention_check')
+    enabled = convention_choice(text)
     routing = default_routing()
     configs = draft_models(routing)
     if allowed is not None and not {config['model'] for config in configs} <= set(allowed):
         raise ValueError('허용 목록 밖 모델로 초안을 쓰게 됩니다: ' + ', '.join(sorted({c['model'] for c in configs} - set(allowed))))
     session = new_session(project)
+    (session/CONVENTION_MARKER).write_text(json.dumps({'enabled': enabled}), encoding='utf-8')
     print(f"요구사항 초안 작성 중 ({configs[0]['model']}, 프로젝트 파일은 읽기만 함)...")
-    options = {'guidance': conventions.guidance()}
+    options = {'guidance': conventions.guidance() if enabled else None}
     if check is not None:
         options['check'] = check
     result = draft.draft(project, session, text, configs, routing, DEFAULT_JAR, call, **options)
@@ -525,11 +566,26 @@ def start_change(text, project, decided, allowed, judge, call, check=None):
                           + '\n'.join('- ' + question for question in result['questions']))
     if result['status'] != 'COMPLETED':
         raise ValueError(result['reason'])
-    value = plan(text, str(result['config']), str(session/'state.json'), None, allowed, judge, decided, convention=True)
+    value = plan(text, str(result['config']), str(session/'state.json'), None, allowed, judge, decided, convention=enabled)
+    value['zeroConfig'] = True
     (session/SESSION_CONFIG).write_text(json.dumps(value['config'], ensure_ascii=False, indent=2), encoding='utf-8')
     value['configSource'] = 'session'
     (project/'build'/'ask'/'current').write_text(session.name, encoding='utf-8')
     print(describe_draft(project, session, result['draft']))
+    if not enabled:
+        print('컨벤션: 끔 (기존 코드 스타일을 따르고 컨벤션 검사는 하지 않음)')
+        return value
+    print('컨벤션: 켬 - 기존 코드 위반 확인 중 (Gradle check)...')
+    try:
+        report = (measure or conventions.run)(project, session/'convention-before.json', value['convention']['baseRef'])
+    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+        print(f'컨벤션: 기존 코드를 검사하지 못해 정리 대상 없이 진행합니다 ({error})')
+        return value
+    files = _module('convention_fix').targets(project, report)
+    if files:
+        print('컨벤션: 실행하면 먼저 기존 코드 위반을 고칩니다 - ' + ', '.join(files))
+    elif conventions.blocking(report):
+        print('컨벤션: 기존 코드에 파일로 특정되지 않는 실패가 있습니다 - ' + conventions.label(conventions.blocking(report)))
     return value
 
 
@@ -537,18 +593,21 @@ def zero_config(text, project, allowed, judge, call):
     """Plan a request against the project's own sessions; nothing is read from or written to its sources."""
     if text is None:
         session = current_session(project)
-        return plan('', str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, None, CONTINUE, convention=True)
+        value = plan('', str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, None, CONTINUE,
+                     convention=convention_enabled(session))
+        return dict(value, zeroConfig=True)
     decided = decide(text, judge)
     intent = decided[0]
     if intent == 'CODE_CHANGE':
         return start_change(text, project, decided, allowed, judge, call)
     if intent in ('ANALYZE', 'MUTATION'):
-        return plan(text, None, None, str(project), allowed, judge, decided, convention=True)
+        return plan(text, None, None, str(project), allowed, judge, decided, convention=convention_choice(text))
     if intent == 'RULES':
         return plan(text, None, None, None, allowed, judge, decided)
     session = current_session(project)
-    convention = intent not in READ_ONLY
-    return plan(text, str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, judge, decided, convention=convention)
+    convention = intent not in READ_ONLY and convention_enabled(session)
+    value = plan(text, str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, judge, decided, convention=convention)
+    return dict(value, zeroConfig=True)
 
 
 def main(argv=None, call=None):

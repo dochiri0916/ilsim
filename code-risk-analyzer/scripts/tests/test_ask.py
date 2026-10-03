@@ -410,10 +410,27 @@ class ZeroConfigTests(unittest.TestCase):
         self.calls.append(config)
         return {'status': 'COMPLETED', 'output': validate(self.samples.sample()), 'usage': {}}
 
+    def measure(self, project, output, base_ref):
+        report = {'status': 'FAIL', 'checks': {'checkstyle': 'FAIL'}, 'baseRef': base_ref, 'violations': [
+            {'file': 'src/test/java/com/example/demo/DemoApplicationTests.java', 'line': 3, 'message': 'tab'}]}
+        output.write_text(json.dumps(report))
+        self.measured.append(base_ref)
+        return report
+
     def start(self, text='회원 가입 기능 추가해줘'):
+        self.measured = []
         with redirect_stdout(io.StringIO()) as output:
-            value = ask.start_change(text, self.project, ask.decide(text, None), None, None, self.call, lambda path, jar: None)
+            value = ask.start_change(text, self.project, ask.decide(text, None), None, None, self.call,
+                                     lambda path, jar: None, self.measure)
         return value, output.getvalue()
+
+    def test_request_wording_turns_conventions_on_or_off(self):
+        cases = {'회원 가입 추가해줘': ask.CONVENTION_DEFAULT, '컨벤션 없이 회원 가입 추가해줘': False,
+                 '코드 스타일 검사 빼고 고쳐줘': False, '컨벤션 무시하고 추가해줘': False,
+                 '컨벤션 적용해서 회원 가입 추가해줘': True, '컨벤션 지켜서 고쳐줘': True}
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(expected, ask.convention_choice(text))
 
     def test_project_is_found_from_any_folder_inside_it(self):
         self.assertEqual(self.project, ask.find_project(self.project/'src/test/java'))
@@ -447,10 +464,12 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertEqual(session.name, (self.project/'build/ask/current').read_text())
         self.assertEqual(value['config'], json.loads((session/'ask-config.json').read_text()))
         self.assertEqual(['baseline', 'generate-tests', 'generate-implementation', 'verification'], value['stages'])
-        self.assertEqual({'project': str(self.project), 'session': str(session)}, value['convention'])
+        self.assertEqual({'project': str(self.project), 'session': str(session), 'baseRef': None}, value['convention'])
         self.assertEqual(['build/ask/' + session.name + '/request.md', 'build/ask/' + session.name + '/conventions.md'],
                          value['config']['documents'])
         self.assertIn('REQ-1 이메일로 회원 가입 (시나리오 2개)', output)
+        self.assertIn('먼저 기존 코드 위반을 고칩니다 - src/test/java/com/example/demo/DemoApplicationTests.java', output)
+        self.assertEqual([None], self.measured)
         self.assertEqual(1, len(self.calls))
         self.assertFalse((session/'state.json').exists())
 
@@ -465,24 +484,47 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertEqual(started['config'], value['config'])
         self.assertEqual(started['stages'], value['stages'])
 
-    def test_convention_is_measured_before_baseline_and_gates_after_verification(self):
+    def test_existing_violations_are_fixed_before_baseline_and_every_check_gates_after_verification(self):
         # given
         value, _ = self.start()
         commands = []
 
         def run(command):
             commands.append(command)
-            return 1 if command[1].endswith('convention_check.py') and '--before' in command else 0
+            return 1 if command[1].endswith('convention_check.py') else 0
         # when
         with redirect_stdout(io.StringIO()):
             code = ask.execute(value, True, run)
         # then
         self.assertEqual(1, code)
-        names = [Path(command[1]).name if command[1].endswith('.py') and 'convention' in command[1] else command[2] for command in commands]
-        self.assertEqual(['convention_check.py', 'baseline', 'generate-tests', 'generate-implementation', 'verification',
+        names = [Path(command[1]).name if 'convention' in command[1] else command[2] for command in commands]
+        self.assertEqual(['convention_fix.py', 'baseline', 'generate-tests', 'generate-implementation', 'verification',
                           'convention_check.py'], names)
         session = Path(value['state']).parent
+        self.assertEqual(['--session', str(session)], commands[0][2:])
         self.assertEqual(str(session/'convention-before.json'), commands[-1][commands[-1].index('--before') + 1])
+
+    def test_failed_cleanup_stops_before_the_baseline(self):
+        value, _ = self.start()
+        commands = []
+        with redirect_stdout(io.StringIO()):
+            code = ask.execute(value, True, lambda command: commands.append(command) or 1)
+        self.assertEqual((1, 1), (code, len(commands)))
+
+    def test_conventions_off_follow_existing_style_without_checks(self):
+        # when
+        value, output = self.start('컨벤션 없이 회원 가입 기능 추가해줘')
+        commands = []
+        with redirect_stdout(io.StringIO()):
+            ask.execute(value, True, lambda command: commands.append(command) or 0)
+        # then
+        session = Path(value['state']).parent
+        self.assertNotIn('convention', value)
+        self.assertEqual(['build/ask/' + session.name + '/request.md'], value['config']['documents'])
+        self.assertEqual([], self.measured)
+        self.assertIn('컨벤션: 끔', output)
+        self.assertEqual(['baseline', 'generate-tests', 'generate-implementation', 'verification'], [c[2] for c in commands])
+        self.assertNotIn('convention', ask.zero_config(None, self.project, None, None, self.call))
 
     def test_convention_that_cannot_run_never_blocks_the_verified_change(self):
         value, _ = self.start()

@@ -122,16 +122,22 @@ def validate(value):
 
 
 def existing_tests(project):
-    """Class#method ids of existing JUnit tests whose XML name is the plain method name."""
+    """Class#name ids of existing JUnit tests as the XML report names them: the @DisplayName text, else the method."""
     result = []
     for path in sorted((project/'src/test/java').rglob('*.java')):
         text = path.read_text(encoding='utf-8', errors='replace')
         package = re.search(r'^\s*package\s+([\w.]+)\s*;', text, re.M)
         name = (package.group(1) + '.' if package else '') + path.stem
-        for match in re.finditer(r'((?:@\w+(?:\([^)]*\))?\s*)+)(?:public\s+|protected\s+)?void\s+(\w+)\s*\(', text):
+        for match in re.finditer(r'((?:@\w+(?:\((?:[^()"]|"(?:[^"\\]|\\.)*")*\))?\s*)+)(?:public\s+|protected\s+)?void\s+(\w+)\s*\(', text):
             annotations = match.group(1)
-            if re.search(r'@Test\b', annotations) and '@DisplayName' not in annotations:
-                result.append(name + '#' + match.group(2))
+            if not re.search(r'@Test\b', annotations):
+                continue
+            display = re.search(r'@DisplayName\s*\(\s*"((?:[^"\\]|\\.)*)"\s*\)', annotations)
+            if '@DisplayName' in annotations and (not display or '\\' in display.group(1)):
+                continue  # A computed or escaped name cannot be matched reliably; leave it to the full test run.
+            label = display.group(1) if display else match.group(2)
+            if label.strip() == label and label and '#' not in label:
+                result.append(name + '#' + label)
     return sorted(set(result))
 
 
