@@ -470,8 +470,9 @@ class Controller:
             prompt_hash = hashlib.sha256(current_prompt.encode()).hexdigest()
             summary = {'number': attempt + 1, 'status': result['status'], 'failureKind': result.get('failureKind', ''),
                        'promptSha256': prompt_hash}
-            if 'attemptId' in result:
-                summary['attemptId'] = result['attemptId']
+            for key in ('attemptId', 'provider', 'model', 'reasoningEffort', 'usage', 'durationSeconds'):
+                if key in result:
+                    summary[key] = result[key]
             if decision is not None:
                 summary['routing'] = dict(decision)
                 result['routing'] = decision

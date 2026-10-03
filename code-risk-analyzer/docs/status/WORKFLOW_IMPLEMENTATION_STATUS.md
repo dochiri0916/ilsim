@@ -33,6 +33,14 @@
 
 ## 단계별 요약
 
+### 2026-10-03 후속 보강
+
+- Test Obligation ID: 한 메서드 안에서 반복되는 조건·예외·저장 호출의 ID 중복을 제거했다. 중복이 없던 ID는 유지한다.
+- 7단계 `pull-request`: COMPLETED 세션의 근거로 PR 본문을 결정적으로 만들고, plan의 `PULL_REQUEST` 승인과 커밋·푸시 확인 후 draft PR만 연다.
+- 일반 서비스 adapter: fixture 외 프로젝트도 `serviceAdapter`로 검증된 JAR를 기동하고 선언한 네 시나리오 명령을 실행한다.
+- 위험 규칙: 객체 단위 권한 `SEC-006`, Tenant 격리 `SEC-007`을 추가했다(REVIEW·LOW confidence).
+- 성공 작업당 비용: CLI 호출별 토큰·시간을 기록하고 `cost_report.py`로 COMPLETED 세션당 토큰·비용을 집계한다.
+
 ### Capability Tier 기반 모델 라우팅 추가 (2026-10-03)
 
 [Capability Tier 기반 모델 라우팅](../requirements-analysis/model-routing.md)을 추가했다. 단계별 Tier를 명시적으로 받아 Registry·Policy의 ACTIVE profile과 지원 reasoning 조합을 선택하고 Codex·Claude CLI에 전달한다. 선택 결과와 Registry/Policy 해시를 기존 생성 artifact에 기록하며 파일·설정·Router 코드 변경과 생성 중 정책 변경은 과거 검증·완료 재사용 및 적용을 차단한다. 직접 provider 선택은 유지한다. 이후 같은 날 JEV 판단과 제한된 생성 오류 escalation을 아래와 같이 추가했다. 평가 기반 비용 최적화·Shadow/Canary는 구현하지 않았다.
@@ -407,7 +415,7 @@ JSON/SARIF, baseline, suppression과 종료 코드 정책은 CI에서 활용할 
 - `repair`는 수락한 테스트·빌드 계약을 고정하고 승인된 production 파일만 수정한다. 수정 반복, JEV/CLI 호출, 전체 시간과 명시적 fallback을 제한하며 세션 재개가 예산을 초기화하지 않는다. 검증·생성 이력은 해시 보호 사본으로 남긴다. 별도 서비스·review·complete 단계는 계속 필요하다.
 - `qualityGates`를 켜면 최종 전체 테스트 실행의 JaCoCo와 새 PIT 실행을 목표 클래스별로 검사한다. 소스·테스트·정책·JAR/JUnit snapshot·XML/exec·mutation 응답·main/test 바이트코드가 같아야 review/complete를 통과한다. 누락·변조·살아남은/미커버 변이·미완료 실행을 통과시키지 않는다. `repair`에는 명시적 품질 설정이 필수다. 기존 수동 경로의 계약과 public API는 유지한다.
 
-소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 개발 모델의 Golden Benchmark·Cost per Successful Task·Shadow·Canary·승격과 일반 서비스 adapter, 선택형 아키텍처·컨벤션 검증은 다음 구현 범위다.
+소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 개발 모델의 Golden Benchmark·Shadow·Canary·승격과 일반 서비스 adapter, 선택형 아키텍처·컨벤션 검증은 다음 구현 범위다.
 
 ### 최종 실제 연결 검증
 
