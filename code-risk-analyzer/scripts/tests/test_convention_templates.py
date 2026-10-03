@@ -94,6 +94,18 @@ class GuidanceTests(unittest.TestCase):
         self.assertIn('public record BookRegistered', full)
         self.assertLess(len(short), len(full))
 
+    def test_frequently_broken_rules_are_listed_in_both_forms(self):
+        # given: the four convention rules generated code broke in real runs
+        rules = ('@RequiredArgsConstructor', '값 하나만 가진 VO', 'null과 blank를 모두 검사', 'id로 `equals`와 `hashCode`')
+        # when
+        short, full = templates.guidance(examples=False), templates.guidance()
+        # then: the draft (tree only) and the generation stages (with code) both carry them
+        for rule in rules:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, short)
+                self.assertIn(rule, full)
+        self.assertIn('자주 걸리는 규칙', short)
+
 
 if __name__ == '__main__':
     unittest.main()
