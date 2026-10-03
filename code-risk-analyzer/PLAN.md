@@ -36,7 +36,7 @@ JEV는 필요한 Tier와 위험도를 판단하고 실제 모델 선택은 Route
 - 현재 실행 경로에서는 ACTIVE profile만 선택한다. Tier 경로·지원 effort가 없으면 실행을 거부한다.
 - 선택한 adapter·모델·reasoning·요구 Tier와 Registry·Policy 해시를 artifact에 기록한다. 파일이나 설정 변경은 이전 완료 근거를 무효화한다.
 - CLI 정상 완료 후 응답 계약 오류에만 최대 세 번의 총 호출과 명시적 fallback을 적용한다. 인증·잔액·환경·timeout·입력·해시 오류는 escalation하지 않는다. JEV의 UNKNOWN·낮은 confidence는 실행을 차단한다.
-- JUnit·빌드·정적 검증 실패를 수정·재검증하는 루프는 후속 범위이며 기존 실패 게이트를 유지한다.
+- 실제 JUnit·javac·정적 검증 실패를 분류해 승인된 production 코드만 수정·재검증한다. 수락된 테스트·빌드 입력을 고정하고 반복·시간·JEV/CLI 호출 한도를 유지한다. 환경·인증·잔액·불확실 판단·품질 근거 오류는 검토 대기로 중단한다.
 - Golden Benchmark·Shadow·Canary와 자동 승격은 MVP 이후 범위다. 모델·effort·작업 종류·prompt/도구 버전 조합을 평가하며 승격 조건은 `QualityGatePassed AND (CostImproved OR LatencyImproved)`로 정의한다. 후보 실행은 별도 작업 공간에서 수행한다.
 
 ## 아키텍처·코드 컨벤션 on/off
@@ -100,9 +100,9 @@ validators:
 
 ## 다음 구현
 
-사용자 승인 후 실제 코드 두 건의 JEV API 시험은 응답 계약 PASS, 작업 판단은 confidence 0.35/0.65로 NEEDS_REVIEW였다. 실제 작업별 기준 데이터와 검토 결과로 질문의 Tier 구분, context 범위와 confidence 기준을 먼저 보정한다. 두 관측값만으로 수락 기준을 변경하지 않는다. 시험 근거는 `build/jev-approved-api-test/summary.json`이다.
+JEV의 실제 작업 보정, 실패 분류, 제한된 구현 수정·재검증, 최종 JaCoCo/PIT 완료 게이트를 연결했다. 동작 계약과 관련 코드만 JEV에 전달하고, 코드 생성기에는 전체 작성 규칙을 전달한다. 기존 confidence 최소 기준을 유지하며 독립 반올림의 가능한 최저 신뢰도로 수락을 판단한다. 설정과 근거는 [모델 라우팅](docs/requirements-analysis/model-routing.md)과 [단계 실행기](docs/requirements-analysis/code-change-workflow.md)에 기록한다.
 
-JUnit·빌드·정적 검증 실패를 구현 결함과 환경·입력·근거 오류로 구분하고, 수락한 테스트를 고정한 구현 수정·재검증 루프를 연결한다. 생성 응답 오류 escalation과 별도로 실제 검증 실패를 근거로 판단하며 총 반복·시간 한도와 오래된 결과 차단을 유지한다. 이후 최종 JaCoCo/PIT 근거를 완료 게이트에 통합한다.
+복잡한 HTTP fixture에서 발견한 정적 Obligation ID 중복을 우선 보강한다. 현재는 모호한 정적 근거를 EVIDENCE로 분류해 실행을 차단한다. 이후 개발 모델의 Golden Benchmark와 Quality Baseline, 성공 작업당 비용·retry·latency를 측정하고 Shadow·Canary·회귀 시 rollback과 Registry 승격을 연결한다. JEV Capability 보정 데이터는 개발 모델의 구현 품질 benchmark를 대신하지 않는다. 일반 프로젝트의 서비스 adapter와 선택형 아키텍처·컨벤션 검증도 남아 있다.
 
 ## 구현 기록
 
@@ -111,6 +111,8 @@ JUnit·빌드·정적 검증 실패를 구현 결함과 환경·입력·근거 �
 - 2026-10-03: Registry·Routing Policy와 명시적 단계별 Tier를 기존 생성 경로에 연결했다. 양쪽 CLI에 reasoning을 전달하고, 선택 결과·Registry/Policy 해시를 기록한다. JEV의 Capability 자동 판단과 평가 기반 자동 선택은 후속 범위다.
 - 2026-10-03: JEV의 Tier·위험도 판단과 최대 세 번의 생성 오류 escalation을 추가했다. 불확실한 JEV 판단·인증·잔액·환경·timeout·scope·입력 변경은 실행이나 재시도를 차단한다. 합성 입력으로 실제 JEV `jev-1.13.0` → Router → Codex 연결과 낮은 신뢰도 차단을 검증했다. 검증 실패의 자동 수정과 평가 기반 비용 최적화는 후속이다.
 - 실제 Codex의 경계 버그 재현·수정과 JUnit·Gradle·정적 검증을 확인했다. 2026-10-03에는 Codex `gpt-6.1-sol / medium`과 Claude `sonnet / medium`의 실제 구조화 응답 계약·선택 메타데이터를 확인했다. Claude 검증은 잔존 DeepSeek 환경변수를 제외한 호출에서 통과했다. Claude의 전체 버그 수정 흐름은 별도 검증 범위다.
-- 선택형 아키텍처·컨벤션 설정, 자동 수정 반복, JaCoCo/PIT 통합 최종 게이트, 중앙 실행과 성능 검증은 아직 구현 완료 상태가 아니다.
+- 2026-10-03: JEV Score·sufficiency 질문과 의미 입력 보정, 결정적 실패 분류, 테스트를 고정한 제한적 repair 단계, 최종 JaCoCo·PIT 해시 연결 게이트를 추가했다. 기존 단계와 실패 기준은 유지한다.
+- 실제 JEV → Router → Codex의 경계 버그 수정은 수락된 테스트를 보존한 1회 수정으로 통과했다. JUnit·JaCoCo 100%·PIT 3/3 killed·별도 JVM 서비스·근거 검토·complete를 검증했다. coverage 변조로 완료가 차단되고 재검증 후 COMPLETED로 복구됐다. 서비스는 검증된 JAR를 사용하는 in-memory 시험 harness이며 MySQL 검증 결과가 아니다. 근거는 `build/repair-workflow-smoke-summary.json`이다.
+- 선택형 아키텍처·컨벤션 설정, 개발 모델 평가·승격, 중앙 실행과 성능 검증은 아직 구현 완료 상태가 아니다.
 
 이 문서는 구현 계획이며, 구현 기록에 명시하지 않은 신규 설정과 기능은 완료 상태가 아니다.

@@ -11,6 +11,7 @@
 | implementation | 성공한 test-writing | 승인된 변경을 `IMPLEMENT/IMPLEMENTATION`으로 적용 |
 | generate-tests / generate-implementation | 해당 작성 단계의 선행 조건과 명시적 agent 또는 routing 설정 | 독립 CLI 세션으로 변경을 생성하고 기존 작성 실행기로 적용. [로컬 Agent 생성 연결](agent-generation.md)과 [모델 라우팅](model-routing.md) 참고 |
 | verification | 구현 단계 완료 | 같은 기존 테스트·새 기능 테스트를 전체 재실행, 기준선 비교, 최종 정적 scan. 실패·skip·삭제·검토 없는 기존 테스트/빌드 변경은 후속 검토 차단 |
+| repair | 구현 단계 완료, 명시적 repair·qualityGates 설정 | 실제 검증 → 실패 분류 → 승인된 production 구현 수정 → 재검증. 수락한 테스트·빌드 입력 고정, 반복·시간·모델 호출 한도 유지 |
 | local-service | 성공한 verification, MYSQL fixture adapter | 최종 JAR를 별도 JVM으로 기동하고 HTTP·독립 MySQL 조회·종료 검증. 실패·중단·소스 변경 시 과거 서비스/검토 수락 제거 |
 | review | 성공한 verification | 최종 실행에 연결된 assertion·요구사항·소스·실행 해시 검토, 별도 서비스 검증 결과 확인. 미해결 위험과 실패는 완료 차단 |
 | complete | 성공한 review | 현재 소스·문서·환경·JUnit·JAR·scan·검토 파일을 다시 확인하고 요구사항/assertion 근거 재검토 |
@@ -95,3 +96,41 @@ python3 scripts/code_change_workflow.py complete \
 - 격리된 Java 프로젝트에서 실제 requirements CLI로 테스트 작성과 구현을 수행하고, Gradle 전체 테스트 2개 및 실제 scan까지 통과했다. 시작 로그와 JSON 응답이 섞이는 문제도 수정했다. 이 실행은 기존 주문 예제를 schema/CLI 입력 검증용으로 사용했으며 주문 업무 검증은 아니다.
 - 기존 MySQL 8.4.8 fixture 테스트 17개와 별도 JVM 서비스의 정상·중복·동시성·rollback, 독립 DB 상태 조회 및 프로세스/컨테이너 종료를 재검증했다. 기존 완료 판정은 COMPLETED이고 의도된 production 위험은 UNRESOLVED로 보존했다. 일반 프로젝트별 서비스 adapter의 실제 실행은 별도 연결이 필요하다.
 - MYSQL adapter 연결 후 Python 59개가 통과했다. 실제 CLI 전체 세션과 기존 assertion 실패·기동 실패·SIGTERM·서비스 중 소스 변경의 4개 실패/복구 검증도 통과했다. 최종 세션은 COMPLETED, verification/evidence review는 PASSED, targetRiskStatus는 UNRESOLVED다. 기존 production·테스트·요구사항의 승인된 해시가 모두 복구/보존됐고 마지막 JVM과 전용 컨테이너도 종료했다. 복구 명령이 거부되더라도 검증기가 임시로 바꾼 내용만 복원하는 경로도 별도 테스트했다.
+
+## 제한된 구현 수정과 최종 품질 게이트
+
+기존 단계 실행을 유지하고, 자동 수정에는 다음 설정을 명시한다. `qualityGates.targets`는 승인된 `src/main/` 파일과 정확한 Java 클래스 이름을 연결한다. 현재 coverage 수집은 루트 Java 프로젝트의 `test`·`jacocoTestReport`에 한정한다.
+
+```json
+"repair": {"maxIterations": 3, "maxModelCalls": 6, "timeoutSeconds": 900},
+"qualityGates": {
+  "targets": {"example.Boundary": "src/main/java/example/Boundary.java"},
+  "minimumLineCoverage": 0.9,
+  "minimumBranchCoverage": 0.8,
+  "minimumMutationScore": 0.9,
+  "maxSurvivingMutations": 0,
+  "timeoutSeconds": 600
+}
+```
+
+```sh
+python3 scripts/code_change_workflow.py repair --config /absolute/config.json --state /absolute/project/build/session/state.json
+```
+
+`repair`는 VERIFICATION 통과까지만 수행한다. 별도 서비스 검증, 근거 검토와 `complete`는 기존 선행 조건을 그대로 적용한다. 새 세션을 만들지 않고 `repair`를 다시 실행해도 누적 호출·반복 횟수와 시작 시각을 초기화하지 않는다. 최대 수정은 3회, 설정 가능한 모델 호출은 1~12회, 전체 실행 시간은 1~3600초다. 호출 한도에는 수정 과정의 JEV와 CLI 호출 및 응답 계약 재시도가 모두 포함된다. 각 실행기는 남은 시간 이하의 timeout을 사용하고 종료 정리 시간은 별도로 필요할 수 있다.
+
+| 실패 | 자동 수정 |
+|---|---|
+| 실제 JUnit assertion 실패 | 승인된 production 파일만 수정 |
+| 기존 production Java 파일의 javac 오류 | 로그에 검증된 파일·행이 있을 때 수정 |
+| 제한된 런타임 예외 | production stack 위치가 확인된 경우만 수정 |
+| 승인된 production 파일의 CONFIRMED HIGH/CRITICAL finding | 구현 수정 후 정적 분석 재실행 |
+| 환경·의존성·인증·잔액·timeout·입력 변경·누락/skip 테스트·검토 없는 계약 변경 | 중단, NEEDS_REVIEW |
+| 낮은 JEV confidence·UNKNOWN·scope 위반·선언되지 않은 fallback | 중단, NEEDS_REVIEW |
+| coverage 부족·살아남은/미커버 변이·PIT 미완료·오래된 근거 | 중단, NEEDS_REVIEW |
+
+실패에 원본 로그나 credential을 저장하지 않고 유형, 테스트 ID와 검증된 production 파일·행만 전달한다. 수락된 테스트와 빌드 입력의 해시는 수정 전후에 동일해야 한다. Registry·Policy 경로는 이전보다 낮은 Tier로 돌아가지 않고 선언된 다음 fallback만 사용한다. 자동 `max` 선택은 계속 금지한다.
+
+품질 설정을 활성화하면 기준선과 최종 검증의 전체 테스트 실행에 임시 JaCoCo init script를 적용한다. 최종 테스트·회귀·정적 검증이 통과한 뒤 기존 `mutation --files-file` CLI로 새로운 PIT 실행을 수행한다. 빌드 파일이나 테스트 설정을 덮어쓰지 않는다. 목표 클래스마다 LINE·BRANCH와 mutation score를 검사하고, 변이가 없거나 결과가 미완료이면 통과시키지 않는다. `TIMED_OUT`, `RUN_ERROR` 등 미확정 변이는 killed로 세지 않는다. 변이 예외나 Agent 판단으로 이 게이트를 면제하지 않는다.
+
+`quality.json`은 최종 snapshot·소스·정책, JaCoCo XML/exec, mutation 응답, main/test 바이트코드 해시에 연결된다. `review`·`complete`에서 이를 다시 검사한다. `repair-N/`에는 각 검증과 생성 artifact의 해시 보호 사본을 남기며, 이력이 변경되면 재개를 차단한다. 미설정된 기존 수동 경로는 기존 검증 계약을 유지하지만, 새 `repair` 경로에는 품질 설정이 필수다.

@@ -166,6 +166,92 @@ class JevCapabilityTests(unittest.TestCase):
         # when / then
         self.assertIsNone(jev.NoRedirect().redirect_request(request, None, 302, 'redirect', {}, 'https://other.invalid'))
 
+    def score_response(self, tier=1, risk=0):
+        answers = {}
+        for name, selected in (('requiredTier', tier), ('risk', risk)):
+            criteria = jev.QUESTIONS_V2[name]['criteria']
+            answers[name] = {'type': 'score', 'score': selected, 'confidence': 1.0,
+                             'legend': {str(index): text for index, text in enumerate(criteria)},
+                             'probabilities': {str(index): float(index == selected) for index in range(len(criteria))}}
+        answers['sufficiency'] = {'type': 'choice', 'choice': 'SUFFICIENT', 'confidence': 1.0,
+                                  'probabilities': {'SUFFICIENT': 1.0, 'UNKNOWN': 0.0}}
+        return {'model': 'jev-1.13.0', 'answers': answers, 'usage': {'input_tokens': 100, 'output_tokens': 20}}
+
+    def test_version_two_splits_ordered_scores_and_sufficiency_with_bounded_context(self):
+        # given
+        self.config = router.capability_settings({'questionVersion': 2})
+        self.state['contextFiles'] = {'a.java': 'code'*2000}
+        # when
+        result, opener = self.judge(self.score_response(tier=1, risk=2))
+        # then
+        self.assertEqual('COMPLETED', result['status'])
+        self.assertEqual('TIER_4', result['requiredTier'])
+        self.assertEqual('HIGH', result['risk'])
+        body = json.loads(opener.open.call_args.args[0].data)
+        self.assertEqual(self.state['requirements'], body['state']['requirements'])
+        context = body['state']['contextFiles']['a.java']
+        self.assertEqual(4000, context['omittedCharacters'])
+        self.assertEqual(4000, len(context['excerpt']))
+        self.assertEqual('score', body['questions']['risk']['type'])
+        self.assertEqual(2, result['questionVersion'])
+
+    def test_independently_rounded_distributions_have_conservative_acceptance_bounds(self):
+        # given: an actual observed API shape; score is computed before rounding probabilities.
+        self.config = router.capability_settings({'questionVersion': 2})
+        response = self.score_response(tier=3, risk=2)
+        response['answers']['risk'].update(score=1.99, confidence=0.99)
+        # when / then
+        result, _ = self.judge(response)
+        self.assertEqual('COMPLETED', result['status'])
+        self.assertLess(result['confidence'], 0.99)
+        response['answers']['risk'].update(score=1.0)
+        self.assertEqual('INVALID_OUTPUT', self.judge(response)[0]['failureKind'])
+        response = self.score_response()
+        response['answers']['requiredTier'].update(probabilities={'0': 0.10, '1': 0.89, '2': 0.0, '3': 0.0},
+                                                  score=0.89, confidence=0.89)
+        self.assertEqual('COMPLETED', self.judge(response)[0]['status'])
+
+    def test_unknown_sufficiency_and_changed_score_legend_never_authorize_routing(self):
+        self.config = router.capability_settings({'questionVersion': 2})
+        response = self.score_response()
+        response['answers']['sufficiency'] = {'type': 'choice', 'choice': 'UNKNOWN', 'confidence': 1.0,
+                                             'probabilities': {'SUFFICIENT': 0.0, 'UNKNOWN': 1.0}}
+        self.assertEqual('UNKNOWN', self.judge(response)[0]['failureKind'])
+        response = self.score_response()
+        response['answers']['requiredTier']['legend']['1'] = 'Different contract'
+        self.assertEqual('INVALID_OUTPUT', self.judge(response)[0]['failureKind'])
+
+    def test_high_risk_floor_has_one_tier_outcome_even_when_raw_difficulty_is_uncertain(self):
+        # given
+        self.config = router.capability_settings({'questionVersion': 2})
+        response = self.score_response(risk=2)
+        response['answers']['requiredTier'].update(score=1.5, confidence=0.0,
+                                                  probabilities=dict.fromkeys(('0', '1', '2', '3'), 0.25))
+        # when
+        result, _ = self.judge(response)
+        # then
+        self.assertEqual('COMPLETED', result['status'])
+        self.assertEqual('TIER_4', result['requiredTier'])
+        self.assertEqual(0.0, result['rawConfidence'])
+        self.assertGreaterEqual(result['confidence'], 0.9)
+        response['answers']['risk'].update(score=1.0, confidence=0.01, probabilities={'0': 0.33, '1': 0.34, '2': 0.33})
+        self.assertEqual('LOW_CONFIDENCE', self.judge(response)[0]['failureKind'])
+
+    def test_semantic_projection_preserves_contract_and_effects_without_generation_rules(self):
+        requirement = {'title': 'Pure boundary', 'postconditions': ['Zero is accepted'], 'invariants': ['Public API preserved'],
+                       'scenarios': {'ZERO': {'expectedOutcomes': ['true']}}, 'transaction': {'applicability': 'NOT_APPLICABLE'},
+                       'review': {'status': 'EVIDENCE_SUPPORTED'}, 'mappings': {'code': []}}
+        state = {'requirements': {'mode': 'CODE_CHANGE', 'requirements': {'BOUNDARY': requirement}},
+                 'contextFiles': {'AGENTS.md': 'Never weaken assertions', 'build.gradle': 'test configuration', 'src/main/B.java': 'pure code'}}
+        projected = jev.project_state(state)
+        contract = projected['requirements']['BOUNDARY']
+        self.assertEqual(requirement['postconditions'], contract['postconditions'])
+        self.assertEqual(requirement['scenarios'], contract['scenarios'])
+        self.assertEqual(requirement['transaction'], contract['effects']['transaction'])
+        self.assertNotIn('review', contract)
+        self.assertNotIn('AGENTS.md', projected['contextFiles'])
+        self.assertEqual('pure code', projected['contextFiles']['src/main/B.java']['excerpt'])
+
 
 if __name__ == '__main__':
     unittest.main()

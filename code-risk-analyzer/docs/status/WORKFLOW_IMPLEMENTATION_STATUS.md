@@ -1,12 +1,12 @@
 # AI Agent 개발·검증 절차 구현 현황
 
-검토일: 2026-09-30
+검토일: 2026-10-03
 
 ## 결론
 
-현재 `code-risk-analyzer`는 요청한 7단계 절차에서 **정적 분석, 테스트 적정성 보고, 선택적 JEV 검토, Gradle/PIT 변이 검증을 제공하는 분석 도구**다. 요구사항을 읽고 프롬프트·테스트·구현 코드를 생성한 뒤 검증과 수정을 반복하고 PR을 제출하는 전체 Agent 절차는 구현되어 있지 않다.
+현재 `code-risk-analyzer`는 **정적 분석, 테스트 적정성, JEV Capability, 로컬 Agent 생성과 제한된 구현 수정·검증**을 제공한다. 구조화된 요구사항을 받은 CODE_CHANGE 세션에서 테스트·구현 생성, 실패 분류, 테스트 보존, JaCoCo/PIT 완료 게이트를 연결했다. 자연어 요구사항의 완전한 자동 정규화, 개발 모델의 평가·승격과 PR 자동 제출은 구현되어 있지 않다.
 
-**1단계의 요구사항 해석은 별도 skill 등에서 수행할 외부 절차로, 정적 분석 도구의 구현·검증 평가에서 제외한다.** 구조화 입력 검증·mode 제한, 명시적 코드 연결과 선택적 JEV 검토는 실행 경로를 제공한다. 승인된 파일 교체와 Gradle 검증에 더해, 구조화 요구사항을 제공한 작업의 로컬 Codex·Claude 테스트·구현 생성 연결을 추가했다. 자연어 요구사항의 자동 정규화와 전체 자동 수정 반복 절차는 없다. 단계별 작업량이 다르므로 이를 단순 구현률 백분율로 환산하지 않는다.
+**1단계의 요구사항 해석은 별도 skill 등에서 수행할 외부 절차로, 정적 분석 도구의 구현·검증 평가에서 제외한다.** 구조화 입력 검증·mode 제한, 명시적 코드 연결과 선택적 JEV 검토는 실행 경로를 제공한다. 승인된 파일 교체, Gradle 검증, 로컬 Codex·Claude 생성과 제한된 production 수정 반복을 지원한다. 문서 해석의 완전성이나 모든 업무의 자동 완수를 보장하지 않는다. 단계별 작업량이 다르므로 이를 단순 구현률 백분율로 환산하지 않는다.
 
 정적 분석·검증 도구에서 다음 두 가지는 현재 보장할 수 없다.
 
@@ -44,7 +44,7 @@
 
 JEV에 단계·승인된 context·요구사항을 전달해 Tier와 위험도를 한 번의 Choice 요청으로 판단한다. 모델 후보와 정책은 전달하지 않고 Router가 실제 모델을 선택한다. UNKNOWN·낮은 confidence·JEV API 실패는 CLI 실행을 차단하며, 위험도에 따라 코드에서 Tier·confidence 최소 기준을 적용한다. 키는 실행 환경에만 두고 artifact·prompt·CLI 자식 프로세스에 전달하지 않는다.
 
-정상 완료 후 응답 계약 오류만 Policy의 명시적 fallback으로 최대 세 번의 총 CLI 호출 안에서 재시도한다. 인증·잔액·환경·timeout·범위 밖 변경·해시 오류에는 재시도하지 않는다. 각 시도와 JEV 판단은 기존 해시 보호 artifact에 기록하고 호출 중 입력 변경은 후속 호출·적용을 차단한다. 기존 JUnit·빌드·정적 검증 실패는 계속 차단하며 이를 자동 수정하는 루프는 아직 없다.
+정상 완료 후 응답 계약 오류만 Policy의 명시적 fallback으로 최대 세 번의 총 CLI 호출 안에서 재시도한다. 인증·잔액·환경·timeout·범위 밖 변경·해시 오류에는 재시도하지 않는다. 각 시도와 JEV 판단은 기존 해시 보호 artifact에 기록하고 호출 중 입력 변경은 후속 호출·적용을 차단한다. 이후 별도의 `repair` 단계에서 실제 JUnit·빌드·정적 검증 실패를 분류하고 제한된 구현 수정·재검증을 연결했다.
 
 - 실제 JEV `jev-1.13.0` → Router → Codex `gpt-6.1-sol / medium` 구조화 응답과 LOW_CONFIDENCE 차단을 합성 설명으로 확인했다. `build/jev-capability-smoke-summary.json`에 근거를 기록했다.
 - 관련 Python 86개, 전체 Python 121개와 Java 25 전체 Gradle build PASS. 기존 Java 테스트 233개 결과는 UP-TO-DATE로 재사용했다.
@@ -397,3 +397,24 @@ JSON/SARIF, baseline, suppression과 종료 코드 정책은 CI에서 활용할 
 - 최종 workflow-completion은 NEEDS_REVIEW(종료 코드 3): 의도된 unsafe 위험과 정적 PARTIAL 근거를 보존했다. 서비스 기동·종료의 실행 assertion은 추가했지만 분석기가 의미를 자동 확정하지 못하므로 정적 상태를 임의 승격하지 않았다. 이번 작업에서 PIT와 외부 JEV API는 실행하지 않았다.
 - 미해결 근거 분류·검토 연결(2026-10-01): 본체 204개, Python 검토/회귀 29개 PASS, 전용 MySQL fixture 15개·별도 서비스 검증 PASS. 실제 reviewed complete CLI와 fixture 정책 없는 일반 처리 경로를 확인했다. 정책이 있으면 실제 테스트 부족 5개가 차단되며, 없으면 의도된 결함 5개 근거도 차단된다. 검증 PASSED·검토 NEEDS_REVIEW·위험 UNRESOLVED를 분리했고 정적 판정은 보존했다. 잘못된 클래스의 JUnit·분석 진단 누락은 실패 재현 후 수정했다.
 - Lifecycle 공백 보완(2026-10-01): 테스트 코드만 추가한 뒤 주소 생성자의 구현 부재를 컴파일 실패로 확인했다. 이어 별도 구현 단계에서 package-private 주소 주입을 추가해 실제 점유 포트의 bind 실패를 재현했다. 기동 전 반복 stop·이후 start·반복 bind 실패·미기동 상태·포트 해제 후 재시도·최종 포트 반환 테스트 2개 PASS. 전체 fixture 17개·본체 204개·Python 29개와 별도 JVM HTTP/MySQL 검증 PASS. 변경 전 15개 모두 유지되며 기대 테스트 수 갱신의 해시 기반 근거를 연결한 실제 complete CLI에서도 COMPLETED. 정적 bind 예외 COVERED, 검토 분류 TEST_GAP 0/STATIC_LIMITATION 21/INTENTIONAL_DEFECT 5와 위험 UNRESOLVED를 각각 보존했다.
+
+## JEV 보정·실패 분류·수정 반복·최종 품질 게이트 (2026-10-03)
+
+네 영역을 기존 CODE_CHANGE 실행기에 연결했다. [설정·실행 계약](../requirements-analysis/code-change-workflow.md)과 [JEV 보정](../requirements-analysis/model-routing.md)을 따른다.
+
+- JEV는 버전이 있는 난이도·위험도 Score와 sufficiency Choice를 제공한다. 작업 의미와 generator 규칙을 분리하고, API 독립 반올림을 보수적으로 검증한다. 위험도 floor 이후 최종 Tier의 confidence를 계산하며 기존 0.8/0.85/0.9 기준을 유지한다. 실제 저장소 12개 고정 작업의 두 평가에서 수락된 18회 판단은 오판 0건, 불명확한 4회 판단은 차단됐다. 14개 알려진 보정 판단 중 12회, 6개 알려진 holdout 판단 모두 수락했다. 근거는 `build/jev-calibration-current/summary.json`이다.
+- 실제 JUnit failure/error와 javac production 위치를 구조화한다. assertion·일부 production 런타임 오류·확정된 HIGH/CRITICAL 정적 위험만 수정 대상으로 삼는다. 환경·인증·잔액·근거·입력 변경은 자동 수정하지 않는다. credential이나 원본 실패 로그를 모델·artifact에 저장하지 않는다.
+- `repair`는 수락한 테스트·빌드 계약을 고정하고 승인된 production 파일만 수정한다. 수정 반복, JEV/CLI 호출, 전체 시간과 명시적 fallback을 제한하며 세션 재개가 예산을 초기화하지 않는다. 검증·생성 이력은 해시 보호 사본으로 남긴다. 별도 서비스·review·complete 단계는 계속 필요하다.
+- `qualityGates`를 켜면 최종 전체 테스트 실행의 JaCoCo와 새 PIT 실행을 목표 클래스별로 검사한다. 소스·테스트·정책·JAR/JUnit snapshot·XML/exec·mutation 응답·main/test 바이트코드가 같아야 review/complete를 통과한다. 누락·변조·살아남은/미커버 변이·미완료 실행을 통과시키지 않는다. `repair`에는 명시적 품질 설정이 필수다. 기존 수동 경로의 계약과 public API는 유지한다.
+
+소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 개발 모델의 Golden Benchmark·Cost per Successful Task·Shadow·Canary·승격과 일반 서비스 adapter, 선택형 아키텍처·컨벤션 검증은 다음 구현 범위다.
+
+### 최종 실제 연결 검증
+
+`build/repair-workflow-smoke-summary.json`에 API·CLI·Gradle을 mock하지 않은 임시 Java 프로젝트 시험을 기록했다. JEV → Router → Codex 테스트 생성 후 실제 assertion 실패를 분류하고, 1회 구현 수정으로 `value > 0`을 `value >= 0`으로 고쳤다. 수락한 테스트 해시는 유지됐으며 최종 JUnit 4개, JaCoCo LINE/BRANCH 100%, PIT 3개 모두 KILLED였다.
+
+검증된 최종 JAR를 별도 JVM의 HTTP 시험 harness에서 사용해 정상·중복·동시성·원자적 rollback과 프로세스 종료를 확인했다. 저장소의 일반 서비스 adapter 구현이나 MySQL 트랜잭션 검증을 의미하지 않는다. 정적 TEST-001 한계는 실제 요구사항·소스·assertion·JUnit 해시에 연결된 검토로 처리했고 원래 정적 상태를 변경하지 않았다. `review`·`complete`는 COMPLETED였다. coverage XML 변조는 완료를 차단했고, 원본 복구·실제 JUnit/JaCoCo/PIT 재실행·새 근거 검토 후 최종 세션은 다시 COMPLETED였다.
+
+공식 Java 25 `bash ./gradlew build --no-daemon`은 PASS이며 Python 149개를 실행했다. 기존 Java 233개 결과는 UP-TO-DATE로 재사용했다. timeout 시 자식 소켓 해제의 race를 보강하고 기존 종료·취소 테스트도 통과했다.
+
+복잡한 HTTP fixture의 단일 메서드에서는 정적 Obligation ID 중복을 발견했다. 현재는 EVIDENCE/NEEDS_REVIEW로 차단하고 자동 수정이나 완료에 사용하지 않는다. ID 생성·중복 원인 보강은 다음 수정 대상이다. 이 시험의 성공 범위는 순수 계산 클래스와 별도 서비스 harness로 선언된 검증이며, 모든 Spring 업무의 자동 완료를 보장하지 않는다.
