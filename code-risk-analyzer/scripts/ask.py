@@ -130,7 +130,7 @@ def jev_intent(text, timeout=30):
             raise ValueError('Response too large')
         return dict(intent_answer(json.loads(raw.decode('utf-8'))), status='COMPLETED')
     except (OSError, ValueError, TypeError, KeyError, UnicodeError) as error:
-        return {'status': 'FAILED', 'reason': type(error).__name__}
+        return {'status': 'FAILED', 'reason': f'{type(error).__name__}: {error}'[:200]}
 
 
 def decide(text, judge):
@@ -145,8 +145,9 @@ def decide(text, judge):
         return keyword, reason
     answer = judge(text)
     if answer.get('status') != 'COMPLETED':
-        if keyword is None:
-            raise ValueError('JEV 판단에 실패했고 키워드로도 판단할 수 없습니다. 요청을 더 구체적으로 적어주세요')
+        # A failed call must not decide more than a successful one would: code changes need JEV's agreement.
+        if keyword is None or keyword not in READ_ONLY:
+            raise ValueError(f"JEV 판단에 실패해 실행하지 않습니다({answer.get('reason')}). 다시 시도하거나 --no-jev로 키워드만 쓰세요")
         return keyword, f"{reason}; JEV 실패({answer.get('reason')})로 키워드만 사용"
     intent, confidence = answer['intent'], answer['confidence']
     if intent == 'UNKNOWN' or confidence < MIN_INTENT_CONFIDENCE:
