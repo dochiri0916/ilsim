@@ -85,7 +85,7 @@ MySQL fixture에는 `fixtureAdapter=MYSQL`과 `local-service` 단계를 연결�
 | 3. 테스트 코드 우선 작성 | 부분 구현 | TEST_WRITING phase의 승인된 테스트 파일 교체, 별도 runner의 기준선 실행·테스트 보호·변경 후 비교 | 요구사항 기반 생성·예상 원인의 실패 확인·assertion 의미 자동 증명 |
 | 4. 1차 Test Adequacy 검증 | 부분 구현 | 코드 기반 Obligation 추출, 정적 적정성 분석, 네 가지 상태 보고 | 구현 전 테스트 검증의 한계, 적정성 JEV 검토·테스트 보완 |
 | 5. 동작 코드 구현 | 부분 구현 | IMPLEMENTATION phase의 승인된 파일 교체와 명시적 TEST/BUILD, 별도 runner의 회귀 비교 | 최소 구현 자동 생성·assertion 의미 증명·전체 개발 반복 절차 |
-| 6. 2차 Production Risk 검증 | 부분 구현 | 19개 위험 규칙, 제한된 JEV 연계 | 권한·Tenant·정합성 검증 확대, 수정·재검증 반복 |
+| 6. 2차 Production Risk 검증 | 부분 구현 | 21개 위험 규칙(권한 SEC-006·Tenant SEC-007 포함), 제한된 JEV 연계 | 호출 경로 전체의 소유권 확인·정합성 검증 확대 |
 | 7. PR 생성 및 최종 검증 | 부분 구현 | 전체/지정 파일 스캔, 보고서·실패 정책·변이 검증, 회귀·서비스·미해결 근거 완료 판정, COMPLETED 세션의 PR 본문 생성과 승인된 draft PR 제출, 일반 프로젝트의 JAR 기동·선언 시나리오 실행 adapter | 전 영역 의미 검토·미신고 근거 탐지. 일반 서비스 adapter는 시나리오 명령의 종료 코드만 판정 |
 
 ## 1. 요구사항 및 정의서 분석
@@ -226,7 +226,7 @@ requirements의 WRITE_TESTS는 TEST_WRITING phase 및 승인된 src/test/ 경로
 | 경계값 | 일부 비교 조건과 정수 리터럴 인자로 경계 미만/동일/초과 등의 사례 식별 | 자동 생성 없음 |
 | 상태 변경 | 필드 대입·일부 변경 호출·저장 호출 식별 | 자동 생성 없음 |
 | 권한 | 일부 annotation에서 허용/거부 항목 추출 | 실제 인증·인가 테스트 생성 없음 |
-| Tenant | 전용 추출/검증 기능 없음 | 자동 생성 없음 |
+| Tenant | SEC-007 위험을 `RISK` 항목으로 연결 | 자동 생성 없음 |
 | 트랜잭션 | 일부 다중 쓰기·예외 경로의 롤백 항목 추출 | 실제 DB 롤백 테스트 생성 없음 |
 | 동시성·멱등성 | 위험 후보를 `RISK` 항목으로 연결 | 병렬 실행·중복 처리·재시도 테스트 생성 없음 |
 
@@ -279,17 +279,17 @@ requirements의 IMPLEMENT action은 IMPLEMENTATION phase와 별도로 승인된 
 
 ## 6. 2차 Production Risk 검증
 
-**판정: 부분 구현 — 19개 정적 위험 규칙과 제한된 의미 검토를 제공한다.**
+**판정: 부분 구현 — 21개 정적 위험 규칙과 제한된 의미 검토를 제공한다.**
 
 | 영역 | 현재 범위 | 미지원 또는 제한 |
 |---|---|---|
 | Security | `SEC-001~005`: SQL/Command Injection, Path Traversal, SSRF, 하드코딩 비밀값 | 메서드 간 전체 데이터 흐름 및 미지원 제어 흐름은 검증하지 못함. SEC-003/004의 블록·분기에서는 호출별 검증 선행·값 일치를 확인 |
-| Authorization | 일부 권한 Test Obligation 추출 | 소유권·리소스 접근 제어 전용 생산 위험 규칙 없음 |
+| Authorization | `SEC-006`: 요청 식별자(`@PathVariable`/`@RequestParam`의 id)로 조회하지만 호출자 식별 정보(Principal·`@AuthenticationPrincipal`·SecurityContextHolder)나 접근 annotation이 entry point에 없음. 일부 권한 Test Obligation 추출 | 하위 서비스에서 수행하는 소유권 확인은 정적으로 증명하지 않으며 REVIEW·LOW confidence로만 보고 |
 | Transaction | `TX-001~005`: self-invocation, async 경계, 외부 호출, 다중 쓰기, 예외 삼키기 | 실제 Spring proxy·propagation·커밋/롤백 실행 결과 미검증 |
 | Concurrency | `CON-001~004`: check-then-act, lost update, singleton 상태, async 컨텍스트 | 실제 경쟁 실행·다중 인스턴스 안전성 미검증 |
 | Data Integrity | check-then-act에서 연결된 엔티티의 UNIQUE/PK 선언 일부 확인 | 운영 DB 제약 적용, FK/CHECK/NULL 정책, 충돌 처리 등을 포괄 검증하지 않음 |
 | Idempotency | `IDEM-001~004`: 메시지 부수 효과, 멱등키, 재시도, 비즈니스 키 | 키의 원자적 저장·전달·실제 중복 방지 계약 미검증 |
-| Tenant Isolation | 전용 생산 위험 규칙 없음 | 교차 Tenant 조회·변경 및 접근 권한 미검증 |
+| Tenant Isolation | `SEC-007`: tenant 필드가 있는 엔티티의 Repository 쿼리와 상속 조회(`findById` 등)에 tenant 조건이 보이지 않음. Hibernate `@TenantId`·`@Filter`는 보호로 인정 | 쿼리 인자의 tenant 값 출처와 실제 교차 Tenant 접근은 실행 검증 필요 |
 | Partial Failure | `REL-001`: DB와 외부 부수 효과 불일치 후보 | 실제 실패 주입·보상·outbox 실행 결과 미검증 |
 
 `REVIEW.md`의 1순위 개선은 실제 코드와 테스트에 반영되어 있다. 조회/변경 저장소와 엔티티를 연결해 관련 제약만 확인하고, JVM 잠금만으로 DB 경쟁 경고를 숨기지 않는 개선이다. 2순위 개선도 반영되어 SEC-003/004에서 호출에 도달하는 모든 지원 경로의 검증 선행 여부와 값 일치를 확인한다. 미지원 제어 흐름은 보수적으로 경고를 유지한다. 3순위 타입 기반 부수 효과·클래스패스와 4순위 분석 완전성·선택형 CI 정책도 반영되었다. 5순위는 JUnit·JaCoCo 및 명시적 DB/assertion 검토를 연결하는 선택형 import로 반영되었다. 전체 위험 검증 완료와 구분해야 한다.
