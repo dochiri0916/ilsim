@@ -1,0 +1,59 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+description = 'code-risk-analyzer'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring
+    implementation 'org.springframework.boot:spring-boot-starter'
+
+    // CLI
+    implementation 'org.springframework.shell:spring-shell-starter:4.0.3'
+
+    // AST + Symbol Resolution
+    implementation 'com.github.javaparser:javaparser-symbol-solver-core:3.28.2'
+
+    // JEV
+    implementation 'io.github.gudcks0305:jev-typesafe:0.2.0'
+
+    // Validation
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.yaml:snakeyaml'
+    implementation 'com.networknt:json-schema-validator:2.0.4'
+
+    // Test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.register('regressionWorkflowTests', Exec) {
+    commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'scripts/tests', '-v'
+}
+tasks.named('check') {
+    dependsOn tasks.named('regressionWorkflowTests')
+}
+
+tasks.named('processResources') {
+    from('docs/requirements-analysis/requirements-analysis.schema.json') {
+        into 'requirements'
+    }
+}

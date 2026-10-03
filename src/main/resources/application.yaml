@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: code-risk-analyzer
+  shell:
+    interactive:
+      enabled: false

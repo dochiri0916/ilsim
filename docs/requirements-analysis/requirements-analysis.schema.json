@@ -1,0 +1,718 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Requirements analysis artifact v1",
+  "description": "Explicitly scoped specification analysis. Structural validation does not execute tools or prove domain correctness.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "mode": {
+      "enum": [
+        "SPEC_ONLY",
+        "SPEC_CODE_REVIEW",
+        "CODE_CHANGE"
+      ]
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/text"
+        },
+        "database": {
+          "enum": [
+            "MYSQL",
+            "OTHER",
+            "UNDECIDED"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "database"
+      ]
+    },
+    "codeRevision": {
+      "$ref": "#/$defs/text"
+    },
+    "requirements": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^REQ-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/requirement"
+      }
+    }
+  },
+  "required": [
+    "version",
+    "mode",
+    "project",
+    "requirements"
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/text"
+        },
+        "version": {
+          "$ref": "#/$defs/text"
+        },
+        "section": {
+          "$ref": "#/$defs/text"
+        },
+        "excerpt": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "document",
+        "version",
+        "section",
+        "excerpt"
+      ]
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "$ref": "#/$defs/text"
+        },
+        "aggregates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "dataOwnership": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "allowedDependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true
+        },
+        "entryPoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        }
+      },
+      "required": [
+        "owner",
+        "aggregates",
+        "dataOwnership",
+        "allowedDependencies",
+        "entryPoints"
+      ]
+    },
+    "perspective": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "applicability": {
+          "enum": [
+            "APPLICABLE",
+            "NOT_APPLICABLE",
+            "UNKNOWN"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "expectations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "applicability",
+        "reason",
+        "expectations"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "applicability": {
+                "const": "APPLICABLE"
+              }
+            },
+            "required": [
+              "applicability"
+            ]
+          },
+          "then": {
+            "properties": {
+              "expectations": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "applicability": {
+                "const": "NOT_APPLICABLE"
+              }
+            },
+            "required": [
+              "applicability"
+            ]
+          },
+          "then": {
+            "properties": {
+              "expectations": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "domain": {
+          "$ref": "#/$defs/domain"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "postconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "invariants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "coreLogic": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "transaction": {
+          "$ref": "#/$defs/perspective"
+        },
+        "concurrency": {
+          "$ref": "#/$defs/perspective"
+        },
+        "idempotency": {
+          "$ref": "#/$defs/perspective"
+        },
+        "consistency": {
+          "$ref": "#/$defs/perspective"
+        },
+        "scenarios": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^SCN-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/scenario"
+          }
+        },
+        "mappings": {
+          "$ref": "#/$defs/mappings"
+        },
+        "review": {
+          "$ref": "#/$defs/review"
+        }
+      },
+      "required": [
+        "title",
+        "source",
+        "domain",
+        "preconditions",
+        "postconditions",
+        "invariants",
+        "coreLogic",
+        "transaction",
+        "concurrency",
+        "idempotency",
+        "consistency",
+        "scenarios",
+        "review"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "transaction": {
+                    "properties": {
+                      "applicability": {
+                        "const": "UNKNOWN"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "concurrency": {
+                    "properties": {
+                      "applicability": {
+                        "const": "UNKNOWN"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "idempotency": {
+                    "properties": {
+                      "applicability": {
+                        "const": "UNKNOWN"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "consistency": {
+                    "properties": {
+                      "applicability": {
+                        "const": "UNKNOWN"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "review": {
+                "properties": {
+                  "openQuestions": {
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "mappings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "implementationStatus": {
+          "enum": [
+            "NOT_IMPLEMENTED",
+            "PARTIAL",
+            "IMPLEMENTED",
+            "UNKNOWN"
+          ]
+        },
+        "code": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/codeLink"
+          },
+          "minItems": 0
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/testLink"
+          },
+          "minItems": 0
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "implementationStatus",
+        "code",
+        "tests",
+        "findings"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "implementationStatus": {
+                "enum": [
+                  "IMPLEMENTED",
+                  "PARTIAL"
+                ]
+              }
+            },
+            "required": [
+              "implementationStatus"
+            ]
+          },
+          "then": {
+            "properties": {
+              "code": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "implementationStatus": {
+                "const": "NOT_IMPLEMENTED"
+              }
+            },
+            "required": [
+              "implementationStatus"
+            ]
+          },
+          "then": {
+            "properties": {
+              "code": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "EVIDENCE_SUPPORTED",
+            "CONTRADICTED",
+            "INSUFFICIENT_EVIDENCE",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0
+        },
+        "openQuestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "status",
+        "reason",
+        "evidence",
+        "openQuestions"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "EVIDENCE_SUPPORTED",
+                  "CONTRADICTED"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "INSUFFICIENT_EVIDENCE"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "openQuestions": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "codeLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/text"
+        },
+        "symbol": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "path",
+        "symbol"
+      ]
+    },
+    "testLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/text"
+        },
+        "test": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "path",
+        "test"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "REQUIREMENT",
+            "CODE",
+            "STATIC_FINDING",
+            "TEST",
+            "EXECUTION",
+            "REVIEW",
+            "JEV"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/text"
+        },
+        "locator": {
+          "$ref": "#/$defs/text"
+        },
+        "observation": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "locator",
+        "observation"
+      ]
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "NORMAL",
+            "DUPLICATE",
+            "CONCURRENCY",
+            "ROLLBACK",
+            "RETRY",
+            "PARTIAL_FAILURE",
+            "VALIDATION",
+            "AUTHORIZATION"
+          ]
+        },
+        "given": {
+          "$ref": "#/$defs/text"
+        },
+        "when": {
+          "$ref": "#/$defs/text"
+        },
+        "expectedOutcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "testTypes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "DOMAIN_UNIT",
+              "REPOSITORY_DB",
+              "API_SLICE",
+              "INTEGRATION",
+              "SERVICE_E2E"
+            ]
+          }
+        }
+      },
+      "required": [
+        "type",
+        "given",
+        "when",
+        "expectedOutcomes",
+        "testTypes"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "SPEC_ONLY"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "codeRevision"
+          ]
+        },
+        "properties": {
+          "requirements": {
+            "additionalProperties": {
+              "not": {
+                "required": [
+                  "mappings"
+                ]
+              },
+              "properties": {
+                "review": {
+                  "properties": {
+                    "evidence": {
+                      "items": {
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "REQUIREMENT",
+                              "REVIEW",
+                              "JEV"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "SPEC_CODE_REVIEW",
+              "CODE_CHANGE"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "codeRevision"
+        ],
+        "properties": {
+          "requirements": {
+            "additionalProperties": {
+              "required": [
+                "mappings"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
