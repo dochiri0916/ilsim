@@ -1,11 +1,52 @@
 {
   "version": 1,
   "models": {
-    "focused": {"adapter": "codex", "model": "gpt-6-luna", "status": "ACTIVE",
-                "supportedTiers": ["TIER_1", "TIER_2"], "reasoningEfforts": ["low", "medium", "high"]},
-    "general": {"adapter": "codex", "model": "gpt-6.1-sol", "status": "ACTIVE",
-                "supportedTiers": ["TIER_2", "TIER_3", "TIER_4"], "reasoningEfforts": ["medium", "high", "xhigh"]},
-    "review": {"adapter": "claude", "model": "claude-sonnet-5-5", "status": "ACTIVE",
-               "supportedTiers": ["TIER_3", "TIER_4"], "reasoningEfforts": ["medium", "high"]}
+    "focused": {
+      "adapter": "codex",
+      "model": "gpt-6-luna",
+      "status": "ACTIVE",
+      "supportedTiers": [
+        "TIER_1"
+      ],
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "general": {
+      "adapter": "codex",
+      "model": "gpt-6.1-sol",
+      "status": "ACTIVE",
+      "supportedTiers": [
+        "TIER_2",
+        "TIER_3",
+        "TIER_4"
+      ],
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "review": {
+      "adapter": "claude",
+      "model": "claude-sonnet-5-5",
+      "status": "ACTIVE",
+      "supportedTiers": [
+        "TIER_1",
+        "TIER_2",
+        "TIER_3",
+        "TIER_4"
+      ],
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    }
   }
 }

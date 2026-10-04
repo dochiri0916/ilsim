@@ -591,7 +591,7 @@ class ZeroConfigTests(unittest.TestCase):
 
     def test_convention_fixes_use_the_cheap_tier_and_refuse_forbidden_models(self):
         configs = ask.fix_models(ask.default_routing({}))
-        self.assertEqual(['gpt-6-luna', 'gpt-6.1-sol'], [config['model'] for config in configs])
+        self.assertEqual(['gpt-6.1-sol', 'gpt-6.1-sol'], [config['model'] for config in configs])
         registry = json.loads((ask.DEFAULT_ROUTING/'models.json').read_text())
         registry['models']['general']['model'] = 'claude-opus-5-5'
         path = self.project.parent/'models.json'
