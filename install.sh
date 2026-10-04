@@ -47,7 +47,7 @@ if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   python3 "$ROOT/code-risk-analyzer/scripts/self_update.py" --mark-built || note "자동 업데이트 기록을 남기지 못했습니다"
 fi
 
-echo "4/4 ask, ask-remote 명령 설치: $BIN"
+echo "4/4 ai, ask, ask-remote 명령 설치: $BIN"
 mkdir -p "$BIN"
 cat > "$BIN/ask" <<EOF
 #!/bin/sh
@@ -59,6 +59,11 @@ cat > "$BIN/ask-remote" <<EOF
 exec python3 "$ROOT/code-risk-analyzer/scripts/remote_runner.py" "\$@"
 EOF
 chmod +x "$BIN/ask-remote"
+cat > "$BIN/ai" <<EOF
+#!/bin/sh
+exec python3 "$ROOT/code-risk-analyzer/scripts/agent_pick.py" "\$@"
+EOF
+chmod +x "$BIN/ai"
 PATH_MISSING=false
 case ":$PATH:" in
   *":$BIN:"*) ;;
@@ -82,6 +87,7 @@ if [ "$AGENT_HINT" = true ]; then
 fi
 
 echo "자동 업데이트: ask가 새 요청마다(최대 10분에 한 번) 이 폴더를 git pull하고 바뀐 쪽만 다시 빌드합니다 (끄기: --no-update 또는 ASK_NO_UPDATE=1)"
+echo "ai: 사용량을 보고 Claude Code·Codex 중 유리한 쪽을 실행합니다 (ai 작업 내용 / ai claude / ai codex / ai --why)"
 echo "완료. Gradle 프로젝트 폴더에서: ask \"요청\" (명세 초안을 모델이 씀, 직접 쓴 명세는 --spec spec.json) → 계획 확인 → ask --yes"
 
 if [ "$PATH_MISSING" = true ]; then
