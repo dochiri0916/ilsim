@@ -298,11 +298,40 @@ class MainTests(unittest.TestCase):
         self.assertIn('60% 남음', pick.choose(pick.claude_state(self.home, NOW + timedelta(hours=2, minutes=50), limits),
                                                  None, NOW + timedelta(hours=2, minutes=50))[1])
 
-    def test_usage_prints_the_usage_report_without_running_anything(self):
+    def test_usage_fetches_claude_limits_with_one_tiny_request_only_when_stale(self):
+        # given: no Claude limit record yet
+        reset = int((NOW + timedelta(hours=1)).timestamp())
+        self.outputs = [FakeProcess(events({'type': 'system', 'subtype': 'init', 'session_id': 'u-1'},
+                                           {'type': 'rate_limit_event', 'rate_limit_info': {'unifiedWindows': {
+                                               'five_hour': {'utilization': 0.35, 'resetsAt': reset},
+                                               'seven_day': {'utilization': 0.6, 'resetsAt': reset + 86400}}}},
+                                           {'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'ok'}]}},
+                                           {'type': 'result', 'is_error': False, 'result': 'ok', 'session_id': 'u-1'}))]
+        # when
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(0, self.main('--usage'))
+        # then: the cheapest model, no tools, no MCP, outside the project; its answer is not shown
+        argv, cwd = self.started[0]
+        self.assertEqual(['--model', 'haiku', '--tools', ''], argv[argv.index('--model'):argv.index('--model') + 4])
+        self.assertIn('--strict-mcp-config', argv)
+        self.assertNotEqual(self.home, cwd)
+        self.assertIn('5시간: 35% 사용', output.getvalue())
+        self.assertIn('주간: 60% 사용', output.getvalue())
+        self.assertEqual([], self.lines)
+        # and: a record younger than REFRESH_AFTER is shown without another request
+        with redirect_stdout(io.StringIO()):
+            self.main('--usage', now=NOW + timedelta(minutes=5))
+        self.assertEqual(1, len(self.started))
+
+    def test_usage_without_a_fresh_claude_answer_shows_the_last_record(self):
+        self.outputs = [FakeProcess([], code=1, stderr='not logged in')]
         with redirect_stdout(io.StringIO()) as output:
             self.assertEqual(0, self.main('--usage'))
         self.assertIn('Claude Code 사용량', output.getvalue())
-        self.assertEqual([], self.started)
+        self.assertEqual(['ai: Claude 한도를 새로 받지 못해 마지막 기록을 보여 줍니다 (not logged in)'], self.lines)
+        with redirect_stdout(io.StringIO()):
+            pick.main(['--usage'], environ=self.environ, now=NOW, which=lambda cli: None, popen=self.popen, say=self.lines.append)
+        self.assertEqual(1, len(self.started))
 
     def test_why_and_no_task_only_print(self):
         self.assertEqual(0, self.main('--why'))
