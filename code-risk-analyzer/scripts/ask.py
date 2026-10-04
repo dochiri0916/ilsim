@@ -807,12 +807,28 @@ def zero_config(text, project, allowed, judge, spec=None):
         return plan(text, None, None, str(project), allowed, judge, decided, convention=bool(chosen['enabled']))
     if intent == 'RULES':
         return plan(text, None, None, None, allowed, judge, decided)
+    if intent == 'COST':
+        return usage_plan(text, project, decided)
     session = current_session(project)
     if intent not in READ_ONLY:
         check_validators(project, session)
     convention = intent not in READ_ONLY and convention_enabled(session)
     value = plan(text, str(session/SESSION_CONFIG), str(session/'state.json'), None, allowed, judge, decided, convention=convention)
     return dict(value, zeroConfig=True)
+
+
+def usage_plan(text, project, decided):
+    """Claude Code and Codex usage from their local logs, plus the current ask session's recorded calls when there is one."""
+    intent, reason = decided
+    value = {'request': text, 'intent': intent, 'reason': reason, 'changesCode': False, 'state': None, 'stages': [],
+             'commands': [[sys.executable, str(SCRIPTS/'usage_report.py')]], 'zeroConfig': True}
+    try:
+        session = current_session(project) if project else None
+    except ValueError:
+        session = None
+    if session is not None:
+        value['commands'].append([sys.executable, str(SCRIPTS/'cost_report.py'), str(session)])
+    return value
 
 
 # Requests that go on with the current session: new tool code in the middle could make its recorded hashes stale.
@@ -852,6 +868,9 @@ def main(argv=None, update=None):
     parser.add_argument('--allowed-models', help='허용할 모델 이름 목록(쉼표 구분)')
     parser.add_argument('--no-jev', action='store_true', help='TYPESAFE_API_KEY가 있어도 JEV 없이 키워드로만 판단')
     parser.add_argument('--no-update', action='store_true', help='이 도구의 자동 업데이트(git pull·재빌드)를 하지 않음')
+    parser.add_argument('--benchmark-models', action='store_true',
+                        help='routing이 쓰는 모델 경로를 Golden Benchmark 과제로 비교(models.json은 바꾸지 않음)')
+    parser.add_argument('--usage', action='store_true', help='Claude Code·Codex 사용량(로컬 기록, 토큰 소모 없음)')
     parser.add_argument('--check-models', action='store_true',
                         help='routing이 쓰는 모델마다 짧은 요청을 보내 아직 쓸 수 있는지 확인(토큰 소량)')
     for name in ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request'):
@@ -863,6 +882,12 @@ def main(argv=None, update=None):
     allowed = args.allowed_models.split(',') if args.allowed_models else None
     if args.check_models:
         return _module('model_check').main()
+    if args.usage:
+        return _module('usage_report').main([])
+    if args.benchmark_models:
+        output = SCRIPTS.parent/'build'/'golden-benchmark.json'
+        output.parent.mkdir(parents=True, exist_ok=True)
+        return _module('golden_benchmark').main(['--output', str(output)])
     if args.request is None and not args.yes:
         parser.error('요청 문장을 적거나, 확인한 계획을 실행하려면 --yes만 주세요')
     if update is not None and updates_now(args):
@@ -886,7 +911,7 @@ def main(argv=None, update=None):
                     project = find_project(Path.cwd().resolve())
                 except ValueError:
                     # Rule questions need no project; everything else reports the missing project.
-                    if args.request is None or decide(args.request, None)[0] != 'RULES':
+                    if args.request is None or decide(args.request, None)[0] not in ('RULES', 'COST'):
                         raise
             spec = Path(args.spec).expanduser().resolve() if args.spec else None
             value = zero_config(args.request, project, allowed, judge, spec)
