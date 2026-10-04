@@ -293,7 +293,7 @@ def _choose(claude, codex_limits, now, installed):
     claude_ahead = _ahead(claude.get('weekLeft'), claude.get('weekResetsAt'), now)
     if codex_ahead is not None and codex_ahead > WEEKLY_PACE_MARGIN and (claude_ahead is None or claude_ahead < codex_ahead):
         elapsed = 1 - (week_reset - now) / WEEK
-        return 'claude', f'Codex 주간 한도를 일정보다 빨리 쓰는 중({100 - week:.0f}% 사용, 주간 {elapsed * 100:.0f}% 경과)'
+        return 'claude', f'Codex 주간 한도를 일정보다 빨리 쓰는 중({week:.0f}% 남음, 주간 기간은 {100 - elapsed * 100:.0f}% 남음)'
     if five is not None and five < FIVE_HOUR_ROOM and (claude_five is None or claude_five > five):
         return 'claude', f'Codex 5시간 한도 {five:.0f}% 남음' + (f', Claude {claude_five:.0f}%' if claude_five is not None else '')
     room = f'5시간 {five:.0f}%' if five is not None else '5시간 기록 없음'

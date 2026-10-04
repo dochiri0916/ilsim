@@ -261,7 +261,7 @@ def _reset(limit, now):
         return ''
     resets = datetime.fromisoformat(limit['resetsAt'])
     if resets <= now:
-        return ' (기록 이후 이미 초기화됨)'
+        return ' (기록 이후 초기화됨)'
     left = resets - now
     hours, minutes = divmod(int(left.total_seconds()) // 60, 60)
     return f" ({resets.astimezone().strftime('%m-%d %H:%M')} 초기화, {hours}시간 {minutes}분 남음)"
@@ -275,7 +275,10 @@ def _limit_lines(limits, now, missing):
     lines = [f'  한도 ({observed} 마지막 기록{plan}):']
     for key, label in (('fiveHour', '5시간'), ('weekly', '주간')):
         if limits.get(key):
-            lines.append(f"    - {label}: {limits[key]['usedPercent']:.0f}% 사용{_reset(limits[key], now)}")
+            limit = limits[key]
+            reset = 'resetsAt' in limit and datetime.fromisoformat(limit['resetsAt']) <= now
+            left = 100.0 if reset else max(0.0, 100.0 - limit['usedPercent'])
+            lines.append(f"    - {label}: {left:.0f}% 남음{_reset(limit, now)}")
     return lines
 
 
