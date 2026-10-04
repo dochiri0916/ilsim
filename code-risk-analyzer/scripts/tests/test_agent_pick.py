@@ -315,8 +315,8 @@ class MainTests(unittest.TestCase):
         self.assertEqual(['--model', 'haiku', '--tools', ''], argv[argv.index('--model'):argv.index('--model') + 4])
         self.assertIn('--strict-mcp-config', argv)
         self.assertNotEqual(self.home, cwd)
-        self.assertIn('5시간: 35% 사용', output.getvalue())
-        self.assertIn('주간: 60% 사용', output.getvalue())
+        self.assertIn('5시간: 65% 남음', output.getvalue())
+        self.assertIn('주간: 40% 남음', output.getvalue())
         self.assertEqual([], self.lines)
         # and: a record younger than REFRESH_AFTER is shown without another request
         with redirect_stdout(io.StringIO()):
