@@ -376,6 +376,10 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
     generator = 'agent' in loaded or 'routing' in loaded
     service = 'fixtureAdapter' in loaded or 'serviceAdapter' in loaded
     result['stages'] = stages(intent, phase, generator, service)
+    scope_path = Path(loaded.get('scope', ''))
+    if scope_path.is_file() and 'WRITE_TESTS' not in _read(scope_path).get('actions', ['WRITE_TESTS']):
+        # A refactoring writes no tests: implementation follows the baseline and existing tests prove the behavior.
+        result['stages'] = [name for name in result['stages'] if name != 'generate-tests']
     if convention:
         session = state_path.parent
         revision = _read(loaded['requirements']).get('codeRevision')
@@ -457,6 +461,10 @@ def execute(value, confirmed, run, options=None):
             code, recheck = _convention_gate(value, run)
             if code:
                 return code
+        if stage == 'verification' and 'approvals' not in options:
+            approvals = spec_approvals(state.parent, Path(_read(value['config']['plan'])['project']))
+            if approvals:
+                options = dict(options, approvals=str(approvals))
         code = run(_command(stage, value, options))
         if code == 1 and stage == 'verification' and 'repair' in value['config']:
             print('검증 실패: 설정된 repair 루프를 실행합니다')
@@ -475,6 +483,38 @@ def execute(value, confirmed, run, options=None):
                 print(line)
             return code
     return 0
+
+
+def reviewer():
+    try:
+        name = subprocess.run(['git', 'config', 'user.name'], capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        name = ''
+    return name or os.environ.get('USER') or 'ask --yes'
+
+
+def spec_approvals(session, project):
+    """Hash-bound approvals for the existing tests the approved spec said would change, as test writing accepted them.
+
+    Running `ask --yes` on a plan that lists these tests is the person's review. Only the declared files, only in the
+    exact content test writing produced, are approved; any other test change still stops verification.
+    """
+    try:
+        spec, state = _read(session/'draft.json'), _read(session/'state.json')
+        before = _read(session/'baseline.json')['protected']
+    except (OSError, ValueError, KeyError):
+        return None
+    locked = state.get('lockedTests', {})
+    approvals = [{'path': item['path'], 'beforeSha256': before[item['path']], 'afterSha256': locked[item['path']],
+                  'basis': 'SPEC_CHANGE', 'reference': (session/'request.md').relative_to(project).as_posix(),
+                  'reviewer': reviewer(), 'reason': item['reason']}
+                 for item in spec.get('changedTests', [])
+                 if item['path'] in before and item['path'] in locked and before[item['path']] != locked[item['path']]]
+    if not approvals:
+        return None
+    path = session/'approvals-spec.json'
+    path.write_text(json.dumps(approvals, ensure_ascii=False, indent=2), encoding='utf-8')
+    return path
 
 
 CAPABILITY_REASONS = {
@@ -671,13 +711,18 @@ def draft_models(routing):
     return fix_models(routing)
 
 
+CHANGE_LABELS = {'FEATURE': '기능 추가', 'MODIFICATION': '기존 기능 수정', 'REFACTOR': '리팩토링 (테스트 작성 없음, 기존 테스트 변경 불가)'}
+
+
 def describe_draft(project, session, value):
-    lines = [f"명세: {value['title']}"]
+    lines = [f"명세: {value['title']} - {CHANGE_LABELS.get(value.get('changeType', 'FEATURE'))}"]
     for requirement in value['requirements']:
         lines.append(f"- {requirement['id']} {requirement['title']} (시나리오 {len(requirement['scenarios'])}개)")
     if value['assumptions']:
         lines.append('가정: ' + '; '.join(value['assumptions']))
     lines.append('바꿀 파일: ' + ', '.join(value['files']))
+    for item in value.get('changedTests', []):
+        lines.append(f"바뀌는 기존 테스트: {item['path']} ({item['reason']}) - ask --yes가 이 변경의 승인으로 기록됩니다")
     lines.append(f'입력 위치: {session.relative_to(project).as_posix()}/ (request.md, requirements.json, plan.json, scope.json)')
     return '\n'.join(lines)
 

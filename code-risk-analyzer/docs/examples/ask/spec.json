@@ -114,5 +114,7 @@
   "files": [
     "src/main/java/com/example/demo/member/domain/model/Member.java",
     "src/test/java/com/example/demo/member/domain/model/MemberTest.java"
-  ]
+  ],
+  "changeType": "FEATURE",
+  "changedTests": []
 }

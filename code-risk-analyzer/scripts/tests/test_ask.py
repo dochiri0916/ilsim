@@ -637,6 +637,35 @@ class ZeroConfigTests(unittest.TestCase):
         self.measured = []
         return self.measure(project, output, base_ref, **options)
 
+    def test_refactoring_skips_test_writing(self):
+        with redirect_stdout(io.StringIO()) as output:
+            value = ask.start_change('Member 정리해줘', self.project, ('CODE_CHANGE', 'k'), None, None,
+                                     self.spec(changeType='REFACTOR', files=['src/main/java/com/example/demo/member/domain/model/Member.java']),
+                                     lambda path, jar: None, self.measure_quiet)
+        self.assertEqual(['baseline', 'generate-implementation', 'verification'], value['stages'])
+        self.assertIn('리팩토링', output.getvalue())
+
+    def test_declared_changed_tests_are_approved_as_test_writing_left_them(self):
+        # given: a modification session whose spec declared one existing test change
+        test = 'src/test/java/com/example/demo/DemoApplicationTests.java'
+        with redirect_stdout(io.StringIO()) as output:
+            value = ask.start_change('가입 응답 바꿔줘', self.project, ('CODE_CHANGE', 'k'), None, None, self.spec(
+                changeType='MODIFICATION', files=['src/main/java/com/example/demo/member/domain/model/Member.java', test],
+                changedTests=[{'path': test, 'reason': '응답 코드 변경'}]), lambda path, jar: None, self.measure_quiet)
+        self.assertIn(f'바뀌는 기존 테스트: {test} (응답 코드 변경)', output.getvalue())
+        session = Path(value['state']).parent
+        (session/'baseline.json').write_text(json.dumps({'protected': {test: 'old', 'build.gradle': 'b'}}))
+        (session/'state.json').write_text(json.dumps({'lockedTests': {test: 'new', 'build.gradle': 'b'}}))
+        # when
+        path = ask.spec_approvals(session, self.project)
+        # then: only the declared file, bound to both hashes
+        approvals = json.loads(path.read_text())
+        self.assertEqual([(test, 'old', 'new', 'SPEC_CHANGE', '응답 코드 변경')],
+                         [(a['path'], a['beforeSha256'], a['afterSha256'], a['basis'], a['reason']) for a in approvals])
+        self.assertTrue(approvals[0]['reviewer'])
+        (session/'state.json').write_text(json.dumps({'lockedTests': {test: 'old'}}))
+        self.assertIsNone(ask.spec_approvals(session, self.project))
+
     def test_quality_gates_are_on_for_changed_classes_unless_the_request_turns_them_off(self):
         self.assertTrue(ask.quality_choice('회원 가입 기능 추가해줘'))
         for text in ('품질 게이트 없이 추가해줘', '커버리지 검사 빼고 해줘', '변이 테스트 끄고 해줘', 'no-mutation please'):

@@ -29,7 +29,14 @@ ask --yes                                           # 확인한 계획 실행
 | `.transaction` `.concurrency` `.idempotency` `.consistency` | `applicability`가 `APPLICABLE`이면 `expectations` 1개 이상, `NOT_APPLICABLE`이면 `reason`만 쓰고 `expectations: []`. `APPLICABLE`이면 그 관점을 실행하는 시나리오가 있어야 한다: transaction은 `ROLLBACK`·`PARTIAL_FAILURE`, concurrency는 `CONCURRENCY`, idempotency는 `DUPLICATE`·`RETRY`, consistency는 `PARTIAL_FAILURE`·`ROLLBACK` 중 하나 |
 | `.scenarios[]` | `id`(`SCN-1`), `type`(`NORMAL` `DUPLICATE` `CONCURRENCY` `ROLLBACK` `RETRY` `PARTIAL_FAILURE` `VALIDATION` `AUTHORIZATION`), `given`, `when`, `expectedOutcomes`(1개 이상), `testTypes`(`DOMAIN_UNIT` `REPOSITORY_DB` `API_SLICE` `INTEGRATION` `SERVICE_E2E`) |
 | `.implementationStatus` / `.existingCode[]` | 새 동작은 `NOT_IMPLEMENTED`와 `[]`, 아니면 `PARTIAL`·`IMPLEMENTED`와 `{path, symbol}` 목록 |
+| `changeType` | `FEATURE`(기능 추가), `MODIFICATION`(기존 동작 변경), `REFACTOR`(동작 유지·구조만 변경). 생략하면 `FEATURE` |
+| `changedTests[]` | 기대값이 바뀌어야 하는 기존 테스트 파일 `{path, reason}`. `files`에도 넣는다. 생략하면 `[]` |
 | `files` | 만들거나 고칠 `src/main/`·`src/test/` 경로 전부(각 1개 이상). 테스트·구현 단계는 이 밖의 파일을 만들 수 없다 |
+
+## 수정과 리팩토링
+
+- **기존 기능 수정(`MODIFICATION`)**: 기존 테스트의 기대값이 바뀌어야 하면 그 파일을 `changedTests`에 이유와 함께 적는다. 계획 화면에 표시되고, `ask --yes`가 그 변경의 승인으로 기록된다(테스트 작성 단계가 만든 내용 그대로일 때만, `SPEC_CHANGE`). 적지 않은 기존 테스트를 바꾸면 검증이 멈춘다. 바꾸는 테스트도 테스트 이름(`@DisplayName`·메서드 이름)은 유지한다.
+- **리팩토링(`REFACTOR`)**: `files`에 `src/main`만 적고 `changedTests`는 비운다. 테스트 작성 단계를 건너뛰고 구현을 바로 하며, 기존 테스트는 바꿀 수 없고 전부 그대로 통과해야 한다. 품질 게이트(변경 클래스 커버리지·변이)는 켜져 있으므로 기존 테스트가 부족한 클래스면 실패할 수 있다(끄려면 요청에 "품질 게이트 없이").
 
 ## 작성 요령
 
