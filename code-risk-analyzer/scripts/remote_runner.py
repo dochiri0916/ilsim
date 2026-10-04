@@ -2,7 +2,7 @@
 and approvals.
 
 Every run stays on this PC with its plan logins; the phone only sees status lines and the tail of `ask` output. A
-request runs `ask "<text>"` (drafts, never changes code); an approval runs `ask --yes`, and only for the session the
+request runs `ask "<text>"` (never changes code; a code change needs a design file on the PC); an approval runs `ask --yes`, and only for the session the
 phone was showing, after that session's plan printed that it waits for confirmation.
 
     ask-remote                 inside a Gradle project
@@ -128,7 +128,7 @@ class TelegramError(OSError):
         self.code = code
 
 
-HELP = '보낼 수 있는 말:\n- 하고 싶은 일 한 줄 (예: 회원 탈퇴 추가해줘): 초안만 만듭니다\n- 승인: 보여준 계획대로 코드를 바꿉니다\n- 상태: 지금 상태를 봅니다'
+HELP = '보낼 수 있는 말:\n- 하고 싶은 일 한 줄 (예: 결제 코드 위험 분석해줘): 분석·상태 요청을 실행합니다. 코드 변경은 PC에서 설계 파일로 시작합니다\n- 승인: 보여준 계획대로 코드를 바꿉니다\n- 상태: 지금 상태를 봅니다'
 
 
 def describe(status):
@@ -137,7 +137,7 @@ def describe(status):
     if status.get('busy'):
         lines.append(f"실행 중: {status['busy']}")
     if session:
-        lines.append(f"작업: {session.get('name')} ({session.get('phase') or '초안'})")
+        lines.append(f"작업: {session.get('name')} ({session.get('phase') or '계획'})")
         if session.get('awaitingApproval'):
             lines.append('승인을 기다립니다. "승인"을 보내면 코드를 바꿉니다')
     return '\n'.join(lines)

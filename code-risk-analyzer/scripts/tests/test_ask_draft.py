@@ -1,6 +1,7 @@
 import copy
 import importlib.util
 import json
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -157,88 +158,56 @@ class InputTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             draft.write_inputs(self.project.root, self.project.session, '추가해줘', sample(), JAR, {})
 
-    def test_prompt_carries_request_project_files_conventions_and_feedback(self):
-        text = draft.prompt('회원 가입 추가해줘', self.project.root, 'files must include a test', '# 규칙 본문')
-        self.assertIn('회원 가입 추가해줘', text)
-        self.assertIn('src/test/java/com/example/demo/DemoApplicationTests.java', text)
-        self.assertIn('void contextLoads()', text)
-        self.assertIn('# 규칙 본문', text)
-        self.assertIn('files must include a test', text)
-
     @unittest.skipUnless(JAR.is_file(), 'analyzer jar not built')
     def test_written_requirements_pass_the_analyzer_schema(self):
         draft.write_inputs(self.project.root, self.project.session, '회원 가입 추가해줘', sample(), JAR, {})
         draft.check_requirements(self.project.session/'requirements.json', JAR)
 
 
-class DraftTests(unittest.TestCase):
+class DesignFileTests(unittest.TestCase):
+    """The design comes from a file the person wrote; nothing here calls a model."""
+
     def setUp(self):
         self.project = Project(self)
-        self.calls = []
+        self.path = self.project.root.parent/'design.json'
 
-    def caller(self, *results):
-        results = list(results)
+    def write(self, value):
+        self.path.write_text(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False), encoding='utf-8')
+        return self.path
 
-        def call(config, workspace, prompt, schema, validate):
-            self.calls.append({'config': config, 'workspace': workspace, 'prompt': prompt})
-            self.assertIs(draft.DRAFT_SCHEMA, schema)
-            self.assertIs(draft.validate, validate)
-            self.assertNotEqual(str(self.project.root), workspace)
-            return results.pop(0)
-        return call
+    def test_finished_design_may_leave_out_status_and_unknowns(self):
+        value = sample()
+        del value['status'], value['unknowns']
+        self.assertEqual(SAMPLE, draft.load(self.write(value)))
 
-    def run_draft(self, call, check=lambda path, analyzer: None):
-        return draft.draft(self.project.root, self.project.session, '회원 가입 추가해줘', [{'model': 'first'}, {'model': 'second'}],
-                           {}, JAR, call, check)
+    def test_problems_name_where_they_are(self):
+        broken = sample()
+        del broken['requirements'][0]['domain']['owner']
+        cases = {'{not json': '올바른 JSON', json.dumps(broken): 'requirements[0].domain: 필드가 맞지 않습니다 (없음: owner)',
+                 json.dumps(sample(database='POSTGRES')): 'design.database: 비어 있거나 허용되지 않은 값',
+                 json.dumps(sample(status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[])): '정하지 못한 질문'}
+        for text, message in cases.items():
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, re.escape(message)):
+                draft.load(self.write(text))
+        with self.assertRaisesRegex(ValueError, '읽지 못했습니다'):
+            draft.load(self.project.root/'missing.json')
 
-    def test_invalid_output_retries_once_on_the_fallback_model(self):
-        # given
-        call = self.caller({'status': 'INVALID_OUTPUT', 'failureKind': 'OUTPUT_CONTRACT', 'usage': {'input': 1}},
-                           {'status': 'COMPLETED', 'output': sample(), 'usage': {'input': 2}})
-        # when
-        result = self.run_draft(call)
-        # then
-        self.assertEqual('COMPLETED', result['status'])
-        self.assertEqual(['first', 'second'], [call['config']['model'] for call in self.calls])
-        self.assertIn('previous draft was rejected', self.calls[1]['prompt'])
-        self.assertEqual([{'input': 1}, {'input': 2}], result['usage'])
-        self.assertTrue((self.project.session/'plan.json').is_file())
-
-    def test_draft_prompt_gets_the_short_guidance_and_the_writers_get_the_full_rules(self):
-        # given
-        call = self.caller({'status': 'COMPLETED', 'output': sample()})
-        # when
-        draft.draft(self.project.root, self.project.session, '회원 가입 추가해줘', [{'model': 'first'}], {}, JAR, call,
-                    lambda path, analyzer: None, guidance='# 파일 트리', rules='# 트리와 예시 코드')
-        # then
-        self.assertIn('# 파일 트리', self.calls[0]['prompt'])
-        self.assertNotIn('# 트리와 예시 코드', self.calls[0]['prompt'])
+    def test_prepare_writes_the_inputs_and_needs_the_analyzer_to_accept_them(self):
+        checked = []
+        config = draft.prepare(self.project.root, self.project.session, '회원 가입 추가해줘', sample(), JAR, {},
+                               lambda path, analyzer: checked.append(path), rules='# 트리와 예시 코드')
+        self.assertEqual([self.project.session/'requirements.json'], checked)
         self.assertEqual('# 트리와 예시 코드', (self.project.session/'conventions.md').read_text())
+        self.assertTrue(config.is_file())
 
-    def test_questions_stop_before_any_file_is_written(self):
-        call = self.caller({'status': 'NEEDS_REVIEW', 'output': sample(status='NEEDS_REVIEW', unknowns=['어떤 DB?'])})
-        result = self.run_draft(call)
-        self.assertEqual(('NEEDS_REVIEW', ['어떤 DB?']), (result['status'], result['questions']))
-        self.assertEqual(1, len(self.calls))
-        self.assertFalse((self.project.session/'requirements.json').exists())
-
-    def test_provider_failure_is_not_retried(self):
-        call = self.caller({'status': 'UNAVAILABLE', 'failureKind': 'BILLING', 'reason': 'balance'})
-        result = self.run_draft(call)
-        self.assertEqual(('FAILED', 'balance'), (result['status'], result['reason']))
-        self.assertEqual(1, len(self.calls))
-
-    def test_schema_rejection_is_fed_back_and_fails_after_last_model(self):
-        # given
         def reject(path, analyzer):
             raise ValueError('Error: Requirements input violates JSON Schema')
-        call = self.caller({'status': 'COMPLETED', 'output': sample()}, {'status': 'COMPLETED', 'output': sample()})
-        # when
-        result = self.run_draft(call, reject)
-        # then
-        self.assertEqual('FAILED', result['status'])
-        self.assertIn('violates JSON Schema', result['reason'])
-        self.assertIn('violates JSON Schema', self.calls[1]['prompt'])
+        with self.assertRaisesRegex(ValueError, 'violates JSON Schema'):
+            draft.prepare(self.project.root, self.project.session, '추가해줘', sample(), JAR, {}, reject)
+
+    def test_the_documented_example_is_a_valid_design(self):
+        example = SCRIPTS.parent/'docs'/'examples'/'ask'/'design.json'
+        self.assertTrue(draft.load(example)['requirements'])
 
 
 if __name__ == '__main__':

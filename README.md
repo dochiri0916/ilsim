@@ -14,7 +14,7 @@
 ```bash
 ./install.sh                  # 한 번만: 도구 확인, 빌드, ~/.local/bin/ask 설치
 cd ~/work/my-spring-project   # start.spring.io 프로젝트 그대로, 설정 파일 없음
-ask "회원 가입 기능 추가해줘"  # 초안·계획 확인
+ask --design design.json "회원 가입 기능 추가해줘"  # 설계 파일 검증·계획 확인 (형식: code-risk-analyzer/docs/guides/DESIGN_FILE.md)
 ask --yes                     # 실행
 ```
 
