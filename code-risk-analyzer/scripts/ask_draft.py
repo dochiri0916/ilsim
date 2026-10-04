@@ -17,6 +17,9 @@ SCENARIO_TYPES = ('NORMAL', 'DUPLICATE', 'CONCURRENCY', 'ROLLBACK', 'RETRY', 'PA
 TEST_TYPES = ('DOMAIN_UNIT', 'REPOSITORY_DB', 'API_SLICE', 'INTEGRATION', 'SERVICE_E2E')
 PERSPECTIVES = ('transaction', 'concurrency', 'idempotency', 'consistency')
 APPROVED_ACTIONS = ['BASELINE', 'REGRESSION', 'LOCAL_SERVICE', 'COMPLETE', 'PULL_REQUEST']
+# An applicable perspective is only tested when a scenario exercises it.
+PERSPECTIVE_SCENARIOS = {'transaction': ('ROLLBACK', 'PARTIAL_FAILURE'), 'concurrency': ('CONCURRENCY',),
+                         'idempotency': ('DUPLICATE', 'RETRY'), 'consistency': ('PARTIAL_FAILURE', 'ROLLBACK')}
 
 
 def _object(properties):
@@ -111,6 +114,10 @@ def validate(value):
                 raise ValueError('Applicable perspectives need expectations; others must have none')
         scenarios = requirement['scenarios']
         _distinct([scenario['id'] for scenario in scenarios], 1)
+        types = {scenario['type'] for scenario in scenarios}
+        for name, needed in PERSPECTIVE_SCENARIOS.items():
+            if requirement[name]['applicability'] == 'APPLICABLE' and not types & set(needed):
+                raise ValueError(f"{requirement['id']}: {name}이 APPLICABLE이면 {' 또는 '.join(needed)} 시나리오가 필요합니다")
         for scenario in scenarios:
             if not SCENARIO_ID.fullmatch(scenario['id']):
                 raise ValueError('Scenario ids must look like SCN-1')
@@ -155,7 +162,17 @@ def code_revision(project):
     return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else 'NO_GIT_REVISION'
 
 
-def write_inputs(project, session, request, draft, analyzer, routing, guidance=None):
+def quality_targets(files):
+    """Class name -> file for every changed production Java class; these get the coverage and mutation gates."""
+    targets = {}
+    for path in files:
+        match = re.fullmatch(r'src/main/java/((?:[A-Za-z_$][\w$]*/)*[A-Za-z_$][\w$]*)\.java', path)
+        if match:
+            targets[match.group(1).replace('/', '.')] = path
+    return targets
+
+
+def write_inputs(project, session, request, draft, analyzer, routing, guidance=None, quality=True):
     """Build the schema-valid requirements, plan, scope and request document plus a config that names them.
 
     Convention guidance becomes a second requirement document, so the generation stages see it as repository rules.
@@ -200,6 +217,10 @@ def write_inputs(project, session, request, draft, analyzer, routing, guidance=N
         (session/name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
     config = {'plan': 'plan.json', 'requirements': 'requirements.json', 'scope': 'scope.json', 'analyzer': str(analyzer),
               'documents': documents, 'routing': routing}
+    targets = quality_targets(draft['files']) if quality else {}
+    if targets:
+        # LINE 90%, BRANCH 80%, mutation 90% with no survivors, on the changed classes only (quality_gate defaults).
+        config['qualityGates'] = {'targets': targets}
     path = session/'draft-config.json'
     path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
     (session/'draft.json').write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -230,8 +251,8 @@ def load(path):
     return value
 
 
-def prepare(project, session, request, spec, analyzer, routing, check=check_requirements, rules=None):
+def prepare(project, session, request, spec, analyzer, routing, check=check_requirements, rules=None, quality=True):
     """Write the session inputs from a loaded spec and have the analyzer accept the requirements; returns the config."""
-    config = write_inputs(project, session, request, spec, analyzer, routing, rules)
+    config = write_inputs(project, session, request, spec, analyzer, routing, rules, quality)
     check(session/'requirements.json', analyzer)
     return config

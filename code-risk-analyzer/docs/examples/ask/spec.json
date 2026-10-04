@@ -81,6 +81,30 @@
           "testTypes": [
             "API_SLICE"
           ]
+        },
+        {
+          "id": "SCN-3",
+          "type": "CONCURRENCY",
+          "given": "가입 이력 없음",
+          "when": "같은 이메일로 동시에 두 번 가입 요청",
+          "expectedOutcomes": [
+            "한 요청만 회원을 만들고 다른 요청은 거절된다"
+          ],
+          "testTypes": [
+            "REPOSITORY_DB"
+          ]
+        },
+        {
+          "id": "SCN-4",
+          "type": "ROLLBACK",
+          "given": "회원 저장 중 오류",
+          "when": "가입 요청",
+          "expectedOutcomes": [
+            "회원이 저장되지 않는다"
+          ],
+          "testTypes": [
+            "REPOSITORY_DB"
+          ]
         }
       ],
       "implementationStatus": "NOT_IMPLEMENTED",

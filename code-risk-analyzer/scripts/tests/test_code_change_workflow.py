@@ -38,7 +38,7 @@ echo artifact > build/libs/service.jar
         self.config['documents'] = ['docs/spec.md']
         # Service evidence always comes from a controller-run adapter; each scenario is its own project script.
         for name in ('normal', 'duplicate', 'concurrency', 'rollback'):
-            self.put('checks/' + name + '.py', 'import sys; sys.exit(0)')
+            self.put('checks/' + name + '.py', "import os; open(os.environ['SCENARIO_REPORT'], 'w').write('{\"assertions\": 1, \"passed\": 1}')")
         self.config['serviceAdapter'] = {'jar': 'build/libs/service.jar', 'scenarios': {
             name: ['python3', 'checks/' + name + '.py'] for name in ('normal', 'duplicate', 'concurrency', 'rollback')}}
         self.state = self.project/'build/session/state.json'
