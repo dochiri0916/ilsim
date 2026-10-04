@@ -51,7 +51,7 @@ class SelfUpdateTests(unittest.TestCase):
         self.home = base/'home'
         self.home.mkdir()
         git(self.home, 'init', '-q', '-b', 'main')
-        commit(self.home, {'code-risk-analyzer/src/A.java': 'a', 'code-risk-analyzer/scripts/ask.py': '1',
+        commit(self.home, {'code-risk-analyzer/src/A.java': 'a', 'code-risk-analyzer/scripts/agent_pick.py': '1',
                            'code-risk-analyzer/build.gradle': 'x', 'build-convention/src/B.java': 'b',
                            'build-convention/build.gradle': 'y'}, 'init')
         git(base, 'clone', '-q', str(self.home), 'work')
@@ -81,12 +81,12 @@ class SelfUpdateTests(unittest.TestCase):
 
     def test_script_only_change_is_pulled_without_rebuilding(self):
         # given: home pushes a change to a script that runs straight from the checkout
-        commit(self.home, {'code-risk-analyzer/scripts/ask.py': '2'}, 'script')
+        commit(self.home, {'code-risk-analyzer/scripts/agent_pick.py': '2'}, 'script')
         # when
         pulled = self.update()
         # then
         self.assertTrue(pulled)
-        self.assertEqual('2', (self.work/'code-risk-analyzer/scripts/ask.py').read_text(encoding='utf-8'))
+        self.assertEqual('2', (self.work/'code-risk-analyzer/scripts/agent_pick.py').read_text(encoding='utf-8'))
         self.assertEqual([], self.gradle.builds)
 
     def test_source_change_rebuilds_only_that_project(self):
@@ -103,7 +103,7 @@ class SelfUpdateTests(unittest.TestCase):
     def test_fetch_waits_for_the_interval(self):
         # given: one check already happened
         self.update()
-        commit(self.home, {'code-risk-analyzer/scripts/ask.py': '2'}, 'script')
+        commit(self.home, {'code-risk-analyzer/scripts/agent_pick.py': '2'}, 'script')
         # when: the next request comes within the interval
         pulled = self.update()
         # then: no fetch until the interval passes, unless forced
@@ -112,13 +112,13 @@ class SelfUpdateTests(unittest.TestCase):
 
     def test_uncommitted_edits_block_the_pull(self):
         # given: the work checkout has a local edit to a tracked file
-        commit(self.home, {'code-risk-analyzer/scripts/ask.py': '2'}, 'script')
-        (self.work/'code-risk-analyzer/scripts/ask.py').write_text('local', encoding='utf-8')
+        commit(self.home, {'code-risk-analyzer/scripts/agent_pick.py': '2'}, 'script')
+        (self.work/'code-risk-analyzer/scripts/agent_pick.py').write_text('local', encoding='utf-8')
         # when
         pulled = self.update()
         # then
         self.assertFalse(pulled)
-        self.assertEqual('local', (self.work/'code-risk-analyzer/scripts/ask.py').read_text(encoding='utf-8'))
+        self.assertEqual('local', (self.work/'code-risk-analyzer/scripts/agent_pick.py').read_text(encoding='utf-8'))
         self.assertIn('커밋하지 않은 수정', self.messages[-1])
 
     def test_tracked_bytecode_rewritten_by_python_does_not_block(self):
@@ -136,7 +136,7 @@ class SelfUpdateTests(unittest.TestCase):
 
     def test_diverged_checkout_is_left_alone(self):
         # given: both sides committed
-        commit(self.home, {'code-risk-analyzer/scripts/ask.py': '2'}, 'home')
+        commit(self.home, {'code-risk-analyzer/scripts/agent_pick.py': '2'}, 'home')
         commit(self.work, {'note.txt': 'work'}, 'work')
         head = git(self.work, 'rev-parse', 'HEAD')
         # when
@@ -182,10 +182,10 @@ class SelfUpdateTests(unittest.TestCase):
         self.assertEqual({'code-risk-analyzer', 'build-convention'}, {project for project, _ in self.gradle.builds})
 
     def test_switched_off_by_environment(self):
-        commit(self.home, {'code-risk-analyzer/scripts/ask.py': '2'}, 'script')
+        commit(self.home, {'code-risk-analyzer/scripts/agent_pick.py': '2'}, 'script')
         pulled = self_update.update(self.work, run=self.gradle, environ={'ASK_NO_UPDATE': '1'})
         self.assertFalse(pulled)
-        self.assertEqual('1', (self.work/'code-risk-analyzer/scripts/ask.py').read_text(encoding='utf-8'))
+        self.assertEqual('1', (self.work/'code-risk-analyzer/scripts/agent_pick.py').read_text(encoding='utf-8'))
 
     def test_not_a_checkout_does_nothing(self):
         folder = Path(self.temp.name)/'plain'

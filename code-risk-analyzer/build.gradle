@@ -51,9 +51,3 @@ tasks.register('regressionWorkflowTests', Exec) {
 tasks.named('check') {
     dependsOn tasks.named('regressionWorkflowTests')
 }
-
-tasks.named('processResources') {
-    from('docs/requirements-analysis/requirements-analysis.schema.json') {
-        into 'requirements'
-    }
-}
