@@ -504,9 +504,9 @@ class ZeroConfigTests(unittest.TestCase):
         self.samples = importlib.util.module_from_spec(draft_spec)
         draft_spec.loader.exec_module(self.samples)
 
-    def design(self, **changes):
-        """The person's design file for the change."""
-        path = self.project.parent/'design.json'
+    def spec(self, **changes):
+        """The person's spec file for the change."""
+        path = self.project.parent/'spec.json'
         path.write_text(json.dumps(self.samples.sample(**changes), ensure_ascii=False), encoding='utf-8')
         return path
 
@@ -564,7 +564,7 @@ class ZeroConfigTests(unittest.TestCase):
     def start(self, text='회원 가입 기능 추가해줘'):
         self.measured = []
         with redirect_stdout(io.StringIO()) as output:
-            value = ask.start_change(text, self.project, ask.decide(text, None), None, None, self.design(),
+            value = ask.start_change(text, self.project, ask.decide(text, None), None, None, self.spec(),
                                      lambda path, jar: None, self.measure)
         return value, output.getvalue()
 
@@ -599,15 +599,15 @@ class ZeroConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '금지된 고비용 모델'):
             ask.fix_models(dict(ask.default_routing({}), registry=str(path)))
 
-    def test_change_request_needs_the_persons_design_and_calls_no_model(self):
-        # given / when / then: without a design file nothing is created
-        with self.assertRaisesRegex(ValueError, '설계 파일이 필요합니다'):
+    def test_change_request_needs_the_persons_spec_and_calls_no_model(self):
+        # given / when / then: without a spec file nothing is created
+        with self.assertRaisesRegex(ValueError, '명세 파일이 필요합니다'):
             ask.zero_config('회원 가입 기능 추가해줘', self.project, None, None)
         self.assertFalse((self.project/'build/ask').exists())
-        # a design with open questions is not a design yet
+        # a spec with open questions is not a spec yet
         with self.assertRaisesRegex(ValueError, '정하지 못한 질문'):
             ask.start_change('회원 가입 기능 추가해줘', self.project, ('CODE_CHANGE', 'k'), None, None,
-                             self.design(status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[]))
+                             self.spec(status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[]))
 
     def test_change_request_drafts_a_new_session_and_waits_for_approval(self):
         # when
@@ -755,7 +755,7 @@ class UpdateTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as folder, redirect_stdout(io.StringIO()):
             try:
-                # Without a design file a change request stops right after the update point.
+                # Without a spec file a change request stops right after the update point.
                 ask.main([*argv, '--project', folder, '--no-jev'], update=update)
             except self.Updated:
                 pass

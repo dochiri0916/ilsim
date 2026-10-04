@@ -1,15 +1,15 @@
-# 설계 파일 (`ask --design`)
+# 명세 파일 (`ask --spec`)
 
-`ask`는 설계와 프롬프트를 쓰지 않는다. 코드 변경은 사람이(또는 함께 쓰는 Claude·Codex 대화에서) 쓴 설계 파일을 받아 시작한다. 모델 판단은 그대로 남는다. JEV(키가 있을 때)가 요청 문장으로 작업 종류를 고르고 단계마다 Tier를 정한다. 테스트·구현 생성 단계는 이 설계로 만든 요구사항을 받아 모델을 호출한다.
+`ask`는 설계와 프롬프트를 쓰지 않는다. 코드 변경은 사람이(또는 함께 쓰는 Claude·Codex 대화에서) 쓴 명세 파일을 받아 시작한다. 모델 판단은 그대로 남는다. JEV(키가 있을 때)가 요청 문장으로 작업 종류를 고르고 단계마다 Tier를 정한다. 테스트·구현 생성 단계는 이 명세로 만든 요구사항을 받아 모델을 호출한다.
 
 ```bash
-ask --design design.json "회원 가입 기능 추가해줘"   # 설계 검증 → 입력 파일 생성 → 계획을 보여 주고 멈춤
+ask --spec spec.json "회원 가입 기능 추가해줘"   # 명세 검증 → 입력 파일 생성 → 계획을 보여 주고 멈춤
 ask --yes                                            # 실행
 ```
 
-[`scripts/ask_draft.py`](../../scripts/ask_draft.py)가 형식을 검사하고 requirements·plan·scope·request.md를 결정적으로 만든다. 분석기 `requirements` 검증까지 통과해야 세션이 생긴다. 틀리면 어느 필드가 왜 틀렸는지(`design.requirements[0].domain: 필드가 맞지 않습니다 (없음: owner)`) 알려 준다. 회귀 기준은 프로젝트의 기존 테스트 전체이며, 테스트가 하나도 없으면 거부한다.
+[`scripts/ask_draft.py`](../../scripts/ask_draft.py)가 형식을 검사하고 requirements·plan·scope·request.md를 결정적으로 만든다. 분석기 `requirements` 검증까지 통과해야 세션이 생긴다. 틀리면 어느 필드가 왜 틀렸는지(`spec.requirements[0].domain: 필드가 맞지 않습니다 (없음: owner)`) 알려 준다. 회귀 기준은 프로젝트의 기존 테스트 전체이며, 테스트가 하나도 없으면 거부한다.
 
-예시: [`docs/examples/ask/design.json`](../examples/ask/design.json)
+예시: [`docs/examples/ask/spec.json`](../examples/ask/spec.json)
 
 ## 형식
 
@@ -30,7 +30,7 @@ ask --yes                                            # 실행
 
 ## 작성 요령
 
-테스트는 이 설계만 보고 작성되므로 추측할 것을 남기지 않는다.
+테스트는 이 명세만 보고 작성되므로 추측할 것을 남기지 않는다.
 
 - HTTP API는 요구사항과 시나리오마다 method·path, 성공 상태 코드, 실패마다의 상태 코드(예: 400 검증, 404 없음, 409 중복), 오류 응답 형식을 적는다. 프로젝트의 기존 오류 처리를 따르고, 없으면 Spring ProblemDetail과 `code` 필드를 쓴다.
 - 영속성은 저장소 연산과 테스트 준비 방식(예: 설정된 DB의 `@DataJpaTest`)을 적는다.

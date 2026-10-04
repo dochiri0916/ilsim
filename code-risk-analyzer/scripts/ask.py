@@ -6,7 +6,7 @@ tier from the requirements and code context. Without a key both fall back to key
 Expensive models and the max reasoning effort are refused for every route a session could reach, including fallbacks.
 
 Run inside any Gradle project with no options and nothing configured there: a code change gets a new session under
-<project>/build/ask from the design file the person wrote (--design; no model writes the design or its
+<project>/build/ask from the spec file the person wrote (--spec; no model writes the spec or its
 prompts), the plan is shown for approval, and `ask --yes` runs it.
 Models and routing come from config/ask in this checkout unless ~/.config/code-risk holds an override.
 A new request first fast-forwards this checkout and rebuilds what changed (self_update.py); --no-update skips that.
@@ -386,7 +386,7 @@ def describe(value):
     if value.get('phase') is not None or value['intent'] == 'STATUS':
         lines.append(f"현재 단계: {value.get('phase')}")
     if value.get('resume'):
-        lines.append('모델이 끝내지 못한 단계부터 다시 합니다 (설계 입력·정리·baseline은 그대로 사용)')
+        lines.append('모델이 끝내지 못한 단계부터 다시 합니다 (명세 입력·정리·baseline은 그대로 사용)')
     if value['intent'] == 'STATUS':
         try:
             lines.append('다음 실행: ' + ' → '.join(stages('CONTINUE', value['phase'], True, True)))
@@ -427,7 +427,7 @@ def execute(value, confirmed, run, options=None):
         return 3
     if not confirmed:
         print(NOT_CONFIRMED + ' '
-              + ('설계와 계획을 확인했으면 ask --yes로 실행하세요(요청은 다시 적지 않음)' if value.get('zeroConfig')
+              + ('명세와 계획을 확인했으면 ask --yes로 실행하세요(요청은 다시 적지 않음)' if value.get('zeroConfig')
                  else '위 계획대로 실행하려면 --yes를 붙이세요'))
         return 0
     state = Path(value['state'])
@@ -482,7 +482,7 @@ CAPABILITY_REASONS = {
 }
 
 
-RETRY_HINT = '같은 설계로 이 단계만 다시 하려면 ask --yes를 실행하세요'
+RETRY_HINT = '같은 명세로 이 단계만 다시 하려면 ask --yes를 실행하세요'
 
 
 def stop_reason(directory, since):
@@ -660,12 +660,12 @@ def fix_models(routing):
     return [router.select(registry, policy, FIX_TIER, 600, attempt)[0] for attempt in range(min(2, chain))]
 
 
-DESIGN_REQUIRED = ('코드 변경에는 설계 파일이 필요합니다: ask --design design.json "요청". '
-                   '형식과 작성 요령은 docs/guides/DESIGN_FILE.md, 예시는 docs/examples/ask/design.json')
+SPEC_REQUIRED = ('코드 변경에는 명세 파일이 필요합니다: ask --spec spec.json "요청". '
+                   '형식과 작성 요령은 docs/guides/SPEC_FILE.md, 예시는 docs/examples/ask/spec.json')
 
 
 def describe_draft(project, session, value):
-    lines = [f"설계: {value['title']}"]
+    lines = [f"명세: {value['title']}"]
     for requirement in value['requirements']:
         lines.append(f"- {requirement['id']} {requirement['title']} (시나리오 {len(requirement['scenarios'])}개)")
     if value['assumptions']:
@@ -731,13 +731,13 @@ def describe_selection(chosen):
     return lines
 
 
-def start_change(text, project, decided, allowed, judge, design, check=None, measure=None):
-    """Build the inputs of a new zero-config session from the person's design; returns its plan or raises the reason."""
-    if design is None:
-        raise ValueError(DESIGN_REQUIRED)
+def start_change(text, project, decided, allowed, judge, spec, check=None, measure=None):
+    """Build the inputs of a new zero-config session from the person's spec; returns its plan or raises the reason."""
+    if spec is None:
+        raise ValueError(SPEC_REQUIRED)
     drafts = _module('ask_draft')
     conventions = _module('convention_check')
-    value = drafts.load(design)
+    value = drafts.load(spec)
     chosen = convention_selection(text, project)
     enabled = bool(chosen['enabled'])
     session = new_session(project)
@@ -774,7 +774,7 @@ def start_change(text, project, decided, allowed, judge, design, check=None, mea
     return value
 
 
-def zero_config(text, project, allowed, judge, design=None):
+def zero_config(text, project, allowed, judge, spec=None):
     """Plan a request against the project's own sessions; nothing is read from or written to its sources."""
     if text is None:
         session = current_session(project)
@@ -785,7 +785,7 @@ def zero_config(text, project, allowed, judge, design=None):
     decided = decide(text, judge)
     intent = decided[0]
     if intent == 'CODE_CHANGE':
-        return start_change(text, project, decided, allowed, judge, design)
+        return start_change(text, project, decided, allowed, judge, spec)
     if intent in ('ANALYZE', 'MUTATION'):
         chosen = convention_selection(text, project)
         for line in describe_selection(chosen):
@@ -833,7 +833,7 @@ def main(argv=None, update=None):
     parser.add_argument('--config')
     parser.add_argument('--state')
     parser.add_argument('--project')
-    parser.add_argument('--design', help='코드 변경의 설계 파일(JSON). 형식: docs/guides/DESIGN_FILE.md')
+    parser.add_argument('--spec', help='코드 변경의 명세 파일(JSON). 형식: docs/guides/SPEC_FILE.md')
     parser.add_argument('--yes', action='store_true', help='계획을 확인했으니 코드 변경 단계를 실행')
     parser.add_argument('--allowed-models', help='허용할 모델 이름 목록(쉼표 구분)')
     parser.add_argument('--no-jev', action='store_true', help='TYPESAFE_API_KEY가 있어도 JEV 없이 키워드로만 판단')
@@ -856,8 +856,8 @@ def main(argv=None, update=None):
         except OSError:
             has_key = False
         judge = jev_intent if has_key and not args.no_jev else None
-        if args.design and (args.config or args.state):
-            raise ValueError('--design은 --config·--state 없이 쓰는 기본 방식에서만 씁니다')
+        if args.spec and (args.config or args.state):
+            raise ValueError('--spec은 --config·--state 없이 쓰는 기본 방식에서만 씁니다')
         if args.config or args.state:
             value = plan(args.request or '', args.config, args.state, args.project, allowed, judge,
                          None if args.request else CONTINUE)
@@ -870,8 +870,8 @@ def main(argv=None, update=None):
                     # Rule questions need no project; everything else reports the missing project.
                     if args.request is None or decide(args.request, None)[0] != 'RULES':
                         raise
-            design = Path(args.design).expanduser().resolve() if args.design else None
-            value = zero_config(args.request, project, allowed, judge, design)
+            spec = Path(args.spec).expanduser().resolve() if args.spec else None
+            value = zero_config(args.request, project, allowed, judge, spec)
     except LookupError as error:
         print(error)
         return 3

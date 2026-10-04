@@ -165,17 +165,17 @@ class InputTests(unittest.TestCase):
 
 
 class DesignFileTests(unittest.TestCase):
-    """The design comes from a file the person wrote; nothing here calls a model."""
+    """The spec comes from a file the person wrote; nothing here calls a model."""
 
     def setUp(self):
         self.project = Project(self)
-        self.path = self.project.root.parent/'design.json'
+        self.path = self.project.root.parent/'spec.json'
 
     def write(self, value):
         self.path.write_text(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False), encoding='utf-8')
         return self.path
 
-    def test_finished_design_may_leave_out_status_and_unknowns(self):
+    def test_finished_spec_may_leave_out_status_and_unknowns(self):
         value = sample()
         del value['status'], value['unknowns']
         self.assertEqual(SAMPLE, draft.load(self.write(value)))
@@ -184,7 +184,7 @@ class DesignFileTests(unittest.TestCase):
         broken = sample()
         del broken['requirements'][0]['domain']['owner']
         cases = {'{not json': '올바른 JSON', json.dumps(broken): 'requirements[0].domain: 필드가 맞지 않습니다 (없음: owner)',
-                 json.dumps(sample(database='POSTGRES')): 'design.database: 비어 있거나 허용되지 않은 값',
+                 json.dumps(sample(database='POSTGRES')): 'spec.database: 비어 있거나 허용되지 않은 값',
                  json.dumps(sample(status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[])): '정하지 못한 질문'}
         for text, message in cases.items():
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, re.escape(message)):
@@ -205,8 +205,8 @@ class DesignFileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'violates JSON Schema'):
             draft.prepare(self.project.root, self.project.session, '추가해줘', sample(), JAR, {}, reject)
 
-    def test_the_documented_example_is_a_valid_design(self):
-        example = SCRIPTS.parent/'docs'/'examples'/'ask'/'design.json'
+    def test_the_documented_example_is_a_valid_spec(self):
+        example = SCRIPTS.parent/'docs'/'examples'/'ask'/'spec.json'
         self.assertTrue(draft.load(example)['requirements'])
 
 
