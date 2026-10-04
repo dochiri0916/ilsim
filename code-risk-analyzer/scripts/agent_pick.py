@@ -5,7 +5,7 @@
     ai --new ...              start a new conversation
     ai claude | codex ...     use that one
     ai --why                  only print the choice, the reason and the model setting
-    ai --usage                Claude Code and Codex usage from their local logs (usage_report.py)
+    ai --usage                Claude Code and Codex usage and limit percentages (usage_report.py)
 
 Claude runs with --permission-mode acceptEdits and only CLAUDE_TOOLS commands; Codex runs in its workspace-write
 sandbox. Every task first fast-forwards this tool's checkout (self_update.py; ASK_NO_UPDATE=1 turns it off).
@@ -18,14 +18,16 @@ static rules could not confirm (at most JEV_MAX_CALLS calls unless .code-risk.ym
 advice only and never changes the result. "컨벤션 없이", "위험 분석 빼고" or
 "검사 없이" in the request switches that check off for that command only.
 
-Reads the CLIs' own local logs (usage_report.py); no network, no tokens. Codex records its 5-hour and weekly limit
-percentages with reset times. Claude Code records no percentages, so its state is estimated: a recorded "limit reached"
-message blocks it until its reset, and its 5-hour window is taken to start at the first message after the last window.
+Reads local records only (usage_report.py); no network, no tokens. Codex logs its 5-hour and weekly limit percentages
+with reset times. Claude Code logs none, but `claude -p` reports them while it works (rate_limit_event) and ai records
+the latest ones; until then, or after they reset, Claude is estimated: a logged "limit reached" message blocks it until
+its reset, and its 5-hour window is taken to start at the first message after the last window.
 
 Rules, in order:
 1. A CLI that hit its limit (or has less than BLOCKED_BELOW percent left) and has not reset yet is skipped.
 2. Capacity that resets within EXPIRING_MINUTES is used first: unused, it is lost at the reset.
-3. Codex running ahead of its weekly pace is spared for Claude; so is Codex with little 5-hour room left.
+3. Codex running ahead of its weekly pace is spared for Claude; so is Codex with little 5-hour room left. Either
+   only when the recorded Claude limits are not worse on the same measure.
 4. Otherwise Codex, whose remaining room is known.
 
 Model and reasoning: capacity about to reset with plenty left (BOOST_LEFT percent or more) gets the TIER_4 route's
@@ -182,8 +184,12 @@ def _clock_reset(match, moment):
     return reset.astimezone(timezone.utc)
 
 
-def claude_state(root, now):
-    """{'blockedUntil', 'windowResetsAt'} estimated from Claude Code transcripts of the last week."""
+def claude_state(root, now, recorded=None):
+    """{'blockedUntil', 'windowResetsAt', 'fiveLeft', 'weekLeft', 'weekResetsAt'}.
+
+    recorded: limits from rate_limit_event (usage_report.load_claude_limits); without them, or past their reset, the
+    window and blocks are estimated from Claude Code transcripts of the last week and the percentages are None.
+    """
     blocked, first = None, None
     files = sorted(Path(root).glob('projects/**/*.jsonl')) if Path(root).is_dir() else []
     moments = []
@@ -214,11 +220,17 @@ def claude_state(root, now):
         if first is None or moment >= first + WINDOW:
             first = moment
     window = first + WINDOW if first is not None and first + WINDOW > now else None
-    return {'blockedUntil': blocked, 'windowResetsAt': window}
+    five, five_reset = _left((recorded or {}).get('fiveHour'), now)
+    week, week_reset = _left((recorded or {}).get('weekly'), now)
+    for left, reset in ((five, five_reset), (week, week_reset)):
+        if left is not None and left < BLOCKED_BELOW and reset and (blocked is None or reset > blocked):
+            blocked = reset
+    return {'blockedUntil': blocked, 'windowResetsAt': five_reset or window, 'fiveLeft': five if five_reset else None,
+            'weekLeft': week if week_reset else None, 'weekResetsAt': week_reset}
 
 
 def _left(limit, now):
-    """(percent left, reset time or None) of a Codex limit; a limit past its reset counts as full."""
+    """(percent left, reset time or None) of a recorded limit; a limit past its reset counts as full."""
     if not limit:
         return None, None
     resets = datetime.fromisoformat(limit['resetsAt']) if 'resetsAt' in limit else None
@@ -235,8 +247,16 @@ def choose(claude, codex_limits, now, installed=('claude', 'codex')):
     """(name, reason, boost) for the CLI to start; boost: plenty of capacity is about to reset unused."""
     name, why = _choose(claude, codex_limits, now, installed)
     five, _ = _left((codex_limits or {}).get('fiveHour'), now)
-    boost = '버려지기 전에' in why and (name == 'claude' or (five is not None and five >= BOOST_LEFT))
+    left = claude.get('fiveLeft') if name == 'claude' else five
+    boost = '버려지기 전에' in why and ((name == 'claude' and left is None) or (left is not None and left >= BOOST_LEFT))
     return name, why, boost
+
+
+def _ahead(left, reset, now):
+    """How many percent of a weekly limit is used beyond the elapsed share of the week; None when unknown."""
+    if left is None or reset is None:
+        return None
+    return (100 - left) - (1 - (reset - now) / WEEK) * 100
 
 
 def _choose(claude, codex_limits, now, installed):
@@ -257,18 +277,23 @@ def _choose(claude, codex_limits, now, installed):
     expiring = []
     if five is not None and five_reset and five >= EXPIRING_MINIMUM and _minutes(five_reset, now) <= EXPIRING_MINUTES:
         expiring.append((five_reset, 'codex', f'Codex 5시간 한도 {five:.0f}% 남음, {_minutes(five_reset, now)}분 뒤 초기화'))
-    if claude['windowResetsAt'] and _minutes(claude['windowResetsAt'], now) <= EXPIRING_MINUTES:
+    claude_five = claude.get('fiveLeft')
+    if (claude['windowResetsAt'] and _minutes(claude['windowResetsAt'], now) <= EXPIRING_MINUTES
+            and (claude_five is None or claude_five >= EXPIRING_MINIMUM)):
         expiring.append((claude['windowResetsAt'], 'claude',
+                         f"Claude 5시간 한도 {claude_five:.0f}% 남음, {_minutes(claude['windowResetsAt'], now)}분 뒤 초기화"
+                         if claude_five is not None else
                          f"Claude 5시간 창이 약 {_minutes(claude['windowResetsAt'], now)}분 뒤 초기화(추정)"))
     if expiring:
         _, name, why = min(expiring)
         return name, why + ' → 버려지기 전에 사용'
-    if week is not None and week_reset:
+    codex_ahead = _ahead(week, week_reset, now)
+    claude_ahead = _ahead(claude.get('weekLeft'), claude.get('weekResetsAt'), now)
+    if codex_ahead is not None and codex_ahead > WEEKLY_PACE_MARGIN and (claude_ahead is None or claude_ahead < codex_ahead):
         elapsed = 1 - (week_reset - now) / WEEK
-        if 100 - week > elapsed * 100 + WEEKLY_PACE_MARGIN:
-            return 'claude', f'Codex 주간 한도를 일정보다 빨리 쓰는 중({100 - week:.0f}% 사용, 주간 {elapsed * 100:.0f}% 경과)'
-    if five is not None and five < FIVE_HOUR_ROOM:
-        return 'claude', f'Codex 5시간 한도 {five:.0f}% 남음'
+        return 'claude', f'Codex 주간 한도를 일정보다 빨리 쓰는 중({100 - week:.0f}% 사용, 주간 {elapsed * 100:.0f}% 경과)'
+    if five is not None and five < FIVE_HOUR_ROOM and (claude_five is None or claude_five > five):
+        return 'claude', f'Codex 5시간 한도 {five:.0f}% 남음' + (f', Claude {claude_five:.0f}%' if claude_five is not None else '')
     room = f'5시간 {five:.0f}%' if five is not None else '5시간 기록 없음'
     return 'codex', f'Codex 여유({room}' + (f', 주간 {week:.0f}%' if week is not None else '') + ' 남음)'
 
@@ -303,7 +328,7 @@ USAGE = ('사용법: 프로젝트 폴더에서\n'
          '  ai --new ...                  새 대화로 시작\n'
          '  ai claude ... / ai codex ...  직접 지정\n'
          '  ai --why                      지금 무엇을 왜 고르는지만 보기\n'
-         '  ai --usage                    Claude·Codex 사용량과 Codex 한도')
+         '  ai --usage                    Claude·Codex 사용량과 한도 %')
 
 
 def command(name, model, effort, resume, mcp=False):
@@ -382,13 +407,13 @@ def _stop(process):
 
 
 def run(name, argv, task, cwd, say, popen=subprocess.Popen):
-    """{'session', 'error', 'limited'}: streams the CLI's JSON events as short lines."""
-    session, error, edits = None, None, []
+    """{'session', 'error', 'limited', 'edits', 'rateLimit'}: streams the CLI's JSON events as short lines."""
+    session, error, edits, rate_limit = None, None, [], None
     try:
         process = popen(argv, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                         encoding='utf-8', errors='replace')
     except OSError as failure:
-        return {'session': None, 'error': str(failure), 'limited': False, 'edits': []}
+        return {'session': None, 'error': str(failure), 'limited': False, 'edits': [], 'rateLimit': None}
     try:
         process.stdin.write(task)
         process.stdin.close()
@@ -397,18 +422,21 @@ def run(name, argv, task, cwd, say, popen=subprocess.Popen):
                 event = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(event, dict):
+            if isinstance(event, dict) and event.get('type') == 'rate_limit_event':
+                rate_limit = event.get('rate_limit_info') or rate_limit  # Claude's limit percentages, not shown
+            elif isinstance(event, dict):
                 found, failed = show(name, event, say, edits)
                 session, error = found or session, failed or error
     except KeyboardInterrupt:
         # Ctrl+C reaches the CLI too; make sure it is gone before returning what it did so far.
         _stop(process)
-        return {'session': session, 'error': None, 'limited': False, 'edits': edits, 'cancelled': True}
+        return {'session': session, 'error': None, 'limited': False, 'edits': edits, 'rateLimit': rate_limit, 'cancelled': True}
     stderr = process.stderr.read() if process.stderr else ''
     code = process.wait()
     if code and not error:
         error = (stderr.strip().splitlines() or [f'exit {code}'])[-1]
-    return {'session': session, 'error': error, 'limited': bool(error and LIMIT_ERROR.search(error + ' ' + stderr)), 'edits': edits}
+    return {'session': session, 'error': error, 'limited': bool(error and LIMIT_ERROR.search(error + ' ' + stderr)), 'edits': edits,
+            'rateLimit': rate_limit}
 
 
 # Checks run after every task that changed files; a request sentence can switch one off for that command only.
@@ -615,7 +643,9 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
     if agent:
         name, why, boost = agent, '직접 지정', False
     else:
-        name, why, boost = choose(claude_state(claude_root, now), usage.codex_usage(codex_root, now, 7)['limits'], now, installed)
+        recorded = usage.load_claude_limits(usage.claude_limits_file(environ))
+        name, why, boost = choose(claude_state(claude_root, now, recorded), usage.codex_usage(codex_root, now, 7)['limits'],
+                                  now, installed)
     if name is None:
         say(f'ai: {why}')
         return 1
@@ -649,19 +679,25 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
         say('ai: 직전 검사에서 실패한 내용을 이번 요청에 함께 보냅니다')
     prompt = ('직전 작업 뒤 자동 검사에서 실패한 내용이다. 요청과 관련되면 함께 고쳐라:\n' + '\n'.join(pending[:40])
               + '\n\n요청: ' + task) if pending else task
-    outcome = run(name, command(name, model, effort, resume, mcp), _prompt(name, prompt), cwd, say, popen)
+    def attempt(name, resume):
+        outcome = run(name, command(name, model, effort, resume, mcp), _prompt(name, prompt), cwd, say, popen)
+        if outcome.get('rateLimit'):
+            usage.save_claude_limits(usage.claude_limits_file(environ), outcome['rateLimit'], now)
+        return outcome
+
+    outcome = attempt(name, resume)
     if outcome.get('cancelled'):
         return _cancelled(outcome, name, cwd, now, conversations, previous, state_path, say)
     if resume and outcome['error'] and not outcome['session']:
         say(f"ai: 이전 대화를 열지 못해 새로 시작합니다 ({outcome['error'][:200]})")
-        outcome = run(name, command(name, model, effort, None, mcp), _prompt(name, prompt), cwd, say, popen)
+        outcome = attempt(name, None)
     if outcome['limited'] and not agent:
         other = 'codex' if name == 'claude' else 'claude'
         if other in installed:
             say(f'ai: {name} 한도에 걸려 {other}로 같은 작업을 이어서 합니다')
             name = other
             model, effort = _setting(name, level, environ, say)
-            outcome = run(name, command(name, model, effort, None, mcp), _prompt(name, prompt), cwd, say, popen)
+            outcome = attempt(name, None)
     failures = [] if outcome['error'] else checks(task, cwd, outcome['edits'], say, process)
     if outcome['session'] or failures or pending:
         conversations[str(cwd)] = {'provider': name, 'session': outcome['session'] or previous.get('session'),
