@@ -59,9 +59,10 @@ cat > "$BIN/ask-remote" <<EOF
 exec python3 "$ROOT/code-risk-analyzer/scripts/remote_runner.py" "\$@"
 EOF
 chmod +x "$BIN/ask-remote"
+PATH_MISSING=false
 case ":$PATH:" in
   *":$BIN:"*) ;;
-  *) note "$BIN 이 PATH에 없습니다. ~/.zshrc에 다음 줄을 추가하세요: export PATH=\"$BIN:\$PATH\"" ;;
+  *) PATH_MISSING=true ;;
 esac
 
 if [ "$AGENT_HINT" = true ]; then
@@ -82,3 +83,16 @@ fi
 
 echo "자동 업데이트: ask가 새 요청마다(최대 10분에 한 번) 이 폴더를 git pull하고 바뀐 쪽만 다시 빌드합니다 (끄기: --no-update 또는 ASK_NO_UPDATE=1)"
 echo "완료. Gradle 프로젝트 폴더에서: ask --spec spec.json \"요청\" → 계획 확인 → ask --yes (명세 형식: code-risk-analyzer/docs/guides/SPEC_FILE.md)"
+
+if [ "$PATH_MISSING" = true ]; then
+  case "$(basename "${SHELL:-}")" in
+    zsh) RC="~/.zshrc" ;;
+    bash) if [ "$(uname)" = Darwin ]; then RC="~/.bash_profile"; else RC="~/.bashrc"; fi ;;
+    *) RC="~/.profile" ;;
+  esac
+  echo
+  echo "ask 명령을 쓰려면 아래 두 줄을 그대로 복사해 실행하세요 ($BIN 을 PATH에 등록):"
+  echo
+  echo "  echo 'export PATH=\"$BIN:\$PATH\"' >> $RC"
+  echo "  source $RC"
+fi
