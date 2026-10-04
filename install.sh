@@ -24,7 +24,7 @@ command -v java >/dev/null || fail "Java 21 이상이 필요합니다"
 JAVA_MAJOR="$(java -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -1)"
 [ -n "$JAVA_MAJOR" ] && [ "$JAVA_MAJOR" -ge 21 ] || fail "Java 21 이상이 필요합니다 (현재: ${JAVA_MAJOR:-알 수 없음})"
 command -v python3 >/dev/null || fail "python3가 필요합니다"
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' || fail "Python 3.10 이상이 필요합니다"
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' || fail "python3가 너무 오래됐습니다 (3.9 이상, macOS 기본 python3면 됩니다)"
 command -v git >/dev/null || fail "git이 필요합니다"
 if ! command -v codex >/dev/null && ! command -v claude >/dev/null; then
   fail "codex 또는 claude CLI가 필요합니다 (설치 후 각 CLI에 요금제 계정으로 로그인)"
