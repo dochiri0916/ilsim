@@ -819,9 +819,14 @@ class ZeroConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '진행 중인 작업이 없습니다'):
             ask.zero_config('검증 다시 해줘', self.project, None, None)
 
-    def test_request_is_required_unless_continuing(self):
-        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            ask.main(['--project', str(self.project)])
+    def test_no_request_or_a_question_shows_the_guide_and_words_need_no_quotes(self):
+        for argv, code in ((['--project', str(self.project)], 0), (['너', '뭐야'], 0), (['오늘', '날씨'], 2)):
+            with self.subTest(argv=argv), redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(code, ask.main([*argv, '--no-jev']))
+            self.assertIn('ask --yes', output.getvalue())
+        with redirect_stdout(io.StringIO()) as output:
+            ask.main(['SEC-001', '규칙', '설명해줘', '--no-jev'])
+        self.assertIn('요청: SEC-001 규칙 설명해줘', output.getvalue())
 
 
 class UpdateTests(unittest.TestCase):
@@ -851,7 +856,8 @@ class UpdateTests(unittest.TestCase):
         # then: the restarted process gets exactly what was typed
         self.assertEqual([['회원 가입 기능 추가해줘', '--project', seen[0][2], '--no-jev']], seen)
         self.assertEqual(1, len(self.updated_with(['결제 코드 위험 분석해줘'])))
-        self.assertEqual(1, len(self.updated_with(['무슨 말인지 모를 문장'])))
+        # A sentence naming no task only gets the usage guide, which needs no update.
+        self.assertEqual(0, len(self.updated_with(['무슨 말인지 모를 문장'])))
 
     def test_continuing_a_session_keeps_the_version_that_started_it(self):
         for argv in (['--yes'], ['이어서 진행해'], ['검증 다시 해줘'], ['PR 올려줘'], ['기능 추가해줘', '--no-update']):
