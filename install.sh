@@ -81,4 +81,4 @@ if [ "$AGENT_HINT" = true ]; then
 fi
 
 echo "자동 업데이트: ask가 새 요청마다(최대 10분에 한 번) 이 폴더를 git pull하고 바뀐 쪽만 다시 빌드합니다 (끄기: --no-update 또는 ASK_NO_UPDATE=1)"
-echo "완료. Gradle 프로젝트 폴더에서: ask \"회원 가입 기능 추가해줘\" → 초안 확인 → ask --yes"
+echo "완료. Gradle 프로젝트 폴더에서: ask --spec spec.json \"요청\" → 계획 확인 → ask --yes (명세 형식: code-risk-analyzer/docs/guides/SPEC_FILE.md)"
