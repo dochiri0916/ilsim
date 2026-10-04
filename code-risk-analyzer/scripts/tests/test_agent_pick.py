@@ -56,6 +56,40 @@ class ChooseTests(unittest.TestCase):
         self.assertEqual('codex', pick.choose(FREE, None, NOW)[0])
 
 
+def claude(five_left, five_minutes, week_left=90, week_hours_left=150):
+    return {'blockedUntil': None, 'windowResetsAt': NOW + timedelta(minutes=five_minutes), 'fiveLeft': five_left,
+            'weekLeft': week_left, 'weekResetsAt': NOW + timedelta(hours=week_hours_left)}
+
+
+class RecordedClaudeTests(unittest.TestCase):
+    def test_claude_resetting_soon_is_spent_only_with_room_left(self):
+        name, why, boost = pick.choose(claude(60, 10), codex(20, 200), NOW)
+        self.assertEqual(('claude', True), (name, boost))
+        self.assertIn('Claude 5시간 한도 60% 남음, 10분 뒤 초기화', why)
+        self.assertFalse(pick.choose(claude(10, 10), codex(90, 200), NOW)[2])         # spend 10%, normal setting
+        self.assertEqual('codex', pick.choose(claude(2, 10), codex(20, 200), NOW)[0])  # nothing worth spending
+
+    def test_codex_is_spared_only_for_a_claude_that_is_better_off(self):
+        # Codex 70% used at mid-week; Claude even further ahead of its pace keeps Codex
+        self.assertEqual('claude', pick.choose(claude(80, 200, week_left=60, week_hours_left=84), codex(10, 200, 70, 84), NOW)[0])
+        self.assertEqual('codex', pick.choose(claude(80, 200, week_left=10, week_hours_left=84), codex(10, 200, 70, 84), NOW)[0])
+        # Codex 5-hour room is low, but Claude's is lower
+        self.assertEqual('claude', pick.choose(claude(50, 200), codex(90, 200), NOW)[0])
+        self.assertEqual('codex', pick.choose(claude(5, 200), codex(90, 200), NOW)[0])
+
+    def test_recorded_limits_override_the_estimate_until_they_reset(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        recorded = {'fiveHour': {'usedPercent': 99.0, 'resetsAt': (NOW + timedelta(minutes=40)).isoformat()},
+                    'weekly': {'usedPercent': 30.0, 'resetsAt': (NOW + timedelta(days=2)).isoformat()}}
+        state = pick.claude_state(temp.name, NOW, recorded)
+        self.assertEqual(NOW + timedelta(minutes=40), state['blockedUntil'])
+        self.assertEqual((70.0, NOW + timedelta(days=2)), (state['weekLeft'], state['weekResetsAt']))
+        recorded['fiveHour']['resetsAt'] = (NOW - timedelta(minutes=1)).isoformat()
+        state = pick.claude_state(temp.name, NOW, recorded)
+        self.assertEqual((None, None, None), (state['blockedUntil'], state['windowResetsAt'], state['fiveLeft']))
+
+
 class BoostTests(unittest.TestCase):
     def test_plenty_left_right_before_the_reset_gets_the_strongest_setting(self):
         self.assertTrue(pick.choose(FREE, codex(40, 10), NOW)[2])     # 60% left, 10 minutes
@@ -246,6 +280,23 @@ class MainTests(unittest.TestCase):
         self.assertTrue(any(line.startswith('ai: 취소했습니다 - 이미 바뀐 파일 1개 (src/A.java)') for line in self.lines))
         self.main('claude', '이어서', now=NOW + timedelta(minutes=1))
         self.assertEqual('c-1', self.started[1][0][self.started[1][0].index('--resume') + 1])
+
+    def test_claude_limit_percentages_reported_while_working_are_recorded(self):
+        # given: claude -p reports its windows during the task
+        reset = int((NOW + timedelta(hours=3)).timestamp())
+        self.outputs = [FakeProcess([CLAUDE_OK[0], json.dumps({'type': 'rate_limit_event', 'rate_limit_info': {
+            'status': 'allowed', 'unifiedWindows': {'five_hour': {'utilization': 0.4, 'resetsAt': reset},
+                                                    'seven_day': {'utilization': 0.2, 'resetsAt': reset + 86400}}}}) + '\n',
+                                     *CLAUDE_OK[1:]])]
+        # when
+        with patch.object(pick, 'checks', return_value=[]):
+            self.assertEqual(0, self.main('claude', '고쳐줘'))
+        # then: not shown, but kept for ai --usage and the next choice
+        self.assertFalse(any('rate_limit' in line for line in self.lines))
+        limits = pick.usage.load_claude_limits(pick.usage.claude_limits_file(self.environ))
+        self.assertEqual((40.0, 20.0), (limits['fiveHour']['usedPercent'], limits['weekly']['usedPercent']))
+        self.assertIn('60% 남음', pick.choose(pick.claude_state(self.home, NOW + timedelta(hours=2, minutes=50), limits),
+                                                 None, NOW + timedelta(hours=2, minutes=50))[1])
 
     def test_usage_prints_the_usage_report_without_running_anything(self):
         with redirect_stdout(io.StringIO()) as output:
