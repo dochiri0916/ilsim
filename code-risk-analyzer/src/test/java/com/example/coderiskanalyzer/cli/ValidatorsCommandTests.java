@@ -23,7 +23,7 @@ class ValidatorsCommandTests {
     private final CliExitCode exitCode = new CliExitCode();
 
     private String run(String... args) {
-        var runner = new ScanApplicationRunner(null, exitCode, null, null, new AnalyzerConfigLoader());
+        var runner = new ScanApplicationRunner(null, exitCode, null, null, new AnalyzerConfigLoader(), null);
         PrintStream original = System.out;
         var output = new ByteArrayOutputStream();
         System.setOut(new PrintStream(output, true, StandardCharsets.UTF_8));

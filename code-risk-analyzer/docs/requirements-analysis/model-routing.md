@@ -2,7 +2,7 @@
 
 `scripts/model_router.py`는 Tier와 Registry·Policy JSON으로 로컬 CLI 모델을 선택한다. Tier는 명시적으로 지정하거나 `scripts/jev_capability.py`의 JEV 판단으로 얻는다. JEV에는 모델 후보·Registry·Policy를 전달하지 않는다. 추가 Python dependency와 외부 ai-router 디렉터리는 사용하지 않는다.
 
-정책에 지정된 모델 선택, JEV의 Tier·위험도 판단, 제한된 생성 오류 escalation과 [검증 실패의 구현 수정 루프](code-change-workflow.md)를 제공한다. 성공 작업당 비용은 아래 `cost_report.py`로 측정한다. 측정값을 이용한 자동 비용 최적화와 개발 모델 Golden Benchmark·Shadow·Canary 승격은 후속 범위다. 기존 `agent` 직접 선택과 수동 작성 경로도 유지한다.
+정책에 지정된 모델 선택, JEV의 Tier·위험도 판단, 제한된 생성 오류 escalation과 [검증 실패의 구현 수정 루프](code-change-workflow.md)를 제공한다. 성공 작업당 비용은 아래 `cost_report.py`로 측정한다. Tier별 경로는 `config/ask/model-benchmarks.json`의 공개 벤치마크 수치(Intelligence Index·과제당 비용)에서 `scripts/model_select.py`가 만든다. 교체 전 비교는 `scripts/golden_benchmark.py`로 한다. 실제 사용 측정값을 이용한 자동 비용 최적화와 Shadow·Canary 승격은 후속 범위다. 아래 Registry·Policy 예시는 형식 설명용이며 현재 값은 `config/ask/`의 파일이다. 기존 `agent` 직접 선택과 수동 작성 경로도 유지한다.
 
 ## Registry
 
@@ -133,7 +133,7 @@ python3 scripts/code_change_workflow.py --config /absolute/config.json --state /
 
 일반적인 TIER_3 정책은 medium → high → xhigh이며 이후 검토 대기로 종료한다. 이 한도는 자동 호출에 적용되며 사용자의 명시적 명령 재호출은 별도 작업이다. 최대 CLI 대기 시간은 `maxAttempts × timeoutSeconds`이고 JEV 대기·프로세스 정리 시간이 추가된다. 실제 비용 예산은 아직 적용하지 않는다.
 
-JUnit·빌드·정적 검증 실패는 기존 verification에서 그대로 차단한다. **그 실패를 자동으로 코드 수정·재검증하는 루프는 아직 없다.** 구현 전 예상 실패의 원인 분석과 최종 coverage·mutation 통합도 별도 후속 작업이다.
+JUnit·빌드·정적 검증 실패는 verification에서 차단한다. 그 실패의 자동 수정·재검증은 별도 `repair` 단계([code-change-workflow](code-change-workflow.md))가 맡고, 최종 coverage·mutation은 `qualityGates`로 검사한다. 이 절의 escalation은 응답 계약 오류에만 적용한다.
 
 ## 라우팅 근거와 무효화
 

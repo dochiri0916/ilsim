@@ -19,9 +19,12 @@ public class ScanApplicationRunner implements ApplicationRunner {
     private final RulesCommand rulesCommand;
     private final MutationCommand mutationCommand;
     private final AnalyzerConfigLoader configLoader;
+    private final com.example.coderiskanalyzer.impact.ImpactCommand impactCommand;
 
     public ScanApplicationRunner(ScanCommand scanCommand, CliExitCode exitCode, RulesCommand rulesCommand,
-                                 MutationCommand mutationCommand, AnalyzerConfigLoader configLoader) {
+                                 MutationCommand mutationCommand, AnalyzerConfigLoader configLoader,
+                                 com.example.coderiskanalyzer.impact.ImpactCommand impactCommand) {
+        this.impactCommand = impactCommand;
         this.scanCommand = scanCommand;
         this.exitCode = exitCode;
         this.rulesCommand = rulesCommand;
@@ -33,7 +36,7 @@ public class ScanApplicationRunner implements ApplicationRunner {
     public void run(ApplicationArguments arguments) {
         String[] args = arguments.getSourceArgs();
         if (args.length == 0) {
-            System.out.println("Usage: requirements <input.json> [options] | prompt <input.json> [--rules file] | prompt --change <text> --files <a,b> | route --change <text> --files <a,b> | scan <project-path> [options] | mutation <project-path> [--files-file file] (executes target build/tests) | rules [rule-id] | validators <project-path>");
+            System.out.println("Usage: requirements <input.json> [options] | prompt <input.json> [--rules file] | prompt --change <text> --files <a,b> | route --change <text> --files <a,b> | scan <project-path> [options] | mutation <project-path> [--files-file file] (executes target build/tests) | rules [rule-id] | validators <project-path> | impact <project-path> [--files-file f] [--depth n] [--compare before.json] [--output f]");
             exitCode.set(2);
             return;
         }
@@ -74,6 +77,10 @@ public class ScanApplicationRunner implements ApplicationRunner {
         }
         if (args[0].equals("validators")) {
             runValidators(args);
+            return;
+        }
+        if (args[0].equals("impact")) {
+            runImpact(args);
             return;
         }
         if (args[0].equals("mutation")) {
@@ -122,6 +129,33 @@ public class ScanApplicationRunner implements ApplicationRunner {
         System.out.println(response.output());
         response.diagnostics().forEach(diagnostic -> System.err.println("%s %s: %s".formatted(
                 diagnostic.severity(), diagnostic.code(), diagnostic.message())));
+        exitCode.set(response.exitCode());
+    }
+
+    /** Transitive callers and tests of the changed files, and the declared-contract snapshot or its comparison. */
+    private void runImpact(String[] args) {
+        if (args.length < 2 || args[1].startsWith("--")) {
+            System.out.println("Error: impact requires a target project path");
+            exitCode.set(2);
+            return;
+        }
+        String optionError = validateOptions(args, 2, java.util.Set.of("files-file", "depth", "compare", "output"), java.util.Set.of());
+        if (optionError != null) {
+            System.out.println("Error: " + optionError);
+            exitCode.set(2);
+            return;
+        }
+        int depth;
+        try {
+            depth = Integer.parseInt(option(args, "depth", String.valueOf(com.example.coderiskanalyzer.impact.ImpactCommand.DEFAULT_DEPTH)));
+        } catch (NumberFormatException exception) {
+            System.out.println("Error: --depth must be a number");
+            exitCode.set(2);
+            return;
+        }
+        var response = impactCommand.run(args[1], option(args, "files-file", ""), depth, option(args, "compare", ""),
+                option(args, "output", ""));
+        System.out.println(response.output());
         exitCode.set(response.exitCode());
     }
 

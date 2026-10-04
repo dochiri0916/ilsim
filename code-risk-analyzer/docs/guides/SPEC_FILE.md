@@ -23,7 +23,7 @@ ask --yes                                            # 실행
 | `requirements[]` | 독립적으로 시험할 수 있는 동작마다 하나: `id`(`REQ-1`), `title` |
 | `.domain` | `owner`, `aggregates`(1개 이상), `dataOwnership`(1개 이상), `allowedDependencies`, `entryPoints`(1개 이상) |
 | `.preconditions` `.postconditions` `.invariants` `.coreLogic` | 각각 1개 이상의 구체적인 문장 |
-| `.transaction` `.concurrency` `.idempotency` `.consistency` | `applicability`가 `APPLICABLE`이면 `expectations` 1개 이상, `NOT_APPLICABLE`이면 `reason`만 쓰고 `expectations: []` |
+| `.transaction` `.concurrency` `.idempotency` `.consistency` | `applicability`가 `APPLICABLE`이면 `expectations` 1개 이상, `NOT_APPLICABLE`이면 `reason`만 쓰고 `expectations: []`. `APPLICABLE`이면 그 관점을 실행하는 시나리오가 있어야 한다: transaction은 `ROLLBACK`·`PARTIAL_FAILURE`, concurrency는 `CONCURRENCY`, idempotency는 `DUPLICATE`·`RETRY`, consistency는 `PARTIAL_FAILURE`·`ROLLBACK` 중 하나 |
 | `.scenarios[]` | `id`(`SCN-1`), `type`(`NORMAL` `DUPLICATE` `CONCURRENCY` `ROLLBACK` `RETRY` `PARTIAL_FAILURE` `VALIDATION` `AUTHORIZATION`), `given`, `when`, `expectedOutcomes`(1개 이상), `testTypes`(`DOMAIN_UNIT` `REPOSITORY_DB` `API_SLICE` `INTEGRATION` `SERVICE_E2E`) |
 | `.implementationStatus` / `.existingCode[]` | 새 동작은 `NOT_IMPLEMENTED`와 `[]`, 아니면 `PARTIAL`·`IMPLEMENTED`와 `{path, symbol}` 목록 |
 | `files` | 만들거나 고칠 `src/main/`·`src/test/` 경로 전부(각 1개 이상). 테스트·구현 단계는 이 밖의 파일을 만들 수 없다 |
@@ -37,3 +37,4 @@ ask --yes                                            # 실행
 - `files`에는 production 타입마다 파일 하나를 적는다(포트, 값 객체, 예외, 이벤트, 그 adapter 포함). 로직이 있는 클래스(aggregate, 값 객체, command, service, controller, 예외 처리기, adapter)마다 테스트 하나를 두고, 예외·포트·use case·result·request/response record는 테스트 파일을 따로 두지 않는다.
 - build 파일은 바꿀 수 없으므로 JDK와 이미 선언된 의존성만 쓴다. 보통 라이브러리가 필요한 기능(예: 비밀번호 해시)은 JDK만으로 하는 방법을 정하고 `assumptions`에 적는다.
 - 컨벤션을 켠 경우 패키지 배치는 build-convention의 `docs/templates` 틀을 따른다.
+- `files`의 `src/main/java` 클래스에는 품질 게이트(LINE 90%·BRANCH 80%·변이 90%, 생존 변이 0)가 기본으로 걸린다. 테스트가 분기와 경계를 모두 확인하도록 시나리오를 적는다. 끄려면 요청 문장에 "품질 게이트 없이"를 넣는다.

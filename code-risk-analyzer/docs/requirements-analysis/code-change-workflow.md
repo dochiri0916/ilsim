@@ -95,7 +95,7 @@ fixture가 아닌 프로젝트는 config에 `serviceAdapter`를 두면 `local-se
 }
 ```
 
-실행기는 verification에서 기록한 JAR를 `127.0.0.1`의 빈 포트로 기동하고, 준비 경로가 200을 반환하면 각 시나리오 명령을 `SERVICE_BASE_URL` 환경변수와 함께 실행한다. 종료 코드 0만 PASSED로 기록하고 프로세스 출력은 저장하지 않는다. 마지막에 프로세스 종료와 포트 반환을 확인한다. 네 시나리오는 서로 다른 명령이어야 하고, 각 명령은 프로젝트 안의 검사 스크립트를 실행 파일이나 인자로 참조해야 한다(`true` 같은 빈 명령 거부). 실행 파일을 포함해 참조한 프로젝트 파일은 해시로 고정되어 바뀌면 세션이 무효화된다. 이 adapter를 쓰면 `review`에 외부 `--service` 결과를 대신 넣을 수 없다. 시나리오 명령의 assertion과 DB 상태 확인은 프로젝트가 책임진다. `serviceAdapter`의 선택 항목은 `arguments`, `readyTimeoutSeconds`(기본 60), `scenarioTimeoutSeconds`(기본 120)이며 `--server.port`·`--server.address`는 지정할 수 없다.
+실행기는 verification에서 기록한 JAR를 `127.0.0.1`의 빈 포트로 기동하고, 준비 경로가 200을 반환하면 각 시나리오 명령을 `SERVICE_BASE_URL`·`SCENARIO_REPORT` 환경변수와 함께 실행한다. 종료 코드 0이고 `SCENARIO_REPORT` 파일에 `{"assertions": n, "passed": n}`(n ≥ 1)을 남긴 시나리오만 PASSED다. assertion을 하나도 보고하지 않거나 일부가 실패하면 FAILED이며, 프로세스 출력은 저장하지 않는다. 마지막에 프로세스 종료와 포트 반환을 확인한다. 네 시나리오는 서로 다른 명령이어야 하고, 각 명령은 프로젝트 안의 검사 스크립트를 실행 파일이나 인자로 참조해야 한다(`true` 같은 빈 명령 거부). 실행 파일을 포함해 참조한 프로젝트 파일은 해시로 고정되어 바뀌면 세션이 무효화된다. 이 adapter를 쓰면 `review`에 외부 `--service` 결과를 대신 넣을 수 없다. 시나리오 명령의 assertion과 DB 상태 확인은 프로젝트가 책임진다. `serviceAdapter`의 선택 항목은 `arguments`, `readyTimeoutSeconds`(기본 60), `scenarioTimeoutSeconds`(기본 120)이며 `--server.port`·`--server.address`는 지정할 수 없다.
 
 일반 프로젝트에는 fixture 정책을 전달하지 않는다. fixture만 별도 승인한 정확한 예외 목록을 `review --fixture-policy`로 전달한다. production 위험은 일반 프로젝트에서 계속 차단한다. fixture의 승인된 결함을 재현해 COMPLETED가 되더라도 `targetRiskStatus=UNRESOLVED`를 유지한다.
 

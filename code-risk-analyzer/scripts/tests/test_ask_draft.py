@@ -38,7 +38,11 @@ SAMPLE = {
             {'id': 'SCN-1', 'type': 'NORMAL', 'given': '가입 이력 없음', 'when': '가입 요청', 'expectedOutcomes': ['회원 생성'],
              'testTypes': ['DOMAIN_UNIT']},
             {'id': 'SCN-2', 'type': 'DUPLICATE', 'given': '같은 이메일 존재', 'when': '가입 요청', 'expectedOutcomes': ['가입 거절'],
-             'testTypes': ['API_SLICE']}],
+             'testTypes': ['API_SLICE']},
+            {'id': 'SCN-3', 'type': 'CONCURRENCY', 'given': '가입 이력 없음', 'when': '같은 이메일 동시 가입',
+             'expectedOutcomes': ['하나만 성공'], 'testTypes': ['REPOSITORY_DB']},
+            {'id': 'SCN-4', 'type': 'ROLLBACK', 'given': '저장 중 오류', 'when': '가입 요청', 'expectedOutcomes': ['저장 안 됨'],
+             'testTypes': ['REPOSITORY_DB']}],
         'implementationStatus': 'NOT_IMPLEMENTED', 'existingCode': []}],
     'files': ['src/main/java/com/example/demo/member/domain/model/Member.java',
               'src/test/java/com/example/demo/member/domain/model/MemberTest.java'],
@@ -90,6 +94,15 @@ class ValidateTests(unittest.TestCase):
     def test_complete_draft_is_accepted(self):
         self.assertEqual(SAMPLE, draft.validate(copy.deepcopy(SAMPLE)))
 
+    def test_an_applicable_perspective_needs_a_scenario_that_exercises_it(self):
+        # given: concurrency applies but the concurrent scenario was left out
+        value = sample()
+        value['requirements'][0]['scenarios'] = [scenario for scenario in value['requirements'][0]['scenarios']
+                                                 if scenario['type'] != 'CONCURRENCY']
+        # when / then
+        with self.assertRaisesRegex(ValueError, 'concurrency이 APPLICABLE이면 CONCURRENCY 시나리오가 필요합니다'):
+            draft.validate(value)
+
     def test_conditional_schema_rules_are_enforced(self):
         def requirement(**changes):
             value = sample()
@@ -139,7 +152,10 @@ class InputTests(unittest.TestCase):
         session = self.project.session
         config = json.loads(path.read_text())
         self.assertEqual(['build/ask/s1/request.md', 'build/ask/s1/conventions.md'], config['documents'])
-        self.assertEqual({'plan', 'requirements', 'scope', 'analyzer', 'documents', 'routing'}, set(config))
+        self.assertEqual({'plan', 'requirements', 'scope', 'analyzer', 'documents', 'routing', 'qualityGates'}, set(config))
+        # the changed production class gets the default coverage and mutation gates
+        self.assertEqual({'targets': {'com.example.demo.member.domain.model.Member':
+                                      'src/main/java/com/example/demo/member/domain/model/Member.java'}}, config['qualityGates'])
         plan = regression.validate_plan(json.loads((session/'plan.json').read_text()))
         self.assertEqual({'existing-tests': ['com.example.demo.DemoApplicationTests#contextLoads',
                                              'com.example.demo.DemoApplicationTests#표시 이름이 있는 테스트']}, plan['features'])
@@ -149,9 +165,14 @@ class InputTests(unittest.TestCase):
         self.assertEqual(SAMPLE['files'], scope['files'])
         requirements = json.loads((session/'requirements.json').read_text())
         self.assertEqual('NO_GIT_REVISION', requirements['codeRevision'])
-        self.assertEqual({'SCN-1', 'SCN-2'}, set(requirements['requirements']['REQ-1']['scenarios']))
+        self.assertEqual({'SCN-1', 'SCN-2', 'SCN-3', 'SCN-4'}, set(requirements['requirements']['REQ-1']['scenarios']))
         self.assertIn('회원 가입 추가해줘', (session/'request.md').read_text())
         self.assertEqual('# 규칙', (session/'conventions.md').read_text())
+
+    def test_quality_gates_can_be_turned_off(self):
+        path = draft.write_inputs(self.project.root, self.project.session, '추가해줘', sample(), JAR,
+                                  {'registry': 'r', 'policy': 'p'}, quality=False)
+        self.assertNotIn('qualityGates', json.loads(path.read_text()))
 
     def test_project_without_tests_has_no_regression_baseline(self):
         (self.project.root/'src/test/java/com/example/demo/DemoApplicationTests.java').unlink()

@@ -591,7 +591,7 @@ class ZeroConfigTests(unittest.TestCase):
 
     def test_convention_fixes_use_the_cheap_tier_and_refuse_forbidden_models(self):
         configs = ask.fix_models(ask.default_routing({}))
-        self.assertEqual(['gpt-6-luna', 'gpt-6.1-sol'], [config['model'] for config in configs])
+        self.assertEqual(['gpt-6.1-sol', 'gpt-6.1-sol'], [config['model'] for config in configs])
         registry = json.loads((ask.DEFAULT_ROUTING/'models.json').read_text())
         registry['models']['general']['model'] = 'claude-opus-5-5'
         path = self.project.parent/'models.json'
@@ -609,6 +609,11 @@ class ZeroConfigTests(unittest.TestCase):
             ask.start_change('회원 가입 기능 추가해줘', self.project, ('CODE_CHANGE', 'k'), None, None,
                              self.spec(status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[]))
 
+    def test_quality_gates_are_on_for_changed_classes_unless_the_request_turns_them_off(self):
+        self.assertTrue(ask.quality_choice('회원 가입 기능 추가해줘'))
+        for text in ('품질 게이트 없이 추가해줘', '커버리지 검사 빼고 해줘', '변이 테스트 끄고 해줘', 'no-mutation please'):
+            self.assertFalse(ask.quality_choice(text), text)
+
     def test_change_request_drafts_a_new_session_and_waits_for_approval(self):
         # when
         value, output = self.start()
@@ -621,7 +626,8 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertEqual({'project': str(self.project), 'session': str(session), 'baseRef': None}, value['convention'])
         self.assertEqual(['build/ask/' + session.name + '/request.md', 'build/ask/' + session.name + '/conventions.md'],
                          value['config']['documents'])
-        self.assertIn('REQ-1 이메일로 회원 가입 (시나리오 2개)', output)
+        self.assertIn('REQ-1 이메일로 회원 가입 (시나리오 4개)', output)
+        self.assertIn('품질 게이트: 켬 - 변경 클래스 1개', output)
         self.assertIn('먼저 기존 코드 위반을 고칩니다 - src/test/java/com/example/demo/DemoApplicationTests.java', output)
         self.assertEqual([None], self.measured)
         self.assertFalse((session/'state.json').exists())
@@ -732,6 +738,13 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertEqual(['scan', str(self.project)], value['commands'][0][3:])
         self.assertTrue(value['commands'][1][1].endswith('convention_check.py'))
         self.assertEqual((2, 1), (len(calls), code))
+
+    def test_analysis_with_a_jev_key_asks_jev_about_what_static_rules_cannot_settle(self):
+        # when: JEV judged the request, so a key is available
+        value = ask.zero_config('결제 코드 위험 분석해줘', self.project, None,
+                                lambda text: {'status': 'COMPLETED', 'intent': 'ANALYZE', 'confidence': 0.99})
+        # then
+        self.assertEqual(['scan', str(self.project), '--jev', 'true'], value['commands'][0][3:])
 
     def test_follow_up_without_a_session_explains_what_to_do_first(self):
         with self.assertRaisesRegex(ValueError, '진행 중인 작업이 없습니다'):
