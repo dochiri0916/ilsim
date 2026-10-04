@@ -293,7 +293,7 @@ public class ScanCommand {
             String apiKey = System.getenv("TYPESAFE_API_KEY");
             if (apiKey == null || apiKey.isBlank()) return error("Error: --jev requested but TYPESAFE_API_KEY is missing", 2);
             try (JevSemanticJudge jevJudge = new JevSemanticJudge(apiKey)) {
-                Integer maxCalls = config.ciPolicy().maxJevCalls();
+                Integer maxCalls = jevCallCap(config.ciPolicy().maxJevCalls(), System.getenv(JEV_CALL_CAP_ENV));
                 SemanticJudge judge = maxCalls == null ? jevJudge : new CallLimitedSemanticJudge(jevJudge, maxCalls);
                 findings = reviewCandidates(findings, judge, projectModel);
                 if (judge instanceof CallLimitedSemanticJudge limited && limited.skipped() > 0)
@@ -400,6 +400,21 @@ public class ScanCommand {
 
     public List<Finding> reviewCandidates(List<Finding> findings, SemanticJudge judge) {
         return reviewCandidates(findings, judge, new ProjectModel(List.of()));
+    }
+
+    /** Caller's JEV call cap (e.g. the ai command) for projects whose .code-risk.yml sets no jev.max-calls. */
+    public static final String JEV_CALL_CAP_ENV = "CODE_RISK_JEV_MAX_CALLS";
+
+    /** jev.max-calls wins; otherwise a valid non-negative integer from the environment; otherwise no cap. */
+    public static Integer jevCallCap(Integer configured, String environment) {
+        if (configured != null) return configured;
+        if (environment == null || environment.isBlank()) return null;
+        try {
+            int value = Integer.parseInt(environment.trim());
+            return value >= 0 ? value : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     /** Longest method source sent to JEV; longer bodies are cut so one finding cannot dominate the request. */

@@ -7,10 +7,13 @@
     ai --why                  only print the choice, the reason and the model setting
 
 Claude runs with --permission-mode acceptEdits and only CLAUDE_TOOLS commands; Codex runs in its workspace-write
-sandbox. Hitting a limit mid-task hands the same task to the other CLI.
+sandbox. MCP servers stay off (`ai --mcp ...` keeps them) and the agent is asked for short answers, to save
+tokens. Hitting a limit mid-task hands the same task to the other CLI.
 
 After a task that changed files, build-convention (./gradlew check without editing the build) and code-risk-analyzer
-(scan of the changed src/main files) run on the project; no model is called. "컨벤션 없이", "위험 분석 빼고" or
+(scan of the changed src/main files) run on the project. With TYPESAFE_API_KEY, JEV reviews the findings the
+static rules could not confirm (at most JEV_MAX_CALLS calls unless .code-risk.yml sets jev.max-calls); its opinion is
+advice only and never changes the result. "컨벤션 없이", "위험 분석 빼고" or
 "검사 없이" in the request switches that check off for that command only.
 
 Reads the CLIs' own local logs (usage_report.py); no network, no tokens. Codex records its 5-hour and weekly limit
@@ -198,6 +201,10 @@ def launch_setting(name, tier, routing):
 # Claude edits files without asking and may run only these commands; Codex writes inside its workspace sandbox.
 CLAUDE_TOOLS = ['Read', 'Edit', 'Write', 'MultiEdit', 'Glob', 'Grep', 'TodoWrite', 'Bash(./gradlew *)', 'Bash(gradle *)',
                 'Bash(git status*)', 'Bash(git diff*)', 'Bash(git log*)', 'Bash(git show*)', 'Bash(ls*)', 'Bash(cat *)']
+# Answers cost output tokens: ask for the result only. MCP servers add their tool definitions to every request.
+CONCISE = ('답변은 핵심만 짧게: 바꾼 것과 사람이 확인할 것만 쓴다. 과정 설명, 코드 전문, 반복 요약은 쓰지 않는다.')
+NO_MCP_CLAUDE = ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']
+NO_MCP_CODEX = ['-c', 'mcp_servers={}']
 LIMIT_ERROR = re.compile(r'usage limit|rate limit|limit reached|quota|too many requests|\b429\b', re.I)
 CONTINUE_WITHIN = timedelta(hours=3)
 USAGE = ('사용법: 프로젝트 폴더에서\n'
@@ -208,16 +215,16 @@ USAGE = ('사용법: 프로젝트 폴더에서\n'
          '  ai --why                      지금 무엇을 왜 고르는지만 보기')
 
 
-def command(name, model, effort, resume):
-    """The headless command; the task goes to stdin so no option can swallow it."""
+def command(name, model, effort, resume, mcp=False):
+    """The headless command; the task goes to stdin so no option can swallow it. MCP stays off unless asked for."""
     if name == 'claude':
         result = ['claude', '-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-                  '--allowedTools', *CLAUDE_TOOLS]
+                  '--append-system-prompt', CONCISE, *([] if mcp else NO_MCP_CLAUDE), '--allowedTools', *CLAUDE_TOOLS]
         result += ['--model', model] if model else []
         result += ['--effort', effort] if effort else []
         return result + (['--resume', resume] if resume else [])
     result = ['codex', 'exec'] + (['resume', resume] if resume else [])
-    result += ['--json', '--skip-git-repo-check', '--sandbox', 'workspace-write']
+    result += ['--json', '--skip-git-repo-check', '--sandbox', 'workspace-write', *([] if mcp else NO_MCP_CODEX)]
     result += ['-m', model] if model else []
     result += ['-c', f'model_reasoning_effort="{effort}"'] if effort else []
     return result + ['-']
@@ -304,6 +311,8 @@ RISK_OFF = re.compile(r'(위험|리스크|코드)\s*(분석|검사|스캔)\s*(�
 ALL_OFF = re.compile(r'(검사|검증|체크)\s*(는|를|은)?\s*(전부|다|모두)?\s*(없이|빼고|끄고|하지\s*말|말고)|no[-\s]?checks?', re.I)
 NAMED_CHECK = re.compile(r'(위험|리스크|코드|컨벤션|스타일|style|risk)\s*$', re.I)
 REPORT_DIR = Path('build')/'ai'
+# JEV reviews what the static rules could not confirm; each call is a TypeSafe request, capped unless the project sets one.
+JEV_MAX_CALLS = 20
 SEVERITY_ORDER = ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO')
 
 
@@ -331,16 +340,29 @@ def changed_sources(project, edits):
     return result
 
 
+def _jev(item):
+    """JEV's advisory note for a finding, or ''."""
+    for evidence in item.get('evidence') or []:
+        attributes = evidence.get('attributes') or {}
+        if evidence.get('type') == 'JEV_RISK_REVIEW' and isinstance(attributes.get('riskProbability'), (int, float)):
+            return f" JEV 위험 {attributes['riskProbability']:.2f}"
+        if evidence.get('type') == 'JEV_TEST_REVIEW' and isinstance(attributes.get('adequateProbability'), (int, float)):
+            return f" JEV 테스트 충분 {attributes['adequateProbability']:.2f}"
+    return ''
+
+
 def risk_summary(report, limit=5):
     findings = [item for item in report.get('findings', []) if item.get('severity') in ('CRITICAL', 'HIGH')]
     findings.sort(key=lambda item: SEVERITY_ORDER.index(item['severity']))
+    notes = {item.get('code'): item.get('message') for item in report.get('diagnostics') or [] if isinstance(item, dict)}
+    jev = ' (JEV 실패, 정적 결과만)' if 'JEV-001' in notes else ' (JEV 호출 한도 도달, 일부만 검토)' if 'JEV-002' in notes else ''
     if not findings:
-        return ['위험 분석: HIGH·CRITICAL 없음']
-    lines = [f'위험 분석: HIGH·CRITICAL {len(findings)}건']
+        return ['위험 분석: HIGH·CRITICAL 없음' + jev]
+    lines = [f'위험 분석: HIGH·CRITICAL {len(findings)}건' + jev]
     for item in findings[:limit]:
         location = item.get('location') or {}
         lines.append(f"  - {location.get('file')}:{location.get('startLine')} {item.get('ruleId')} {item.get('title')} "
-                     f"({item.get('status', '').lower() or 'confirmed'})")
+                     f"({item.get('status', '').lower() or 'confirmed'}){_jev(item)}")
     if len(findings) > limit:
         lines.append(f'  - 외 {len(findings) - limit}건')
     return lines
@@ -387,9 +409,14 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
         else:
             (reports/'changed.txt').write_text('\n'.join(sources) + '\n', encoding='utf-8')
             output = REPORT_DIR/'scan.json'
+            environ = dict(os.environ)
+            with_jev = _module('ask').load_key(environ)
+            if not with_jev:
+                say('위험 분석: JEV 키가 없어 정적으로 확정 못 한 항목(review)은 검토하지 않음')
+            environ.setdefault('CODE_RISK_JEV_MAX_CALLS', str(JEV_MAX_CALLS))
             result = process(['java', '-jar', str(jar), 'scan', str(project), '--format', 'json', '--output', output.as_posix(),
-                              '--files-file', (REPORT_DIR/'changed.txt').as_posix()],
-                             cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=1800)
+                              '--files-file', (REPORT_DIR/'changed.txt').as_posix(), '--jev', 'true' if with_jev else 'false'],
+                             cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=1800, env=environ)
             try:
                 lines = risk_summary(json.loads((project/output).read_text(encoding='utf-8')))
             except (OSError, ValueError):
@@ -397,7 +424,7 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
                                                      if line.startswith('Error')), f'exit {result.returncode}')]
             for line in lines:
                 say(line)
-            if lines[0] != '위험 분석: HIGH·CRITICAL 없음':
+            if not lines[0].startswith('위험 분석: HIGH·CRITICAL 없음'):
                 failed = True
                 findings += lines
     else:
@@ -405,6 +432,10 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
     if failed:
         say('고치려면: ai 검사 결과 고쳐줘 (이 결과가 다음 요청에 한 번 함께 전달됨)')
     return findings
+
+
+def _prompt(name, text):
+    return text if name == 'claude' else CONCISE + '\n\n' + text
 
 
 def _state_file(environ):
@@ -420,12 +451,12 @@ def _load(path):
 
 
 def _split(argv):
-    """(agent or None, task text, --why, --new)."""
+    """(agent or None, task text, --why, --new, --mcp)."""
     argv = list(sys.argv[1:] if argv is None else argv)
-    why, new = '--why' in argv, '--new' in argv
-    argv = [item for item in argv if item not in ('--why', '--new')]
+    why, new, mcp = '--why' in argv, '--new' in argv, '--mcp' in argv
+    argv = [item for item in argv if item not in ('--why', '--new', '--mcp')]
     agent = argv.pop(0) if argv[:1] in (['claude'], ['codex']) else None
-    return agent, ' '.join(argv).strip(), why, new
+    return agent, ' '.join(argv).strip(), why, new, mcp
 
 
 def _setting(name, tier, environ, say):
@@ -438,7 +469,7 @@ def _setting(name, tier, environ, say):
 
 def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subprocess.Popen, cwd=None, say=print,
          process=subprocess.run):
-    agent, task, why_only, new = _split(argv)
+    agent, task, why_only, new, mcp = _split(argv)
     cwd = Path(cwd or os.getcwd()).resolve()
     now = now or datetime.now(timezone.utc)
     installed = tuple(cli for cli in ('claude', 'codex') if which(cli))
@@ -481,17 +512,17 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
         say('ai: 직전 검사에서 실패한 내용을 이번 요청에 함께 보냅니다')
     prompt = ('직전 작업 뒤 자동 검사에서 실패한 내용이다. 요청과 관련되면 함께 고쳐라:\n' + '\n'.join(pending[:40])
               + '\n\n요청: ' + task) if pending else task
-    outcome = run(name, command(name, model, effort, resume), prompt, cwd, say, popen)
+    outcome = run(name, command(name, model, effort, resume, mcp), _prompt(name, prompt), cwd, say, popen)
     if resume and outcome['error'] and not outcome['session']:
         say('ai: 이전 대화를 열지 못해 새로 시작합니다')
-        outcome = run(name, command(name, model, effort, None), prompt, cwd, say, popen)
+        outcome = run(name, command(name, model, effort, None, mcp), _prompt(name, prompt), cwd, say, popen)
     if outcome['limited'] and not agent:
         other = 'codex' if name == 'claude' else 'claude'
         if other in installed:
             say(f'ai: {name} 한도에 걸려 {other}로 같은 작업을 이어서 합니다')
             name = other
             model, effort = _setting(name, tier, environ, say)
-            outcome = run(name, command(name, model, effort, None), prompt, cwd, say, popen)
+            outcome = run(name, command(name, model, effort, None, mcp), _prompt(name, prompt), cwd, say, popen)
     failures = [] if outcome['error'] else checks(task, cwd, outcome['edits'], say, process)
     if outcome['session'] or failures or pending:
         conversations[str(cwd)] = {'provider': name, 'session': outcome['session'] or previous.get('session'),

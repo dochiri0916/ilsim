@@ -147,7 +147,7 @@ class MainTests(unittest.TestCase):
         argv, cwd = self.started[0]
         self.assertEqual(0, code)
         self.assertEqual(['codex', 'exec', '--json', '--skip-git-repo-check', '--sandbox', 'workspace-write',
-                          '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="high"', '-'], argv)
+                          '-c', 'mcp_servers={}', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="high"', '-'], argv)
         self.assertEqual(Path(self.home).resolve(), cwd)
         self.assertIn('  · 명령 ./gradlew test', self.lines)
         self.assertIn('테스트 통과', self.lines)
@@ -188,6 +188,16 @@ class MainTests(unittest.TestCase):
         self.assertTrue(prompts[1].endswith('요청: 검사 결과 고쳐줘'))
         self.assertEqual('다음 일', prompts[2])
 
+    def test_mcp_is_off_and_answers_are_asked_to_be_short_unless_mcp_is_requested(self):
+        claude = pick.command('claude', None, None, None)
+        self.assertIn('--strict-mcp-config', claude)
+        self.assertEqual(pick.CONCISE, claude[claude.index('--append-system-prompt') + 1])
+        self.assertNotIn('--strict-mcp-config', pick.command('claude', None, None, None, mcp=True))
+        self.assertNotIn('mcp_servers={}', pick.command('codex', None, None, None, mcp=True))
+        self.assertTrue(pick._prompt('codex', '작업').startswith(pick.CONCISE))
+        self.assertEqual('작업', pick._prompt('claude', '작업'))
+        self.assertEqual((None, '작업', False, False, True), pick._split(['--mcp', '작업']))
+
     def test_why_and_no_task_only_print(self):
         self.assertEqual(0, self.main('--why'))
         self.assertEqual(0, self.main())
@@ -227,6 +237,39 @@ class CheckTests(unittest.TestCase):
         self.assertIn('  - src/main/java/A.java:14 CON-001 Check-then-act race (review)', self.lines)
         self.assertIn('고치려면: ai 검사 결과 고쳐줘 (이 결과가 다음 요청에 한 번 함께 전달됨)', self.lines)
         self.assertEqual('src/main/java/A.java\n', (self.project/'build/ai/changed.txt').read_text())
+
+    def test_jev_reviews_what_static_rules_could_not_confirm_within_a_cap(self):
+        environments = []
+
+        def process(command, **options):
+            environments.append((command, options.get('env')))
+            return self.process(command, **options)
+        with tempfile.TemporaryDirectory() as secrets:
+            (Path(secrets)/'keys').write_text('TYPESAFE_API_KEY=test-key\n')
+            with patch.dict(pick.os.environ, {'CODE_RISK_SECRETS': secrets + '/keys'}, clear=False):
+                pick.os.environ.pop('TYPESAFE_API_KEY', None)
+                pick.os.environ.pop('CODE_RISK_JEV_MAX_CALLS', None)
+                pick.checks('위험 분석만', self.project, ['src/main/java/A.java'], self.lines.append, process, self.jar)
+        command, environ = next(item for item in environments if item[0][0] == 'java')
+        self.assertEqual('true', command[command.index('--jev') + 1])
+        self.assertEqual('20', environ['CODE_RISK_JEV_MAX_CALLS'])
+        self.assertEqual('test-key', environ['TYPESAFE_API_KEY'])
+
+    def test_without_a_key_the_review_items_are_named_as_unreviewed(self):
+        with patch.dict(pick.os.environ, {'CODE_RISK_SECRETS': '/nonexistent'}, clear=False):
+            pick.os.environ.pop('TYPESAFE_API_KEY', None)
+            self.run_checks('추가해줘')
+        self.assertTrue(any('JEV 키가 없어' in line for line in self.lines))
+        self.assertIn('false', next(c for c in self.commands if c[0] == 'java'))
+
+    def test_jev_opinion_is_shown_as_advice(self):
+        report = {'findings': [{'ruleId': 'CON-001', 'severity': 'HIGH', 'status': 'REVIEW', 'title': 'race',
+                                'location': {'file': 'A.java', 'startLine': 3},
+                                'evidence': [{'type': 'JEV_RISK_REVIEW', 'attributes': {'riskProbability': 0.82}}]}],
+                  'diagnostics': [{'code': 'JEV-002', 'message': 'limit'}]}
+        lines = pick.risk_summary(report)
+        self.assertIn('JEV 호출 한도 도달', lines[0])
+        self.assertEqual('  - A.java:3 CON-001 race (review) JEV 위험 0.82', lines[1])
 
     def test_the_request_switches_off_only_the_named_check_for_this_command(self):
         cases = {'컨벤션 없이 추가해줘': ['scan'], '위험 분석 빼고 추가해줘': ['convention_check.py'],
