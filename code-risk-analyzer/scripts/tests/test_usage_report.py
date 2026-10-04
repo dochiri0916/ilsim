@@ -74,8 +74,8 @@ class UsageReportTests(unittest.TestCase):
         self.assertEqual(42.0, value['limits']['fiveHour']['usedPercent'])
         self.assertEqual((NOW - timedelta(hours=1) + timedelta(seconds=3600)).isoformat(), value['limits']['fiveHour']['resetsAt'])
         text = usage.report(usage.claude_usage(self.root/'claude', NOW), value, NOW)
-        self.assertIn('5시간: 42% 사용 (기록 이후 이미 초기화됨)', text)
-        self.assertIn('주간: 8% 사용', text)
+        self.assertIn('5시간: 100% 남음 (기록 이후 초기화됨)', text)
+        self.assertIn('주간: 92% 남음', text)
         self.assertIn('요금제 plus', text)
         self.assertIn('기록 파일이 없습니다 (~/.claude/projects)', text)
 
@@ -108,8 +108,8 @@ class UsageReportTests(unittest.TestCase):
         self.assertEqual((NOW - timedelta(minutes=10)).isoformat(), limits['observedAt'])
         claude = dict(usage.claude_usage(self.root/'claude', NOW), limits=limits)
         text = usage.report(claude, usage.codex_usage(self.root/'codex', NOW), NOW)
-        self.assertIn('5시간: 25% 사용', text)
-        self.assertIn('주간: 77% 사용', text)
+        self.assertIn('5시간: 75% 남음', text)
+        self.assertIn('주간: 23% 남음', text)
 
     def test_a_rejected_window_without_utilization_counts_as_used_up(self):
         found = usage.claude_limits_from({'status': 'rejected', 'rateLimitType': 'five_hour',
