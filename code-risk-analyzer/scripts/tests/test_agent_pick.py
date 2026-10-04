@@ -171,11 +171,80 @@ class MainTests(unittest.TestCase):
         self.assertEqual(['claude', 'codex'], [argv[0] for argv, _ in self.started])
         self.assertTrue(any('codex로 같은 작업' in line for line in self.lines))
 
+    def test_failed_checks_go_to_the_next_task_once(self):
+        prompts = []
+
+        def popen(argv, **options):
+            process = FakeProcess(CLAUDE_OK)
+            process.stdin = type('Stdin', (), {'write': lambda _, text: prompts.append(text), 'close': lambda _: None})()
+            return process
+        failures = [['위험 분석: HIGH·CRITICAL 1건', '  - A.java:14 CON-001'], [], []]
+        with patch.object(pick, 'checks', side_effect=lambda *args, **kwargs: failures.pop(0)):
+            for minute, task in ((0, '추가해줘'), (5, '검사 결과 고쳐줘'), (10, '다음 일')):
+                pick.main(['claude', task], environ=self.environ, now=NOW + timedelta(minutes=minute),
+                          which=lambda cli: '/bin/' + cli, popen=popen, cwd=self.home, say=self.lines.append)
+        self.assertEqual('추가해줘', prompts[0])
+        self.assertIn('A.java:14 CON-001', prompts[1])
+        self.assertTrue(prompts[1].endswith('요청: 검사 결과 고쳐줘'))
+        self.assertEqual('다음 일', prompts[2])
+
     def test_why_and_no_task_only_print(self):
         self.assertEqual(0, self.main('--why'))
         self.assertEqual(0, self.main())
         self.assertEqual([], self.started)
         self.assertTrue(any('사용법' in line for line in self.lines))
+
+
+class CheckTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.project = Path(temp.name).resolve()
+        (self.project/'gradlew').write_text('')
+        (self.project/'settings.gradle').write_text('')
+        self.jar = self.project/'analyzer.jar'
+        self.jar.write_text('')
+        self.commands, self.lines = [], []
+
+    def process(self, command, **options):
+        self.commands.append(command)
+        if 'scan' in command:
+            output = self.project/command[command.index('--output') + 1]
+            output.write_text(json.dumps({'findings': [
+                {'ruleId': 'CON-001', 'severity': 'HIGH', 'status': 'REVIEW', 'title': 'Check-then-act race',
+                 'location': {'file': 'src/main/java/A.java', 'startLine': 14}},
+                {'ruleId': 'X', 'severity': 'MEDIUM', 'title': 'ignored', 'location': {}}]}))
+            return pick.subprocess.CompletedProcess(command, 1, stdout='')
+        return pick.subprocess.CompletedProcess(command, 0, stdout='컨벤션 검증: 통과\n리포트: x\n')
+
+    def run_checks(self, task, edits=('src/main/java/A.java',)):
+        pick.checks(task, self.project, list(edits), self.lines.append, self.process, self.jar)
+        return [Path(command[1]).name if command[0] != 'java' else 'scan' for command in self.commands]
+
+    def test_both_checks_run_after_a_change_and_report_briefly(self):
+        self.assertEqual(['convention_check.py', 'scan'], self.run_checks('회원 탈퇴 추가해줘'))
+        self.assertIn('컨벤션 검증: 통과', self.lines)
+        self.assertIn('  - src/main/java/A.java:14 CON-001 Check-then-act race (review)', self.lines)
+        self.assertIn('고치려면: ai 검사 결과 고쳐줘 (이 결과가 다음 요청에 한 번 함께 전달됨)', self.lines)
+        self.assertEqual('src/main/java/A.java\n', (self.project/'build/ai/changed.txt').read_text())
+
+    def test_the_request_switches_off_only_the_named_check_for_this_command(self):
+        cases = {'컨벤션 없이 추가해줘': ['scan'], '위험 분석 빼고 추가해줘': ['convention_check.py'],
+                 '리스크 검사 하지 말고 해줘': ['convention_check.py'], '검사 없이 해줘': []}
+        for task, expected in cases.items():
+            with self.subTest(task=task):
+                self.commands = []
+                self.assertEqual(expected, self.run_checks(task))
+
+    def test_nothing_runs_without_a_change_or_outside_a_gradle_project(self):
+        self.assertEqual([], self.run_checks('설명해줘', edits=()))
+        (self.project/'gradlew').unlink()
+        self.assertEqual([], self.run_checks('추가해줘'))
+        self.assertIn('검사: Gradle 프로젝트가 아니라 건너뜀', self.lines)
+
+    def test_only_edited_production_java_files_are_scanned(self):
+        edits = [str(self.project/'src/main/java/A.java'), 'src/test/java/ATest.java', '/elsewhere/B.java', 'README.md']
+        self.assertEqual(['src/main/java/A.java'], pick.changed_sources(self.project, edits))
 
 
 if __name__ == '__main__':
