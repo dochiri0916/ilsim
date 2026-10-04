@@ -838,6 +838,8 @@ def main(argv=None, update=None):
     parser.add_argument('--allowed-models', help='허용할 모델 이름 목록(쉼표 구분)')
     parser.add_argument('--no-jev', action='store_true', help='TYPESAFE_API_KEY가 있어도 JEV 없이 키워드로만 판단')
     parser.add_argument('--no-update', action='store_true', help='이 도구의 자동 업데이트(git pull·재빌드)를 하지 않음')
+    parser.add_argument('--check-models', action='store_true',
+                        help='routing이 쓰는 모델마다 짧은 요청을 보내 아직 쓸 수 있는지 확인(토큰 소량)')
     for name in ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request'):
         parser.add_argument('--' + name)
     args = parser.parse_args(argv)
@@ -845,6 +847,8 @@ def main(argv=None, update=None):
                ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request')
                if getattr(args, name.replace('-', '_')) is not None}
     allowed = args.allowed_models.split(',') if args.allowed_models else None
+    if args.check_models:
+        return _module('model_check').main()
     if args.request is None and not args.yes:
         parser.error('요청 문장을 적거나, 확인한 계획을 실행하려면 --yes만 주세요')
     if update is not None and updates_now(args):
