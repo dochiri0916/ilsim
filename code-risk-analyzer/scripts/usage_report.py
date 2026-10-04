@@ -283,7 +283,7 @@ def report(claude, codex, now, days=7):
     labels = {'last5h': '최근 5시간', 'today': '오늘', f'last{days}d': f'최근 {days}일'}
     lines = ['Claude Code 사용량 (로컬 기록):']
     lines += _period_lines(claude['periods'], labels) if claude['files'] else ['  기록 파일이 없습니다 (~/.claude/projects)']
-    lines += _limit_lines(claude.get('limits'), now, 'ai로 Claude를 한 번 실행하면 남습니다')
+    lines += _limit_lines(claude.get('limits'), now, 'Claude CLI에 로그인돼 있으면 ai --usage가 받아 옵니다')
     lines.append('Codex 사용량 (로컬 기록):')
     if not codex['files']:
         lines.append('  기록 파일이 없습니다 (~/.codex/sessions)')
