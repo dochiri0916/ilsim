@@ -600,15 +600,42 @@ class ZeroConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '금지된 고비용 모델'):
             ask.fix_models(dict(ask.default_routing({}), registry=str(path)))
 
-    def test_change_request_needs_the_persons_spec_and_calls_no_model(self):
-        # given / when / then: without a spec file nothing is created
-        with self.assertRaisesRegex(ValueError, '명세 파일이 필요합니다'):
-            ask.zero_config('회원 가입 기능 추가해줘', self.project, None, None)
-        self.assertFalse((self.project/'build/ask').exists())
-        # a spec with open questions is not a spec yet
+    def call(self, config, workspace, prompt, schema, validate):
+        self.calls.append({'config': config, 'prompt': prompt})
+        return {'status': 'COMPLETED', 'output': validate(self.samples.sample()), 'usage': {}}
+
+    def test_without_a_spec_the_model_drafts_one_and_keeps_it_for_editing(self):
+        # when
+        with redirect_stdout(io.StringIO()) as output:
+            value = ask.start_change('회원 가입 기능 추가해줘', self.project, ('CODE_CHANGE', 'k'), None, None,
+                                     None, lambda path, jar: None, self.measure_quiet, self.call)
+        # then: one cheap-tier call, the plan waits for approval and the draft is an editable spec
+        session = Path(value['state']).parent
+        self.assertEqual([ask.draft_models(ask.default_routing({}))[0]['model']], [call['config']['model'] for call in self.calls])
+        self.assertIn('회원 가입 기능 추가해줘', self.calls[0]['prompt'])
+        drafted = json.loads((session/'spec.json').read_text())
+        self.assertNotIn('status', drafted)
+        self.assertEqual(self.samples.SAMPLE['requirements'], drafted['requirements'])
+        self.assertIn(f'ask --spec build/ask/{session.name}/spec.json', output.getvalue())
+        self.assertFalse((session/'state.json').exists())
+
+    def test_draft_questions_stop_and_a_spec_with_open_questions_is_rejected(self):
+        def ask_back(config, workspace, prompt, schema, validate):
+            return {'status': 'NEEDS_REVIEW', 'output': validate(self.samples.sample(
+                status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[]))}
+        with redirect_stdout(io.StringIO()), self.assertRaisesRegex(LookupError, '어떤 DB?'):
+            ask.start_change('회원 가입 기능 추가해줘', self.project, ('CODE_CHANGE', 'k'), None, None, None, call=ask_back)
         with self.assertRaisesRegex(ValueError, '정하지 못한 질문'):
             ask.start_change('회원 가입 기능 추가해줘', self.project, ('CODE_CHANGE', 'k'), None, None,
                              self.spec(status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[]))
+
+    def test_a_given_spec_is_used_without_any_model_call(self):
+        self.start()
+        self.assertEqual([], self.calls)
+
+    def measure_quiet(self, project, output, base_ref, **options):
+        self.measured = []
+        return self.measure(project, output, base_ref, **options)
 
     def test_quality_gates_are_on_for_changed_classes_unless_the_request_turns_them_off(self):
         self.assertTrue(ask.quality_choice('회원 가입 기능 추가해줘'))
@@ -779,10 +806,12 @@ class UpdateTests(unittest.TestCase):
             seen.append(arguments)
             raise self.Updated()
 
+        def draft(*arguments, **options):
+            raise self.Updated()  # past the update point: stop before any model call
+
         with tempfile.TemporaryDirectory() as folder, redirect_stdout(io.StringIO()):
             try:
-                # Without a spec file a change request stops right after the update point.
-                ask.main([*argv, '--project', folder, '--no-jev'], update=update)
+                ask.main([*argv, '--project', folder, '--no-jev'], update=update, call=draft)
             except self.Updated:
                 pass
         return seen
