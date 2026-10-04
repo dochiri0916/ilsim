@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Sets up the `ask` command on this PC. Target projects need nothing: run `ask "..."` inside any Gradle project.
+# Sets up the `ai` command on this PC. Target projects need nothing: run `ai 작업 내용` inside any Gradle project.
 #
-#   ./install.sh               check tools, build both projects, install ~/.local/bin/ask
+#   ./install.sh               check tools, build both projects, install ~/.local/bin/ai and ask-remote
 #   ./install.sh --agent-hint  also tell Claude Code and Codex (global instruction files) that ai runs the checks
 set -euo pipefail
 
@@ -42,18 +42,18 @@ echo "2/4 code-risk-analyzer 빌드"
 
 echo "3/4 build-convention 빌드 후 로컬 Maven 저장소(~/.m2)에 설치"
 (cd "$ROOT/build-convention" && ./gradlew clean publishToMavenLocal --no-daemon -q) || fail "build-convention 빌드 실패"
-# ask pulls and rebuilds on its own after this; record what was just built so the first request does not rebuild.
+# ai pulls and rebuilds on its own after this; record what was just built so the first task does not rebuild.
 if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   python3 "$ROOT/code-risk-analyzer/scripts/self_update.py" --mark-built || note "자동 업데이트 기록을 남기지 못했습니다"
 fi
 
-echo "4/4 ai, ask, ask-remote 명령 설치: $BIN"
+echo "4/4 ai, ask-remote 명령 설치: $BIN"
 mkdir -p "$BIN"
-cat > "$BIN/ask" <<EOF
-#!/bin/sh
-exec python3 "$ROOT/code-risk-analyzer/scripts/ask.py" "\$@"
-EOF
-chmod +x "$BIN/ask"
+# The ask command was removed; drop its old wrapper if it is ours.
+if grep -qs "code-risk-analyzer/scripts/ask.py" "$BIN/ask"; then
+  rm -f "$BIN/ask"
+  note "예전 ask 명령을 지웠습니다 (ai로 바뀜)"
+fi
 cat > "$BIN/ask-remote" <<EOF
 #!/bin/sh
 exec python3 "$ROOT/code-risk-analyzer/scripts/remote_runner.py" "\$@"
@@ -91,9 +91,8 @@ for name in sys.argv[1:]:
 PY
 fi
 
-echo "자동 업데이트: ask가 새 요청마다(최대 10분에 한 번) 이 폴더를 git pull하고 바뀐 쪽만 다시 빌드합니다 (끄기: --no-update 또는 ASK_NO_UPDATE=1)"
-echo "ai: 프로젝트 폴더에서 ai 작업 내용 → 한도가 유리한 Claude·Codex가 대신 작업하고 결과만 보여 줍니다 (ai --why, ai --new)"
-echo "완료. Gradle 프로젝트 폴더에서: ask \"요청\" (명세 초안을 모델이 씀, 직접 쓴 명세는 --spec spec.json) → 계획 확인 → ask --yes"
+echo "완료. Gradle 프로젝트 폴더에서: ai 작업 내용 → 한도가 유리한 Claude·Codex가 작업하고 검사 결과까지 보여 줍니다 (ai --why, ai --new)"
+echo "자동 업데이트: ai가 작업을 받을 때마다(최대 10분에 한 번) 이 폴더를 git pull하고 바뀐 쪽만 다시 빌드합니다 (끄기: ASK_NO_UPDATE=1)"
 
 if [ "$PATH_MISSING" = true ]; then
   case "$(basename "${SHELL:-}")" in
@@ -102,7 +101,7 @@ if [ "$PATH_MISSING" = true ]; then
     *) RC="~/.profile" ;;
   esac
   echo
-  echo "ask 명령을 쓰려면 아래 두 줄을 그대로 복사해 실행하세요 ($BIN 을 PATH에 등록):"
+  echo "ai 명령을 쓰려면 아래 두 줄을 그대로 복사해 실행하세요 ($BIN 을 PATH에 등록):"
   echo
   echo "  echo 'export PATH=\"$BIN:\$PATH\"' >> $RC"
   echo "  source $RC"

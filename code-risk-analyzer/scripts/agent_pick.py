@@ -28,9 +28,9 @@ Rules, in order:
 4. Otherwise Codex, whose remaining room is known.
 
 Model and reasoning: capacity about to reset with plenty left (BOOST_LEFT percent or more) gets the TIER_4 route's
-strongest setting for the chosen CLI; otherwise a task sentence gets ask's tier (TIER_3 for risk words such as payment,
+strongest setting for the chosen CLI; otherwise a task sentence gets tier() (TIER_3 for risk words such as payment,
 concurrency or transaction, else TIER_2). Without either the CLI's own default is used. Routes come from
-config/ask/routing-policy.json, so forbidden models and efforts are never chosen.
+config/models/routing-policy.json, so forbidden models and efforts are never chosen.
 """
 from datetime import datetime, timedelta, timezone
 import importlib.util
@@ -62,6 +62,96 @@ def _module(name):
 
 
 usage = _module('usage_report')
+
+
+# --- project, routing and key helpers ---
+DEFAULT_JAR = SCRIPTS.parent/'build'/'libs'/'code-risk-analyzer-0.0.1-SNAPSHOT.jar'
+DEFAULT_ROUTING = SCRIPTS.parent/'config'/'models'
+ROUTING_FILES = {'registry': 'models.json', 'policy': 'routing-policy.json'}
+FORBIDDEN_MODELS = ('astra', 'fable', 'opus')
+FORBIDDEN_EFFORTS = ('max',)
+# Request words that mark a high-risk change; they raise the task to TIER_3.
+RISK = ('결제', '금액', '환불', '정산', '돈', '재고', '상태 전이', '상태전이', '동시', '트랜잭션', '롤백', '재시도', '메시지',
+        '이벤트', '멱등', '중복', '락', '보안', '권한', '인증', '개인정보', '테넌트', 'tenant', 'sql', 'payment', 'stock',
+        'inventory', 'concurren*', 'transaction', 'rollback', 'retr*', 'idempot*', 'security', 'auth*', 'lock', 'message')
+CONVENTION_OFF = re.compile(r'(컨벤션|코드\s*스타일|스타일\s*검사)\s*(검사|검증|확인)?\s*(없이|빼고|끄고|무시|안\s*지키|하지\s*말|말고)'
+                            r'|no[-\s]?convention', re.I)
+KEY = 'TYPESAFE_API_KEY'
+KEY_LINE = re.compile(r'\s*(?:export\s+)?' + KEY + r'\s*=\s*(.*?)\s*')
+
+
+def _read(path):
+    return json.loads(Path(path).read_text(encoding='utf-8'))
+
+
+def _matches(text, words):
+    found = []
+    for word in words:
+        # ASCII words match whole words; a trailing * marks a stem such as concurren*.
+        stem = word.rstrip('*')
+        pattern = re.escape(stem)
+        if word.isascii():
+            pattern = r'(?<![a-z])' + pattern + ('' if word.endswith('*') else r's?(?![a-z])')
+        if re.search(pattern, text):
+            found.append(stem)
+    return found
+
+
+def tier(text):
+    found = _matches(text.lower(), RISK)
+    if found:
+        return 'TIER_3', '고위험 영역: ' + ', '.join(found)
+    return 'TIER_2', '고위험 영역 단어 없음'
+
+
+def find_project(start):
+    """The nearest folder at or above start that holds a Gradle wrapper and build file."""
+    for folder in [start, *start.parents]:
+        if (folder/'gradlew').is_file() and any((folder/name).is_file() for name in
+                                                ('settings.gradle', 'settings.gradle.kts', 'build.gradle', 'build.gradle.kts')):
+            return folder
+    raise ValueError('Gradle 프로젝트 폴더(gradlew가 있는 곳)에서 실행하거나 --project로 지정하세요')
+
+
+def default_routing(environ=os.environ):
+    """config/models in this checkout, each file replaceable from ~/.config/code-risk (or CODE_RISK_CONFIG_HOME)."""
+    home = Path(environ.get('CODE_RISK_CONFIG_HOME') or '~/.config/code-risk').expanduser()
+    return {key: str((home/name if (home/name).is_file() else DEFAULT_ROUTING/name).resolve()) for key, name in ROUTING_FILES.items()}
+
+
+def check_routes(routing):
+    """Every model and effort the routing policy can reach; refuses forbidden ones before anything runs."""
+    registry, policy = _read(routing['registry']), _read(routing['policy'])
+    for route in policy['tiers'].values():
+        for step in [route, *route.get('fallbacks', [])]:
+            model, effort = registry['models'][step['modelId']]['model'], step['reasoningEffort']
+            if any(word in model.lower() for word in FORBIDDEN_MODELS):
+                raise ValueError(f'금지된 고비용 모델이 경로에 있습니다: {model}')
+            if effort in FORBIDDEN_EFFORTS:
+                raise ValueError(f'reasoningEffort {effort}는 자동 실행에서 금지됩니다 ({model})')
+    return registry, policy
+
+
+def load_key(environ=os.environ):
+    """Fill TYPESAFE_API_KEY from ~/.secrets (or CODE_RISK_SECRETS) when the shell did not export it; never printed."""
+    if environ.get(KEY, '').strip():
+        return True
+    path = Path(environ.get('CODE_RISK_SECRETS') or '~/.secrets').expanduser()
+    files = [path] if path.is_file() else sorted(item for item in path.iterdir() if item.is_file()) if path.is_dir() else []
+    for file in files:
+        if file.stat().st_size > 65536:
+            continue
+        text = file.read_text(encoding='utf-8', errors='replace')
+        if file.name == KEY and '=' not in text:
+            values = [text.strip()]
+        else:
+            values = [match.group(1) for match in map(KEY_LINE.fullmatch, text.splitlines()) if match]
+        for value in values:
+            value = value.strip().strip('"\'')
+            if value:
+                environ[KEY] = value
+                return True
+    return False
 LIMIT_TEXT = re.compile(r'(usage limit reached|limit reached|limit will reset|rate limit)', re.I)
 EPOCH = re.compile(r'\|(\d{10})\b')
 CLOCK = re.compile(r'resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', re.I)
@@ -186,9 +276,7 @@ def launch_setting(name, tier, routing):
     """(model, effort) for the chosen CLI from the tier's route, strongest setting of that provider; (None, None) for defaults."""
     if tier is None:
         return None, None
-    ask = _module('ask')
-    ask.models({'routing': {'registry': routing['registry'], 'policy': routing['policy']}})  # refuses forbidden routes
-    registry, policy = ask._read(routing['registry']), ask._read(routing['policy'])
+    registry, policy = check_routes(routing)
     route = policy['tiers'].get(tier)
     if route is None:
         return None, None
@@ -319,10 +407,9 @@ SEVERITY_ORDER = ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO')
 
 def check_plan(task):
     """Which checks run for this command: both unless the sentence switches one (or all) off."""
-    ask = _module('ask')
     # "검사 없이" alone switches every check off; "리스크 검사 없이" names one check, handled by its own pattern.
     everything_off = any(not NAMED_CHECK.search(task[max(0, match.start() - 10):match.start()]) for match in ALL_OFF.finditer(task))
-    return {'convention': not everything_off and not ask.CONVENTION_OFF.search(task),
+    return {'convention': not everything_off and not CONVENTION_OFF.search(task),
             'risk': not everything_off and not RISK_OFF.search(task)}
 
 
@@ -381,7 +468,7 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
             say('검사: 요청대로 건너뜀')
         return findings
     try:
-        project = _module('ask').find_project(Path(cwd))
+        project = find_project(Path(cwd))
     except ValueError:
         say('검사: Gradle 프로젝트가 아니라 건너뜀')
         return findings
@@ -401,7 +488,7 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
     else:
         say('검사: build-convention은 요청대로 건너뜀')
     if plan['risk']:
-        jar = Path(jar) if jar else _module('ask').DEFAULT_JAR
+        jar = Path(jar) if jar else DEFAULT_JAR
         sources = changed_sources(project, edits)
         if not jar.is_file():
             say('위험 분석: 분석기 jar가 없어 건너뜀 (install.sh)')
@@ -411,7 +498,7 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
             (reports/'changed.txt').write_text('\n'.join(sources) + '\n', encoding='utf-8')
             output = REPORT_DIR/'scan.json'
             environ = dict(os.environ)
-            with_jev = _module('ask').load_key(environ)
+            with_jev = load_key(environ)
             if not with_jev:
                 say('위험 분석: JEV 키가 없어 정적으로 확정 못 한 항목(review)은 검토하지 않음')
             environ.setdefault('CODE_RISK_JEV_MAX_CALLS', str(JEV_MAX_CALLS))
@@ -462,7 +549,7 @@ def _split(argv):
 
 def _setting(name, tier, environ, say):
     try:
-        return launch_setting(name, tier, _module('ask').default_routing(environ))
+        return launch_setting(name, tier, default_routing(environ))
     except (ValueError, OSError, KeyError) as error:
         say(f'ai: 모델 설정을 쓰지 못해 CLI 기본값으로 실행합니다 ({error})')
         return None, None
@@ -497,10 +584,10 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
     if name is None:
         say(f'ai: {why}')
         return 1
-    tier = 'TIER_4' if boost else _module('ask').tier(task)[0] if task else None
-    model, effort = _setting(name, tier, environ, say)
+    level = 'TIER_4' if boost else tier(task)[0] if task else None
+    model, effort = _setting(name, level, environ, say)
     setting = ' '.join(item for item in (model, effort) if item) or 'CLI 기본값'
-    say(f'ai: {name} ({why}) - {setting}' + (' [곧 초기화될 여유분이라 최고 설정]' if boost else f' [{tier}]' if tier else ''))
+    say(f'ai: {name} ({why}) - {setting}' + (' [곧 초기화될 여유분이라 최고 설정]' if boost else f' [{level}]' if level else ''))
     if why_only or not task:
         if not why_only:
             say(USAGE)
@@ -536,7 +623,7 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
         if other in installed:
             say(f'ai: {name} 한도에 걸려 {other}로 같은 작업을 이어서 합니다')
             name = other
-            model, effort = _setting(name, tier, environ, say)
+            model, effort = _setting(name, level, environ, say)
             outcome = run(name, command(name, model, effort, None, mcp), _prompt(name, prompt), cwd, say, popen)
     failures = [] if outcome['error'] else checks(task, cwd, outcome['edits'], say, process)
     if outcome['session'] or failures or pending:

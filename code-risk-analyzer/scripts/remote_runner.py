@@ -9,7 +9,7 @@ as on the PC. There is no approval step.
                                Vercel:   ASK_REMOTE_URL and ASK_RUNNER_TOKEN in env or ~/.secrets
     ask-remote --once          one exchange, for a quick connection check
 
-When a request's `ask` pulled new code for this runner too, the runner starts again on it between exchanges and keeps
+When a request's `ai` pulled new code for this runner too, the runner starts again on it between exchanges and keeps
 the session that was waiting for approval.
 """
 import argparse
@@ -92,13 +92,13 @@ def poster(url, token, timeout=30):
 
 
 def summary(output, limit=SUMMARY_LIMIT):
-    """The end of the output, where ask prints the plan and the result."""
+    """The end of the output, where ai prints the answer and the checks."""
     text = output.strip()
     return text if len(text) <= limit else '...\n' + text[-limit:].split('\n', 1)[-1]
 
 
 def child_env(environ=os.environ):
-    """ask does not need the runner's own secrets."""
+    """ai does not need the runner's own secrets."""
     return {key: value for key, value in environ.items() if key not in SECRET_KEYS}
 
 
@@ -281,7 +281,7 @@ def main(argv=None, sleep=time.sleep):
     args = parser.parse_args(argv)
     try:
         telegram = telegram_settings()
-        project = Path(args.project).expanduser().resolve() if args.project else _module('ask').find_project(Path.cwd().resolve())
+        project = Path(args.project).expanduser().resolve() if args.project else _module('agent_pick').find_project(Path.cwd().resolve())
         if telegram:
             call = telegram_api(telegram[0])
             if telegram[1] is None:

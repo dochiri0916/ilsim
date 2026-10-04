@@ -1,2 +1,0 @@
-{"title": "Rate limit window", "file": "RateLimiter.java",
- "description": "RateLimiter.allow lets at most `limit` calls through per caller within any window of `windowMillis` milliseconds ending at `now` (a call exactly windowMillis old no longer counts). It currently never forgets old calls, so a caller stays blocked forever. Fix allow without changing its signature."}
