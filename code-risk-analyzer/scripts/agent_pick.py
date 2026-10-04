@@ -369,6 +369,16 @@ def show(name, event, say, edits=None):
     return None, None
 
 
+def _stop(process):
+    try:
+        process.terminate()
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+    except (OSError, AttributeError):
+        pass
+
+
 def run(name, argv, task, cwd, say, popen=subprocess.Popen):
     """{'session', 'error', 'limited'}: streams the CLI's JSON events as short lines."""
     session, error, edits = None, None, []
@@ -377,16 +387,21 @@ def run(name, argv, task, cwd, say, popen=subprocess.Popen):
                         encoding='utf-8', errors='replace')
     except OSError as failure:
         return {'session': None, 'error': str(failure), 'limited': False, 'edits': []}
-    process.stdin.write(task)
-    process.stdin.close()
-    for line in process.stdout:
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(event, dict):
-            found, failed = show(name, event, say, edits)
-            session, error = found or session, failed or error
+    try:
+        process.stdin.write(task)
+        process.stdin.close()
+        for line in process.stdout:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict):
+                found, failed = show(name, event, say, edits)
+                session, error = found or session, failed or error
+    except KeyboardInterrupt:
+        # Ctrl+C reaches the CLI too; make sure it is gone before returning what it did so far.
+        _stop(process)
+        return {'session': session, 'error': None, 'limited': False, 'edits': edits, 'cancelled': True}
     stderr = process.stderr.read() if process.stderr else ''
     code = process.wait()
     if code and not error:
@@ -567,6 +582,22 @@ def self_update(argv):
         os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *argv])
 
 
+def _cancelled(outcome, name, cwd, now, conversations, previous, state_path, say):
+    """Keep the conversation (the next ai continues it) and say which files were already changed."""
+    if outcome['session'] or previous.get('session'):
+        conversations[str(cwd)] = {'provider': name, 'session': outcome['session'] or previous.get('session'),
+                                   'at': now.isoformat(), 'checks': previous.get('checks') or []}
+        try:
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            state_path.write_text(json.dumps(conversations, ensure_ascii=False, indent=2), encoding='utf-8')
+        except OSError:
+            pass
+    edited = sorted(set(outcome['edits']))
+    say('ai: 취소했습니다' + (f" - 이미 바뀐 파일 {len(edited)}개 ({', '.join(edited[:5])}{' 외' if len(edited) > 5 else ''}), "
+                            "되돌리려면 git status·git restore" if edited else ''))
+    return 130
+
+
 def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subprocess.Popen, cwd=None, say=print,
          process=subprocess.run, update=None):
     agent, task, why_only, new, mcp = _split(argv)
@@ -615,6 +646,8 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
     prompt = ('직전 작업 뒤 자동 검사에서 실패한 내용이다. 요청과 관련되면 함께 고쳐라:\n' + '\n'.join(pending[:40])
               + '\n\n요청: ' + task) if pending else task
     outcome = run(name, command(name, model, effort, resume, mcp), _prompt(name, prompt), cwd, say, popen)
+    if outcome.get('cancelled'):
+        return _cancelled(outcome, name, cwd, now, conversations, previous, state_path, say)
     if resume and outcome['error'] and not outcome['session']:
         say(f"ai: 이전 대화를 열지 못해 새로 시작합니다 ({outcome['error'][:200]})")
         outcome = run(name, command(name, model, effort, None, mcp), _prompt(name, prompt), cwd, say, popen)
@@ -642,4 +675,9 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
 
 
 if __name__ == '__main__':
-    sys.exit(main(update=self_update))
+    try:
+        sys.exit(main(update=self_update))
+    except KeyboardInterrupt:
+        # Ctrl+C outside the CLI run (update, checks): stop without a traceback.
+        print('\nai: 취소했습니다', file=sys.stderr)
+        sys.exit(130)
