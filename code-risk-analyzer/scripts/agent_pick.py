@@ -5,6 +5,7 @@
     ai --new ...              start a new conversation
     ai claude | codex ...     use that one
     ai --why                  only print the choice, the reason and the model setting
+    ai --usage                Claude Code and Codex usage from their local logs (usage_report.py)
 
 Claude runs with --permission-mode acceptEdits and only CLAUDE_TOOLS commands; Codex runs in its workspace-write
 sandbox. Every task first fast-forwards this tool's checkout (self_update.py; ASK_NO_UPDATE=1 turns it off).
@@ -301,7 +302,8 @@ USAGE = ('사용법: 프로젝트 폴더에서\n'
          '  ai 방금 거 테스트도 추가해줘    같은 폴더의 이전 대화를 이어서 (3시간 이내, 같은 CLI일 때)\n'
          '  ai --new ...                  새 대화로 시작\n'
          '  ai claude ... / ai codex ...  직접 지정\n'
-         '  ai --why                      지금 무엇을 왜 고르는지만 보기')
+         '  ai --why                      지금 무엇을 왜 고르는지만 보기\n'
+         '  ai --usage                    Claude·Codex 사용량과 Codex 한도')
 
 
 def command(name, model, effort, resume, mcp=False):
@@ -600,6 +602,8 @@ def _cancelled(outcome, name, cwd, now, conversations, previous, state_path, say
 
 def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subprocess.Popen, cwd=None, say=print,
          process=subprocess.run, update=None):
+    if list(sys.argv[1:] if argv is None else argv) == ['--usage']:
+        return usage.main([], environ=environ)
     agent, task, why_only, new, mcp = _split(argv)
     if update is not None and task and not why_only:
         update(sys.argv[1:] if argv is None else list(argv))

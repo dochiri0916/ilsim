@@ -247,6 +247,12 @@ class MainTests(unittest.TestCase):
         self.main('claude', '이어서', now=NOW + timedelta(minutes=1))
         self.assertEqual('c-1', self.started[1][0][self.started[1][0].index('--resume') + 1])
 
+    def test_usage_prints_the_usage_report_without_running_anything(self):
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(0, self.main('--usage'))
+        self.assertIn('Claude Code 사용량', output.getvalue())
+        self.assertEqual([], self.started)
+
     def test_why_and_no_task_only_print(self):
         self.assertEqual(0, self.main('--why'))
         self.assertEqual(0, self.main())
