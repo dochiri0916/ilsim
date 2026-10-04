@@ -334,6 +334,9 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
         if not target:
             raise ValueError('--project 또는 --config로 대상 프로젝트를 지정하세요')
         result['commands'] = [['java', '-jar', jar, 'scan' if intent == 'ANALYZE' else 'mutation', target]]
+        if intent == 'ANALYZE' and judge is not None:
+            # With a JEV key, risks the static rules cannot settle get JEV's advisory opinion (method source is sent).
+            result['commands'][0] += ['--jev', 'true']
         if intent == 'ANALYZE' and convention:
             report = Path(target)/'build'/'ask'/'convention-analyze.json'
             result['commands'].append([sys.executable, str(SCRIPTS/'convention_check.py'), target, '--output', str(report)])

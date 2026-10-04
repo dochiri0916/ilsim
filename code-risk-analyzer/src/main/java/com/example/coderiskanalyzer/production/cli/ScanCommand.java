@@ -295,7 +295,7 @@ public class ScanCommand {
             try (JevSemanticJudge jevJudge = new JevSemanticJudge(apiKey)) {
                 Integer maxCalls = config.ciPolicy().maxJevCalls();
                 SemanticJudge judge = maxCalls == null ? jevJudge : new CallLimitedSemanticJudge(jevJudge, maxCalls);
-                findings = reviewCandidates(findings, judge);
+                findings = reviewCandidates(findings, judge, projectModel);
                 if (judge instanceof CallLimitedSemanticJudge limited && limited.skipped() > 0)
                     diagnostics.add(new Diagnostic(DiagnosticSeverity.WARNING, "JEV-002",
                             "JEV call limit (jev.max-calls=" + maxCalls + ") reached; " + limited.skipped()
@@ -399,14 +399,32 @@ public class ScanCommand {
     }
 
     public List<Finding> reviewCandidates(List<Finding> findings, SemanticJudge judge) {
+        return reviewCandidates(findings, judge, new ProjectModel(List.of()));
+    }
+
+    /** Longest method source sent to JEV; longer bodies are cut so one finding cannot dominate the request. */
+    static final int MAX_JEV_SOURCE_CHARS = 6000;
+
+    /**
+     * Sends each reviewable finding with the source of the method it points at, so JEV can judge what the static
+     * rule could not (protections on the call path, business meaning). Files with a hardcoded-secret finding are
+     * never sent. The answer is attached as evidence; only IDEM-001 keeps its existing confirmation path.
+     */
+    public List<Finding> reviewCandidates(List<Finding> findings, SemanticJudge judge, ProjectModel model) {
+        Set<Path> secretFiles = findings.stream().filter(finding -> finding.ruleId().equals("SEC-005"))
+                .map(finding -> finding.location() == null ? null : finding.location().file())
+                .filter(java.util.Objects::nonNull).map(path -> path.toAbsolutePath().normalize())
+                .collect(java.util.stream.Collectors.toSet());
         List<Finding> reviewed = new ArrayList<>();
         for (var finding : findings) {
             if (finding.status() == FindingStatus.SUPPRESSED) {
                 reviewed.add(finding);
                 continue;
             }
-            Map<String, Object> evidence = Map.of("evidence", finding.evidence().stream().map(item -> Map.of(
+            Map<String, Object> evidence = new LinkedHashMap<>();
+            evidence.put("evidence", finding.evidence().stream().map(item -> Map.of(
                     "type", item.type(), "message", item.message(), "attributes", item.attributes())).toList());
+            enclosingMethodSource(finding, model, secretFiles).ifPresent(source -> evidence.put("source", source));
             if (isUncertainTestGap(finding)) {
                 reviewed.add(withTestReview(finding, judge.reviewTestAdequacy(finding, evidence)));
                 continue;
@@ -428,8 +446,33 @@ public class ScanCommand {
         return List.copyOf(reviewed);
     }
 
-    /** Rules whose JEV opinion is attached as evidence only; status, severity and confidence stay static. */
-    private static final Set<String> RISK_REVIEW_RULES = Set.of("IDEM-002", "IDEM-003", "IDEM-004", "CON-001", "CON-002");
+    /** Rules whose JEV opinion is attached as evidence only; status, severity and confidence stay static. SEC-005 is never sent. */
+    public static final Set<String> RISK_REVIEW_RULES = Set.of("IDEM-002", "IDEM-003", "IDEM-004", "CON-001", "CON-002",
+            "CON-003", "CON-004", "TX-001", "TX-002", "TX-003", "TX-004", "TX-005",
+            "SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-006", "SEC-007", "REL-001");
+
+    private java.util.Optional<Map<String, Object>> enclosingMethodSource(Finding finding, ProjectModel model, Set<Path> secretFiles) {
+        if (finding.location() == null || finding.location().file() == null) return java.util.Optional.empty();
+        Path file = finding.location().file().toAbsolutePath().normalize();
+        if (secretFiles.contains(file)) return java.util.Optional.empty();
+        int line = finding.location().startLine();
+        return model.classes().stream().flatMap(type -> type.methods().stream())
+                .filter(method -> method.location() != null && method.location().file() != null
+                        && method.location().file().toAbsolutePath().normalize().equals(file)
+                        && method.location().startLine() <= line && line <= method.location().endLine()
+                        && !method.body().isEmpty())
+                .min(java.util.Comparator.comparingInt(method -> method.location().endLine() - method.location().startLine()))
+                .map(method -> {
+                    String body = method.body();
+                    boolean truncated = body.length() > MAX_JEV_SOURCE_CHARS;
+                    Map<String, Object> source = new LinkedHashMap<>();
+                    source.put("method", method.ownerClass() + "#" + method.name());
+                    source.put("annotations", method.annotations().stream().sorted().toList());
+                    source.put("body", truncated ? body.substring(0, MAX_JEV_SOURCE_CHARS) : body);
+                    source.put("truncated", truncated);
+                    return source;
+                });
+    }
 
     private Finding withRiskReview(Finding finding, JudgeResult result) {
         if (!result.reviewed()) return finding;
