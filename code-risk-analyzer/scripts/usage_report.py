@@ -1,7 +1,8 @@
 """Claude Code and Codex usage on this PC, read from the CLIs' own local logs (no network, no tokens spent).
 
 - Claude Code: ~/.claude/projects/**/*.jsonl (or CLAUDE_CONFIG_DIR). Tokens per model for the last 5 hours, today and
-  the last 7 days. The plan's limit percentage is not in these logs; `/usage` inside Claude Code shows it.
+  the last 7 days. These logs hold no limit percentages; `ai` records the 5-hour and weekly ones that `claude -p`
+  reports while it works (rate_limit_event) in ~/.local/state/ai-orchestration/claude-limits.json, shown from there.
 - Codex: ~/.codex/sessions/**/*.jsonl (or CODEX_HOME). Tokens per model for the same periods, and the most recent
   5-hour and weekly limit percentages Codex recorded, with their reset times.
 
@@ -15,6 +16,8 @@ from pathlib import Path
 import sys
 
 WINDOW = timedelta(hours=5)
+# rate_limit_event window names in `claude -p --output-format stream-json`.
+CLAUDE_WINDOWS = {'five_hour': 'fiveHour', 'seven_day': 'weekly'}
 
 
 def _time(value):
@@ -110,6 +113,76 @@ def _limit(value, observed):
     return limit
 
 
+def claude_limits_file(environ=os.environ):
+    return Path(environ.get('XDG_STATE_HOME') or '~/.local/state').expanduser()/'ai-orchestration'/'claude-limits.json'
+
+
+def _claude_window(value, observed):
+    """{'usedPercent', 'resetsAt', 'observedAt'} of one window; utilization is a 0-1 fraction, resetsAt epoch seconds."""
+    if not isinstance(value, dict):
+        return None
+    used = value.get('utilization')
+    if type(used) in (int, float):
+        used = min(100.0, max(0.0, used * 100))
+    elif value.get('status') == 'rejected':
+        used = 100.0
+    else:
+        return None
+    limit = {'usedPercent': used, 'observedAt': observed.isoformat()}
+    resets = value.get('resetsAt')
+    if type(resets) in (int, float) and resets > 0:
+        limit['resetsAt'] = datetime.fromtimestamp(resets / 1000 if resets > 1e11 else resets, timezone.utc).isoformat()
+    return limit
+
+
+def claude_limits_from(info, observed):
+    """{'fiveHour': ..., 'weekly': ...} found in the rate_limit_info of a claude -p rate_limit_event."""
+    if not isinstance(info, dict):
+        return {}
+    windows = info.get('unifiedWindows') if isinstance(info.get('unifiedWindows'), dict) else {}
+    result = {}
+    for name, key in CLAUDE_WINDOWS.items():
+        limit = _claude_window(windows.get(name), observed)
+        if limit:
+            result[key] = limit
+    key = CLAUDE_WINDOWS.get(info.get('rateLimitType'))
+    if key and key not in result:
+        limit = _claude_window(info, observed)
+        if limit:
+            result[key] = limit
+    return result
+
+
+def load_claude_limits(path):
+    """The recorded Claude limits in the shape of codex_usage()['limits'], or None."""
+    try:
+        value = json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    limits = {key: value[key] for key in CLAUDE_WINDOWS.values() if isinstance(value, dict) and isinstance(value.get(key), dict)
+              and type(value[key].get('usedPercent')) in (int, float) and isinstance(value[key].get('observedAt'), str)}
+    if not limits:
+        return None
+    limits['observedAt'] = max(limit['observedAt'] for limit in limits.values())
+    return limits
+
+
+def save_claude_limits(path, info, observed):
+    """Merge the windows of one rate_limit_info into the record; False when it held none."""
+    found = claude_limits_from(info, observed)
+    if not found:
+        return False
+    record = load_claude_limits(path) or {}
+    record.pop('observedAt', None)
+    record.update(found)
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
+    except OSError:
+        return False
+    return True
+
+
 def codex_usage(root, now, days=7):
     """{'periods': ..., 'limits': {...} or None, 'files': n}; token_count totals are cumulative per session file."""
     periods = _periods(now, days)
@@ -194,26 +267,29 @@ def _reset(limit, now):
     return f" ({resets.astimezone().strftime('%m-%d %H:%M')} 초기화, {hours}시간 {minutes}분 남음)"
 
 
+def _limit_lines(limits, now, missing):
+    if not limits:
+        return [f'  한도 기록이 아직 없습니다 ({missing})']
+    observed = datetime.fromisoformat(limits['observedAt']).astimezone().strftime('%m-%d %H:%M')
+    plan = f", 요금제 {limits['plan']}" if limits.get('plan') else ''
+    lines = [f'  한도 ({observed} 마지막 기록{plan}):']
+    for key, label in (('fiveHour', '5시간'), ('weekly', '주간')):
+        if limits.get(key):
+            lines.append(f"    - {label}: {limits[key]['usedPercent']:.0f}% 사용{_reset(limits[key], now)}")
+    return lines
+
+
 def report(claude, codex, now, days=7):
     labels = {'last5h': '최근 5시간', 'today': '오늘', f'last{days}d': f'최근 {days}일'}
     lines = ['Claude Code 사용량 (로컬 기록):']
     lines += _period_lines(claude['periods'], labels) if claude['files'] else ['  기록 파일이 없습니다 (~/.claude/projects)']
-    lines.append('  한도 %는 로컬 기록에 없습니다. Claude Code 안에서 /usage로 확인하세요')
+    lines += _limit_lines(claude.get('limits'), now, 'ai로 Claude를 한 번 실행하면 남습니다')
     lines.append('Codex 사용량 (로컬 기록):')
     if not codex['files']:
         lines.append('  기록 파일이 없습니다 (~/.codex/sessions)')
     else:
         lines += _period_lines(codex['periods'], labels)
-        limits = codex['limits']
-        if limits:
-            observed = datetime.fromisoformat(limits['observedAt']).astimezone().strftime('%m-%d %H:%M')
-            plan = f", 요금제 {limits['plan']}" if limits.get('plan') else ''
-            lines.append(f'  한도 ({observed} 마지막 기록{plan}):')
-            for key, label in (('fiveHour', '5시간'), ('weekly', '주간')):
-                if limits.get(key):
-                    lines.append(f"    - {label}: {limits[key]['usedPercent']:.0f}% 사용{_reset(limits[key], now)}")
-        else:
-            lines.append('  한도 기록이 아직 없습니다 (Codex를 한 번 쓰면 남습니다)')
+        lines += _limit_lines(codex['limits'], now, 'Codex를 한 번 쓰면 남습니다')
     return '\n'.join(lines)
 
 
@@ -229,6 +305,7 @@ def main(argv=None, environ=os.environ, now=None):
     claude_root = Path(environ.get('CLAUDE_CONFIG_DIR') or '~/.claude').expanduser()
     codex_root = Path(environ.get('CODEX_HOME') or '~/.codex').expanduser()
     claude, codex = claude_usage(claude_root, now, args.days), codex_usage(codex_root, now, args.days)
+    claude['limits'] = load_claude_limits(claude_limits_file(environ))
     if args.json:
         print(json.dumps({'claude': claude, 'codex': codex}, ensure_ascii=False, indent=2))
     else:
