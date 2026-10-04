@@ -47,20 +47,20 @@ class ModelCheckTests(unittest.TestCase):
         code, output = self.run_main(self.caller())
         # then
         self.assertEqual(0, code)
-        self.assertEqual({'gpt-6-luna': 'low', 'gpt-6.1-sol': 'medium', 'claude-sonnet-5-5': 'medium'},
+        self.assertEqual({'gpt-6-luna': 'low', 'gpt-6.1-sol': 'low', 'claude-sonnet-5-5': 'low'},
                          {config['model']: config['reasoningEffort'] for config in self.calls})
         self.assertEqual(3, len(self.calls))
         self.assertIn('모든 모델이 응답했습니다', output)
 
     def test_a_failed_primary_is_reported_with_the_tiers_it_affects(self):
-        # given: the cheap model was retired
-        code, output = self.run_main(self.caller(failing={'gpt-6-luna'}))
-        # then: TIER_1 has no route left, TIER_2 still works through its fallback
+        # given: the codex models stopped answering
+        code, output = self.run_main(self.caller(failing={'gpt-6-luna', 'gpt-6.1-sol'}))
+        # then: every tier still works through its claude fallback only
         self.assertEqual(1, code)
         self.assertIn('focused (gpt-6-luna): 실패 - FAILED INVOCATION: CLI invocation failed', output)
-        self.assertIn('TIER_1: 쓸 수 있는 모델이 없습니다', output)
-        self.assertIn('TIER_2: 첫 모델이 실패해 fallback으로만 동작합니다 (1/2)', output)
-        self.assertNotIn('TIER_3', output)
+        self.assertIn('TIER_1: 첫 모델이 실패해 fallback으로만 동작합니다 (1/3)', output)
+        self.assertIn('TIER_4: 첫 모델이 실패해 fallback으로만 동작합니다 (1/3)', output)
+        self.assertNotIn('쓸 수 있는 모델이 없습니다', output)
         self.assertIn('models.json의 model 값을 고치세요', output)
 
     def test_forbidden_models_are_refused_before_any_call(self):

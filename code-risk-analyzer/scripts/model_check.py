@@ -79,6 +79,21 @@ def report(value, registry_path):
     return '\n'.join(lines)
 
 
+def benchmark_report(routing):
+    """The routes the benchmark numbers give, and whether the routing files in use still match them."""
+    select, ask = _module('model_select'), _module('ask')
+    path = select.CONFIG/'model-benchmarks.json'
+    if not path.is_file():
+        return ''
+    value = select.validate(ask._read(str(path)))
+    registry, policy = select.derive(value)
+    lines = [select.describe(value)]
+    if ask._read(routing['registry']) != registry or ask._read(routing['policy']) != policy:
+        lines.append('사용 중인 models.json·routing-policy.json이 벤치마크에서 나온 경로와 다릅니다. '
+                     '의도한 덮어쓰기가 아니면 python3 scripts/model_select.py --write 후 push하세요')
+    return '\n'.join(lines)
+
+
 def main(call=None, routing=None):
     """0: every model answered, 1: at least one failed, 2: invalid or forbidden settings."""
     ask = _module('ask')
@@ -89,6 +104,12 @@ def main(call=None, routing=None):
         print(f'모델 설정 거부: {error}')
         return 2
     print(report(value, routing['registry']))
+    try:
+        extra = benchmark_report(routing)
+    except (ValueError, OSError, KeyError) as error:
+        extra = f'벤치마크 파일 거부: {error}'
+    if extra:
+        print(extra)
     return 0 if all(result['ok'] for result in value['models'].values()) else 1
 
 
