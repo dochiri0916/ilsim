@@ -2,7 +2,7 @@
 # Sets up the `ask` command on this PC. Target projects need nothing: run `ask "..."` inside any Gradle project.
 #
 #   ./install.sh               check tools, build both projects, install ~/.local/bin/ask
-#   ./install.sh --agent-hint  also tell Claude Code and Codex (global instruction files) that `ask` exists
+#   ./install.sh --agent-hint  also tell Claude Code and Codex (global instruction files) that ai runs the checks
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -71,19 +71,24 @@ case ":$PATH:" in
 esac
 
 if [ "$AGENT_HINT" = true ]; then
-  HINT_START="<!-- code-risk ask: start -->"
-  HINT="$HINT_START
-- 코드 변경·위험 분석·검증 요청은 프로젝트 폴더에서 \`ask \"요청\"\`으로 실행할 수 있다. 계획을 확인한 뒤 \`ask --yes\`로 실행한다.
-<!-- code-risk ask: end -->"
-  for file in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md"; do
-    mkdir -p "$(dirname "$file")"
-    if grep -qs "$HINT_START" "$file"; then
-      note "$file 에 이미 안내가 있습니다"
-    else
-      printf '\n%s\n' "$HINT" >> "$file"
-      echo "안내 추가: $file"
-    fi
-  done
+  # Replaces the earlier ask hint; ai runs the checks after each task, so agents need not repeat them.
+  python3 - "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+HINT = ('<!-- ai-orchestration: start -->\n'
+        '- ai 명령으로 실행된 작업은 끝난 뒤 build-convention 검사와 위험 분석이 자동으로 실행된다. '
+        '같은 검사(./gradlew check 등)를 작업 중에 따로 반복하지 않는다.\n'
+        '<!-- ai-orchestration: end -->')
+OLD = re.compile(r'\n?<!-- (code-risk ask|ai-orchestration): start -->.*?<!-- (code-risk ask|ai-orchestration): end -->\n?', re.S)
+for name in sys.argv[1:]:
+    path = Path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = path.read_text(encoding='utf-8') if path.is_file() else ''
+    path.write_text(OLD.sub('\n', text).rstrip('\n') + '\n\n' + HINT + '\n', encoding='utf-8')
+    print('안내 갱신: ' + name)
+PY
 fi
 
 echo "자동 업데이트: ask가 새 요청마다(최대 10분에 한 번) 이 폴더를 git pull하고 바뀐 쪽만 다시 빌드합니다 (끄기: --no-update 또는 ASK_NO_UPDATE=1)"

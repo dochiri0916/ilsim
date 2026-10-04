@@ -7,7 +7,8 @@
     ai --why                  only print the choice, the reason and the model setting
 
 Claude runs with --permission-mode acceptEdits and only CLAUDE_TOOLS commands; Codex runs in its workspace-write
-sandbox. MCP servers stay off (`ai --mcp ...` keeps them) and the agent is asked for short answers, to save
+sandbox. Every task first fast-forwards this tool's checkout (self_update.py; ASK_NO_UPDATE=1 turns it off).
+MCP servers stay off (`ai --mcp ...` keeps them) and the agent is asked for short answers, to save
 tokens. Hitting a limit mid-task hands the same task to the other CLI.
 
 After a task that changed files, build-convention (./gradlew check without editing the build) and code-risk-analyzer
@@ -467,9 +468,23 @@ def _setting(name, tier, environ, say):
         return None, None
 
 
+def self_update(argv):
+    """Pull this tool and rebuild what changed (self_update.py); after new commits, run the same command on the new code."""
+    try:
+        pulled = _module('self_update').update()
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'업데이트 건너뜀: {error}', file=sys.stderr)
+        return
+    if pulled:
+        sys.stdout.flush()
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *argv])
+
+
 def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subprocess.Popen, cwd=None, say=print,
-         process=subprocess.run):
+         process=subprocess.run, update=None):
     agent, task, why_only, new, mcp = _split(argv)
+    if update is not None and task and not why_only:
+        update(sys.argv[1:] if argv is None else list(argv))
     cwd = Path(cwd or os.getcwd()).resolve()
     now = now or datetime.now(timezone.utc)
     installed = tuple(cli for cli in ('claude', 'codex') if which(cli))
@@ -540,4 +555,4 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(main(update=self_update))
