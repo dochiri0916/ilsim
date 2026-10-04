@@ -928,9 +928,44 @@ def self_update(argv):
         os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *argv])
 
 
+HELP_TEXT = '''ask: Spring·Gradle 프로젝트에서 코드 변경·위험 분석·검증을 실행하는 도구입니다 (프로젝트 폴더에서 실행).
+
+  ask 회원 가입 기능 추가해줘         모델이 명세 초안과 계획을 만들고 멈춤 (코드는 안 바꿈)
+  ask --spec spec.json 회원 가입 추가  직접 쓴 명세로 계획 생성
+  ask --yes                           확인한 계획 실행 (테스트 생성 → 구현 → 검증)
+  ask 이어서 진행해 / 검증 다시 해줘    현재 작업 이어서 / 다시 검증
+  ask 어디까지 했어                    현재 단계
+  ask 결제 코드 위험 분석해줘          위험·컨벤션 분석 (코드 안 바꿈)
+  ask PR 올려줘                        PR 본문 생성 (승인·푸시된 경우 draft PR)
+  ask 리팩터링해줘 / 기존 기능 수정해줘  명세의 changeType으로 리팩토링·수정 처리
+  ask SEC-001 규칙 / 변이 테스트 해줘 / 토큰 사용량
+  ask --check-models / --usage         모델 응답 점검 / 사용량
+
+명세 형식: code-risk-analyzer/docs/guides/SPEC_FILE.md'''
+HELP_WORDS = re.compile(r'뭐야|뭐\s*하는|뭘\s*할|무엇을?\s*할|뭐\s*할\s*수|사용법|도움말|도와줘|명령어|어떻게\s*(써|쓰|사용)|\bhelp\b|\busage\b', re.I)
+
+
+def help_answer(text):
+    """A sentence that names no task gets the usage guide instead of an error; None when it names a task.
+
+    Keywords decide this before JEV: a task needs a keyword in any case, so nothing a JEV judgment could run is lost.
+    """
+    try:
+        classify(text)
+        return None
+    except ValueError:
+        pass
+    if HELP_WORDS.search(text):
+        print(HELP_TEXT)
+        return 0
+    print('요청에서 할 일을 찾지 못했습니다. 할 수 있는 일:\n')
+    print(HELP_TEXT)
+    return 2
+
+
 def main(argv=None, update=None, call=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('request', nargs='?', help='자연어 요청 (생략하고 --yes만 주면 현재 세션을 이어서 실행)')
+    parser.add_argument('request', nargs='*', help='자연어 요청, 따옴표 없이 써도 됨 (생략하고 --yes만 주면 현재 세션을 이어서 실행)')
     parser.add_argument('--config')
     parser.add_argument('--state')
     parser.add_argument('--project')
@@ -946,7 +981,8 @@ def main(argv=None, update=None, call=None):
                         help='routing이 쓰는 모델마다 짧은 요청을 보내 아직 쓸 수 있는지 확인(토큰 소량)')
     for name in ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request'):
         parser.add_argument('--' + name)
-    args = parser.parse_args(argv)
+    args = parser.parse_intermixed_args(argv)
+    args.request = ' '.join(args.request).strip() or None
     options = {name: getattr(args, name.replace('-', '_')) for name in
                ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request')
                if getattr(args, name.replace('-', '_')) is not None}
@@ -960,7 +996,12 @@ def main(argv=None, update=None, call=None):
         output.parent.mkdir(parents=True, exist_ok=True)
         return _module('golden_benchmark').main(['--output', str(output)])
     if args.request is None and not args.yes:
-        parser.error('요청 문장을 적거나, 확인한 계획을 실행하려면 --yes만 주세요')
+        print(HELP_TEXT)
+        return 0
+    if args.request is not None and not args.config and not args.state:
+        help_code = help_answer(args.request)
+        if help_code is not None:
+            return help_code
     if update is not None and updates_now(args):
         update(sys.argv[1:] if argv is None else argv)
     try:
