@@ -17,6 +17,7 @@ import re
 import tempfile
 import time
 import math
+import zipfile
 
 
 def module(name):
@@ -303,6 +304,9 @@ class Controller:
         if self._inputs() != inputs:
             check = {'status': 'FAILED', 'failures': ['Inputs changed during baseline']}
         regression.save(self.directory/'baseline.json', snapshot, exclusive=True)
+        contracts = self._impact()
+        if contracts is not None:
+            regression.save(self.directory/'contracts-before.json', contracts)
         self.state = {'version': 1, 'project': str(self.project), 'inputs': inputs,
                       'baselineSha256': regression.digest(self.directory/'baseline.json'),
                       'baselineStatus': check['status'], 'sources': snapshot['sources'],
@@ -722,6 +726,39 @@ class Controller:
                        '--format', 'json', '--output', report.relative_to(self.project).as_posix(), '--fail-on', 'off'])
         evidence.items_from_report(regression.read_json(report))
 
+    def _impact(self, compare=None):
+        """Declared contracts, or with compare their changes plus the callers and tests reaching the scope files.
+
+        Advisory: a missing analyzer jar or a failed run leaves None and never blocks verification."""
+        if not zipfile.is_zipfile(self.paths['analyzer']):
+            return None
+        command = ['java', '-Dspring.main.banner-mode=off', '-Dlogging.level.root=OFF', '-jar', str(self.paths['analyzer']),
+                   'impact', str(self.project)]
+        if compare is not None:
+            files = self.directory/'impact-files.txt'
+            files.write_text(''.join(path + '\n' for path in self.scope['files'] if path.endswith('.java')), encoding='utf-8')
+            command += ['--compare', str(compare), '--files-file', str(files)]
+        try:
+            output = self._process(command, timeout=300, allow_failure=True)
+            return json.loads(output[output.index('{'):])
+        except (ValueError, OSError, subprocess.SubprocessError):
+            return None
+
+    def _contract_review(self, result):
+        """Adds contract changes and the regression reach of the change to the verification result (warnings only)."""
+        before = self.directory/'contracts-before.json'
+        report = self._impact(before) if before.is_file() else None
+        if report is None:
+            result['contractCheck'] = 'UNAVAILABLE'
+            return
+        regression.save(self.directory/'impact.json', report)
+        impact = report.get('impact', {})
+        result['contractCheck'] = 'CHECKED'
+        result['contractChanges'] = [{'change': item['change'], 'key': item['key'], 'effect': item['effect']}
+                                     for item in report.get('changes', [])]
+        result['impactedCallerFiles'] = impact.get('callerFiles', [])
+        result['impactedTests'] = sorted(impact.get('tests', {}))
+
     def _verification(self, approvals):
         if not isinstance(approvals, list) or any(not isinstance(a, dict) for a in approvals):
             raise ValueError('Approvals must be review records')
@@ -751,6 +788,7 @@ class Controller:
         regression.save(self.directory/'after.json', after)
         before = regression.read_json(self.directory/'baseline.json')
         result = regression.compare(before, after, approvals, self.plan['newFeatures'])
+        self._contract_review(result)
         if 'agent-test-writing.json' in self.state.get('agentArtifacts', {}):
             for entry in regression.read_json(self.directory/'agent-test-writing.json')['output']['requirementTestMap']:
                 for test in entry['tests']:
