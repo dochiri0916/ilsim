@@ -46,6 +46,7 @@ SAMPLE = {
         'implementationStatus': 'NOT_IMPLEMENTED', 'existingCode': []}],
     'files': ['src/main/java/com/example/demo/member/domain/model/Member.java',
               'src/test/java/com/example/demo/member/domain/model/MemberTest.java'],
+    'changeType': 'FEATURE', 'changedTests': [],
 }
 SPRING_TEST = '''package com.example.demo;
 
@@ -136,6 +137,25 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(value, draft.validate(value))
 
 
+class ChangeTypeTests(unittest.TestCase):
+    MAIN = 'src/main/java/com/example/demo/member/domain/model/Member.java'
+    TEST = 'src/test/java/com/example/demo/member/domain/model/MemberTest.java'
+
+    def test_refactoring_changes_only_production_files(self):
+        self.assertEqual('REFACTOR', draft.validate(sample(changeType='REFACTOR', files=[self.MAIN]))['changeType'])
+        for value in (sample(changeType='REFACTOR'),
+                      sample(changeType='REFACTOR', files=[self.MAIN], changedTests=[{'path': self.TEST, 'reason': 'r'}])):
+            with self.subTest(value=value['files']), self.assertRaisesRegex(ValueError, 'REFACTOR'):
+                draft.validate(value)
+
+    def test_changed_tests_are_listed_test_files(self):
+        changed = [{'path': self.TEST, 'reason': '가입 실패 코드가 409로 바뀜'}]
+        self.assertEqual(changed, draft.validate(sample(changeType='MODIFICATION', changedTests=changed))['changedTests'])
+        for path in (self.MAIN, 'src/test/java/com/example/demo/Other.java'):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'changedTests'):
+                draft.validate(sample(changeType='MODIFICATION', changedTests=[{'path': path, 'reason': 'r'}]))
+
+
 class InputTests(unittest.TestCase):
     def setUp(self):
         self.project = Project(self)
@@ -173,6 +193,20 @@ class InputTests(unittest.TestCase):
         path = draft.write_inputs(self.project.root, self.project.session, '추가해줘', sample(), JAR,
                                   {'registry': 'r', 'policy': 'p'}, quality=False)
         self.assertNotIn('qualityGates', json.loads(path.read_text()))
+
+    def test_refactoring_scope_approves_no_test_writing_and_changed_tests_must_exist(self):
+        main = 'src/main/java/com/example/demo/member/domain/model/Member.java'
+        draft.write_inputs(self.project.root, self.project.session, '정리해줘', sample(changeType='REFACTOR', files=[main]), JAR, {})
+        self.assertEqual(['IMPLEMENT'], json.loads((self.project.session/'scope.json').read_text())['actions'])
+        self.assertIn('REFACTOR', (self.project.session/'request.md').read_text())
+        changed = 'src/test/java/com/example/demo/DemoApplicationTests.java'
+        value = sample(changeType='MODIFICATION', files=[main, changed], changedTests=[{'path': changed, 'reason': '기대값 변경'}])
+        draft.write_inputs(self.project.root, self.project.session, '바꿔줘', value, JAR, {})
+        self.assertIn(f'- {changed}: 기대값 변경', (self.project.session/'request.md').read_text())
+        missing = 'src/test/java/com/example/demo/MissingTest.java'
+        with self.assertRaisesRegex(ValueError, '기존 테스트 파일이 없습니다'):
+            draft.write_inputs(self.project.root, self.project.session, '바꿔줘', sample(
+                changeType='MODIFICATION', files=[main, missing], changedTests=[{'path': missing, 'reason': 'r'}]), JAR, {})
 
     def test_project_without_tests_has_no_regression_baseline(self):
         (self.project.root/'src/test/java/com/example/demo/DemoApplicationTests.java').unlink()

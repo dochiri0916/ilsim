@@ -16,6 +16,8 @@ REQUIREMENT_ID = re.compile(r'REQ-[A-Z0-9]+(?:-[A-Z0-9]+)*')
 SCENARIO_ID = re.compile(r'SCN-[A-Z0-9]+(?:-[A-Z0-9]+)*')
 SCENARIO_TYPES = ('NORMAL', 'DUPLICATE', 'CONCURRENCY', 'ROLLBACK', 'RETRY', 'PARTIAL_FAILURE', 'VALIDATION', 'AUTHORIZATION')
 TEST_TYPES = ('DOMAIN_UNIT', 'REPOSITORY_DB', 'API_SLICE', 'INTEGRATION', 'SERVICE_E2E')
+# FEATURE adds behavior, MODIFICATION changes existing behavior (and may change existing tests), REFACTOR keeps it.
+CHANGE_TYPES = ('FEATURE', 'MODIFICATION', 'REFACTOR')
 PERSPECTIVES = ('transaction', 'concurrency', 'idempotency', 'consistency')
 APPROVED_ACTIONS = ['BASELINE', 'REGRESSION', 'LOCAL_SERVICE', 'COMPLETE', 'PULL_REQUEST']
 # An applicable perspective is only tested when a scenario exercises it.
@@ -55,6 +57,8 @@ DRAFT_SCHEMA = _object({
         'existingCode': _array(_object({'path': TEXT, 'symbol': TEXT})),
     })),
     'files': _array(TEXT),
+    'changeType': _enum(CHANGE_TYPES),
+    'changedTests': _array(_object({'path': TEXT, 'reason': TEXT})),
 })
 
 
@@ -128,10 +132,21 @@ def validate(value):
         if (requirement['implementationStatus'] == 'NOT_IMPLEMENTED') == bool(requirement['existingCode']):
             raise ValueError('Existing code links must match the implementation status')
     files = value['files']
-    _distinct(files, 2)
-    if not all(source_path(path) for path in files) \
-            or not any(path.startswith('src/main/') for path in files) or not any(path.startswith('src/test/') for path in files):
+    changed = [item['path'] for item in value['changedTests']]
+    _distinct(changed)
+    if not all(source_path(path) for path in files) or not any(path.startswith('src/main/') for path in files):
         raise ValueError('Files must be normalized src/main and src/test paths')
+    if value['changeType'] == 'REFACTOR':
+        # Tests are not written for a refactoring; the existing ones, unchanged, prove the behavior is kept.
+        _distinct(files, 1)
+        if changed or any(path.startswith('src/test/') for path in files):
+            raise ValueError('REFACTOR은 테스트 파일을 바꾸지 않습니다: files는 src/main만, changedTests는 비워 두세요')
+    else:
+        _distinct(files, 2)
+        if not any(path.startswith('src/test/') for path in files):
+            raise ValueError('Files must be normalized src/main and src/test paths')
+    if any(not path.startswith('src/test/') or path not in files for path in changed):
+        raise ValueError('changedTests는 files에 들어 있는 src/test 경로여야 합니다')
     return value
 
 
@@ -211,6 +226,10 @@ def prompt(request, project, feedback=None, guidance=None):
         'Each APPLICABLE perspective needs a matching scenario: transaction -> ROLLBACK or PARTIAL_FAILURE, '
         'concurrency -> CONCURRENCY, idempotency -> DUPLICATE or RETRY, consistency -> PARTIAL_FAILURE or ROLLBACK.',
         'implementationStatus: NOT_IMPLEMENTED with empty existingCode for new behavior; otherwise link the existing code.',
+        'changeType: FEATURE adds behavior; MODIFICATION changes existing behavior; REFACTOR changes structure only and keeps '
+        'every observable behavior (then files lists only src/main paths, no tests are written and changedTests is empty). '
+        'changedTests: every existing src/test file whose expectations must change because the behavior changes, each with '
+        'the reason; list it in files too. Keep every existing test name in those files; change only what the requirements change.',
         'files: every src/main and src/test path the change will create or edit, following the existing package layout '
         'and AGENTS.md if present. Include at least one test file and one production file. Tests and implementation may '
         'create no other file, so list every production type as its own file: each port (e.g. password hashing, time), '
@@ -240,7 +259,13 @@ def write_inputs(project, session, request, draft, analyzer, routing, guidance=N
     if guidance:
         (session/'conventions.md').write_text(guidance, encoding='utf-8')
         documents.append((session/'conventions.md').relative_to(project).as_posix())
-    lines = ['# ' + draft['title'], '', '## Request', '', request, '']
+    for item in draft['changedTests']:
+        if not (project/item['path']).is_file():
+            raise ValueError(f"changedTests의 기존 테스트 파일이 없습니다: {item['path']}")
+    lines = ['# ' + draft['title'], '', '## Request', '', request, '', '## Change type', '', draft['changeType'], '']
+    if draft['changedTests']:
+        lines += ['## Existing tests whose expectations change (keep their test names)', '']
+        lines += [f"- {item['path']}: {item['reason']}" for item in draft['changedTests']] + ['']
     if draft['assumptions']:
         lines += ['## Assumptions', ''] + ['- ' + item for item in draft['assumptions']] + ['']
     document.write_text('\n'.join(lines), encoding='utf-8')
@@ -267,7 +292,7 @@ def write_inputs(project, session, request, draft, analyzer, routing, guidance=N
         'plan.json': {'mode': 'CODE_CHANGE', 'project': str(project), 'approvedActions': APPROVED_ACTIONS,
                       'features': {'existing-tests': tests}, 'newFeatures': {},
                       'database': 'NOT_APPLICABLE' if draft['database'] == 'UNDECIDED' else draft['database']},
-        'scope.json': {'project': str(project), 'files': draft['files'], 'actions': ['WRITE_TESTS', 'IMPLEMENT']},
+        'scope.json': {'project': str(project), 'files': draft['files'], 'actions': ['IMPLEMENT'] if draft['changeType'] == 'REFACTOR' else ['WRITE_TESTS', 'IMPLEMENT']},
     }
     for name, value in files.items():
         (session/name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -300,7 +325,7 @@ def load(path):
     except ValueError as error:
         raise ValueError(f'명세 파일이 올바른 JSON이 아닙니다: {error}')
     if isinstance(value, dict):
-        value = {'status': 'COMPLETED', 'unknowns': [], **value}
+        value = {'status': 'COMPLETED', 'unknowns': [], 'changeType': 'FEATURE', 'changedTests': [], **value}
     validate(value)
     if value['status'] != 'COMPLETED':
         raise ValueError('명세 파일에 정하지 못한 질문이 남아 있습니다: ' + '; '.join(value['unknowns']))

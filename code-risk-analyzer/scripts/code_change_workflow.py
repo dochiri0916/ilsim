@@ -271,6 +271,9 @@ class Controller:
             }
             if generation and self.state['phase'] == 'STALE' and self.state.get('generationStage') == stage:
                 allowed[stage].add('STALE')
+            if 'WRITE_TESTS' not in self.scope['actions']:
+                # A refactoring scope approves no test writing: existing tests alone prove the behavior is unchanged.
+                allowed['implementation'].add('BASELINED')
             if stage not in allowed or self.state['phase'] not in allowed[stage]:
                 raise ValueError('Stage transition rejected')
             if stage == 'verification' and not any(h['phase'] == 'IMPLEMENTATION' and h['status'] == 'COMPLETED' for h in self.state['history']):
@@ -432,7 +435,10 @@ class Controller:
                         'dependencies the build already declares.' if stage == 'test-writing' else
                         'Implement the minimum change satisfying the accepted tests and requirements. Do not change any test. '
                         'Production types must match exactly the packages, signatures, exception types and messages the tests use. '
-                        'Return empty requirementTestMap and expectedFailures; empty changes are allowed if no fix is needed.')
+                        'Return empty requirementTestMap and expectedFailures; empty changes are allowed if no fix is needed.'
+                        + ('' if 'WRITE_TESTS' in self.scope['actions'] else
+                           ' This is a refactoring: no tests were written for it, so keep every observable behavior '
+                           'unchanged; all existing tests must still pass without being changed.'))
         task = {'stage': stage, 'requirements': requirements, 'allowedFiles': allowed,
                 'contextFiles': context, 'acceptedTests': accepted}
         if stage == 'test-writing':
