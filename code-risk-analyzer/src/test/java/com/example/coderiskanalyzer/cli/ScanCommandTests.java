@@ -396,7 +396,7 @@ class ScanCommandTests {
             }
         };
         var result = command().reviewCandidates(java.util.List.of(risk.apply("CON-001", FindingStatus.REVIEW),
-                risk.apply("IDEM-003", FindingStatus.SUPPRESSED), risk.apply("SEC-001", FindingStatus.REVIEW)), judge);
+                risk.apply("IDEM-003", FindingStatus.SUPPRESSED), risk.apply("SEC-005", FindingStatus.REVIEW)), judge);
         assertThat(calls[0]).isEqualTo(1);
         assertThat(result.get(0).status()).isEqualTo(FindingStatus.REVIEW);
         assertThat(result.get(0).confidence()).isEqualTo(Confidence.LOW);
@@ -404,6 +404,54 @@ class ScanCommandTests {
                 && e.attributes().get("riskProbability").equals(0.99));
         assertThat(result.get(1).evidence()).hasSize(1);
         assertThat(result.get(2).evidence()).hasSize(1);
+    }
+
+    @Test
+    void everyAdvisoryRiskRuleHasAJevQuestionAndSecretsAreNeverReviewed() {
+        assertThat(ScanCommand.RISK_REVIEW_RULES)
+                .allMatch(com.example.coderiskanalyzer.production.judge.jev.JevSemanticJudge::supportsRiskReview)
+                .contains("TX-001", "TX-005", "CON-003", "CON-004", "SEC-006", "SEC-007", "REL-001")
+                .doesNotContain("SEC-005", "IDEM-001");
+    }
+
+    @Test
+    void jevRiskReviewReceivesTheEnclosingMethodSourceExceptFromFilesWithSecrets() {
+        var file = tempDir.resolve("A.java");
+        var other = tempDir.resolve("B.java");
+        java.util.function.Function<Path, com.example.coderiskanalyzer.production.model.MethodInfo> method = path ->
+                new com.example.coderiskanalyzer.production.model.MethodInfo("demo.A", "load", "void", java.util.List.of(),
+                        java.util.Set.of("Transactional"), java.util.Set.of(), java.util.List.of(),
+                        new SourceLocation(path, 10, 1, 20, 1), java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                        "{ repository.findById(id); }", java.util.List.of());
+        var model = new com.example.coderiskanalyzer.production.model.ProjectModel(java.util.List.of(
+                new com.example.coderiskanalyzer.production.model.ClassInfo("demo.A", "demo", "A", java.util.Set.of(),
+                        java.util.List.of(), java.util.List.of(method.apply(file), method.apply(other)),
+                        new SourceLocation(file, 1, 1, 30, 1))));
+        java.util.function.BiFunction<String, Path, Finding> risk = (rule, path) -> new Finding(rule,
+                RiskCategory.SECURITY, Severity.HIGH, Confidence.LOW, "t", "m", new SourceLocation(path, 12, 1, 12, 9),
+                java.util.List.of(new Evidence("TEST", "e", new SourceLocation(path, 12, 1, 12, 9), java.util.Map.of())),
+                FindingStatus.REVIEW);
+        var sent = new java.util.ArrayList<java.util.Map<String, Object>>();
+        var judge = new com.example.coderiskanalyzer.production.judge.SemanticJudge() {
+            public com.example.coderiskanalyzer.production.judge.JudgeResult judge(Finding f, java.util.Map<String, Object> e) {
+                throw new AssertionError("only IDEM-001 uses judge()");
+            }
+            @Override public com.example.coderiskanalyzer.production.judge.JudgeResult reviewRisk(
+                    Finding f, java.util.Map<String, Object> e) {
+                sent.add(e);
+                return new com.example.coderiskanalyzer.production.judge.JudgeResult(true, true, 0.7, "x");
+            }
+        };
+        var result = command().reviewCandidates(java.util.List.of(risk.apply("SEC-006", file), risk.apply("TX-004", other),
+                risk.apply("SEC-005", other)), judge, model);
+        assertThat(sent).hasSize(2);
+        @SuppressWarnings("unchecked")
+        var source = (java.util.Map<String, Object>) sent.get(0).get("source");
+        assertThat(source).containsEntry("method", "demo.A#load").containsEntry("body", "{ repository.findById(id); }")
+                .containsEntry("truncated", false);
+        assertThat(sent.get(1)).doesNotContainKey("source");
+        assertThat(result.get(0).status()).isEqualTo(FindingStatus.REVIEW);
+        assertThat(result.get(0).evidence()).anyMatch(e -> e.type().equals("JEV_RISK_REVIEW"));
     }
 
     @Test

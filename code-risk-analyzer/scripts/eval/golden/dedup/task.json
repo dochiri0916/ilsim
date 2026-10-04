@@ -1,0 +1,2 @@
+{"title": "Process a payment message once", "file": "PaymentHandler.java",
+ "description": "PaymentHandler.handle receives payment messages that the broker may deliver more than once, possibly from several threads at the same time. Each paymentId must be charged exactly once; a repeated delivery returns false and charges nothing. Fix it so this holds under concurrent delivery."}

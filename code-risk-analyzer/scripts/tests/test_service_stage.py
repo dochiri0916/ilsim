@@ -8,6 +8,7 @@ import test_code_change_workflow as base
 controller = base.controller
 CHECK = '''import os, sys, urllib.request
 with urllib.request.urlopen(os.environ['SERVICE_BASE_URL'] + '/ready', timeout=5) as response:
+    open(os.environ['SCENARIO_REPORT'], 'w').write('{"assertions": 1, "passed": 1}' if response.status == 200 else '{"assertions": 1, "passed": 0}')
     sys.exit(0 if response.status == 200 else 1)
 '''
 SERVER = '''import http.server, sys

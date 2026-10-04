@@ -334,6 +334,9 @@ def plan(text, config=None, state=None, project=None, allowed_models=None, judge
         if not target:
             raise ValueError('--project 또는 --config로 대상 프로젝트를 지정하세요')
         result['commands'] = [['java', '-jar', jar, 'scan' if intent == 'ANALYZE' else 'mutation', target]]
+        if intent == 'ANALYZE' and judge is not None:
+            # With a JEV key, risks the static rules cannot settle get JEV's advisory opinion (method source is sent).
+            result['commands'][0] += ['--jev', 'true']
         if intent == 'ANALYZE' and convention:
             report = Path(target)/'build'/'ask'/'convention-analyze.json'
             result['commands'].append([sys.executable, str(SCRIPTS/'convention_check.py'), target, '--output', str(report)])
@@ -681,6 +684,13 @@ CONVENTION_OFF = re.compile(r'(컨벤션|코드\s*스타일|스타일\s*검사)\
                             r'|no[-\s]?convention', re.I)
 CONVENTION_ON = re.compile(r'컨벤션\s*(검사|검증)?\s*(적용|켜|지켜|맞춰|대로|포함)|with[-\s]?convention', re.I)
 CONVENTION_MARKER = 'convention.json'
+# Coverage and mutation gates on the changed classes are on unless the request turns them off.
+QUALITY_OFF = re.compile(r'(품질\s*(게이트|검사|기준)|커버리지|변이\s*(검사|테스트)?|mutation|coverage)\s*(검사|확인)?\s*'
+                         r'(없이|빼고|끄고|무시|하지\s*말|말고)|no[-\s]?(quality|coverage|mutation)', re.I)
+
+
+def quality_choice(text):
+    return not QUALITY_OFF.search(text or '')
 
 
 def convention_request(text):
@@ -744,6 +754,7 @@ def start_change(text, project, decided, allowed, judge, spec, check=None, measu
     (session/CONVENTION_MARKER).write_text(json.dumps(dict(chosen, enabled=enabled), ensure_ascii=False), encoding='utf-8')
     # The code writers get the convention templates with example files as a repository rules document.
     options = {'rules': conventions.guidance()} if enabled else {}
+    options['quality'] = quality_choice(text)
     if check is not None:
         options['check'] = check
     result = {'config': drafts.prepare(project, session, text, value, DEFAULT_JAR, default_routing(), **options),
@@ -756,6 +767,9 @@ def start_change(text, project, decided, allowed, judge, spec, check=None, measu
     print(describe_draft(project, session, result['draft']))
     for line in describe_selection(chosen):
         print(line)
+    quality = value['config'].get('qualityGates') if isinstance(value.get('config'), dict) else None
+    print('품질 게이트: ' + (f"켬 - 변경 클래스 {len(quality['targets'])}개에 LINE 90%·BRANCH 80%·변이 90%(생존 0)"
+                           if quality else '끔' + ('' if options['quality'] else ' (요청 문장)')))
     if not enabled:
         print('컨벤션: 끔 (기존 코드 스타일을 따르고 컨벤션 검사는 하지 않음)')
         return value

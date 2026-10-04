@@ -38,7 +38,7 @@ echo artifact > build/libs/service.jar
         self.config['documents'] = ['docs/spec.md']
         # Service evidence always comes from a controller-run adapter; each scenario is its own project script.
         for name in ('normal', 'duplicate', 'concurrency', 'rollback'):
-            self.put('checks/' + name + '.py', 'import sys; sys.exit(0)')
+            self.put('checks/' + name + '.py', "import os; open(os.environ['SCENARIO_REPORT'], 'w').write('{\"assertions\": 1, \"passed\": 1}')")
         self.config['serviceAdapter'] = {'jar': 'build/libs/service.jar', 'scenarios': {
             name: ['python3', 'checks/' + name + '.py'] for name in ('normal', 'duplicate', 'concurrency', 'rollback')}}
         self.state = self.project/'build/session/state.json'
@@ -953,6 +953,33 @@ esac
         self.assertIn('-Dlogging.level.root=OFF', command)
         self.assertEqual('COMPLETED', result['status'])
         self.assertFalse((self.state.parent/'changes.json').exists())
+
+    def test_contract_changes_and_regression_reach_are_reported_without_blocking(self):
+        # given: a baseline contract snapshot and an analyzer that reports one removed method
+        self.run_stage('baseline')
+        runner = controller.Controller(self.config, self.state)
+        controller.regression.save(self.state.parent/'contracts-before.json', {'version': 1, 'contracts': {}})
+        report = {'contracts': {}, 'changes': [{'change': 'API_REMOVED', 'key': 'METHOD demo.Service#run()', 'effect': 'e',
+                                                'before': {}, 'after': None}],
+                  'impact': {'callerFiles': ['src/main/Caller.java'], 'tests': {'demo.ServiceTest#works()': 2}}}
+        result = {'status': 'PASSED', 'failures': []}
+        with patch.object(runner, '_impact', return_value=report) as impact:
+            runner._contract_review(result)
+        # then
+        impact.assert_called_once_with(self.state.parent/'contracts-before.json')
+        self.assertEqual('PASSED', result['status'])
+        self.assertEqual([{'change': 'API_REMOVED', 'key': 'METHOD demo.Service#run()', 'effect': 'e'}], result['contractChanges'])
+        self.assertEqual((['src/main/Caller.java'], ['demo.ServiceTest#works()']),
+                         (result['impactedCallerFiles'], result['impactedTests']))
+        self.assertTrue((self.state.parent/'impact.json').is_file())
+
+    def test_contract_check_is_unavailable_without_a_real_analyzer_jar(self):
+        # given: the test analyzer is not a jar, so baseline wrote no contract snapshot
+        self.run_stage('baseline')
+        result = {'status': 'PASSED', 'failures': []}
+        controller.Controller(self.config, self.state)._contract_review(result)
+        self.assertFalse((self.state.parent/'contracts-before.json').exists())
+        self.assertEqual(('PASSED', 'UNAVAILABLE'), (result['status'], result['contractCheck']))
 
     def test_session_path_cannot_escape_build_via_parent_traversal(self):
         escaped = self.project/'build/../src/session/state.json'

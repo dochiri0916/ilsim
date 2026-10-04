@@ -46,10 +46,66 @@ class AccessControlRulesTests {
     void acceptsVisibleAuthorizationOrCallerIdentity() throws Exception {
         assertThat(authorization(CONTROLLER.formatted("", "@PreAuthorize(\"hasRole('ADMIN')\")", "@PathVariable Long id", ""))).isEmpty();
         assertThat(authorization(CONTROLLER.formatted("@Secured(\"ROLE_ADMIN\")", "", "@PathVariable Long id", ""))).isEmpty();
-        assertThat(authorization(CONTROLLER.formatted("", "", "@PathVariable Long id, Principal principal", ""))).isEmpty();
-        assertThat(authorization(CONTROLLER.formatted("", "", "@PathVariable Long id, @AuthenticationPrincipal User user", ""))).isEmpty();
+        assertThat(authorization(CONTROLLER.formatted("", "", "@PathVariable Long id, Principal principal",
+                "audit(principal.getName());"))).isEmpty();
+        assertThat(authorization(CONTROLLER.formatted("", "", "@PathVariable Long id, @AuthenticationPrincipal User user",
+                "audit(user);"))).isEmpty();
         assertThat(authorization(CONTROLLER.formatted("", "", "@PathVariable Long id",
                 "SecurityContextHolder.getContext().getAuthentication();"))).isEmpty();
+    }
+
+    @Test
+    void callerIdentityThatTheHandlerNeverUsesIsNotAProtection() throws Exception {
+        assertThat(authorization(CONTROLLER.formatted("", "", "@PathVariable Long id, Principal principal", ""))).hasSize(1);
+    }
+
+    private static final String DELEGATING_CONTROLLER = """
+            package demo;
+            @RestController
+            class OrderController {
+                private final OrderService service;
+                @GetMapping("/orders/{id}")
+                Order get(@PathVariable Long id) { return service.load(id); }
+            }
+            """;
+
+    @Test
+    void acceptsAnOwnershipCheckOrAccessRuleFoundDeeperOnTheCallPath() throws Exception {
+        assertThat(authorization(DELEGATING_CONTROLLER, """
+                package demo;
+                class OrderService {
+                    private final OrderRepository orders;
+                    private final AccessPolicy policy;
+                    Order load(Long id) { Order order = orders.findById(id).orElseThrow(); verify(order); return order; }
+                    void verify(Order order) { policy.checkOwnership(order); }
+                }
+                """)).isEmpty();
+        assertThat(authorization(DELEGATING_CONTROLLER, """
+                package demo;
+                class OrderService {
+                    @PreAuthorize("@orders.isOwner(#id)") Order load(Long id) { return null; }
+                }
+                """)).isEmpty();
+        assertThat(authorization(DELEGATING_CONTROLLER, """
+                package demo;
+                class OrderService {
+                    private final OrderRepository orders;
+                    Order load(Long id) { return orders.findByIdAndOwnerId(id, currentUser()).orElseThrow(); }
+                    Long currentUser() { return 1L; }
+                }
+                """)).isEmpty();
+    }
+
+    @Test
+    void reportsTheInspectedCallPathWhenNoCheckIsFound() throws Exception {
+        assertThat(authorization(DELEGATING_CONTROLLER, """
+                package demo;
+                class OrderService {
+                    private final OrderRepository orders;
+                    Order load(Long id) { return orders.findById(id).orElseThrow(); }
+                }
+                """)).singleElement().satisfies(finding -> assertThat(finding.evidence().getFirst().attributes())
+                .containsEntry("inspectedMethods", List.of("OrderController#get", "OrderService#load")));
     }
 
     @Test
@@ -110,14 +166,34 @@ class AccessControlRulesTests {
     }
 
     @Test
+    void acceptsAnInheritedLookupWhoseCallerChecksTheLoadedTenant() throws Exception {
+        String checked = """
+                class OrderService {
+                    private final OrderRepository orders;
+                    OrderService(OrderRepository orders) { this.orders = orders; }
+                    Order load(Long id, String tenant) {
+                        Order order = orders.findById(id).orElseThrow();
+                        if (!order.getTenantId().equals(tenant)) throw new IllegalStateException();
+                        return order;
+                    }
+                    Order other(Long id) { Order order = orders.findById(id).orElseThrow(); verifyTenant(order); return order; }
+                    void verifyTenant(Order order) { }
+                }
+                """;
+        assertThat(tenant(ENTITY.formatted("", ""), REPOSITORY, checked))
+                .extracting(finding -> finding.evidence().getFirst().attributes().get("method"))
+                .containsExactlyInAnyOrder("findByStatus", "active");
+    }
+
+    @Test
     void trustsFrameworkTenantFiltersAndIgnoresUnscopedEntities() throws Exception {
         assertThat(tenant(ENTITY.formatted("", "@TenantId"), REPOSITORY, SERVICE)).isEmpty();
         assertThat(tenant(ENTITY.formatted("@Filter(name = \"tenantFilter\")", ""), REPOSITORY, SERVICE)).isEmpty();
         assertThat(tenant(ENTITY.formatted("", "").replace("tenantId", "ownerName"), REPOSITORY, SERVICE)).isEmpty();
     }
 
-    private List<Finding> authorization(String source) throws Exception {
-        return analyze(new MissingObjectAuthorizationRule(), source);
+    private List<Finding> authorization(String... sources) throws Exception {
+        return analyze(new MissingObjectAuthorizationRule(), sources);
     }
 
     private List<Finding> tenant(String... sources) throws Exception {
