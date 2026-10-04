@@ -1,13 +1,16 @@
 # 명세 파일 (`ask --spec`)
 
-`ask`는 설계와 프롬프트를 쓰지 않는다. 코드 변경은 사람이(또는 함께 쓰는 Claude·Codex 대화에서) 쓴 명세 파일을 받아 시작한다. 모델 판단은 그대로 남는다. JEV(키가 있을 때)가 요청 문장으로 작업 종류를 고르고 단계마다 Tier를 정한다. 테스트·구현 생성 단계는 이 명세로 만든 요구사항을 받아 모델을 호출한다.
+코드 변경은 명세에서 시작한다. 명세는 두 가지 방법으로 준다.
 
 ```bash
-ask --spec spec.json "회원 가입 기능 추가해줘"   # 명세 검증 → 입력 파일 생성 → 계획을 보여 주고 멈춤
-ask --yes                                            # 실행
+ask "회원 가입 기능 추가해줘"                       # 모델이 요청과 프로젝트 파일로 명세 초안을 씀 → 계획을 보여 주고 멈춤
+ask --spec spec.json "회원 가입 기능 추가해줘"      # 직접 쓴 명세를 그대로 씀 (모델 호출 없음)
+ask --yes                                           # 확인한 계획 실행
 ```
 
-[`scripts/ask_draft.py`](../../scripts/ask_draft.py)가 형식을 검사하고 requirements·plan·scope·request.md를 결정적으로 만든다. 분석기 `requirements` 검증까지 통과해야 세션이 생긴다. 틀리면 어느 필드가 왜 틀렸는지(`spec.requirements[0].domain: 필드가 맞지 않습니다 (없음: owner)`) 알려 준다. 회귀 기준은 프로젝트의 기존 테스트 전체이며, 테스트가 하나도 없으면 거부한다.
+모델이 쓴 초안은 세션의 `spec.json`(예: `build/ask/<시각>/spec.json`)에 남는다. 고칠 곳이 있으면 그 파일을 수정해 `--spec`으로 다시 시작한다. 초안 단계에서 정해야 할 것이 있으면 질문만 보여 주고 멈추므로, 답을 요청 문장에 넣어 다시 실행한다.
+
+[`scripts/ask_draft.py`](../../scripts/ask_draft.py)가 형식을 검사하고 requirements·plan·scope·request.md를 결정적으로 만든다. 분석기 `requirements` 검증까지 통과해야 세션이 생긴다. 직접 쓴 명세가 틀리면 어느 필드가 왜 틀렸는지(`spec.requirements[0].domain: 필드가 맞지 않습니다 (없음: owner)`) 알려 준다. 회귀 기준은 프로젝트의 기존 테스트 전체이며, 테스트가 하나도 없으면 거부한다. 모델 판단(JEV 작업·Tier 판단)과 테스트·구현 생성은 두 방법 모두 같다.
 
 예시: [`docs/examples/ask/spec.json`](../examples/ask/spec.json)
 
