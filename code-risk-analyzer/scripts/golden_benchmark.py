@@ -7,6 +7,7 @@ not change models.json. Compare the current route with a candidate, then edit mo
 justify it and regenerate the routing with model_select.py.
 
     python3 scripts/golden_benchmark.py --routes general/medium,review/high --repeat 2 --output build/golden.json
+    ask --benchmark-models     # every route the routing policy uses, once each
 """
 import argparse
 import importlib.util
@@ -108,6 +109,18 @@ def benchmark(routes, registry, call, repeat=1, run=subprocess.run, root=TASKS):
     return results
 
 
+def policy_routes(policy):
+    """Distinct <profile>/<effort> routes in the policy, primaries and fallbacks, in tier order."""
+    routes = []
+    for tier in sorted(policy['tiers']):
+        route = policy['tiers'][tier]
+        for step in [route, *route.get('fallbacks', [])]:
+            name = step['modelId'] + '/' + step['reasoningEffort']
+            if name not in routes:
+                routes.append(name)
+    return routes
+
+
 def report(results):
     lines = ['Golden Benchmark:']
     for route, value in results.items():
@@ -119,7 +132,8 @@ def report(results):
 
 def main(argv=None, call=None):
     parser = argparse.ArgumentParser(description='Run the golden bug-fix tasks against model routes')
-    parser.add_argument('--routes', required=True, help='comma-separated <profile>/<effort>, e.g. general/medium,review/high')
+    parser.add_argument('--routes', help='comma-separated <profile>/<effort>, e.g. general/medium,review/high '
+                                         '(default: every route the routing policy uses)')
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--output')
     args = parser.parse_args(argv)
@@ -127,9 +141,13 @@ def main(argv=None, call=None):
     try:
         if not 1 <= args.repeat <= 5:
             raise ValueError('--repeat must be between 1 and 5')
-        registry = _module('model_router').validate_registry(ask._read(ask.default_routing()['registry']))
-        results = benchmark([route.strip() for route in args.routes.split(',') if route.strip()], registry,
-                            call or _module('agent_runner').run, args.repeat)
+        routing = ask.default_routing()
+        registry = _module('model_router').validate_registry(ask._read(routing['registry']))
+        routes = [route.strip() for route in args.routes.split(',') if route.strip()] if args.routes \
+            else policy_routes(ask._read(routing['policy']))
+        print(f'{len(routes)}개 경로 × 과제 {len(tasks())}개 × {args.repeat}회 = 모델 호출 {len(routes) * len(tasks()) * args.repeat}번 '
+              '(과제당 짧은 파일 하나, 구독 CLI 사용량으로 처리)')
+        results = benchmark(routes, registry, call or _module('agent_runner').run, args.repeat)
     except (ValueError, OSError, KeyError) as error:
         print(f'벤치마크 거부: {error}')
         return 2

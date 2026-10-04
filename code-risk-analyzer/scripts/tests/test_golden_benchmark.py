@@ -98,6 +98,12 @@ class GoldenBenchmarkTests(unittest.TestCase):
         self.assertTrue(all('Check.java' not in prompt for prompt in prompts))
         self.assertIn('2/4 통과', golden.report(results))
 
+    def test_default_routes_are_every_route_the_policy_uses(self):
+        policy = {'tiers': {'TIER_2': {'modelId': 'general', 'reasoningEffort': 'low',
+                                       'fallbacks': [{'modelId': 'review', 'reasoningEffort': 'high'}]},
+                            'TIER_1': {'modelId': 'general', 'reasoningEffort': 'low'}}}
+        self.assertEqual(['general/low', 'review/high'], golden.policy_routes(policy))
+
     def test_forbidden_or_unknown_routes_are_refused(self):
         with self.assertRaisesRegex(ValueError, 'Forbidden'):
             golden.route_config(REGISTRY, 'banned/high')
