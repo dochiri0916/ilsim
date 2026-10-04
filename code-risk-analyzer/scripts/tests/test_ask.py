@@ -733,6 +733,13 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertTrue(value['commands'][1][1].endswith('convention_check.py'))
         self.assertEqual((2, 1), (len(calls), code))
 
+    def test_analysis_with_a_jev_key_asks_jev_about_what_static_rules_cannot_settle(self):
+        # when: JEV judged the request, so a key is available
+        value = ask.zero_config('결제 코드 위험 분석해줘', self.project, None,
+                                lambda text: {'status': 'COMPLETED', 'intent': 'ANALYZE', 'confidence': 0.99})
+        # then
+        self.assertEqual(['scan', str(self.project), '--jev', 'true'], value['commands'][0][3:])
+
     def test_follow_up_without_a_session_explains_what_to_do_first(self):
         with self.assertRaisesRegex(ValueError, '진행 중인 작업이 없습니다'):
             ask.zero_config('검증 다시 해줘', self.project, None, None)
