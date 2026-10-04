@@ -1,5 +1,10 @@
-"""General local service verification: start the verified JAR on loopback and run declared scenario commands."""
+"""General local service verification: start the verified JAR on loopback and run declared scenario commands.
+
+Each scenario command gets SERVICE_BASE_URL and SCENARIO_REPORT. Exit code 0 alone is not a pass: the command must
+write {"assertions": n, "passed": n} (n >= 1) to SCENARIO_REPORT, so a check that asserts nothing cannot pass.
+"""
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -115,25 +120,40 @@ def port_released(port):
     return False
 
 
+def assertion_report(path):
+    """{'valid', 'assertions', 'passed'} from the scenario's report; a missing, malformed or empty report is invalid."""
+    try:
+        value = json.loads(Path(path).read_text(encoding='utf-8')[:4096])
+    except (OSError, ValueError):
+        return {'valid': False, 'reason': 'No assertion report was written to SCENARIO_REPORT'}
+    if not isinstance(value, dict) or set(value) != {'assertions', 'passed'} \
+            or any(type(value[key]) is not int or value[key] < 0 for key in value):
+        return {'valid': False, 'reason': 'Assertion report must be {"assertions": n, "passed": n}'}
+    valid = value['assertions'] >= 1 and value['passed'] == value['assertions']
+    return {'valid': valid, 'assertions': value['assertions'], 'passed': value['passed'],
+            **({} if valid else {'reason': 'At least one assertion is required and all must pass'})}
+
+
 def verify(project, config, sources, launcher=java_launcher):
     jar = project/config['jar']
     port = free_port()
     base_url = 'http://127.0.0.1:' + str(port)
     result = {'status': 'FAILED', 'adapter': 'GENERAL', 'sources': sources, 'jarSha256': digest(jar), 'port': port,
               'scenarios': {}, 'observations': [], 'processStopped': False,
-              'limitations': ['Scenario commands own their assertions; exit code 0 is recorded as PASSED',
+              'limitations': ['Scenario commands own their assertions; a pass needs exit code 0 and a report of at least one passed assertion',
                               'Loopback process only; external systems are whatever the declared environment provides']}
     process = None
     try:
         # Process output can carry secrets, so it is discarded rather than stored as evidence.
-        with tempfile.TemporaryFile() as output:
+        with tempfile.TemporaryFile() as output, tempfile.TemporaryDirectory(prefix='code-risk-scenario-') as reports:
             process = subprocess.Popen(launcher(jar, port, config['arguments']), cwd=project, stdout=output,
                                        stderr=subprocess.STDOUT, start_new_session=True)
             if not ready(base_url + config['readyPath'], process, time.monotonic() + config['readyTimeoutSeconds']):
                 result['reason'] = 'Service did not become ready'
                 return result
-            environment = dict(os.environ, SERVICE_BASE_URL=base_url)
             for name in SCENARIOS:
+                report = Path(reports)/(name + '.json')
+                environment = dict(os.environ, SERVICE_BASE_URL=base_url, SCENARIO_REPORT=str(report))
                 try:
                     completed = subprocess.run(config['scenarios'][name], cwd=project, env=environment,
                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -141,8 +161,9 @@ def verify(project, config, sources, launcher=java_launcher):
                     code = completed.returncode
                 except subprocess.TimeoutExpired:
                     code = 'TIMEOUT'
-                result['scenarios'][name] = 'PASSED' if code == 0 else 'FAILED'
-                result['observations'].append({'scenario': name, 'exitCode': code})
+                assertions = assertion_report(report)
+                result['scenarios'][name] = 'PASSED' if code == 0 and assertions['valid'] else 'FAILED'
+                result['observations'].append({'scenario': name, 'exitCode': code, 'assertions': assertions})
                 if process.poll() is not None:
                     result['reason'] = 'Service exited during scenarios'
                     return result

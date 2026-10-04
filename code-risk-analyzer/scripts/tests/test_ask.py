@@ -609,6 +609,11 @@ class ZeroConfigTests(unittest.TestCase):
             ask.start_change('회원 가입 기능 추가해줘', self.project, ('CODE_CHANGE', 'k'), None, None,
                              self.spec(status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[]))
 
+    def test_quality_gates_are_on_for_changed_classes_unless_the_request_turns_them_off(self):
+        self.assertTrue(ask.quality_choice('회원 가입 기능 추가해줘'))
+        for text in ('품질 게이트 없이 추가해줘', '커버리지 검사 빼고 해줘', '변이 테스트 끄고 해줘', 'no-mutation please'):
+            self.assertFalse(ask.quality_choice(text), text)
+
     def test_change_request_drafts_a_new_session_and_waits_for_approval(self):
         # when
         value, output = self.start()
@@ -621,7 +626,8 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertEqual({'project': str(self.project), 'session': str(session), 'baseRef': None}, value['convention'])
         self.assertEqual(['build/ask/' + session.name + '/request.md', 'build/ask/' + session.name + '/conventions.md'],
                          value['config']['documents'])
-        self.assertIn('REQ-1 이메일로 회원 가입 (시나리오 2개)', output)
+        self.assertIn('REQ-1 이메일로 회원 가입 (시나리오 4개)', output)
+        self.assertIn('품질 게이트: 켬 - 변경 클래스 1개', output)
         self.assertIn('먼저 기존 코드 위반을 고칩니다 - src/test/java/com/example/demo/DemoApplicationTests.java', output)
         self.assertEqual([None], self.measured)
         self.assertFalse((session/'state.json').exists())

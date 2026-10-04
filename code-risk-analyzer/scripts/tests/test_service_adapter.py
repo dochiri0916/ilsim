@@ -21,6 +21,7 @@ http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), Handler).serve_
 '''
 CHECK = '''import os, sys, urllib.request
 with urllib.request.urlopen(os.environ['SERVICE_BASE_URL'] + '/ready', timeout=5) as response:
+    open(os.environ['SCENARIO_REPORT'], 'w').write('{"assertions": 1, "passed": 1}' if response.status == 200 else '{"assertions": 1, "passed": 0}')
     sys.exit(0 if response.status == 200 else 1)
 '''
 
@@ -88,6 +89,23 @@ class ServiceAdapterTests(unittest.TestCase):
         self.settings['scenarios'] = {name: ['checks/run.sh', name] for name in adapter.SCENARIOS}
         files = adapter.scenario_files(self.project, adapter.settings(self.settings))
         self.assertEqual({'checks/run.sh': adapter.digest(self.project/'checks/run.sh')}, files)
+
+    def test_exit_code_zero_without_passed_assertions_is_not_a_pass(self):
+        # given: one check asserts nothing, one reports no assertions, one reports a failed assertion
+        (self.project/'checks/silent.py').write_text('import sys; sys.exit(0)')
+        (self.project/'checks/empty.py').write_text("import os; open(os.environ['SCENARIO_REPORT'], 'w').write('{\"assertions\": 0, \"passed\": 0}')")
+        (self.project/'checks/partial.py').write_text("import os; open(os.environ['SCENARIO_REPORT'], 'w').write('{\"assertions\": 2, \"passed\": 1}')")
+        self.settings['scenarios'].update(duplicate=['python3', 'checks/silent.py'], concurrency=['python3', 'checks/empty.py'],
+                                          rollback=['python3', 'checks/partial.py'])
+        # when
+        result = adapter.verify(self.project, adapter.settings(self.settings), {}, launcher=python_launcher(self.project))
+        # then
+        self.assertEqual('FAILED', result['status'])
+        self.assertEqual({'normal': 'PASSED', 'duplicate': 'FAILED', 'concurrency': 'FAILED', 'rollback': 'FAILED'},
+                         result['scenarios'])
+        observed = {item['scenario']: item for item in result['observations']}
+        self.assertEqual((0, False), (observed['duplicate']['exitCode'], observed['duplicate']['assertions']['valid']))
+        self.assertEqual({'valid': True, 'assertions': 1, 'passed': 1}, observed['normal']['assertions'])
 
     def test_scenarios_without_project_check_or_identical_commands_are_rejected(self):
         self.settings['scenarios'] = {name: ['true', 'noop-' + name] for name in adapter.SCENARIOS}
