@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('agent_pick', Path(__file__).resolve().parents[1]/'agent_pick.py')
 pick = importlib.util.module_from_spec(spec)
@@ -63,10 +64,10 @@ class BoostTests(unittest.TestCase):
 
     def test_settings_come_from_the_tier_route_of_the_chosen_cli(self):
         routing = pick._module('ask').default_routing({})
-        self.assertEqual(['-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="xhigh"'], pick.launch_args('codex', 'TIER_4', routing))
-        self.assertEqual(['--model', 'claude-sonnet-5-5', '--effort', 'xhigh'], pick.launch_args('claude', 'TIER_4', routing))
-        self.assertEqual(['-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="high"'], pick.launch_args('codex', 'TIER_3', routing))
-        self.assertEqual([], pick.launch_args('codex', None, routing))
+        self.assertEqual(('gpt-6.1-sol', 'xhigh'), pick.launch_setting('codex', 'TIER_4', routing))
+        self.assertEqual(('claude-sonnet-5-5', 'xhigh'), pick.launch_setting('claude', 'TIER_4', routing))
+        self.assertEqual(('gpt-6.1-sol', 'high'), pick.launch_setting('codex', 'TIER_3', routing))
+        self.assertEqual((None, None), pick.launch_setting('codex', None, routing))
 
 
 class ClaudeStateTests(unittest.TestCase):
@@ -99,27 +100,82 @@ class ClaudeStateTests(unittest.TestCase):
         self.assertIsNone(pick.claude_state(old, NOW)['blockedUntil'])
 
 
+class FakeProcess:
+    def __init__(self, lines, code=0, stderr=''):
+        self.stdin, self.stdout, self.stderr, self.code = io.StringIO(), iter(lines), io.StringIO(stderr), code
+
+    def wait(self):
+        return self.code
+
+
+def events(*items):
+    return [json.dumps(item) + '\n' for item in items]
+
+
+CLAUDE_OK = events({'type': 'system', 'subtype': 'init', 'session_id': 'c-1'},
+                   {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'name': 'Edit', 'input': {'file_path': 'src/A.java'}},
+                                                                  {'type': 'text', 'text': '수정했습니다'}]}},
+                   {'type': 'result', 'is_error': False, 'result': '수정했습니다', 'session_id': 'c-1'})
+CODEX_OK = events({'type': 'thread.started', 'thread_id': 'x-1'},
+                  {'type': 'item.completed', 'item': {'type': 'command_execution', 'command': './gradlew test'}},
+                  {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': '테스트 통과'}},
+                  {'type': 'turn.completed'})
+
+
 class MainTests(unittest.TestCase):
-    def test_explicit_choice_starts_that_cli_with_the_rest_of_the_arguments(self):
-        started = []
-        with redirect_stderr(io.StringIO()):
-            pick.main(['codex', '--', '--model', 'x'], execvp=lambda name, argv: started.append(argv), which=lambda cli: '/bin/' + cli)
-        self.assertEqual([['codex', '--model', 'x']], started)
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.home = temp.name
+        self.environ = {'CLAUDE_CONFIG_DIR': self.home, 'CODEX_HOME': self.home, 'XDG_STATE_HOME': self.home}
+        self.lines, self.started, self.outputs = [], [], []
 
-    def test_task_words_start_the_cli_with_that_task_and_its_tier(self):
-        started = []
-        with tempfile.TemporaryDirectory() as home, redirect_stderr(io.StringIO()) as output:
-            pick.main(['결제', '동시성', '버그', '고쳐줘'], environ={'CLAUDE_CONFIG_DIR': home, 'CODEX_HOME': home}, now=NOW,
-                      execvp=lambda name, argv: started.append(argv), which=lambda cli: '/bin/' + cli)
-        self.assertEqual([['codex', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="high"', '결제 동시성 버그 고쳐줘']], started)
-        self.assertIn('[TIER_3]', output.getvalue())
+    def popen(self, argv, **options):
+        self.started.append((argv, options['cwd']))
+        return self.outputs.pop(0)
 
-    def test_why_only_prints(self):
-        with tempfile.TemporaryDirectory() as home, redirect_stderr(io.StringIO()) as output:
-            code = pick.main(['--why'], environ={'CLAUDE_CONFIG_DIR': home, 'CODEX_HOME': home}, now=NOW,
-                             execvp=lambda *a: self.fail('must not start'), which=lambda cli: '/bin/' + cli)
+    def main(self, *argv, now=NOW):
+        return pick.main(list(argv), environ=self.environ, now=now, which=lambda cli: '/bin/' + cli, popen=self.popen,
+                         cwd=self.home, say=self.lines.append)
+
+    def test_a_task_runs_headless_in_the_folder_and_prints_progress(self):
+        # given: no usage recorded, so Codex is chosen
+        self.outputs = [FakeProcess(CODEX_OK)]
+        # when
+        code = self.main('결제', '동시성', '버그', '고쳐줘')
+        # then: no interactive screen, the task goes to stdin, progress lines are shown
+        argv, cwd = self.started[0]
         self.assertEqual(0, code)
-        self.assertIn('ai: codex', output.getvalue())
+        self.assertEqual(['codex', 'exec', '--json', '--skip-git-repo-check', '--sandbox', 'workspace-write',
+                          '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="high"', '-'], argv)
+        self.assertEqual(Path(self.home).resolve(), cwd)
+        self.assertIn('  · 명령 ./gradlew test', self.lines)
+        self.assertIn('테스트 통과', self.lines)
+
+    def test_the_next_task_continues_the_conversation_unless_new(self):
+        self.outputs = [FakeProcess(CLAUDE_OK), FakeProcess(CLAUDE_OK), FakeProcess(CLAUDE_OK)]
+        self.main('claude', '회원', '탈퇴', '추가해줘')
+        self.main('claude', '테스트도', '추가해줘', now=NOW + timedelta(minutes=20))
+        self.main('claude', '--new', '다른', '일', now=NOW + timedelta(minutes=30))
+        resumed = [argv[argv.index('--resume') + 1] if '--resume' in argv else None for argv, _ in self.started]
+        self.assertEqual([None, 'c-1', None], resumed)
+        self.assertIn('  · Edit src/A.java', self.lines)
+
+    def test_hitting_a_limit_hands_the_task_to_the_other_cli(self):
+        limited = events({'type': 'system', 'subtype': 'init', 'session_id': 'c-2'},
+                         {'type': 'result', 'is_error': True, 'result': 'Claude AI usage limit reached', 'session_id': 'c-2'})
+        self.outputs = [FakeProcess(limited, code=1), FakeProcess(CODEX_OK)]
+        with patch.object(pick, 'choose', return_value=('claude', 'test', False)):
+            code = self.main('작업해줘')
+        self.assertEqual(0, code)
+        self.assertEqual(['claude', 'codex'], [argv[0] for argv, _ in self.started])
+        self.assertTrue(any('codex로 같은 작업' in line for line in self.lines))
+
+    def test_why_and_no_task_only_print(self):
+        self.assertEqual(0, self.main('--why'))
+        self.assertEqual(0, self.main())
+        self.assertEqual([], self.started)
+        self.assertTrue(any('사용법' in line for line in self.lines))
 
 
 if __name__ == '__main__':
