@@ -1,8 +1,8 @@
-"""Build the CODE_CHANGE inputs (requirements, plan, scope, request document) from a design file a person wrote.
+"""Build the CODE_CHANGE inputs (requirements, plan, scope, request document) from a spec file a person wrote.
 
-Design and prompt writing stay with the person (or the assistant they work with): `ask --design design.json "..."`
+Design and prompt writing stay with the person (or the assistant they work with): `ask --spec spec.json "..."`
 reads a compact form, validates it strictly and builds the schema-valid files deterministically. No model is called
-here and nothing here edits project sources. The form and how to fill it: docs/guides/DESIGN_FILE.md.
+here and nothing here edits project sources. The form and how to fill it: docs/guides/SPEC_FILE.md.
 """
 import json
 from pathlib import Path
@@ -53,7 +53,7 @@ DRAFT_SCHEMA = _object({
 })
 
 
-def _check(node, schema, where='design'):
+def _check(node, schema, where='spec'):
     kind = schema['type']
     if kind == 'object':
         if not isinstance(node, dict):
@@ -215,23 +215,23 @@ def check_requirements(path, analyzer, run=subprocess.run):
 
 
 def load(path):
-    """The design file as a validated form; status and unknowns may be left out of a finished design."""
+    """The spec file as a validated form; status and unknowns may be left out of a finished spec."""
     try:
         value = json.loads(Path(path).read_text(encoding='utf-8'))
     except OSError as error:
-        raise ValueError(f'설계 파일을 읽지 못했습니다: {path} ({error.strerror or error})')
+        raise ValueError(f'명세 파일을 읽지 못했습니다: {path} ({error.strerror or error})')
     except ValueError as error:
-        raise ValueError(f'설계 파일이 올바른 JSON이 아닙니다: {error}')
+        raise ValueError(f'명세 파일이 올바른 JSON이 아닙니다: {error}')
     if isinstance(value, dict):
         value = {'status': 'COMPLETED', 'unknowns': [], **value}
     validate(value)
     if value['status'] != 'COMPLETED':
-        raise ValueError('설계 파일에 정하지 못한 질문이 남아 있습니다: ' + '; '.join(value['unknowns']))
+        raise ValueError('명세 파일에 정하지 못한 질문이 남아 있습니다: ' + '; '.join(value['unknowns']))
     return value
 
 
-def prepare(project, session, request, design, analyzer, routing, check=check_requirements, rules=None):
-    """Write the session inputs from a loaded design and have the analyzer accept the requirements; returns the config."""
-    config = write_inputs(project, session, request, design, analyzer, routing, rules)
+def prepare(project, session, request, spec, analyzer, routing, check=check_requirements, rules=None):
+    """Write the session inputs from a loaded spec and have the analyzer accept the requirements; returns the config."""
+    config = write_inputs(project, session, request, spec, analyzer, routing, rules)
     check(session/'requirements.json', analyzer)
     return config
