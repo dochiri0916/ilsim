@@ -221,6 +221,32 @@ class MainTests(unittest.TestCase):
         self.assertIn('resume', self.started[1][0])
         self.assertNotIn('resume', self.started[2][0])
 
+    def test_ctrl_c_stops_the_cli_keeps_the_conversation_and_names_changed_files(self):
+        class Interrupted(FakeProcess):
+            stopped = False
+
+            def __init__(self):
+                super().__init__([])
+                self.stdout = self.lines()
+
+            def lines(self):
+                yield CLAUDE_OK[0]
+                yield CLAUDE_OK[1]
+                raise KeyboardInterrupt
+
+            def terminate(self):
+                Interrupted.stopped = True
+
+            def wait(self, timeout=None):
+                return -2
+        self.outputs = [Interrupted(), FakeProcess(CLAUDE_OK)]
+        with patch.object(pick, 'checks', side_effect=AssertionError('no checks after a cancel')):
+            self.assertEqual(130, self.main('claude', '작업해줘'))
+        self.assertTrue(Interrupted.stopped)
+        self.assertTrue(any(line.startswith('ai: 취소했습니다 - 이미 바뀐 파일 1개 (src/A.java)') for line in self.lines))
+        self.main('claude', '이어서', now=NOW + timedelta(minutes=1))
+        self.assertEqual('c-1', self.started[1][0][self.started[1][0].index('--resume') + 1])
+
     def test_why_and_no_task_only_print(self):
         self.assertEqual(0, self.main('--why'))
         self.assertEqual(0, self.main())
