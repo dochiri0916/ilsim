@@ -34,6 +34,8 @@ import org.springframework.stereotype.Component;
 /**
  * Flags data access on tenant-scoped entities that does not visibly restrict results to a tenant. An entity is
  * tenant-scoped when it declares a tenant field; Hibernate tenant identifiers and filters are trusted as protection.
+ * An inherited lookup such as findById is accepted when the calling method, or a project method it reaches, reads
+ * the loaded entity's tenant (getTenantId(), tenantId()) or calls a tenant check (verifyTenant(..), checkTenantAccess(..)).
  */
 @Component
 public class TenantIsolationRule implements RiskRule {
@@ -44,6 +46,10 @@ public class TenantIsolationRule implements RiskRule {
             "count", "exists", "delete", "remove");
     private static final Set<String> INHERITED_LOOKUPS = Set.of("findById", "findAll", "findAllById", "getById",
             "getReferenceById", "getOne", "existsById", "deleteById", "deleteAll", "deleteAllById", "count");
+    /** getTenantId(), tenantId(), getTenant() read the loaded row's tenant; verifyTenant(..) and similar check it. */
+    private static final java.util.regex.Pattern TENANT_CHECK = java.util.regex.Pattern.compile(
+            "(get)?(tenantId|tenant|tenantCode|tenantKey)|(check|verify|assert|ensure|validate|require)\\w*Tenant\\w*",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
 
     @Override public String id() { return "SEC-007"; }
     @Override public RiskCategory category() { return RiskCategory.SECURITY; }
@@ -58,6 +64,7 @@ public class TenantIsolationRule implements RiskRule {
                 if (tenantScoped(type)) tenantEntities.add(type.getNameAsString());
             }
         }
+        CallPaths paths = new CallPaths(context);
         Map<String, String> repositories = new HashMap<>();
         List<Finding> findings = new ArrayList<>();
         for (ParsedSource source : context.parsedSources()) {
@@ -88,12 +95,19 @@ public class TenantIsolationRule implements RiskRule {
                             : scope instanceof FieldAccessExpr access ? access.getNameAsString() : null).orElse(null);
                     if (receiver == null || !fields.containsKey(receiver) || !INHERITED_LOOKUPS.contains(call.getNameAsString())) continue;
                     String repository = fields.get(receiver);
+                    var caller = call.findAncestor(MethodDeclaration.class);
+                    if (caller.isPresent() && tenantCheckedOnPath(paths.from(type, caller.get()))) continue;
                     findings.add(finding(source, call, repository, call.getNameAsString(), repositories.get(repository),
                             "Inherited repository lookup on a tenant-scoped entity bypasses tenant filtering"));
                 }
             }
         }
         return findings;
+    }
+
+    private static boolean tenantCheckedOnPath(CallPaths.Reach reach) {
+        return reach.methods().stream().flatMap(declared -> declared.method().findAll(MethodCallExpr.class).stream())
+                .anyMatch(call -> TENANT_CHECK.matcher(call.getNameAsString()).matches());
     }
 
     private static boolean tenantScoped(ClassOrInterfaceDeclaration type) {
