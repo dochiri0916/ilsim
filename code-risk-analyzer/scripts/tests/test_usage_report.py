@@ -87,7 +87,7 @@ class UsageReportTests(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn('claude-sonnet-5-5', output.getvalue())
         self.assertIn('기록 파일이 없습니다 (~/.codex/sessions)', output.getvalue())
-        self.assertIn('한도 기록이 아직 없습니다 (ai로 Claude를 한 번 실행하면 남습니다)', output.getvalue())
+        self.assertIn('한도 기록이 아직 없습니다 (Claude CLI에 로그인돼 있으면 ai --usage가 받아 옵니다)', output.getvalue())
 
     def test_claude_limits_from_rate_limit_events_are_merged_and_reported(self):
         # given: claude -p reports both windows, later only the weekly one at the top level
