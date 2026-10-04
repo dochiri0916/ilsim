@@ -312,11 +312,11 @@ def command(name, model, effort, resume, mcp=False):
         result += ['--model', model] if model else []
         result += ['--effort', effort] if effort else []
         return result + (['--resume', resume] if resume else [])
-    result = ['codex', 'exec'] + (['resume', resume] if resume else [])
-    result += ['--json', '--skip-git-repo-check', '--sandbox', 'workspace-write', *([] if mcp else NO_MCP_CODEX)]
+    # Every exec option goes before `resume`: codex rejects them after the subcommand ("unexpected argument").
+    result = ['codex', 'exec', '--json', '--skip-git-repo-check', '--sandbox', 'workspace-write', *([] if mcp else NO_MCP_CODEX)]
     result += ['-m', model] if model else []
     result += ['-c', f'model_reasoning_effort="{effort}"'] if effort else []
-    return result + ['-']
+    return result + (['resume', resume] if resume else []) + ['-']
 
 
 def _short(tool, data):
@@ -616,7 +616,7 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
               + '\n\n요청: ' + task) if pending else task
     outcome = run(name, command(name, model, effort, resume, mcp), _prompt(name, prompt), cwd, say, popen)
     if resume and outcome['error'] and not outcome['session']:
-        say('ai: 이전 대화를 열지 못해 새로 시작합니다')
+        say(f"ai: 이전 대화를 열지 못해 새로 시작합니다 ({outcome['error'][:200]})")
         outcome = run(name, command(name, model, effort, None, mcp), _prompt(name, prompt), cwd, say, popen)
     if outcome['limited'] and not agent:
         other = 'codex' if name == 'claude' else 'claude'

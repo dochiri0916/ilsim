@@ -206,6 +206,21 @@ class MainTests(unittest.TestCase):
                       cwd=self.home, say=self.lines.append, update=updates.append)
         self.assertEqual([['작업해줘']], updates)
 
+    def test_codex_resume_keeps_every_option_before_the_subcommand(self):
+        argv = pick.command('codex', 'gpt-6.1-sol', 'medium', 'thread-1')
+        self.assertEqual(['resume', 'thread-1', '-'], argv[-3:])
+        self.assertLess(argv.index('--json'), argv.index('resume'))
+        self.assertLess(argv.index('-m'), argv.index('resume'))
+
+    def test_a_failed_resume_says_why_and_starts_new(self):
+        failed = events({'type': 'error', 'message': "error: unexpected argument '--json' found"})
+        self.outputs = [FakeProcess(CODEX_OK), FakeProcess(failed, code=2), FakeProcess(CODEX_OK)]
+        self.main('codex', '첫', '일')
+        self.main('codex', '다음', '일', now=NOW + timedelta(minutes=5))
+        self.assertTrue(any("unexpected argument '--json'" in line for line in self.lines))
+        self.assertIn('resume', self.started[1][0])
+        self.assertNotIn('resume', self.started[2][0])
+
     def test_why_and_no_task_only_print(self):
         self.assertEqual(0, self.main('--why'))
         self.assertEqual(0, self.main())
