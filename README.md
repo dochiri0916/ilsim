@@ -12,10 +12,11 @@
 ## 빠른 시작
 
 ```bash
-ai                            # 사용량을 보고 Claude Code·Codex 중 유리한 쪽을 실행 (ai 작업 내용 / ai --why)
+ai 회원 탈퇴 API 추가해줘     # Claude·Codex 중 한도가 유리한 쪽이 이 폴더에서 작업하고 진행·결과만 보여 줌
+ai 테스트도 추가해줘           # 같은 폴더의 이전 대화를 이어서 (새로: ai --new ..., 선택 이유만: ai --why)
 ```
 
-곧 초기화될 남은 한도는 먼저 쓰고, 그 여유가 많으면 가장 높은 모델·추론으로, 작업 문장에 결제·동시성 같은 위험 단어가 있으면 한 단계 높은 설정으로 실행한다. 규칙은 [`agent_pick.py`](code-risk-analyzer/scripts/agent_pick.py) 맨 위에 있다.
+CLI 화면을 열지 않는다. 곧 초기화될 남은 한도를 먼저 쓰고, 그 여유가 많으면 가장 높은 모델·추론으로, 위험 단어(결제·동시성 등)가 있으면 한 단계 높은 설정으로 실행한다. 작업 중 한도에 걸리면 다른 CLI가 이어받는다. Claude는 파일 수정과 gradlew·git 조회 명령만, Codex는 작업 폴더 샌드박스 안에서만 실행한다. 규칙은 [`agent_pick.py`](code-risk-analyzer/scripts/agent_pick.py) 맨 위에 있다.
 
 ```bash
 ./install.sh                  # 한 번만: 도구 확인, 빌드, ~/.local/bin/ask 설치
