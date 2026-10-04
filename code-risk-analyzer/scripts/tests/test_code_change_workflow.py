@@ -103,6 +103,28 @@ echo artifact > build/libs/service.jar
         for stage in ('implementation', 'verification', 'review', 'complete'):
             with self.subTest(stage=stage), self.assertRaises(ValueError): self.run_stage(stage)
 
+    def test_refactoring_scope_implements_after_baseline_and_keeps_every_test(self):
+        # given: a refactoring scope approves no test writing
+        self.put('scope.json', json.dumps({'project': str(self.project), 'files': ['src/main/Service.java'], 'actions': ['IMPLEMENT']}))
+        self.run_stage('baseline')
+        # when: implementation follows the baseline directly
+        with patch.object(controller.Controller, '_write', side_effect=self.writer):
+            self.run_stage('implementation', changes=self.changes('src/main/Service.java'))
+            # then: tests cannot be written in this session
+            with self.assertRaisesRegex(ValueError, 'outside approved scope'):
+                self.run_stage('test-writing', changes=self.changes('src/test/ServiceTest.java'))
+
+        def scan():
+            self.put('build/session/scan.json', json.dumps({'findings': []}))
+        with patch.object(controller.Controller, '_scan', side_effect=scan):
+            result = self.run_stage('verification')
+        self.assertEqual('PASSED', result['status'], result)
+
+    def test_feature_scope_still_requires_tests_before_implementation(self):
+        self.run_stage('baseline')
+        with self.assertRaisesRegex(ValueError, 'Stage transition rejected'):
+            self.run_stage('implementation', changes=self.changes('src/main/Service.java'))
+
     def agent_input(self):
         requirement = {'scenarios': {'SCN-1': {'given': 'valid input', 'when': 'boundary call', 'expectedOutcomes': ['accepted']}},
                        'review': {'status': 'EVIDENCE_SUPPORTED', 'openQuestions': []}}
