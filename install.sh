@@ -64,6 +64,14 @@ cat > "$BIN/ai" <<EOF
 exec python3 "$ROOT/code-risk-analyzer/scripts/agent_pick.py" "\$@"
 EOF
 chmod +x "$BIN/ai"
+# zsh expands ? * [ ] in words before ai runs ("ai 안녕?" fails with "no matches found"); noglob passes them as typed.
+if [ "$(basename "${SHELL:-}")" = zsh ]; then
+  ZSHRC="${ZDOTDIR:-$HOME}/.zshrc"
+  if ! grep -qs "alias ai='noglob ai'" "$ZSHRC"; then
+    printf '\n# ai-orchestration: ? * 를 그대로 ai에 넘김\nalias ai='"'"'noglob ai'"'"'\n' >> "$ZSHRC"
+    ZSH_ALIAS_ADDED=true
+  fi
+fi
 PATH_MISSING=false
 case ":$PATH:" in
   *":$BIN:"*) ;;
@@ -94,6 +102,10 @@ fi
 echo "완료. Gradle 프로젝트 폴더에서: ai 작업 내용 → 한도가 유리한 Claude·Codex가 작업하고 검사 결과까지 보여 줍니다 (ai --why, ai --new)"
 echo "자동 업데이트: ai가 작업을 받을 때마다(최대 10분에 한 번) 이 폴더를 git pull하고 바뀐 쪽만 다시 빌드합니다 (끄기: ASK_NO_UPDATE=1)"
 
+if [ "${ZSH_ALIAS_ADDED:-false}" = true ]; then
+  echo
+  echo "zsh에서 ai 뒤의 ? * 를 그대로 쓰도록 ~/.zshrc에 alias를 넣었습니다. 지금 터미널에 적용하려면: source ~/.zshrc"
+fi
 if [ "$PATH_MISSING" = true ]; then
   case "$(basename "${SHELL:-}")" in
     zsh) RC="~/.zshrc" ;;
