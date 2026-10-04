@@ -41,6 +41,14 @@
 - 위험 규칙: 객체 단위 권한 `SEC-006`, Tenant 격리 `SEC-007`을 추가했다(REVIEW·LOW confidence).
 - 성공 작업당 비용: CLI 호출별 토큰·시간을 기록하고 `cost_report.py`로 COMPLETED 세션당 토큰·비용을 집계한다.
 
+### 2026-10-04 보강
+
+- 모델 선택: 공개 벤치마크 수치(`config/ask/model-benchmarks.json`)로 Tier 경로를 만든다(`model_select.py`). 교체 전 비교용 Golden Benchmark(`golden_benchmark.py`, 과제 4개)를 추가했다.
+- JEV: 참고 검토를 TX·CON-003/004·SEC-001~004·SEC-006/007·REL-001까지 넓히고 메서드 소스를 함께 보낸다. `ask` 분석에서 키가 있으면 사용한다.
+- 위험 규칙: SEC-006/007이 호출 경로의 권한·소유권·tenant 확인을 따라간다.
+- 회귀 범위: `impact` 명령(간접 호출자·도달 테스트, 계약 선언 비교)을 추가하고 CODE_CHANGE verification에 경고로 연결했다.
+- 품질 게이트는 `ask`의 변경 클래스에 기본 적용, 서비스 시나리오는 assertion 보고 필수, 명세의 APPLICABLE 관점은 해당 시나리오 필수.
+
 ### 설계·프롬프트 작성 제외 (2026-10-04)
 
 입력 파일 옵션은 `--spec`(명세 파일)이다. 같은 날 `ask --check-models`를 추가했다. routing이 쓰는 모델마다 짧은 요청으로 응답 여부와 Tier별 영향을 확인한다. 모델 교체는 `models.json` 수정과 push로 하며, 새 모델 평가·자동 승격은 여전히 다음 구현 범위다.
@@ -106,8 +114,8 @@ MySQL fixture에는 `fixtureAdapter=MYSQL`과 `local-service` 단계를 연결�
 | 3. 테스트 코드 우선 작성 | 부분 구현 | TEST_WRITING phase의 승인된 테스트 파일 교체, 별도 runner의 기준선 실행·테스트 보호·변경 후 비교 | 요구사항 기반 생성·예상 원인의 실패 확인·assertion 의미 자동 증명 |
 | 4. 1차 Test Adequacy 검증 | 부분 구현 | 코드 기반 Obligation 추출, 정적 적정성 분석, 네 가지 상태 보고 | 구현 전 테스트 검증의 한계, 적정성 JEV 검토·테스트 보완 |
 | 5. 동작 코드 구현 | 부분 구현 | IMPLEMENTATION phase의 승인된 파일 교체와 명시적 TEST/BUILD, 별도 runner의 회귀 비교 | 최소 구현 자동 생성·assertion 의미 증명·전체 개발 반복 절차 |
-| 6. 2차 Production Risk 검증 | 부분 구현 | 21개 위험 규칙(권한 SEC-006·Tenant SEC-007 포함), 제한된 JEV 연계 | 호출 경로 전체의 소유권 확인·정합성 검증 확대 |
-| 7. PR 생성 및 최종 검증 | 부분 구현 | 전체/지정 파일 스캔, 보고서·실패 정책·변이 검증, 회귀·서비스·미해결 근거 완료 판정, COMPLETED 세션의 PR 본문 생성과 승인된 draft PR 제출, 일반 프로젝트의 JAR 기동·선언 시나리오 실행 adapter | 전 영역 의미 검토·미신고 근거 탐지. 일반 서비스 adapter는 시나리오 명령의 종료 코드만 판정 |
+| 6. 2차 Production Risk 검증 | 부분 구현 | 21개 위험 규칙(권한 SEC-006·Tenant SEC-007은 호출 경로 최대 5단계의 확인을 따라감), 메서드 소스를 포함한 JEV 참고 검토 | 해석되지 않는 호출 안의 확인·정합성 검증 확대 |
+| 7. PR 생성 및 최종 검증 | 부분 구현 | 전체/지정 파일 스캔, 보고서·실패 정책·변이 검증, 회귀·서비스·미해결 근거 완료 판정, COMPLETED 세션의 PR 본문 생성과 승인된 draft PR 제출, 일반 프로젝트의 JAR 기동·선언 시나리오 실행 adapter | 전 영역 의미 검토·미신고 근거 탐지. 일반 서비스 adapter는 시나리오가 보고한 assertion 수와 종료 코드로 판정(assertion 내용은 프로젝트 책임) |
 
 ## 1. 요구사항 및 정의서 분석
 
@@ -209,10 +217,10 @@ requirements의 WRITE_TESTS는 TEST_WRITING phase 및 승인된 src/test/ 경로
 
 | 확인 대상 | 현재 분석기 지원 | 추가 구현 또는 별도 확인이 필요한 부분 |
 |---|---|---|
-| 변경 범위와 관련 테스트 | `--files-file`로 변경 파일을 seed로 선택하고, 메서드 심볼로 테스트의 직접 호출을 연결 | 전이적인 호출자·공유 데이터 영향 분석과 회귀 테스트 실행 대상 자동 선정은 미구현. 변경 파일 scan을 전체 영향 분석으로 취급하지 않음 |
+| 변경 범위와 관련 테스트 | `--files-file`로 변경 파일을 seed로 선택하고, 메서드 심볼로 테스트의 직접 호출을 연결. `impact` 명령이 호출 그래프로 간접 호출자와 그 경로의 테스트를 찾고(기본 3단계) CODE_CHANGE verification이 결과에 경고로 남김 | 해석되지 않는 호출·리플렉션·프레임워크 dispatch·다른 서비스와 공유 데이터 영향은 보지 못함. 회귀 실행은 계속 기존 테스트 전체 |
 | 기존 동작의 테스트 공백 | 분기·경계·예외·저장·상태·권한·롤백 및 위험 Obligation과 MISSING/PARTIAL/UNKNOWN 보고 | 요구사항상 유지해야 할 업무 계약과 assertion의 충분함은 검토 필요 |
 | 변경 후 새로운 위험 | 동시성·트랜잭션·멱등성·보안·부분 실패 규칙과 baseline 비교, 선택형 신규 Test Gap 정책 | 정적 baseline은 finding 비교용이며 변경 전 실행 성공 기준선을 대신하지 않음 |
-| public API·annotation·DB 선언 변경 | 소스에서 확인·비교 가능한 항목 | 메서드 시그니처, transaction·권한 annotation, UNIQUE·NOT NULL 등의 변경을 비교해 계약 영향으로 보고하는 전용 기능은 미구현. 실제 DB 제약 적용 여부는 실행 확인 필요 |
+| public API·annotation·DB 선언 변경 | `impact` 명령의 계약 스냅샷 비교: API 삭제·시그니처·가시성 변경, 트랜잭션·보안·비동기·재시도·캐시·매핑 annotation 변경, 엔티티 필드·제약(@Column 등) 변경. baseline 대비 verification 결과에 경고로 남김 | 실제 DB 스키마·마이그레이션 적용 여부는 실행 확인 필요. 경고이며 차단하지 않음 |
 | 테스트 보호 장치 변경 | assertion 없는 연결 테스트 후보, 별도 runner의 기존 test identity 누락·skip·실패 차단과 테스트/빌드 파일 해시 변경 검토 | assertion 의미의 약화·동등성과 전이적인 영향 범위는 자동 증명하지 않음. 해시에 연결된 변경 근거 검토 필요 |
 
 정적 분석은 실행할 회귀 테스트와 위험 검토 대상을 찾는 데 사용한다. 기존 기능이 동일하게 동작하는지의 최종 확인은 변경 전후 테스트 실행 결과와 필요한 통합 검증을 함께 사용한다.
@@ -305,12 +313,12 @@ requirements의 IMPLEMENT action은 IMPLEMENTATION phase와 별도로 승인된 
 | 영역 | 현재 범위 | 미지원 또는 제한 |
 |---|---|---|
 | Security | `SEC-001~005`: SQL/Command Injection, Path Traversal, SSRF, 하드코딩 비밀값 | 메서드 간 전체 데이터 흐름 및 미지원 제어 흐름은 검증하지 못함. SEC-003/004의 블록·분기에서는 호출별 검증 선행·값 일치를 확인 |
-| Authorization | `SEC-006`: 요청 식별자(`@PathVariable`/`@RequestParam`의 id)로 조회하지만 호출자 식별 정보(Principal·`@AuthenticationPrincipal`·SecurityContextHolder)나 접근 annotation이 entry point에 없음. 일부 권한 Test Obligation 추출 | 하위 서비스에서 수행하는 소유권 확인은 정적으로 증명하지 않으며 REVIEW·LOW confidence로만 보고 |
+| Authorization | `SEC-006`: 요청 식별자(`@PathVariable`/`@RequestParam`의 id)로 조회하지만 호출자 식별 정보(Principal·`@AuthenticationPrincipal`·SecurityContextHolder)나 접근 annotation이 entry point와 그 아래 호출 경로(최대 5단계)에 없음. 쓰지 않는 Principal 파라미터는 보호로 보지 않고, 경로의 `@PreAuthorize` 등, SecurityContextHolder, `checkOwnership` 같은 확인 호출, `findByIdAndOwnerId` 같은 호출자 범위 조회는 보호로 인정. 남은 finding에 확인한 메서드 목록을 남김. 일부 권한 Test Obligation 추출 | 해석되지 않는 호출(라이브러리·리플렉션) 안의 확인은 보지 못하고, 확인 호출은 이름으로 판단하므로 REVIEW·LOW confidence로만 보고 |
 | Transaction | `TX-001~005`: self-invocation, async 경계, 외부 호출, 다중 쓰기, 예외 삼키기 | 실제 Spring proxy·propagation·커밋/롤백 실행 결과 미검증 |
 | Concurrency | `CON-001~004`: check-then-act, lost update, singleton 상태, async 컨텍스트 | 실제 경쟁 실행·다중 인스턴스 안전성 미검증 |
 | Data Integrity | check-then-act에서 연결된 엔티티의 UNIQUE/PK 선언 일부 확인 | 운영 DB 제약 적용, FK/CHECK/NULL 정책, 충돌 처리 등을 포괄 검증하지 않음 |
 | Idempotency | `IDEM-001~004`: 메시지 부수 효과, 멱등키, 재시도, 비즈니스 키 | 키의 원자적 저장·전달·실제 중복 방지 계약 미검증 |
-| Tenant Isolation | `SEC-007`: tenant 필드가 있는 엔티티의 Repository 쿼리와 상속 조회(`findById` 등)에 tenant 조건이 보이지 않음. Hibernate `@TenantId`·`@Filter`는 보호로 인정 | 쿼리 인자의 tenant 값 출처와 실제 교차 Tenant 접근은 실행 검증 필요 |
+| Tenant Isolation | `SEC-007`: tenant 필드가 있는 엔티티의 Repository 쿼리와 상속 조회(`findById` 등)에 tenant 조건이 보이지 않음. Hibernate `@TenantId`·`@Filter`는 보호로 인정. 상속 조회는 호출 메서드나 그 아래 경로가 로드한 행의 tenant를 읽거나(`getTenantId()`) tenant 확인(`verifyTenant(..)`)을 호출하면 제외 | 쿼리 인자의 tenant 값 출처와 실제 교차 Tenant 접근은 실행 검증 필요 |
 | Partial Failure | `REL-001`: DB와 외부 부수 효과 불일치 후보 | 실제 실패 주입·보상·outbox 실행 결과 미검증 |
 
 `REVIEW.md`의 1순위 개선은 실제 코드와 테스트에 반영되어 있다. 조회/변경 저장소와 엔티티를 연결해 관련 제약만 확인하고, JVM 잠금만으로 DB 경쟁 경고를 숨기지 않는 개선이다. 2순위 개선도 반영되어 SEC-003/004에서 호출에 도달하는 모든 지원 경로의 검증 선행 여부와 값 일치를 확인한다. 미지원 제어 흐름은 보수적으로 경고를 유지한다. 3순위 타입 기반 부수 효과·클래스패스와 4순위 분석 완전성·선택형 CI 정책도 반영되었다. 5순위는 JUnit·JaCoCo 및 명시적 DB/assertion 검토를 연결하는 선택형 import로 반영되었다. 전체 위험 검증 완료와 구분해야 한다.
@@ -329,7 +337,7 @@ JEV 동작의 실제 범위:
 
 ## 7. PR 생성 및 최종 검증
 
-**판정: 부분 구현 — 명시적으로 선택하는 회귀·서비스 증거·완료 게이트가 있으며 PR 제출은 없다.**
+**판정: 부분 구현 — 명시적으로 선택하는 회귀·서비스 증거·완료 게이트와, COMPLETED 세션의 승인된 draft PR 제출이 있다.**
 
 | 요청 항목 | 판정 | 실제 상태 |
 |---|---|---|
@@ -338,9 +346,9 @@ JEV 동작의 실제 범위:
 | Production Risk 재검증 | 부분 구현 | 동일하게 `scan` 재실행 가능 |
 | Mutation Test 등 동적 검증 | 부분 구현 | 별도 `mutation` 명령의 Gradle/PIT 실행·XML 파싱·결과 보고 구현. 최종 절차의 실행 조건은 없음 |
 | 최종 로컬 서비스 실행 검증 | 부분 구현 | fixture는 별도 JVM·loopback HTTP·독립 MySQL 조회·종료 검증을 구현. 다른 대상 프로젝트에는 실행 adapter가 필요 |
-| JEV 최종 의미 검토 | 부분 구현 | `IDEM-001`만 지원. 전체 변경사항과 Test Adequacy 의미 검토는 없음 |
+| JEV 최종 의미 검토 | 부분 구현 | `IDEM-001`은 확인 경로, IDEM-002~004·CON-001~004·TX-001~005·SEC-001~004·SEC-006/007·REL-001은 finding이 가리키는 메서드 소스와 함께 참고 검토(정적 상태 불변, SEC-005가 있는 파일은 소스 미전송), 불확실한 Test Gap 참고 검토. `ask` 분석은 키가 있으면 사용. 전체 변경사항의 의미 검토는 없음 |
 | Critical/High Risk 및 Test Gap 잔존 차단 | 부분 구현 | CONFIRMED 위험 게이트와 선택형 신규 MISSING/PARTIAL Gap 차단. 모든 잔여 위험/Gap의 차단은 아님 |
-| 검증 완료 후 PR 제출 | 미구현 | PR 생성·제출 및 검증 상태와의 연계 없음 |
+| 검증 완료 후 PR 제출 | 구현 | `pull-request` 단계가 COMPLETED 세션 근거로 본문을 만들고, plan의 `PULL_REQUEST` 승인과 커밋·푸시·검증 소스 일치 확인 후 draft PR만 연다 |
 
 ### 최종 로컬 서비스 실행 검증 규칙
 
@@ -428,7 +436,7 @@ JSON/SARIF, baseline, suppression과 종료 코드 정책은 CI에서 활용할 
 - `repair`는 수락한 테스트·빌드 계약을 고정하고 승인된 production 파일만 수정한다. 수정 반복, JEV/CLI 호출, 전체 시간과 명시적 fallback을 제한하며 세션 재개가 예산을 초기화하지 않는다. 검증·생성 이력은 해시 보호 사본으로 남긴다. 별도 서비스·review·complete 단계는 계속 필요하다.
 - `qualityGates`를 켜면 최종 전체 테스트 실행의 JaCoCo와 새 PIT 실행을 목표 클래스별로 검사한다. 소스·테스트·정책·JAR/JUnit snapshot·XML/exec·mutation 응답·main/test 바이트코드가 같아야 review/complete를 통과한다. 누락·변조·살아남은/미커버 변이·미완료 실행을 통과시키지 않는다. `repair`에는 명시적 품질 설정이 필수다. 기존 수동 경로의 계약과 public API는 유지한다.
 
-소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 개발 모델의 Golden Benchmark·Shadow·Canary·승격은 다음 구현 범위다. 일반 서비스 adapter(`serviceAdapter`)와 선택형 아키텍처·컨벤션 검증(아래 2026-10-03 후속 보강)은 이후 구현했다.
+소규모 JEV 보정은 개발 모델 품질 평가를 대신하지 않는다. 2026-10-04에 공개 벤치마크 수치 기반 경로 선택(`model_select.py`)과 교체 전 비교용 소규모 Golden Benchmark(`golden_benchmark.py`)를 추가했다. Shadow·Canary·자동 승격은 다음 구현 범위다. 일반 서비스 adapter(`serviceAdapter`)와 선택형 아키텍처·컨벤션 검증(아래 2026-10-03 후속 보강)은 이후 구현했다.
 
 ### 최종 실제 연결 검증
 

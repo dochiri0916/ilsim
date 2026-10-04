@@ -24,10 +24,11 @@ ask "결제 코드 위험 분석해줘"    # 분석 + 컨벤션 검사, 코드 �
 - 검증 on/off: 대상 프로젝트 `.code-risk.yml`의 `validators.architecture.enabled`·`validators.convention.enabled`로 build-convention의 아키텍처(`architecture`·`archUnit`, `ARCH-*`)와 나머지 검사를 따로 끈다. 꺼진 검사도 실행은 되지만 리포트에 사유와 함께 `skipped`로 남고 실패·수정 대상이 아니다. 둘 다 끄면 Gradle을 돌리지 않는다. `architecture` 미설정은 `convention`을 따르고, 요청 문장의 켬·끔이 설정보다 우선한다. 명시적으로 `true`인데 build-convention을 찾지 못하면 건너뛰지 않고 실패한다. 세션 시작 뒤 설정이 바뀌면 `--yes`·이어서·검증을 거부한다(새 요청 필요).
 - 작업 판단: `TYPESAFE_API_KEY`가 있으면 JEV가 요청 문장만 보고 작업을 고르고, 키워드 규칙과 결과가 같아야 진행한다. 둘이 다르거나 JEV 신뢰도가 0.8 미만이거나 UNKNOWN이면 실행하지 않고 다시 묻는다. JEV 호출이 실패하면 읽기 전용 작업(분석·상태·비용·규칙·변이)만 키워드로 진행하고, 코드 변경·검증·PR·이어서는 거부한다(재시도하거나 `--no-jev`). 키가 없거나 `--no-jev`면 키워드만 쓴다(토큰 0). 코드를 바꾸는 단계는 `--yes`를 붙여야 실행한다.
 - 작업 종류: 변경 / 분석 / 상태 / 이어서 / 검증 / PR / 비용 / 규칙 / 변이.
+- JEV 위험 검토: 분석 요청은 키가 있으면 `scan --jev true`로 실행한다. 정적 규칙이 확정하지 못한 위험(IDEM·CON·TX·SEC-001~004·SEC-006/007·REL)을 finding이 가리키는 메서드 소스와 함께 물어 확률을 근거로 붙인다(정적 상태 불변, SEC-005가 있는 파일의 소스는 보내지 않음, 2026-10-04 사용자 결정으로 코드 전송 허용).
 - 자동 업데이트: 새 요청 전에 `scripts/self_update.py`가 이 checkout을 최대 10분에 한 번 fetch해 fast-forward pull하고(커밋 안 한 수정·갈라진 이력이면 건너뜀), 소스가 바뀐 쪽만 `bootJar`·`publishToMavenLocal`로 다시 빌드한 뒤 같은 명령을 새 코드로 다시 실행한다. `--yes`·이어서·검증·PR 요청과 `--no-update`·`ASK_NO_UPDATE=1`이면 하지 않는다. 다른 PC 설치는 [WORK_PC_INSTALL.md](guides/WORK_PC_INSTALL.md).
 - 단계: 세션 `phase`에서 다음 사람 확인 지점(verification → review → pull-request)까지만 실행한다. 검증 실패 시 `repair` 설정이 있으면 repair를 한 번 실행한다.
 - 모델: `routing`에 Tier·capability가 없으면 새 세션 설정을 `<session>/ask-config.json`에 저장하고 이후 재사용한다. JEV 키가 있으면 `capability: {}`로 단계마다 JEV가 요구사항·코드 범위를 보고 Tier를 정한다(해당 내용이 TypeSafe로 전송된다). 키가 없으면 고위험 단어(결제·재고·동시성·트랜잭션·보안 등)가 있을 때 TIER_3, 아니면 TIER_2이며 TIER_4는 고르지 않는다.
-- 모델 점검: 모델은 `config/ask/models.json`(PC별 덮어쓰기 `~/.config/code-risk/models.json`)에 이름으로 고정한다. 바꾸려면 이 파일을 고쳐 push하면 자동 업데이트로 모든 PC에 퍼진다. `ask --check-models`가 routing이 쓰는 모델마다 가장 낮은 effort로 짧은 구조화 요청을 한 번 보내(토큰 소량) 응답 여부와 Tier별 영향(fallback으로만 동작·쓸 모델 없음)을 보여 준다. 종료 코드 0 전부 정상, 1 실패 있음, 2 설정 거부(금지 모델 포함 시 호출 전 거부). 새 모델을 찾아 품질을 비교해 바꾸는 자동 승격은 없다.
+- 모델 선택 근거: `config/ask/model-benchmarks.json`에 Artificial Analysis의 모델·effort별 Intelligence Index와 과제당 비용, Tier별 최소 지수를 둔다. `python3 scripts/model_select.py --write`가 Tier마다 최소 지수를 넘는 가장 싼 조합 → 더 강한 조합 → 다른 CLI 순으로 `models.json`·`routing-policy.json`을 만든다(금지 모델·max 제외, 손으로 고친 파일은 테스트가 거부). 바꾸려면 수치를 고쳐 다시 만들고 push하면 자동 업데이트로 모든 PC에 퍼진다(PC별 덮어쓰기 `~/.config/code-risk/models.json`). 교체 전 비교: `python3 scripts/golden_benchmark.py --routes general/medium,review/high`(숨은 검사가 있는 Java 버그 수정 과제 4개, models.json은 바꾸지 않음). `ask --check-models`가 routing이 쓰는 모델마다 가장 낮은 effort로 짧은 구조화 요청을 한 번 보내(토큰 소량) 응답 여부와 Tier별 영향(fallback으로만 동작·쓸 모델 없음)을 보여 준다. 종료 코드 0 전부 정상, 1 실패 있음, 2 설정 거부(금지 모델 포함 시 호출 전 거부). 사용 중인 파일이 벤치마크에서 나온 경로와 다르면 알린다. Shadow·Canary와 자동 승격은 없다.
 - 금지: 도달 가능한 모든 경로(fallback 포함)에 이름에 `astra`·`fable`·`opus`가 든 모델이나 `max` effort가 있으면 실행 전에 거부한다. `--allowed-models a,b`로 허용 목록을 더 좁힐 수 있다.
 - 직접 설정(`--config`): [`docs/examples/ask/config.json`](examples/ask/config.json)처럼 쓴다. config 안의 경로는 config 파일 위치 기준 상대경로(또는 `~`)로 적을 수 있어 여러 PC에서 같은 파일을 쓴다. `analyzer`를 빼면 이 checkout의 `build/libs` jar를 쓴다. plan의 `project`만 PC별 절대경로다.
 - 인증: codex·claude는 각 CLI에 한 번 로그인한다(API 키를 넣으면 종량제 과금이 될 수 있다). JEV 키는 환경변수가 없으면 `~/.secrets`(파일의 `TYPESAFE_API_KEY=` 줄, 또는 디렉터리 안 같은 이름의 파일, 경로는 `CODE_RISK_SECRETS`로 변경)에서 읽어 하위 단계에도 전달한다. 키를 저장소에 커밋하지 않는다.
@@ -48,6 +49,7 @@ ask "결제 코드 위험 분석해줘"    # 분석 + 컨벤션 검사, 코드 �
 | `CRA mutation <project>` | PIT 변이 검증 |
 | `CRA rules [ID]` | 규칙 목록·설명 |
 | `CRA validators <project>` | `.code-risk.yml`의 `validators` 설정을 검증해 JSON으로 출력(null: 미설정) |
+| `CRA impact <project> [--files-file f] [--depth 3] [--compare before.json] [--output f]` | 변경 파일을 간접 호출하는 메서드·테스트, 계약 선언 스냅샷과 이전 스냅샷 대비 변경(API 삭제·시그니처·annotation·엔티티 제약) |
 
 규칙: `SEC-001~007`(SQL·Command·Path·SSRF·비밀값·객체 권한·Tenant), `CON-001~004`, `IDEM-001~004`, `TX-001~005`, `REL-001`.
 
@@ -56,7 +58,8 @@ ask "결제 코드 위험 분석해줘"    # 분석 + 컨벤션 검사, 코드 �
 `baseline` → `test-writing`(또는 `generate-tests`) → `implementation`(또는 `generate-implementation`) → `verification`(또는 `repair`) → `local-service` → `review` → `complete` → `pull-request`
 
 - 각 단계는 이전 단계 성공과 입력·소스 해시가 그대로일 때만 실행된다. 바뀌면 STALE이 되고 다시 실행해야 한다. 단, 테스트·구현 생성 모델이 답을 내지 못하거나 답이 거부돼 아무것도 쓰지 않고 STALE이 된 경우는 `ask --yes`가 그 생성 단계부터 같은 세션에서 다시 한다(2026-10-03 사용자 결정). 입력·소스가 바뀐 STALE은 여전히 새 세션이 필요하다.
-- 최종 검증: 회귀 비교 → HIGH/CRITICAL 정적 위험 → 품질 게이트(LINE 90%·BRANCH 80%·변이 90%·생존 0, `qualityGates` 설정 시) → 별도 서비스 4개 시나리오(normal·duplicate·concurrency·rollback) → 근거 검토.
+- 최종 검증: 회귀 비교(+ 계약 변경·영향 범위 경고) → HIGH/CRITICAL 정적 위험 → 품질 게이트(LINE 90%·BRANCH 80%·변이 90%·생존 0, `qualityGates` 설정 시. `ask`는 명세의 변경 production 클래스에 기본 적용, 요청에 "품질 게이트 없이"·"커버리지 빼고"가 있으면 끔) → 별도 서비스 4개 시나리오(normal·duplicate·concurrency·rollback, 각 명령이 `SCENARIO_REPORT`에 통과한 assertion 수를 남겨야 통과) → 근거 검토.
+- 계약·영향: baseline이 `contracts-before.json`(public API·트랜잭션/보안/비동기 annotation·엔티티 제약 선언)을 남기고, verification이 `impact.json`에 비교 결과와 scope 파일을 간접 호출하는 메서드·테스트(3단계)를 남긴다. 결과의 `contractChanges`·`impactedTests`는 경고이며 차단하지 않는다.
 - 서비스: MySQL fixture는 `fixtureAdapter`, 그 외 프로젝트는 `serviceAdapter`(네 시나리오는 서로 다른 프로젝트 안 검사 스크립트). adapter 없이 `--service`로 넘긴 결과는 NEEDS_REVIEW로 남아 complete·PR에 가지 못한다.
 - 테스트 먼저: test-writing 뒤 구현 전 빌드로 `newFeatures`·`expectedFailures` 테스트가 아직 통과하지 않는지 `red.json`에 기록한다. 이미 통과하면 implementation이 막힌다(기존 동작이면 `features`로 옮긴다). implementation은 `src/main/`만 바꾸고, test-writing에서 잠근 테스트·빌드 파일이 바뀌면 verification이 거부한다.
 - PR: `pull-request`는 본문 초안만 만든다. `submit: true`는 plan의 `PULL_REQUEST` 승인과 커밋·푸시가 끝난 경우에만 draft PR을 연다.
