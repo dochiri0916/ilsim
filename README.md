@@ -12,6 +12,12 @@
 ## 빠른 시작
 
 ```bash
+ai                            # 사용량을 보고 Claude Code·Codex 중 유리한 쪽을 실행 (ai 작업 내용 / ai --why)
+```
+
+곧 초기화될 남은 한도는 먼저 쓰고, 그 여유가 많으면 가장 높은 모델·추론으로, 작업 문장에 결제·동시성 같은 위험 단어가 있으면 한 단계 높은 설정으로 실행한다. 규칙은 [`agent_pick.py`](code-risk-analyzer/scripts/agent_pick.py) 맨 위에 있다.
+
+```bash
 ./install.sh                  # 한 번만: 도구 확인, 빌드, ~/.local/bin/ask 설치
 cd ~/work/my-spring-project   # start.spring.io 프로젝트 그대로, 설정 파일 없음
 ask "회원 가입 기능 추가해줘"  # 명세 초안·계획 확인 (직접 쓴 명세는 --spec spec.json)
