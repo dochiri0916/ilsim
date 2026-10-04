@@ -5,9 +5,6 @@
 - Codex: ~/.codex/sessions/**/*.jsonl (or CODEX_HOME). Tokens per model for the same periods, and the most recent
   5-hour and weekly limit percentages Codex recorded, with their reset times.
 
-ask's own generation calls run without saved CLI sessions; `ask "비용"` on a session (cost_report.py) counts those.
-
-    ask --usage            # or: ask "사용량 보여줘"
     python3 scripts/usage_report.py [--days 7] [--json]
 """
 import argparse
@@ -217,7 +214,6 @@ def report(claude, codex, now, days=7):
                     lines.append(f"    - {label}: {limits[key]['usedPercent']:.0f}% 사용{_reset(limits[key], now)}")
         else:
             lines.append('  한도 기록이 아직 없습니다 (Codex를 한 번 쓰면 남습니다)')
-    lines.append('ask가 실행한 생성 호출은 CLI 기록에 남지 않습니다. 세션별로는 ask "비용"으로 확인하세요')
     return '\n'.join(lines)
 
 

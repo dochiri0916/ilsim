@@ -1,10 +1,10 @@
 # AI Orchestration
 
-요구사항 분석, Agent 실행, 코드 위험 분석과 검증 흐름을 관리하는 통합 저장소다.
+Claude Code·Codex를 한도에 맞춰 골라 쓰고(`ai`), 작업 뒤 컨벤션·위험 검사를 자동으로 돌리는 도구 저장소다.
 
 | 프로젝트 | 역할 | 실행 환경 |
 |---|---|---|
-| [Code Risk Analyzer](code-risk-analyzer/docs/README.md) | 요구사항·코드 위험·테스트 적정성 분석과 개발 검증 워크플로우 | Java 25, 독립 Gradle 빌드 |
+| [Code Risk Analyzer](code-risk-analyzer/docs/README.md) | `ai` 명령, 코드 위험·테스트 적정성 정적 분석 | Java 25, 독립 Gradle 빌드 |
 | [Build Convention](build-convention/README.md) | Java/Spring 아키텍처·품질·테스트·커버리지·변이 검증을 수행하는 Gradle 플러그인 | Java 21, 독립 Gradle 빌드 |
 
 `build-convention`은 필요한 대상 프로젝트에서 선택적으로 적용한다. `code-risk-analyzer`는 플러그인 적용 여부와 관계없이 독립적으로 사용할 수 있다. 현재 두 프로젝트의 빌드·배포와 보고서 형식은 각각 유지한다.
@@ -12,6 +12,8 @@
 ## 빠른 시작
 
 ```bash
+./install.sh                  # 한 번만: 도구 확인, 빌드, ~/.local/bin/ai 설치 (끝에 PATH 등록 명령 출력)
+cd ~/work/my-spring-project   # 대상 프로젝트에는 아무것도 추가하지 않음
 ai 회원 탈퇴 API 추가해줘     # Claude·Codex 중 한도가 유리한 쪽이 이 폴더에서 작업하고 진행·결과만 보여 줌
 ai 테스트도 추가해줘           # 같은 폴더의 이전 대화를 이어서 (새로: ai --new ..., 선택 이유만: ai --why)
 ```
@@ -20,16 +22,9 @@ CLI 화면을 열지 않는다. 곧 초기화될 남은 한도를 먼저 쓰고,
 
 파일을 바꾼 작업 뒤에는 build-convention 검사(`./gradlew check`, 빌드 파일 수정 없음)와 code-risk-analyzer 위험 분석(바뀐 `src/main` 파일)을 모델 호출 없이 자동으로 실행한다. 요청에 "컨벤션 없이", "위험 분석 빼고", "검사 없이"가 있으면 그 명령에서만 해당 검사를 건너뛴다. 실패 내용은 다음 `ai` 요청에 한 번 함께 전달된다.
 
-```bash
-./install.sh                  # 한 번만: 도구 확인, 빌드, ~/.local/bin/ask 설치
-cd ~/work/my-spring-project   # start.spring.io 프로젝트 그대로, 설정 파일 없음
-ask "회원 가입 기능 추가해줘"  # 명세 초안·계획 확인 (직접 쓴 명세는 --spec spec.json)
-ask --yes                     # 실행
-```
-
-자세한 동작은 [Agent 요약](code-risk-analyzer/docs/AGENT_BRIEF.md)의 "가장 쉬운 사용"을 본다.
-회사 PC처럼 개인 GitHub 계정이 없는 곳에는 [다른 PC에 설치](code-risk-analyzer/docs/guides/WORK_PC_INSTALL.md)를 본다 (읽기 전용 Deploy key, 이후 `ask`가 알아서 pull·재빌드).
-폰에서 상태 보기·요청·승인은 [폰에서 ask 쓰기](code-risk-analyzer/remote/README.md)를 본다 (텔레그램 봇, 실행은 PC에서만).
+자세한 동작은 [Agent 요약](code-risk-analyzer/docs/AGENT_BRIEF.md)을 본다.
+회사 PC처럼 개인 GitHub 계정이 없는 곳에는 [다른 PC에 설치](code-risk-analyzer/docs/guides/WORK_PC_INSTALL.md)를 본다 (읽기 전용 Deploy key, 이후 `ai`가 알아서 pull·재빌드).
+폰에서 요청·상태 보기는 [폰에서 ai 쓰기](code-risk-analyzer/remote/README.md)를 본다 (텔레그램 봇, 실행은 PC에서만).
 
 ## 검증
 

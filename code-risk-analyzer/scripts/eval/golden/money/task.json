@@ -1,2 +1,0 @@
-{"title": "Split a bill without losing money", "file": "Split.java",
- "description": "Split.share divides a bill in won among people. The shares must always add up to the total; the first people get one extra won when it does not divide evenly. It currently loses the remainder. Fix it."}

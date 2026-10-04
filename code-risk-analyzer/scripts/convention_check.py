@@ -8,7 +8,6 @@ report, which is saved into the session with the violations Gradle printed. Any 
 checks or the other convention checks; those still run, but are recorded as skipped with the reason and do not fail.
 """
 import argparse
-import importlib.util
 import json
 from pathlib import Path
 import re
@@ -19,7 +18,6 @@ SCRIPTS = Path(__file__).resolve().parent
 CONVENTION = SCRIPTS.parent.parent/'build-convention'
 PLUGIN_ID = 'io.github.dochiri0916.build-convention'
 REPORT = Path('build/reports/build-convention/report.json')
-GUIDANCE = CONVENTION/'docs'/'AGENTS_GUIDANCE.md'
 NAMES = {'architecture': '아키텍처', 'archUnit': '아키텍처(ArchUnit)', 'checkstyle': 'Checkstyle', 'pmd': 'PMD',
          'spotBugs': 'SpotBugs', 'migration': 'DB 마이그레이션', 'changedCodeCoverage': '변경 코드 커버리지',
          'coverageVerification': '전체 커버리지', 'tests': '테스트', 'compilation': '컴파일', 'javaVersion': 'Java 버전',
@@ -57,20 +55,6 @@ allprojects {{
     }}
 }}
 """
-
-
-def guidance(examples=True):
-    """The agent guidance plus the template tree; examples adds one template file per kind (for code writers)."""
-    if not GUIDANCE.is_file():
-        return None
-    return GUIDANCE.read_text(encoding='utf-8') + _templates().guidance(examples)
-
-
-def _templates():
-    spec = importlib.util.spec_from_file_location('convention_templates', SCRIPTS/'convention_templates.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 CHECKSTYLE = re.compile(r'\[ant:checkstyle\] \[(?:ERROR|WARN)\] (.+?):(\d+)(?::\d+)?: (.+)')

@@ -1,2 +1,0 @@
-{"title": "Inclusive discount boundary", "file": "Discount.java",
- "description": "Orders of 10000 won or more get 10% off. An order of exactly 10000 won currently gets no discount. Fix Discount.apply so the boundary is inclusive and nothing else changes."}

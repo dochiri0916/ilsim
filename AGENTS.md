@@ -2,12 +2,12 @@
 
 이 저장소는 독립적인 두 Gradle 프로젝트를 하나의 Git 이력으로 관리한다.
 
-- `code-risk-analyzer/`: 요구사항·코드 위험 분석과 개발 검증 워크플로우. Java 25를 사용한다.
+- `code-risk-analyzer/`: `ai` 명령(Claude·Codex 선택 실행과 작업 뒤 검사)과 코드 위험 정적 분석기. Java 25를 사용한다.
 - `build-convention/`: 선택적으로 적용하는 Gradle Convention Plugin. Java 21을 사용하며 해당 디렉터리의 `AGENTS.md`를 우선한다.
 
 ## 작업 원칙
 
-- `code-risk-analyzer` 작업은 먼저 [`docs/AGENT_BRIEF.md`](code-risk-analyzer/docs/AGENT_BRIEF.md)를 읽고, 긴 현황·리서치 문서는 필요한 절만 연다.
+- `code-risk-analyzer` 작업은 먼저 [`docs/AGENT_BRIEF.md`](code-risk-analyzer/docs/AGENT_BRIEF.md)를 읽는다.
 - 각 프로젝트의 기존 구조, 문서, 빌드와 배포 계약을 따른다.
 - `code-risk-analyzer` 사용에 `build-convention` 적용을 필수 조건으로 추가하지 않는다.
 - 각 프로젝트의 Gradle Wrapper를 해당 디렉터리에서 실행한다.

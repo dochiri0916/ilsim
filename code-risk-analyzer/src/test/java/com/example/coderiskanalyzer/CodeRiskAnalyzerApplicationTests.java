@@ -32,9 +32,5 @@ class CodeRiskAnalyzerApplicationTests {
         org.junit.jupiter.api.Assertions.assertNotNull(commandRegistry.getCommandByName("rules"));
     }
 
-    @Test
-    void registersOptInMutationCommand() {
-        org.junit.jupiter.api.Assertions.assertNotNull(commandRegistry.getCommandByName("mutation"));
-    }
 
 }
