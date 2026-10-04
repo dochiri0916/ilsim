@@ -204,7 +204,7 @@ def main(argv=None, call=None):
     config = json.loads((session/ask.SESSION_CONFIG).read_text(encoding='utf-8'))
     project = Path(json.loads(Path(config['plan']).read_text(encoding='utf-8'))['project'])
     try:
-        configs = ask.draft_models({key: config['routing'][key] for key in ('registry', 'policy')})
+        configs = ask.fix_models({key: config['routing'][key] for key in ('registry', 'policy')})
         call = call or _module('agent_runner').run
         guidance = _module('convention_check').guidance()
         if args.mode == 'implementation':

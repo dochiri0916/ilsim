@@ -504,9 +504,11 @@ class ZeroConfigTests(unittest.TestCase):
         self.samples = importlib.util.module_from_spec(draft_spec)
         draft_spec.loader.exec_module(self.samples)
 
-    def call(self, config, workspace, prompt, schema, validate):
-        self.calls.append(config)
-        return {'status': 'COMPLETED', 'output': validate(self.samples.sample()), 'usage': {}}
+    def spec(self, **changes):
+        """The person's spec file for the change."""
+        path = self.project.parent/'spec.json'
+        path.write_text(json.dumps(self.samples.sample(**changes), ensure_ascii=False), encoding='utf-8')
+        return path
 
     def measure(self, project, output, base_ref, **options):
         report = {'status': 'FAIL', 'checks': {'checkstyle': 'FAIL'}, 'baseRef': base_ref, 'violations': [
@@ -557,12 +559,12 @@ class ZeroConfigTests(unittest.TestCase):
         # then: continuing would mix evidence from both settings
         for text in (None, '검증 다시 해줘'):
             with self.subTest(text=text), self.assertRaisesRegex(ValueError, 'validators 설정이 이 세션을 시작한 뒤 바뀌었습니다'):
-                ask.zero_config(text, self.project, None, None, self.call)
+                ask.zero_config(text, self.project, None, None)
 
     def start(self, text='회원 가입 기능 추가해줘'):
         self.measured = []
         with redirect_stdout(io.StringIO()) as output:
-            value = ask.start_change(text, self.project, ask.decide(text, None), None, None, self.call,
+            value = ask.start_change(text, self.project, ask.decide(text, None), None, None, self.spec(),
                                      lambda path, jar: None, self.measure)
         return value, output.getvalue()
 
@@ -587,15 +589,25 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertEqual(str(home/'routing-policy.json'), routing['policy'])
         self.assertEqual(str(ask.DEFAULT_ROUTING/'models.json'), routing['registry'])
 
-    def test_draft_uses_the_cheap_tier_and_refuses_forbidden_models(self):
-        configs = ask.draft_models(ask.default_routing({}))
+    def test_convention_fixes_use_the_cheap_tier_and_refuse_forbidden_models(self):
+        configs = ask.fix_models(ask.default_routing({}))
         self.assertEqual(['gpt-6-luna', 'gpt-6.1-sol'], [config['model'] for config in configs])
         registry = json.loads((ask.DEFAULT_ROUTING/'models.json').read_text())
         registry['models']['general']['model'] = 'claude-opus-5-5'
         path = self.project.parent/'models.json'
         path.write_text(json.dumps(registry))
         with self.assertRaisesRegex(ValueError, '금지된 고비용 모델'):
-            ask.draft_models(dict(ask.default_routing({}), registry=str(path)))
+            ask.fix_models(dict(ask.default_routing({}), registry=str(path)))
+
+    def test_change_request_needs_the_persons_spec_and_calls_no_model(self):
+        # given / when / then: without a spec file nothing is created
+        with self.assertRaisesRegex(ValueError, '명세 파일이 필요합니다'):
+            ask.zero_config('회원 가입 기능 추가해줘', self.project, None, None)
+        self.assertFalse((self.project/'build/ask').exists())
+        # a spec with open questions is not a spec yet
+        with self.assertRaisesRegex(ValueError, '정하지 못한 질문'):
+            ask.start_change('회원 가입 기능 추가해줘', self.project, ('CODE_CHANGE', 'k'), None, None,
+                             self.spec(status='NEEDS_REVIEW', unknowns=['어떤 DB?'], requirements=[], files=[]))
 
     def test_change_request_drafts_a_new_session_and_waits_for_approval(self):
         # when
@@ -612,14 +624,13 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertIn('REQ-1 이메일로 회원 가입 (시나리오 2개)', output)
         self.assertIn('먼저 기존 코드 위반을 고칩니다 - src/test/java/com/example/demo/DemoApplicationTests.java', output)
         self.assertEqual([None], self.measured)
-        self.assertEqual(1, len(self.calls))
         self.assertFalse((session/'state.json').exists())
 
     def test_yes_alone_continues_the_current_session_with_its_saved_config(self):
         # given
         started, _ = self.start()
         # when
-        value = ask.zero_config(None, self.project, None, None, self.call)
+        value = ask.zero_config(None, self.project, None, None)
         # then
         self.assertEqual('CONTINUE', value['intent'])
         self.assertEqual('session', value['configSource'])
@@ -699,7 +710,7 @@ class ZeroConfigTests(unittest.TestCase):
         self.assertEqual([], self.measured)
         self.assertIn('컨벤션: 끔', output)
         self.assertEqual(['baseline', 'generate-tests', 'generate-implementation', 'verification'], [c[2] for c in commands])
-        self.assertNotIn('convention', ask.zero_config(None, self.project, None, None, self.call))
+        self.assertNotIn('convention', ask.zero_config(None, self.project, None, None))
 
     def test_convention_that_cannot_run_never_blocks_the_verified_change(self):
         value, _ = self.start()
@@ -712,7 +723,7 @@ class ZeroConfigTests(unittest.TestCase):
 
     def test_analysis_also_checks_conventions_and_runs_every_check(self):
         # given
-        value = ask.zero_config('결제 코드 위험 분석해줘', self.project, None, None, self.call)
+        value = ask.zero_config('결제 코드 위험 분석해줘', self.project, None, None)
         calls = []
         # when
         with redirect_stdout(io.StringIO()):
@@ -724,7 +735,7 @@ class ZeroConfigTests(unittest.TestCase):
 
     def test_follow_up_without_a_session_explains_what_to_do_first(self):
         with self.assertRaisesRegex(ValueError, '진행 중인 작업이 없습니다'):
-            ask.zero_config('검증 다시 해줘', self.project, None, None, self.call)
+            ask.zero_config('검증 다시 해줘', self.project, None, None)
 
     def test_request_is_required_unless_continuing(self):
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
@@ -742,11 +753,10 @@ class UpdateTests(unittest.TestCase):
             seen.append(arguments)
             raise self.Updated()
 
-        def draft(*arguments, **options):
-            raise self.Updated()  # past the update point: stop before any model call
         with tempfile.TemporaryDirectory() as folder, redirect_stdout(io.StringIO()):
             try:
-                ask.main([*argv, '--project', folder, '--no-jev'], call=draft, update=update)
+                # Without a spec file a change request stops right after the update point.
+                ask.main([*argv, '--project', folder, '--no-jev'], update=update)
             except self.Updated:
                 pass
         return seen

@@ -6,6 +6,7 @@
 | 사용 가이드 | [CI_POLICY](guides/CI_POLICY.md) | 분석 완전성 지표, `fail.*` 통과 정책, 변이 예외 |
 | | [CLASSPATH](guides/CLASSPATH.md) | 클래스패스 설정과 타입 기반 호출 판정 범위 |
 | | [EXECUTION_EVIDENCE](guides/EXECUTION_EVIDENCE.md) | JUnit·JaCoCo·DB 시나리오 실행 증거 연결 |
+| | [SPEC_FILE](guides/SPEC_FILE.md) | `ask --spec` 명세 파일 형식과 작성 요령 |
 | | [WORK_PC_INSTALL](guides/WORK_PC_INSTALL.md) | 다른 PC에 Deploy key로 설치, `ask` 자동 업데이트 |
 | 검토·현황 | [REVIEW](status/REVIEW.md) | 분석기 능력·한계와 개선 우선순위 |
 | | [WORKFLOW_IMPLEMENTATION_STATUS](status/WORKFLOW_IMPLEMENTATION_STATUS.md) | 7단계 Agent 절차 구현 현황과 남은 작업 |

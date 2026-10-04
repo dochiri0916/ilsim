@@ -6,7 +6,8 @@ tier from the requirements and code context. Without a key both fall back to key
 Expensive models and the max reasoning effort are refused for every route a session could reach, including fallbacks.
 
 Run inside any Gradle project with no options and nothing configured there: a code change gets a new session under
-<project>/build/ask, a low-tier model drafts the requirements, plan and scope for approval, and `ask --yes` runs it.
+<project>/build/ask from the spec file the person wrote (--spec; no model writes the spec or its
+prompts), the plan is shown for approval, and `ask --yes` runs it.
 Models and routing come from config/ask in this checkout unless ~/.config/code-risk holds an override.
 A new request first fast-forwards this checkout and rebuilds what changed (self_update.py); --no-update skips that.
 """
@@ -385,7 +386,7 @@ def describe(value):
     if value.get('phase') is not None or value['intent'] == 'STATUS':
         lines.append(f"현재 단계: {value.get('phase')}")
     if value.get('resume'):
-        lines.append('모델이 끝내지 못한 단계부터 다시 합니다 (초안·정리·baseline은 그대로 사용)')
+        lines.append('모델이 끝내지 못한 단계부터 다시 합니다 (명세 입력·정리·baseline은 그대로 사용)')
     if value['intent'] == 'STATUS':
         try:
             lines.append('다음 실행: ' + ' → '.join(stages('CONTINUE', value['phase'], True, True)))
@@ -426,7 +427,7 @@ def execute(value, confirmed, run, options=None):
         return 3
     if not confirmed:
         print(NOT_CONFIRMED + ' '
-              + ('초안과 계획을 확인했으면 ask --yes로 실행하세요(요청은 다시 적지 않음)' if value.get('zeroConfig')
+              + ('명세와 계획을 확인했으면 ask --yes로 실행하세요(요청은 다시 적지 않음)' if value.get('zeroConfig')
                  else '위 계획대로 실행하려면 --yes를 붙이세요'))
         return 0
     state = Path(value['state'])
@@ -481,7 +482,7 @@ CAPABILITY_REASONS = {
 }
 
 
-RETRY_HINT = '같은 초안으로 이 단계만 다시 하려면 ask --yes를 실행하세요'
+RETRY_HINT = '같은 명세로 이 단계만 다시 하려면 ask --yes를 실행하세요'
 
 
 def stop_reason(directory, since):
@@ -606,8 +607,9 @@ def _command(stage, value, options):
 
 DEFAULT_ROUTING = SCRIPTS.parent/'config'/'ask'
 ROUTING_FILES = {'registry': 'models.json', 'policy': 'routing-policy.json'}
-DRAFT_TIER = 'TIER_2'
 GENERATION_TIMEOUT = 1200
+# Convention fixes rewrite files to rules the templates already show; the cheap general tier is enough.
+FIX_TIER = 'TIER_2'
 CONTINUE = ('CONTINUE', '요청 없이 --yes: 현재 세션 이어서 실행')
 
 
@@ -648,24 +650,28 @@ def new_session(project, now=None):
     return session
 
 
-def draft_models(routing):
-    """The draft tier's route and its first fallback, after refusing forbidden models anywhere in that chain."""
+def fix_models(routing):
+    """The convention-fix tier's route and its first fallback, after refusing forbidden models anywhere in that chain."""
     router = _module('model_router')
     registry = router.validate_registry(_read(routing['registry']))
     policy = router.validate_policy(_read(routing['policy']), registry)
-    models({'routing': dict(routing, requiredTiers={'draft': DRAFT_TIER})})
-    chain = 1 + len(policy['tiers'][DRAFT_TIER].get('fallbacks', []))
-    return [router.select(registry, policy, DRAFT_TIER, 600, attempt)[0] for attempt in range(min(2, chain))]
+    models({'routing': dict(routing, requiredTiers={'convention-fix': FIX_TIER})})
+    chain = 1 + len(policy['tiers'][FIX_TIER].get('fallbacks', []))
+    return [router.select(registry, policy, FIX_TIER, 600, attempt)[0] for attempt in range(min(2, chain))]
+
+
+SPEC_REQUIRED = ('코드 변경에는 명세 파일이 필요합니다: ask --spec spec.json "요청". '
+                   '형식과 작성 요령은 docs/guides/SPEC_FILE.md, 예시는 docs/examples/ask/spec.json')
 
 
 def describe_draft(project, session, value):
-    lines = [f"초안: {value['title']}"]
+    lines = [f"명세: {value['title']}"]
     for requirement in value['requirements']:
         lines.append(f"- {requirement['id']} {requirement['title']} (시나리오 {len(requirement['scenarios'])}개)")
     if value['assumptions']:
         lines.append('가정: ' + '; '.join(value['assumptions']))
     lines.append('바꿀 파일: ' + ', '.join(value['files']))
-    lines.append(f'초안 위치: {session.relative_to(project).as_posix()}/ (request.md, requirements.json, plan.json, scope.json)')
+    lines.append(f'입력 위치: {session.relative_to(project).as_posix()}/ (request.md, requirements.json, plan.json, scope.json)')
     return '\n'.join(lines)
 
 
@@ -725,29 +731,23 @@ def describe_selection(chosen):
     return lines
 
 
-def start_change(text, project, decided, allowed, judge, call, check=None, measure=None):
-    """Draft the inputs of a new zero-config session; returns its plan or raises with the reason to stop."""
-    draft = _module('ask_draft')
+def start_change(text, project, decided, allowed, judge, spec, check=None, measure=None):
+    """Build the inputs of a new zero-config session from the person's spec; returns its plan or raises the reason."""
+    if spec is None:
+        raise ValueError(SPEC_REQUIRED)
+    drafts = _module('ask_draft')
     conventions = _module('convention_check')
+    value = drafts.load(spec)
     chosen = convention_selection(text, project)
     enabled = bool(chosen['enabled'])
-    routing = default_routing()
-    configs = draft_models(routing)
-    if allowed is not None and not {config['model'] for config in configs} <= set(allowed):
-        raise ValueError('허용 목록 밖 모델로 초안을 쓰게 됩니다: ' + ', '.join(sorted({c['model'] for c in configs} - set(allowed))))
     session = new_session(project)
     (session/CONVENTION_MARKER).write_text(json.dumps(dict(chosen, enabled=enabled), ensure_ascii=False), encoding='utf-8')
-    print(f"요구사항 초안 작성 중 ({configs[0]['model']}, 프로젝트 파일은 읽기만 함)...")
-    # The draft only places files, so it gets the template tree; the code writers also get the example files.
-    options = {'guidance': conventions.guidance(examples=False), 'rules': conventions.guidance()} if enabled else {}
+    # The code writers get the convention templates with example files as a repository rules document.
+    options = {'rules': conventions.guidance()} if enabled else {}
     if check is not None:
         options['check'] = check
-    result = draft.draft(project, session, text, configs, routing, DEFAULT_JAR, call, **options)
-    if result['status'] == 'NEEDS_REVIEW':
-        raise LookupError('초안을 쓰기 전에 정해야 할 것이 있습니다. 답을 요청에 넣어 다시 실행하세요:\n'
-                          + '\n'.join('- ' + question for question in result['questions']))
-    if result['status'] != 'COMPLETED':
-        raise ValueError(result['reason'])
+    result = {'config': drafts.prepare(project, session, text, value, DEFAULT_JAR, default_routing(), **options),
+              'draft': value}
     value = plan(text, str(result['config']), str(session/'state.json'), None, allowed, judge, decided, convention=enabled)
     value['zeroConfig'] = True
     (session/SESSION_CONFIG).write_text(json.dumps(value['config'], ensure_ascii=False, indent=2), encoding='utf-8')
@@ -774,7 +774,7 @@ def start_change(text, project, decided, allowed, judge, call, check=None, measu
     return value
 
 
-def zero_config(text, project, allowed, judge, call):
+def zero_config(text, project, allowed, judge, spec=None):
     """Plan a request against the project's own sessions; nothing is read from or written to its sources."""
     if text is None:
         session = current_session(project)
@@ -785,7 +785,7 @@ def zero_config(text, project, allowed, judge, call):
     decided = decide(text, judge)
     intent = decided[0]
     if intent == 'CODE_CHANGE':
-        return start_change(text, project, decided, allowed, judge, call)
+        return start_change(text, project, decided, allowed, judge, spec)
     if intent in ('ANALYZE', 'MUTATION'):
         chosen = convention_selection(text, project)
         for line in describe_selection(chosen):
@@ -827,16 +827,19 @@ def self_update(argv):
         os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *argv])
 
 
-def main(argv=None, call=None, update=None):
+def main(argv=None, update=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('request', nargs='?', help='자연어 요청 (생략하고 --yes만 주면 현재 세션을 이어서 실행)')
     parser.add_argument('--config')
     parser.add_argument('--state')
     parser.add_argument('--project')
+    parser.add_argument('--spec', help='코드 변경의 명세 파일(JSON). 형식: docs/guides/SPEC_FILE.md')
     parser.add_argument('--yes', action='store_true', help='계획을 확인했으니 코드 변경 단계를 실행')
     parser.add_argument('--allowed-models', help='허용할 모델 이름 목록(쉼표 구분)')
     parser.add_argument('--no-jev', action='store_true', help='TYPESAFE_API_KEY가 있어도 JEV 없이 키워드로만 판단')
     parser.add_argument('--no-update', action='store_true', help='이 도구의 자동 업데이트(git pull·재빌드)를 하지 않음')
+    parser.add_argument('--check-models', action='store_true',
+                        help='routing이 쓰는 모델마다 짧은 요청을 보내 아직 쓸 수 있는지 확인(토큰 소량)')
     for name in ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request'):
         parser.add_argument('--' + name)
     args = parser.parse_args(argv)
@@ -844,6 +847,8 @@ def main(argv=None, call=None, update=None):
                ('approvals', 'container', 'bundle', 'open-evidence', 'service', 'fixture-policy', 'pull-request')
                if getattr(args, name.replace('-', '_')) is not None}
     allowed = args.allowed_models.split(',') if args.allowed_models else None
+    if args.check_models:
+        return _module('model_check').main()
     if args.request is None and not args.yes:
         parser.error('요청 문장을 적거나, 확인한 계획을 실행하려면 --yes만 주세요')
     if update is not None and updates_now(args):
@@ -855,6 +860,8 @@ def main(argv=None, call=None, update=None):
         except OSError:
             has_key = False
         judge = jev_intent if has_key and not args.no_jev else None
+        if args.spec and (args.config or args.state):
+            raise ValueError('--spec은 --config·--state 없이 쓰는 기본 방식에서만 씁니다')
         if args.config or args.state:
             value = plan(args.request or '', args.config, args.state, args.project, allowed, judge,
                          None if args.request else CONTINUE)
@@ -867,7 +874,8 @@ def main(argv=None, call=None, update=None):
                     # Rule questions need no project; everything else reports the missing project.
                     if args.request is None or decide(args.request, None)[0] != 'RULES':
                         raise
-            value = zero_config(args.request, project, allowed, judge, call or _module('agent_runner').run)
+            spec = Path(args.spec).expanduser().resolve() if args.spec else None
+            value = zero_config(args.request, project, allowed, judge, spec)
     except LookupError as error:
         print(error)
         return 3
