@@ -1,6 +1,0 @@
-analysis:
-  source-roots:
-    - src/main/java
-    - src/test/java
-report:
-  format: json

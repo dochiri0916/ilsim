@@ -1,6 +1,6 @@
-"""Keep this checkout current for `ask`: fast-forward to the tracked branch, then rebuild what the pull changed.
+"""Keep this checkout current for `ai`: fast-forward to the tracked branch, then rebuild what the pull changed.
 
-`ask` runs the Python scripts straight from this checkout, so a pull is enough for them. The analyzer jar and the
+`ai` runs the Python scripts straight from this checkout, so a pull is enough for them. The analyzer jar and the
 build-convention plugin in ~/.m2 are built artifacts: each is rebuilt only when its sources changed since the last
 build this file recorded. Nothing is pulled when the checkout has uncommitted edits or has diverged from its upstream,
 and a failed fetch or build leaves the previous version running. The record lives in the Git directory, never in the
@@ -20,10 +20,11 @@ import time
 
 try:
     import fcntl
-except ImportError:  # pragma: no cover - ask is installed as a POSIX shell wrapper
+except ImportError:  # pragma: no cover - ai is installed as a POSIX shell wrapper
     fcntl = None
 
 ROOT = Path(__file__).resolve().parents[2]
+# Names kept from the ask era so existing installs keep their build record.
 RECORD = 'ask-update.json'
 LOCK = 'ask-update.lock'
 # A fetch at most this often, so an offline PC does not wait on the network for every request.
@@ -148,7 +149,7 @@ def update(root=ROOT, run=subprocess.run, now=time.time, environ=os.environ, say
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
-                return False  # another ask is updating; this one runs the current version
+                return False  # another ai is updating; this one runs the current version
         if not _clean(root, run):
             say('업데이트 건너뜀: 이 도구 폴더에 커밋하지 않은 수정이 있습니다')
             return False

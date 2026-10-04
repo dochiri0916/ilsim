@@ -6,10 +6,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.shell.core.command.annotation.EnableCommand;
 import com.example.coderiskanalyzer.production.cli.ScanCommand;
-import com.example.coderiskanalyzer.mutation.MutationCommand;
 
 @SpringBootApplication
-@EnableCommand({ScanCommand.class, RulesCommand.class, MutationCommand.class})
+@EnableCommand({ScanCommand.class, RulesCommand.class})
 public class CodeRiskAnalyzerApplication {
 
     public static void main(String[] args) {

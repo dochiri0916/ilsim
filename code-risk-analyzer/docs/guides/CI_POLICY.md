@@ -33,7 +33,6 @@
 | UNKNOWN 비율 | 통과 | `max-unknown-ratio` |
 | 파싱·규칙 실행 실패 | 항상 종료 코드 3 | - |
 | JEV 실패 | 경고 | `on-jev-failure` |
-| 변이 미검증(SURVIVED 등) | 통과 | `max-survived-mutations` |
 
 ```yaml
 fail:
@@ -41,34 +40,16 @@ fail:
   confidence: HIGH
   max-unknown-ratio: 0.25
   new-test-gaps: true
-  max-survived-mutations: 0
   include-review: true
   on-jev-failure: true
 ```
 
 - `scan`: `max-unknown-ratio`는 **테스트 적정성 UNKNOWN 비율**의 최대 허용치다. 0~1의 유한 숫자이며, 초과할 때 종료 코드 1과 `CI-UNKNOWN` 진단을 반환한다. baseline·suppression·TEST-001 비활성으로 분석 불확실성을 숨기지 않도록 원래 적정성 결과를 사용한다. 미해결 호출 비율과는 별도 지표다.
 - `scan`: 선택형 [실행 증거 연결](EXECUTION_EVIDENCE.md) 후 `new-test-gaps: true`이면 baseline·suppression·규칙 설정 적용 후 남은 TEST-001의 MISSING/PARTIAL 항목에 대해 종료 코드 1과 `CI-TEST-GAPS` 진단을 반환한다. COVERED/UNKNOWN은 이 정책의 실패 대상이 아니다. baseline이 없으면 현재 범위의 모든 미제외 Gap을 신규로 취급한다. `baseline create`로 기존 항목을 기록할 수 있다. baseline fingerprint가 바뀐 항목은 다시 신규로 취급된다.
-- `mutation`: `max-survived-mutations`는 SURVIVED·NO_COVERAGE·RUN_ERROR·MEMORY_ERROR·UNKNOWN 개수에서 검토 예외(SURVIVED만 해당)를 뺀 값의 최대 허용치다. 0 이상의 정수이며, 초과할 때 종료 코드 1을 반환한다. TIMED_OUT·NON_VIABLE은 집계하지 않는다.
 
 - `scan`: `include-review: true`이면 `--fail-on`/`fail.severity`·`confidence` 게이트가 `CONFIRMED`뿐 아니라 `REVIEW` finding도 차단한다. 종료 코드 1. `--fail-on off`이면 적용되지 않는다.
 - `scan`: `on-jev-failure: true`이면 `--jev` 실행이 실패(`JEV-001`)할 때 종료 코드 1과 `CI-JEV` 진단을 반환한다. 기본은 경고만 남기고 정적 결과를 유지한다.
 
-- `scan`: `jev.max-calls`(0 이상 정수, 기본 무제한)는 `--jev` 실행 한 번의 JEV API 호출 상한이다. 초과분 검토는 건너뛰고 정적 결과를 유지하며 `JEV-002` 경고 진단에 건너뛴 개수를 남긴다. 종료 코드에는 영향을 주지 않는다.
+- `scan`: `jev.max-calls`(0 이상 정수; 없으면 환경변수 `CODE_RISK_JEV_MAX_CALLS`, 그것도 없으면 무제한. `ai`는 20을 넘김)는 `--jev` 실행 한 번의 JEV API 호출 상한이다. 초과분 검토는 건너뛰고 정적 결과를 유지하며 `JEV-002` 경고 진단에 건너뛴 개수를 남긴다. 종료 코드에는 영향을 주지 않는다.
 
-임계치와 같으면 통과한다. `--fail-on off`는 기존 CONFIRMED 심각도 게이트만 끄며 새 선택형 정책은 유지한다. scan의 파싱/규칙 실행 실패는 정책 위반보다 우선하여 기존 종료 코드 3을 반환한다. mutation의 설정 오류는 실행 전에 종료 코드 2로 처리하고, 빌드/PIT 실행 실패는 기존 종료 코드를 유지한다. 두 명령의 정책은 각각 별도로 평가하며 scan이 PIT를 실행하지 않는다. mutation의 정적 문맥 파싱과 변경 seed 연결에는 설정된 root·excludes·classpath를 사용한다. 변경 seed가 없는 전체 PIT 실행은 기존 대상 빌드 설정을 따르며 analysis.excludes가 PIT 실행 자체를 제한하지는 않는다. 보고서는 정책 실패 시에도 출력된다.
-
-## 동등 변이 검토와 예외
-
-PIT 생존은 동등 변이일 수도 있다. 보고서의 변이·연결된 Obligation·테스트를 검토하고, 구별 가능한 동작이 있다면 테스트를 보완한다. 동등 변이 또는 명시적으로 수용한 항목만 검토 근거와 추적 번호를 남겨 예외로 등록한다.
-
-```yaml
-fail:
-  max-survived-mutations: 0
-  mutation-exceptions:
-    - fingerprint: '여기에 보고서의 64자리 소문자 SHA-256 fingerprint'
-      reason: '동등 변이 검토 근거와 추적 번호'
-```
-
-위 fingerprint 자리에는 실제 보고서 값을 넣어야 한다. 잘못된 형식·중복 fingerprint·빈 사유·알 수 없는 예외 필드는 설정 오류다. fingerprint는 현재 변이 모델의 class·method·line·mutator·description을 길이 정보와 함께 SHA-256으로 계산하며 status는 포함하지 않는다. 위치나 설명이 바뀌면 재검토가 필요하다. 현재 모델은 PIT의 method descriptor·index·module을 보존하지 않으므로 같은 fingerprint가 여러 결과에 나타나면 예외를 적용하지 않는다.
-
-예외는 SURVIVED 결과를 삭제하거나 KILLED로 바꾸지 않는다. 각 항목에 `fingerprint`, `exceptionReason`을 남기고 `gate`에 `survived`, `excepted`, `actionableSurvived`, `maxSurvivedMutations`, `failed`, `unmatchedExceptions`를 기록한다. 매칭되지 않는 예외는 보고서에서 확인하고 제거하거나 재검토한다. 정책 게이트는 PIT가 정상 완료한 경우에만 평가한다. `NO_MUTATION_TARGETS`나 실행 실패 보고서의 `gate`는 null이며 검증 완료를 뜻하지 않는다.
+임계치와 같으면 통과한다. `--fail-on off`는 기존 CONFIRMED 심각도 게이트만 끄며 새 선택형 정책은 유지한다. scan의 파싱/규칙 실행 실패는 정책 위반보다 우선하여 기존 종료 코드 3을 반환한다. 보고서는 정책 실패 시에도 출력된다.

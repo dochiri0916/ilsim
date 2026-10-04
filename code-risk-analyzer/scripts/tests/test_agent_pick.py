@@ -63,7 +63,7 @@ class BoostTests(unittest.TestCase):
         self.assertFalse(pick.choose(FREE, codex(40, 200), NOW)[2])   # plenty but a long time left
 
     def test_settings_come_from_the_tier_route_of_the_chosen_cli(self):
-        routing = pick._module('ask').default_routing({})
+        routing = pick.default_routing({})
         self.assertEqual(('gpt-6.1-sol', 'xhigh'), pick.launch_setting('codex', 'TIER_4', routing))
         self.assertEqual(('claude-sonnet-5-5', 'xhigh'), pick.launch_setting('claude', 'TIER_4', routing))
         self.assertEqual(('gpt-6.1-sol', 'high'), pick.launch_setting('codex', 'TIER_3', routing))
