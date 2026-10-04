@@ -1,9 +1,8 @@
-"""Connect this PC's `ask` to the phone: a Telegram bot, or the phone page on Vercel. Report status, take requests
-and approvals.
+"""Connect this PC's `ai` to the phone: a Telegram bot, or the phone page on Vercel. Report status and take requests.
 
-Every run stays on this PC with its plan logins; the phone only sees status lines and the tail of `ask` output. A
-request runs `ask "<text>"` (a code change only drafts its spec and plan, never changes code); an approval runs `ask --yes`, and only for the session the
-phone was showing, after that session's plan printed that it waits for confirmation.
+Every run stays on this PC with its plan logins; the phone only sees status lines and the tail of the `ai` output. A
+request runs `ai "<text>"` in the project folder: the CLI the limits favor does the task and the checks run after it,
+as on the PC. There is no approval step.
 
     ask-remote                 inside a Gradle project
                                Telegram: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in env or ~/.secrets
@@ -128,18 +127,14 @@ class TelegramError(OSError):
         self.code = code
 
 
-HELP = '보낼 수 있는 말:\n- 하고 싶은 일 한 줄 (예: 회원 탈퇴 추가해줘): 코드 변경은 명세 초안과 계획만 만듭니다\n- 승인: 보여준 계획대로 코드를 바꿉니다\n- 상태: 지금 상태를 봅니다'
+HELP = '보낼 수 있는 말:\n- 하고 싶은 일 한 줄 (예: 회원 탈퇴 추가해줘): PC의 ai가 바로 작업하고 결과를 보냅니다\n- 상태: 지금 상태를 봅니다'
+NO_APPROVAL = 'ai는 승인 단계 없이 요청을 바로 실행합니다. 하고 싶은 일을 보내세요'
 
 
 def describe(status):
-    session = status.get('session') or {}
     lines = [f"프로젝트: {status.get('project')}"]
     if status.get('busy'):
         lines.append(f"실행 중: {status['busy']}")
-    if session:
-        lines.append(f"작업: {session.get('name')} ({session.get('phase') or '계획'})")
-        if session.get('awaitingApproval'):
-            lines.append('승인을 기다립니다. "승인"을 보내면 코드를 바꿉니다')
     return '\n'.join(lines)
 
 
@@ -192,16 +187,12 @@ class TelegramLink:
 
     def command(self, text):
         word = text.lower().lstrip('/')
-        session = (self.status or {}).get('session') or {}
         if word in ('start', 'help', '도움말'):
             self.send(HELP)
         elif word in ('status', '상태'):
             self.send(describe(self.status or {}))
         elif word in ('approve', '승인'):
-            if not session.get('awaitingApproval'):
-                self.send('승인할 작업이 없습니다. 먼저 하고 싶은 일을 보내세요')
-                return None
-            return {'type': 'approve', 'session': session['name']}
+            self.send(NO_APPROVAL)
         elif text:
             return {'type': 'request', 'text': text[:2000]}
         return None
@@ -217,34 +208,24 @@ class Runner:
     def __init__(self, project, post, run=subprocess.run, now=time.time):
         self.project, self.post, self.run, self.now = project, post, run, now
         self.busy = None
-        self.awaiting = None
+        self.awaiting = None  # nothing waits for approval with ai; kept for the restart hand-over
         self.last = None
         self.pending = []
 
-    def session(self):
-        try:
-            session = _module('ask').current_session(self.project)
-        except (ValueError, OSError):
-            return None
-        try:
-            phase = json.loads((session/'state.json').read_text(encoding='utf-8')).get('phase')
-        except (OSError, ValueError, AttributeError):
-            phase = None
-        return {'name': session.name, 'phase': phase, 'awaitingApproval': self.awaiting == session.name}
-
     def status(self):
-        return {'project': self.project.name, 'busy': self.busy, 'session': self.session(), 'last': self.last}
+        return {'project': self.project.name, 'busy': self.busy, 'session': None, 'last': self.last}
 
     def exchange(self):
         self.pending.extend(self.post(self.status()))
 
-    def ask(self, arguments, label):
-        self.busy = label
+    def ai(self, text):
+        self.busy = '요청: ' + text[:80]
         try:
             self.exchange()
         except (OSError, ValueError, KeyError):
             pass
-        command = [sys.executable, str(SCRIPTS/'ask.py'), '--project', str(self.project), *arguments]
+        # One argument, never through a shell.
+        command = [sys.executable, str(SCRIPTS/'agent_pick.py'), text]
         try:
             result = self.run(command, cwd=self.project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                               timeout=RUN_TIMEOUT, env=child_env())
@@ -258,22 +239,10 @@ class Runner:
         kind = command.get('type') if isinstance(command, dict) else None
         if kind == 'request' and isinstance(command.get('text'), str) and command['text'].strip():
             text = command['text'].strip()
-            code, output = self.ask([text], '요청: ' + text[:80])
-            current = self.session()
-            ask = _module('ask')
-            self.awaiting = current['name'] if current and code == 0 and ask.NOT_CONFIRMED in output else None
+            code, output = self.ai(text)
             self.last = {'command': '요청: ' + text[:200], 'exitCode': code, 'summary': summary(output)}
         elif kind == 'approve':
-            current = self.session()
-            if not current or command.get('session') != current['name'] or self.awaiting != current['name']:
-                self.last = {'command': '승인', 'exitCode': 2,
-                             'summary': '승인하지 않았습니다: 폰에 보이던 작업이 지금 PC의 작업과 다르거나 승인 대기 중이 아닙니다. 새로 고친 뒤 다시 확인하세요'}
-                return
-            self.awaiting = None
-            code, output = self.ask(['--yes'], '승인 실행: ' + current['name'])
-            if code == 0 and _module('ask').NOT_CONFIRMED in output:
-                self.awaiting = current['name']
-            self.last = {'command': '승인 실행: ' + current['name'], 'exitCode': code, 'summary': summary(output)}
+            self.last = {'command': '승인', 'exitCode': 2, 'summary': NO_APPROVAL}
         else:
             self.last = {'command': '알 수 없는 명령', 'exitCode': 2, 'summary': '알 수 없는 명령이라 건너뛰었습니다'}
 
@@ -289,7 +258,7 @@ def fingerprint(path=Path(__file__).resolve()):
 
 
 def restart_if_changed(started, runner, argv, environ=os.environ, current=fingerprint, execve=os.execve):
-    """Run the runner's new code after an update replaced it; only between exchanges, never during an `ask` run."""
+    """Run the runner's new code after an update replaced it; only between exchanges, never during an `ai` run."""
     try:
         if current() == started:
             return False

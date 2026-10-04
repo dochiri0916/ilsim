@@ -198,6 +198,14 @@ class MainTests(unittest.TestCase):
         self.assertEqual('작업', pick._prompt('claude', '작업'))
         self.assertEqual((None, '작업', False, False, True), pick._split(['--mcp', '작업']))
 
+    def test_a_task_updates_the_tool_first_and_why_does_not(self):
+        updates = []
+        self.outputs = [FakeProcess(CODEX_OK)]
+        for argv in (['작업해줘'], ['--why'], []):
+            pick.main(argv, environ=self.environ, now=NOW, which=lambda cli: '/bin/' + cli, popen=self.popen,
+                      cwd=self.home, say=self.lines.append, update=updates.append)
+        self.assertEqual([['작업해줘']], updates)
+
     def test_why_and_no_task_only_print(self):
         self.assertEqual(0, self.main('--why'))
         self.assertEqual(0, self.main())
