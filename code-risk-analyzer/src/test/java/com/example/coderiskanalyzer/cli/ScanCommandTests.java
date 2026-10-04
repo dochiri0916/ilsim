@@ -643,4 +643,13 @@ class ScanCommandTests {
         return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
                 .digest(Files.readAllBytes(path)));
     }
+
+    @Test
+    void projectJevCapWinsOverTheCallersAndInvalidValuesMeanNoCap() {
+        assertThat(ScanCommand.jevCallCap(5, "20")).isEqualTo(5);
+        assertThat(ScanCommand.jevCallCap(null, "20")).isEqualTo(20);
+        assertThat(ScanCommand.jevCallCap(null, "0")).isZero();
+        for (String invalid : java.util.Arrays.asList(null, "", " ", "-1", "many", "1.5"))
+            assertThat(ScanCommand.jevCallCap(null, invalid)).as(String.valueOf(invalid)).isNull();
+    }
 }
