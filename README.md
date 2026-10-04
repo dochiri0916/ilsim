@@ -18,6 +18,8 @@ ai 테스트도 추가해줘           # 같은 폴더의 이전 대화를 이�
 
 CLI 화면을 열지 않는다. 곧 초기화될 남은 한도를 먼저 쓰고, 그 여유가 많으면 가장 높은 모델·추론으로, 위험 단어(결제·동시성 등)가 있으면 한 단계 높은 설정으로 실행한다. 작업 중 한도에 걸리면 다른 CLI가 이어받는다. Claude는 파일 수정과 gradlew·git 조회 명령만, Codex는 작업 폴더 샌드박스 안에서만 실행한다. 규칙은 [`agent_pick.py`](code-risk-analyzer/scripts/agent_pick.py) 맨 위에 있다.
 
+파일을 바꾼 작업 뒤에는 build-convention 검사(`./gradlew check`, 빌드 파일 수정 없음)와 code-risk-analyzer 위험 분석(바뀐 `src/main` 파일)을 모델 호출 없이 자동으로 실행한다. 요청에 "컨벤션 없이", "위험 분석 빼고", "검사 없이"가 있으면 그 명령에서만 해당 검사를 건너뛴다. 실패 내용은 다음 `ai` 요청에 한 번 함께 전달된다.
+
 ```bash
 ./install.sh                  # 한 번만: 도구 확인, 빌드, ~/.local/bin/ask 설치
 cd ~/work/my-spring-project   # start.spring.io 프로젝트 그대로, 설정 파일 없음
