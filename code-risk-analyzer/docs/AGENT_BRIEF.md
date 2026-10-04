@@ -21,7 +21,7 @@ ai --new ... / ai claude ... / ai codex ... / ai --why / ai --mcp ...
 - 실행: Claude는 `-p` stream-json, `acceptEdits`와 gradlew·git 조회 명령만 허용. Codex는 `exec --json`, `workspace-write` 샌드박스. MCP는 끄고(`--mcp`로 유지) 답변은 핵심만 쓰게 한다. 작업 중 한도에 걸리면 다른 CLI가 같은 작업을 이어받는다.
 - 검사(파일이 바뀐 작업 뒤, 모델 호출 없음): build-convention `check`와 바뀐 `src/main` Java 파일 `scan`. `TYPESAFE_API_KEY`가 있으면 정적으로 확정 못 한 항목을 JEV가 검토하고 의견만 덧붙인다(호출 상한: `.code-risk.yml`의 `jev.max-calls`, 없으면 20). 요청에 "컨벤션 없이"·"위험 분석 빼고"·"검사 없이"가 있으면 그 명령에서만 건너뛴다.
 - 업데이트: 작업을 받으면 먼저 이 checkout을 fast-forward하고 바뀐 프로젝트만 다시 빌드한다([`scripts/self_update.py`](../scripts/self_update.py), 끄기 `ASK_NO_UPDATE=1`).
-- 기타: 사용량·한도 % `ai --usage`(Claude 한도는 마지막 `ai` 실행 시점 값), 폰 원격 [`remote/`](../remote/README.md)(`ask-remote`가 폰 요청을 `ai`로 실행).
+- 기타: 사용량·한도 % `ai --usage`(Claude 한도는 기록이 10분보다 오래됐으면 haiku·도구 없음으로 짧은 요청 하나를 보내 새로 받음, 구독 한도만 조금 씀), 폰 원격 [`remote/`](../remote/README.md)(`ask-remote`가 폰 요청을 `ai`로 실행).
 
 ## 분석기 명령
 

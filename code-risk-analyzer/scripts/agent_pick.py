@@ -5,7 +5,8 @@
     ai --new ...              start a new conversation
     ai claude | codex ...     use that one
     ai --why                  only print the choice, the reason and the model setting
-    ai --usage                Claude Code and Codex usage and limit percentages (usage_report.py)
+    ai --usage                Claude Code and Codex usage and limit percentages (usage_report.py); Claude's are
+                              fetched with one tiny request when the record is older than REFRESH_AFTER
 
 Claude runs with --permission-mode acceptEdits and only CLAUDE_TOOLS commands; Codex runs in its workspace-write
 sandbox. Every task first fast-forwards this tool's checkout (self_update.py; ASK_NO_UPDATE=1 turns it off).
@@ -44,6 +45,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 SCRIPTS = Path(__file__).resolve().parent
 WINDOW = timedelta(hours=5)
@@ -322,6 +324,11 @@ NO_MCP_CLAUDE = ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']
 NO_MCP_CODEX = ['-c', 'mcp_servers={}']
 LIMIT_ERROR = re.compile(r'usage limit|rate limit|limit reached|quota|too many requests|\b429\b', re.I)
 CONTINUE_WITHIN = timedelta(hours=3)
+# ai --usage: Claude reports its limits only in answer to a request, so a stale record costs one tiny one.
+REFRESH_AFTER = timedelta(minutes=10)
+REFRESH_MODEL = 'haiku'
+REFRESH_PROMPT = 'ok라고만 답해.'
+
 USAGE = ('사용법: 프로젝트 폴더에서\n'
          '  ai 회원 탈퇴 API 추가해줘      Claude·Codex 중 한도가 유리한 쪽이 이 폴더에서 작업하고 진행·결과만 보여 줌\n'
          '  ai 방금 거 테스트도 추가해줘    같은 폴더의 이전 대화를 이어서 (3시간 이내, 같은 CLI일 때)\n'
@@ -612,6 +619,21 @@ def self_update(argv):
         os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *argv])
 
 
+def refresh_claude_limits(environ, now, popen, say):
+    """Record Claude's current limits with the smallest request when the last record is missing or stale."""
+    path = usage.claude_limits_file(environ)
+    recorded = usage.load_claude_limits(path)
+    if recorded and now - datetime.fromisoformat(recorded['observedAt']) < REFRESH_AFTER:
+        return
+    argv = ['claude', '-p', '--output-format', 'stream-json', '--verbose', '--model', REFRESH_MODEL, '--tools', '',
+            *NO_MCP_CLAUDE]
+    # No tools and an empty folder: one short answer, without tool definitions or project instruction files.
+    with tempfile.TemporaryDirectory() as folder:
+        outcome = run('claude', argv, REFRESH_PROMPT, folder, lambda line: None, popen)
+    if not (outcome.get('rateLimit') and usage.save_claude_limits(path, outcome['rateLimit'], now)):
+        say('ai: Claude 한도를 새로 받지 못해 마지막 기록을 보여 줍니다' + (f" ({outcome['error'][:120]})" if outcome.get('error') else ''))
+
+
 def _cancelled(outcome, name, cwd, now, conversations, previous, state_path, say):
     """Keep the conversation (the next ai continues it) and say which files were already changed."""
     if outcome['session'] or previous.get('session'):
@@ -631,7 +653,9 @@ def _cancelled(outcome, name, cwd, now, conversations, previous, state_path, say
 def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subprocess.Popen, cwd=None, say=print,
          process=subprocess.run, update=None):
     if list(sys.argv[1:] if argv is None else argv) == ['--usage']:
-        return usage.main([], environ=environ)
+        if which('claude'):
+            refresh_claude_limits(environ, now or datetime.now(timezone.utc), popen, say)
+        return usage.main([], environ=environ, now=now)
     agent, task, why_only, new, mcp = _split(argv)
     if update is not None and task and not why_only:
         update(sys.argv[1:] if argv is None else list(argv))
