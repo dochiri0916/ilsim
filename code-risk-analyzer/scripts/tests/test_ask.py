@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -745,6 +746,18 @@ class ZeroConfigTests(unittest.TestCase):
                                 lambda text: {'status': 'COMPLETED', 'intent': 'ANALYZE', 'confidence': 0.99})
         # then
         self.assertEqual(['scan', str(self.project), '--jev', 'true'], value['commands'][0][3:])
+
+    def test_usage_request_shows_cli_usage_and_the_current_session_cost(self):
+        # without a session: only the CLI usage from local logs
+        value = ask.zero_config('사용량 보여줘', self.project, None, None)
+        self.assertEqual('COST', value['intent'])
+        self.assertEqual([[sys.executable, str(ask.SCRIPTS/'usage_report.py')]], value['commands'])
+        # with a session: its recorded ask calls too
+        session = ask.new_session(self.project)
+        (session/ask.SESSION_CONFIG).write_text('{}')
+        (self.project/'build/ask/current').write_text(session.name)
+        value = ask.zero_config('토큰 얼마나 썼어?', self.project, None, None)
+        self.assertEqual([sys.executable, str(ask.SCRIPTS/'cost_report.py'), str(session)], value['commands'][1])
 
     def test_follow_up_without_a_session_explains_what_to_do_first(self):
         with self.assertRaisesRegex(ValueError, '진행 중인 작업이 없습니다'):
