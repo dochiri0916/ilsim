@@ -41,12 +41,12 @@ public class LostUpdateRiskRule implements RiskRule {
         for (ParsedSource source : context.parsedSources()) {
             if (source.compilationUnit() == null) continue;
             for (MethodDeclaration method : source.compilationUnit().findAll(MethodDeclaration.class)) {
-                if (hasPessimisticProtection(method)) continue;
                 List<MethodCallExpr> reads = method.findAll(MethodCallExpr.class).stream()
                         .filter(this::isRead).toList();
                 List<MethodCallExpr> writes = method.findAll(MethodCallExpr.class).stream()
                         .filter(this::isWrite).toList();
                 for (MethodCallExpr read : reads) {
+                    if (hasPessimisticProtection(read)) continue;
                     VariableDeclarator entity = assignedVariable(method, read);
                     if (entity == null || versionedTypes.contains(entity.getTypeAsString())) continue;
                     for (Node mutation : mutationsBasedOn(method, entity.getNameAsString())) {
@@ -78,10 +78,34 @@ public class LostUpdateRiskRule implements RiskRule {
         return result;
     }
 
-    private boolean hasPessimisticProtection(MethodDeclaration method) {
-        return method.toString().contains("PESSIMISTIC_WRITE") || method.toString().contains("FOR UPDATE")
-                || method.getAnnotations().stream().filter(annotation -> simpleName(annotation.getNameAsString()).equals("Lock"))
-                        .anyMatch(annotation -> annotation.toString().contains("PESSIMISTIC_WRITE"));
+    private boolean hasPessimisticProtection(MethodCallExpr read) {
+        try {
+            var resolved = read.resolve();
+            Set<String> owners = new HashSet<>();
+            owners.add(resolved.declaringType().getQualifiedName());
+            resolved.declaringType().getAllAncestors().forEach(type -> owners.add(type.getQualifiedName()));
+            boolean repository = owners.stream().anyMatch(type -> type.startsWith("org.springframework.data.repository.")
+                    || type.startsWith("org.springframework.data.jpa.repository."));
+            if (repository && resolved.toAst(MethodDeclaration.class).stream().anyMatch(declaration ->
+                    declaration.getAnnotations().stream().anyMatch(annotation -> {
+                        String name = annotation.getNameAsString();
+                        boolean lock = name.equals("org.springframework.data.jpa.repository.Lock")
+                                || name.equals("Lock") && declaration.findCompilationUnit().stream().anyMatch(unit ->
+                                unit.getImports().stream().anyMatch(imported ->
+                                        imported.getNameAsString().equals("org.springframework.data.jpa.repository.Lock")
+                                                || imported.isAsterisk() && imported.getNameAsString().equals("org.springframework.data.jpa.repository")));
+                        return lock && annotation.findAll(com.github.javaparser.ast.expr.FieldAccessExpr.class).stream()
+                                .anyMatch(field -> field.getNameAsString().equals("PESSIMISTIC_WRITE"));
+                    }))) return true;
+            boolean entityManager = owners.stream().anyMatch(type -> Set.of("jakarta.persistence.EntityManager",
+                    "javax.persistence.EntityManager", "org.hibernate.Session").contains(type));
+            return entityManager && read.getArguments().stream().anyMatch(argument ->
+                    argument.isFieldAccessExpr() && argument.asFieldAccessExpr().getNameAsString().equals("PESSIMISTIC_WRITE")
+                            && Set.of("jakarta.persistence.LockModeType", "javax.persistence.LockModeType", "org.hibernate.LockMode")
+                            .contains(argument.calculateResolvedType().describe()));
+        } catch (RuntimeException unresolved) {
+            return false;
+        }
     }
 
     private boolean isRead(MethodCallExpr call) {

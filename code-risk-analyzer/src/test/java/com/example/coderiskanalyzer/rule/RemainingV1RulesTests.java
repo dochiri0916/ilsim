@@ -64,6 +64,49 @@ class RemainingV1RulesTests {
     }
 
     @Test
+    void stringsCommentsAndUnusedLockAnnotationsCannotSuppressLostUpdates() throws Exception {
+        for (String text : List.of("String note = \"FOR UPDATE\";", "String note = \"PESSIMISTIC_WRITE\";",
+                "/* PESSIMISTIC_WRITE FOR UPDATE */")) {
+            assertThat(new LostUpdateRiskRule().analyze(analyze("class AccountService { "
+                    + "@Lock(PESSIMISTIC_WRITE) void debit(long id, int amount) { " + text
+                    + " Account account = repository.findById(id); account.setBalance(account.getBalance() - amount); "
+                    + "repository.save(account); } }"))).as(text).hasSize(1);
+        }
+    }
+
+    @Test
+    void acceptsPessimisticLockOnTheActualSpringDataReadOnly() throws Exception {
+        Path root = tempDir.resolve("src/main/java");
+        java.util.Map<String, String> code = java.util.Map.of(
+                "org/springframework/data/repository/CrudRepository.java", "package org.springframework.data.repository; "
+                        + "public interface CrudRepository<T> { T findById(long id); T save(T value); }",
+                "org/springframework/data/jpa/repository/Lock.java", "package org.springframework.data.jpa.repository; "
+                        + "public @interface Lock { jakarta.persistence.LockModeType value(); }",
+                "jakarta/persistence/LockModeType.java", "package jakarta.persistence; public enum LockModeType { PESSIMISTIC_WRITE }",
+                "AccountService.java", "import org.springframework.data.jpa.repository.Lock; import jakarta.persistence.LockModeType; "
+                        + "class Account { int getBalance() { return 1; } void setBalance(int value) {} } "
+                        + "interface Repo extends org.springframework.data.repository.CrudRepository<Account> { "
+                        + "@Lock(LockModeType.PESSIMISTIC_WRITE) Account findById(long id); } "
+                        + "class AccountService { Repo repository; void debit(long id, int amount) { "
+                        + "Account account = repository.findById(id); account.setBalance(account.getBalance() - amount); repository.save(account); } }");
+        List<SourceFile> files = new java.util.ArrayList<>();
+        for (var entry : code.entrySet()) {
+            Path file = root.resolve(entry.getKey());
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, entry.getValue());
+            files.add(new SourceFile(root, file));
+        }
+        var sources = new JavaSourceParser().parse(files);
+        var rule = new LostUpdateRiskRule();
+        assertThat(rule.analyze(new AnalysisContext(new ProgramModelBuilder().build(sources), sources))).isEmpty();
+        Path service = root.resolve("AccountService.java");
+        Files.writeString(service, code.get("AccountService.java").replace("@Lock(LockModeType.PESSIMISTIC_WRITE) Account findById(long id);",
+                "Account findById(long id); @Lock(LockModeType.PESSIMISTIC_WRITE) Account findLocked(long id);"));
+        sources = new JavaSourceParser().parse(files);
+        assertThat(rule.analyze(new AnalysisContext(new ProgramModelBuilder().build(sources), sources))).hasSize(1);
+    }
+
+    @Test
     void asyncMethodUsingRequestContextIsReviewed() throws Exception {
         var findings = new UnsafeAsyncStateAccessRule().analyze(analyze(
                 "class Service { @Async void send() { RequestContextHolder.getRequestAttributes(); } }"));
