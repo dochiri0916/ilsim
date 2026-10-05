@@ -38,6 +38,22 @@ class PathTraversalRuleTests {
     }
 
     @Test
+    void detectsControlledCopyAndMoveDestinationsWithFixedSources() throws Exception {
+        for (String operation : List.of("copy", "move")) {
+            assertThat(analyze("@RequestParam String destination) { Files." + operation
+                    + "(Path.of(\"/safe/input.txt\"), Path.of(destination)); }"))
+                    .singleElement().satisfies(finding -> assertThat(finding.ruleId()).isEqualTo("SEC-003"));
+            assertThat(analyze("@RequestParam String source, @RequestParam String destination) { Files." + operation
+                    + "(Path.of(source), Path.of(destination)); }")).hasSize(1);
+            assertThat(analyze("@RequestParam String ignored) { Files." + operation
+                    + "(Path.of(\"/safe/input.txt\"), Path.of(\"/safe/output.txt\")); }")).isEmpty();
+        }
+        assertThat(analyzeSource("import java.nio.file.*; import java.io.*; class Controller { "
+                + "void download(@RequestBody byte[] body) throws IOException { "
+                + "Files.copy(new ByteArrayInputStream(body), Path.of(\"/safe/output.txt\")); } }")).isEmpty();
+    }
+
+    @Test
     void ignoresPathThatIsNormalizedAndRejectedWhenOutsideBase() throws Exception {
         assertThat(analyze("@RequestParam String path) { Path base = root.toRealPath(); "
                 + "Path resolved = base.resolve(path).normalize(); "
@@ -109,10 +125,14 @@ class PathTraversalRuleTests {
     }
 
     private List<Finding> analyze(String method) throws Exception {
+        return analyzeSource("class Controller { void download(" + method + " }");
+    }
+
+    private List<Finding> analyzeSource(String code) throws Exception {
         Path root = tempDir.resolve("src/main/java");
         Files.createDirectories(root);
         Path file = root.resolve("Controller.java");
-        Files.writeString(file, "class Controller { void download(" + method + " }");
+        Files.writeString(file, code);
         var sources = new JavaSourceParser().parse(List.of(new SourceFile(root, file)));
         var context = new AnalysisContext(new ProgramModelBuilder().build(sources), sources);
         return new PathTraversalRule(new DataFlowAnalyzer()).analyze(context);

@@ -1,7 +1,9 @@
 package com.example.coderiskanalyzer.production.analysis.dataflow;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -11,6 +13,7 @@ import com.example.coderiskanalyzer.production.model.SourceLocation;
 import com.example.coderiskanalyzer.production.parser.ParsedSource;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
@@ -46,7 +49,76 @@ public class DataFlowAnalyzer {
     }
 
     public List<DataFlowPath> analyze(MethodDeclaration method, ParsedSource source, TaintSinkKind sinkKind) {
-        Map<String, TaintSource> tainted = collectTaintedVariables(method);
+        return analyze(method, source, sinkKind, collectTaintedVariables(method, Map.of()));
+    }
+
+    /** Follow request-tainted arguments into project methods, preserving the actual sink's source location. */
+    public List<DataFlowPath> analyze(MethodDeclaration method, ParsedSource source, TaintSinkKind sinkKind,
+                                      List<ParsedSource> context) {
+        record Declared(MethodDeclaration method, ParsedSource source) {}
+        record Work(Declared declared, Map<String, TaintSource> incoming) {}
+        List<Declared> declarations = context.stream().filter(p -> p.compilationUnit() != null)
+                .flatMap(p -> p.compilationUnit().findAll(MethodDeclaration.class).stream().map(m -> new Declared(m, p)))
+                .toList();
+        List<MethodDeclaration> methods = declarations.stream().map(Declared::method).toList();
+        var pending = new ArrayDeque<Work>();
+        pending.add(new Work(new Declared(method, source), Map.of()));
+        Map<MethodDeclaration, Map<String, TaintSource>> seen = new IdentityHashMap<>();
+        List<DataFlowPath> paths = new ArrayList<>();
+        while (!pending.isEmpty()) {
+            Work work = pending.removeFirst();
+            MethodDeclaration current = work.declared().method();
+            Map<String, TaintSource> incoming = new HashMap<>(seen.getOrDefault(current, Map.of()));
+            boolean first = !seen.containsKey(current);
+            work.incoming().forEach(incoming::putIfAbsent);
+            if (!first && seen.get(current).keySet().containsAll(incoming.keySet())) continue;
+            seen.put(current, incoming);
+            Map<String, TaintSource> tainted = collectTaintedVariables(current, incoming);
+            paths.addAll(analyze(current, work.declared().source(), sinkKind, tainted));
+            for (MethodCallExpr call : current.findAll(MethodCallExpr.class)) {
+                MethodDeclaration resolved = projectTarget(call, current, methods);
+                if (resolved == null) continue;
+                Declared target = declarations.stream().filter(d -> d.method() == resolved).findFirst().orElseThrow();
+                Map<String, TaintSource> arguments = new HashMap<>();
+                for (int index = 0; index < call.getArguments().size() && !resolved.getParameters().isEmpty(); index++) {
+                    int parameterIndex = Math.min(index, resolved.getParameters().size() - 1);
+                    if (index >= resolved.getParameters().size() && !resolved.getParameter(parameterIndex).isVarArgs()) break;
+                    TaintSource value = sourceIn(call.getArgument(index), tainted);
+                    var parameter = resolved.getParameter(parameterIndex);
+                    if (value != null && !nonInjectable(parameter.getTypeAsString())) {
+                        arguments.putIfAbsent(parameter.getNameAsString(), new TaintSource(parameter.getNameAsString(), value.kind()));
+                    }
+                }
+                if (!arguments.isEmpty()) pending.add(new Work(target, arguments));
+            }
+        }
+        return paths.stream().distinct().toList();
+    }
+
+    private MethodDeclaration projectTarget(MethodCallExpr call, MethodDeclaration caller,
+                                             List<MethodDeclaration> declarations) {
+        try {
+            var ast = call.resolve().toAst(MethodDeclaration.class);
+            if (ast.isEmpty()) return null;
+            var target = ast.get();
+            var path = target.findCompilationUnit().flatMap(unit -> unit.getStorage().map(storage -> storage.getPath()));
+            return declarations.stream().filter(candidate -> candidate == target || path.isPresent()
+                    && candidate.findCompilationUnit().flatMap(unit -> unit.getStorage().map(storage -> storage.getPath()))
+                    .filter(path.get()::equals).isPresent() && candidate.getRange().equals(target.getRange()))
+                    .findFirst().orElse(null);
+        } catch (RuntimeException unresolved) {
+            if (call.getScope().isPresent() && !call.getScope().get().isThisExpr()) return null;
+            var owner = caller.findAncestor(TypeDeclaration.class);
+            var candidates = declarations.stream().filter(candidate -> candidate.findAncestor(TypeDeclaration.class)
+                    .filter(type -> type == owner.orElse(null)).isPresent()
+                    && candidate.getNameAsString().equals(call.getNameAsString())
+                    && candidate.getParameters().size() == call.getArguments().size()).toList();
+            return candidates.size() == 1 ? candidates.getFirst() : null;
+        }
+    }
+
+    private List<DataFlowPath> analyze(MethodDeclaration method, ParsedSource source, TaintSinkKind sinkKind,
+                                       Map<String, TaintSource> tainted) {
         Set<String> processBuilderVariables = method.findAll(VariableDeclarator.class).stream()
                 .filter(variable -> variable.getTypeAsString().endsWith("ProcessBuilder"))
                 .map(variable -> variable.getNameAsString()).collect(java.util.stream.Collectors.toSet());
@@ -60,10 +132,10 @@ public class DataFlowAnalyzer {
             if (sinkKind == TaintSinkKind.COMMAND && call.getNameAsString().equals("start")
                     && call.getScope().stream().anyMatch(scope -> scope.findAll(ObjectCreationExpr.class).stream()
                             .anyMatch(creation -> creation.getTypeAsString().endsWith("ProcessBuilder")))) continue;
-            Expression argument = sinkArgument(call, sinkKind);
-            if (argument == null) continue;
-            TaintSource taint = sourceIn(argument, tainted);
-            if (taint != null) paths.add(new DataFlowPath(taint, call.getNameAsString(), location(source, call)));
+            for (Expression argument : sinkArguments(call, sinkKind)) {
+                TaintSource taint = sourceIn(argument, tainted);
+                if (taint != null) paths.add(new DataFlowPath(taint, call.getNameAsString(), location(source, call)));
+            }
         }
         for (ObjectCreationExpr creation : method.findAll(ObjectCreationExpr.class)) {
             if (!isCreationSink(creation, sinkKind)) continue;
@@ -78,8 +150,8 @@ public class DataFlowAnalyzer {
         return List.copyOf(paths);
     }
 
-    private Map<String, TaintSource> collectTaintedVariables(MethodDeclaration method) {
-        Map<String, TaintSource> tainted = new HashMap<>();
+    private Map<String, TaintSource> collectTaintedVariables(MethodDeclaration method, Map<String, TaintSource> incoming) {
+        Map<String, TaintSource> tainted = new HashMap<>(incoming);
         Set<String> safeTyped = new java.util.HashSet<>();
         method.getParameters().stream().filter(parameter -> nonInjectable(parameter.getTypeAsString()))
                 .forEach(parameter -> safeTyped.add(parameter.getNameAsString()));
@@ -174,8 +246,19 @@ public class DataFlowAnalyzer {
     private boolean isSink(MethodCallExpr call, TaintSinkKind kind) {
         String method = call.getNameAsString();
         String receiver = call.getScope().map(Node::toString).orElse("").toLowerCase(Locale.ROOT);
+        Set<String> types = receiverTypes(call);
         return switch (kind) {
             case SQL -> {
+                if (!types.isEmpty()) {
+                    yield types.contains("java.sql.Connection") && method.equals("prepareStatement")
+                            || types.stream().anyMatch(type -> Set.of("java.sql.Statement", "java.sql.PreparedStatement",
+                                    "java.sql.CallableStatement").contains(type))
+                            && Set.of("execute", "executeQuery", "executeUpdate", "executeLargeUpdate").contains(method)
+                            || types.stream().anyMatch(type -> type.startsWith("org.springframework.jdbc.core."))
+                            && Set.of("query", "queryForList", "queryForObject", "update", "execute", "batchUpdate").contains(method)
+                            || types.stream().anyMatch(type -> Set.of("jakarta.persistence.EntityManager",
+                                    "javax.persistence.EntityManager").contains(type)) && method.equals("createNativeQuery");
+                }
                 boolean statementCall = Set.of("execute", "executeQuery", "executeUpdate", "prepareStatement")
                         .contains(method) && (receiver.contains("statement") || receiver.contains("connection"));
                 boolean templateCall = Set.of("query", "queryForList", "queryForObject", "update", "execute",
@@ -184,12 +267,33 @@ public class DataFlowAnalyzer {
                 yield statementCall || templateCall
                         || method.equals("createNativeQuery") && receiver.contains("entitymanager");
             }
-            case COMMAND -> (method.equals("exec") && receiver.contains("runtime"))
+            case COMMAND -> types.contains("java.lang.Runtime") && method.equals("exec")
+                    || types.contains("java.lang.ProcessBuilder") && Set.of("command", "start").contains(method)
+                    || types.isEmpty() && ((method.equals("exec") && receiver.contains("runtime"))
                     || (method.equals("command") && receiver.contains("processbuilder"))
-                    || (method.equals("start") && receiver.contains("processbuilder"));
+                    || (method.equals("start") && receiver.contains("processbuilder")));
             case PATH -> isPathIoMethod(method, receiver);
             case SSRF -> isHttpRequestMethod(method, receiver);
         };
+    }
+
+    private Set<String> receiverTypes(MethodCallExpr call) {
+        Set<String> types = new java.util.HashSet<>();
+        try {
+            var declaration = call.resolve().declaringType();
+            types.add(declaration.getQualifiedName());
+            declaration.getAllAncestors().forEach(type -> types.add(type.getQualifiedName()));
+        } catch (RuntimeException unresolved) {
+            try {
+                if (call.getScope().isPresent()) {
+                    var type = call.getScope().get().calculateResolvedType();
+                    if (type.isReferenceType()) types.add(type.asReferenceType().getQualifiedName());
+                }
+            } catch (RuntimeException ignored) {
+                // Name heuristics are retained only when API types cannot be resolved.
+            }
+        }
+        return types;
     }
 
     private boolean isProcessBuilderSink(MethodCallExpr call, TaintSinkKind kind, Set<String> processBuilders) {
@@ -199,19 +303,28 @@ public class DataFlowAnalyzer {
         return (name.equals("command") || name.equals("start")) && processBuilders.contains(receiver);
     }
 
-    private Expression sinkArgument(MethodCallExpr call, TaintSinkKind kind) {
+    private List<Expression> sinkArguments(MethodCallExpr call, TaintSinkKind kind) {
         if (kind == TaintSinkKind.COMMAND && call.getNameAsString().equals("start")) {
-            return call.getScope().orElse(null);
+            return call.getScope().stream().toList();
         }
         if (kind == TaintSinkKind.SSRF && Set.of("openConnection", "openStream", "connect", "getInputStream")
-                .contains(call.getNameAsString())) return call.getScope().orElse(null);
-        if (call.getArguments().isEmpty()) return null;
+                .contains(call.getNameAsString())) return call.getScope().stream().toList();
+        if (call.getArguments().isEmpty()) return List.of();
         if (kind == TaintSinkKind.PATH && Set.of("copy", "move").contains(call.getNameAsString())
                 && call.getArguments().size() > 1) {
-            return call.getArguments().stream().filter(argument -> sourceLooksLikePath(argument)).findFirst()
-                    .orElse(call.getArgument(0));
+            return call.getArguments().stream().limit(2).filter(this::pathArgument).toList();
         }
-        return call.getArgument(0);
+        return List.of(call.getArgument(0));
+    }
+
+    private boolean pathArgument(Expression expression) {
+        try {
+            var type = expression.calculateResolvedType();
+            return type.isReferenceType() && (type.asReferenceType().getQualifiedName().equals("java.nio.file.Path")
+                    || type.asReferenceType().getAllAncestors().stream().anyMatch(ancestor -> ancestor.getQualifiedName().equals("java.nio.file.Path")));
+        } catch (RuntimeException unresolved) {
+            return true;
+        }
     }
 
     private boolean isPathIoMethod(String method, String receiver) {
@@ -242,11 +355,6 @@ public class DataFlowAnalyzer {
             case SSRF -> false;
             case SQL -> false;
         };
-    }
-
-    private boolean sourceLooksLikePath(Expression expression) {
-        String text = expression.toString().toLowerCase();
-        return text.contains("path") || text.contains("file") || text.contains("source") || text.contains("target");
     }
 
     private String simpleName(String annotation) {

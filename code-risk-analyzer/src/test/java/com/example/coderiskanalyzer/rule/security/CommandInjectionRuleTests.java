@@ -40,6 +40,15 @@ class CommandInjectionRuleTests {
                 .isEmpty();
     }
 
+    @Test
+    void detectsResolvedRuntimeAliasAndHelperArguments() throws Exception {
+        assertThat(analyze("@RequestParam String command) throws Exception { Runtime rt = Runtime.getRuntime(); rt.exec(command); }"))
+                .singleElement().satisfies(finding -> assertThat(finding.ruleId()).isEqualTo("SEC-002"));
+        assertThat(analyze("@RequestParam String command) throws Exception { execute(command); } "
+                + "private void execute(String value) throws Exception { Runtime rt = Runtime.getRuntime(); rt.exec(value); }"))
+                .singleElement().satisfies(finding -> assertThat(finding.ruleId()).isEqualTo("SEC-002"));
+    }
+
     private List<Finding> analyze(String method) throws Exception {
         Path root = tempDir.resolve("src/main/java");
         Files.createDirectories(root);

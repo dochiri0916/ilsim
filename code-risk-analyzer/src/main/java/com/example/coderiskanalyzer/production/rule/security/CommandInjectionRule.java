@@ -37,7 +37,7 @@ public class CommandInjectionRule implements RiskRule {
         for (ParsedSource source : context.parsedSources()) {
             if (source.compilationUnit() == null) continue;
             for (MethodDeclaration method : source.compilationUnit().findAll(MethodDeclaration.class)) {
-                for (var path : dataFlowAnalyzer.analyze(method, source, TaintSinkKind.COMMAND)) {
+                for (var path : dataFlowAnalyzer.analyze(method, source, TaintSinkKind.COMMAND, context.resolutionSources())) {
                     Evidence evidence = new Evidence("TAINTED_COMMAND_INPUT",
                             "Request-controlled value reaches process execution",
                             path.sinkLocation(), Map.of("source", path.source().variable(),
@@ -48,6 +48,6 @@ public class CommandInjectionRule implements RiskRule {
                 }
             }
         }
-        return findings;
+        return findings.stream().distinct().toList();
     }
 }

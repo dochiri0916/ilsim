@@ -7,6 +7,7 @@ import java.util.Map;
 import com.example.coderiskanalyzer.production.analysis.AnalysisContext;
 import com.example.coderiskanalyzer.production.analysis.dataflow.DataFlowAnalyzer;
 import com.example.coderiskanalyzer.production.analysis.dataflow.DataFlowPath;
+import com.example.coderiskanalyzer.production.analysis.dataflow.TaintSinkKind;
 import com.example.coderiskanalyzer.production.finding.Confidence;
 import com.example.coderiskanalyzer.production.finding.Evidence;
 import com.example.coderiskanalyzer.production.finding.Finding;
@@ -37,7 +38,7 @@ public class SqlInjectionRule implements RiskRule {
         for (ParsedSource source : context.parsedSources()) {
             if (source.compilationUnit() == null) continue;
             for (MethodDeclaration method : source.compilationUnit().findAll(MethodDeclaration.class)) {
-                for (DataFlowPath path : dataFlowAnalyzer.analyze(method, source)) {
+                for (DataFlowPath path : dataFlowAnalyzer.analyze(method, source, TaintSinkKind.SQL, context.resolutionSources())) {
                     Evidence evidence = new Evidence("TAINTED_SQL_INPUT",
                             "Request-controlled value reaches a SQL execution argument",
                             path.sinkLocation(), Map.of("source", path.source().variable(),
@@ -48,6 +49,6 @@ public class SqlInjectionRule implements RiskRule {
                 }
             }
         }
-        return findings;
+        return findings.stream().distinct().toList();
     }
 }

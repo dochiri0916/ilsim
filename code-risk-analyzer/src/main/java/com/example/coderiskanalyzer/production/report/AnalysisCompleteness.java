@@ -55,7 +55,7 @@ public record AnalysisCompleteness(int filesDiscovered, int filesSelected, int f
                         "Limited patterns are occurrences where security protection flow may remain unproven, not skipped files.",
                         "Discovery excludes build/target/out/generated/generated-sources/node_modules/.git/.gradle and symlinks; unreadable entries may be omitted.",
                         "Configured roots and excludes bound discovery; files outside it are not counted.",
-                        changed ? "Changed-files mode: risk analysis covers selected production files only."
+                        changed ? "Changed-files mode: risk entry points are selected production files; SQL/command taint follows reachable project helpers."
                                 : "Full scan of discovered production sources.",
                         "Static analysis does not prove runtime transactions, concurrency, idempotency or partial-failure safety."));
     }

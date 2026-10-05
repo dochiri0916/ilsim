@@ -51,6 +51,8 @@ public class PathTraversalRule implements RiskRule {
                 }
             }
         }
-        return findings;
+        // A copy/move sink can have two tainted paths; keep one finding with the same report identity.
+        return findings.stream().collect(java.util.stream.Collectors.toMap(Finding::location, finding -> finding,
+                (first, second) -> first, java.util.LinkedHashMap::new)).values().stream().toList();
     }
 }

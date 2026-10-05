@@ -60,6 +60,31 @@ class ScanCommandTests {
     }
 
     @Test
+    void changedFileScanFollowsSqlArgumentsIntoUnchangedHelpersWithoutScanningUnrelatedEntries() throws Exception {
+        Path root = tempDir.resolve("src/main/java");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("Controller.java"), "class Controller { Helper helper; "
+                + "void users(@RequestParam String name) throws Exception { helper.query(name); } }");
+        Files.writeString(root.resolve("Helper.java"), "import java.sql.*; class Helper { Statement stmt; "
+                + "void query(String value) throws SQLException { stmt.executeQuery(\"select * from users where name='\" + value); } "
+                + "void unrelated(@RequestParam String extra) throws SQLException { stmt.executeQuery(extra); } }");
+        Files.writeString(tempDir.resolve("changed.txt"), "src/main/java/Controller.java\n");
+        var scanner = new ScanCommand(new SourceDiscoveryService(new SourceRootDetector()),
+                new JavaSourceParser(), new ProgramModelBuilder(), new RuleEngine(java.util.List.of(
+                new com.example.coderiskanalyzer.production.rule.security.SqlInjectionRule(
+                        new com.example.coderiskanalyzer.production.analysis.dataflow.DataFlowAnalyzer()))),
+                java.util.List.of(new JsonReporter()));
+        var result = scanner.scanForCli(new ScanRequest(tempDir.toString(), "json", "", "false", "", "", "changed.txt", false));
+        var report = new com.fasterxml.jackson.databind.ObjectMapper().readTree(result.output());
+        assertThat(result.exitCode()).isEqualTo(1);
+        assertThat(report.path("findings")).hasSize(1);
+        assertThat(report.path("findings").get(0).path("ruleId").asText()).isEqualTo("SEC-001");
+        assertThat(report.path("findings").get(0).path("location").path("file").asText()).endsWith("Helper.java");
+        assertThat(report.path("metrics").path("completeness").path("filesSelected").asInt()).isEqualTo(1);
+        assertThat(report.path("metrics").path("completeness").path("filesParsedAsContext").asInt()).isEqualTo(1);
+    }
+
+    @Test
     void rejectsMissingDirectory() {
         assertThat(command().scan(tempDir.resolve("missing").toString(), "console", "", "false"))
                 .contains("path does not exist");

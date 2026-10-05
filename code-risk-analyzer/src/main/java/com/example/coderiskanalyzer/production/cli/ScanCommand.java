@@ -209,7 +209,7 @@ public class ScanCommand {
                 config.classpath().stream().map(target::resolve).toList()));
         Set<Path> resolvedProductionPaths = new java.util.LinkedHashSet<>();
         for (var parsed : parsedSources) {
-            if (!isTestSource(parsed.sourceFile().path()) || parsed.compilationUnit() == null) continue;
+            if (parsed.compilationUnit() == null) continue;
             parsed.compilationUnit().findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).forEach(call -> {
                 try {
                     call.resolve().toAst(com.github.javaparser.ast.body.MethodDeclaration.class)
@@ -230,6 +230,30 @@ public class ScanCommand {
                     config.classpath().stream().map(target::resolve).toList()));
             if (!hasProductionSeed) productionAdequacyScope.addAll(productionContext.stream().map(SourceFile::path).toList());
         }
+        // Keep reachable production helpers as context without widening the changed-file risk entry points.
+        Set<Path> parsedPaths = parsedSources.stream().map(p -> p.sourceFile().path())
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        while (hasProductionSeed) {
+            Set<Path> helperPaths = new java.util.LinkedHashSet<>();
+            for (var parsed : parsedSources) {
+                if (isTestSource(parsed.sourceFile().path()) || parsed.compilationUnit() == null) continue;
+                for (var call : parsed.compilationUnit().findAll(com.github.javaparser.ast.expr.MethodCallExpr.class)) {
+                    try {
+                        call.resolve().toAst(com.github.javaparser.ast.body.MethodDeclaration.class)
+                                .flatMap(method -> method.findCompilationUnit())
+                                .flatMap(unit -> unit.getStorage().map(storage -> storage.getPath().toAbsolutePath().normalize()))
+                                .filter(path -> !parsedPaths.contains(path) && discoveredByPath.containsKey(path)
+                                        && !isTestSource(path)).ifPresent(helperPaths::add);
+                    } catch (RuntimeException ignored) {
+                        // Unresolved calls remain visible in completeness metrics.
+                    }
+                }
+            }
+            if (helperPaths.isEmpty()) break;
+            parsedPaths.addAll(helperPaths);
+            parsedSources.addAll(javaSourceParser.parse(helperPaths.stream().map(discoveredByPath::get).toList(),
+                    symbolSourceRoots, config.classpath().stream().map(target::resolve).toList()));
+        }
         timings.put("parse", elapsedMillis(started));
         int parsedCount = 0;
         int failedCount = 0;
@@ -249,7 +273,9 @@ public class ScanCommand {
         var productionSources = parsedSources.stream().filter(parsed -> seedPaths.contains(parsed.sourceFile().path()))
                 .filter(parsed -> !isTestSource(parsed.sourceFile().path())).toList();
         var projectModel = programModelBuilder.build(productionSources);
-        AnalysisContext context = new AnalysisContext(projectModel, productionSources);
+        AnalysisContext context = new AnalysisContext(projectModel, productionSources,
+                new com.example.coderiskanalyzer.production.analysis.callgraph.CallGraphBuilder().build(productionSources),
+                parsedSources.stream().filter(p -> !isTestSource(p.sourceFile().path())).toList());
         timings.put("model", elapsedMillis(started));
 
         started = System.nanoTime();
