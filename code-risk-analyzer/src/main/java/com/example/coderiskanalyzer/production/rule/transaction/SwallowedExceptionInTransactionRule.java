@@ -73,10 +73,41 @@ public class SwallowedExceptionInTransactionRule implements RiskRule {
     }
 
     private boolean rethrowsOrRollsBack(CatchClause catchClause) {
-        if (!catchClause.findAll(com.github.javaparser.ast.stmt.ThrowStmt.class).isEmpty()) return true;
-        return catchClause.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).stream()
-                .map(call -> call.getNameAsString().toLowerCase())
-                .anyMatch(name -> name.contains("rollbackonly") || name.contains("compensate")
-                        || name.contains("rollback") || name.contains("restore") || name.contains("undo"));
+        boolean[] unsafeReturn = {false};
+        List<Boolean> remaining = catchPaths(catchClause.getBody(), List.of(false), unsafeReturn);
+        return !unsafeReturn[0] && remaining.stream().allMatch(Boolean::booleanValue);
+    }
+
+    /** Each normal exit must mark rollback; throws only protect the paths that actually execute them. */
+    private List<Boolean> catchPaths(com.github.javaparser.ast.stmt.Statement statement,
+                                      List<Boolean> states, boolean[] unsafeReturn) {
+        if (states.isEmpty()) return states;
+        if (statement.isBlockStmt()) {
+            List<Boolean> remaining = states;
+            for (var child : statement.asBlockStmt().getStatements()) remaining = catchPaths(child, remaining, unsafeReturn);
+            return remaining;
+        }
+        if (statement.isThrowStmt()) return List.of();
+        if (statement.isReturnStmt()) {
+            unsafeReturn[0] |= states.contains(false);
+            return List.of();
+        }
+        if (statement.isIfStmt()) {
+            var branch = statement.asIfStmt();
+            if (branch.getCondition().isBooleanLiteralExpr()) {
+                return branch.getCondition().asBooleanLiteralExpr().getValue()
+                        ? catchPaths(branch.getThenStmt(), states, unsafeReturn)
+                        : branch.getElseStmt().map(other -> catchPaths(other, states, unsafeReturn)).orElse(states);
+            }
+            List<Boolean> paths = new ArrayList<>(catchPaths(branch.getThenStmt(), states, unsafeReturn));
+            paths.addAll(branch.getElseStmt().map(other -> catchPaths(other, states, unsafeReturn)).orElse(states));
+            return paths.stream().distinct().toList();
+        }
+        if (statement.isExpressionStmt() && statement.asExpressionStmt().getExpression().isMethodCallExpr()) {
+            var call = statement.asExpressionStmt().getExpression().asMethodCallExpr();
+            if (call.getNameAsString().equals("setRollbackOnly") && call.getArguments().isEmpty()) return List.of(true);
+        }
+        // Loops, nested try/catch and deferred lambdas do not prove an escaping throw or rollback.
+        return states;
     }
 }

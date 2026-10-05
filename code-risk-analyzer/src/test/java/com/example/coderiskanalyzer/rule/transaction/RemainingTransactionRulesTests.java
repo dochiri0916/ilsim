@@ -86,6 +86,28 @@ class RemainingTransactionRulesTests {
         assertThat(rule.analyze(rollbackOnly)).isEmpty();
     }
 
+    @Test
+    void requiresProtectionOnEveryCatchExitAndIgnoresDeferredThrowsAndRollbackNames() throws Exception {
+        var rule = new SwallowedExceptionInTransactionRule(new SideEffectDetector());
+        for (String body : List.of("if (retry) throw e; log.error(e);",
+                "if (retry) tx.setRollbackOnly();",
+                "if (retry) return; throw e;",
+                "Runnable deferred = () -> { throw e; };",
+                "Runnable deferred = () -> tx.setRollbackOnly();",
+                "try { throw e; } catch (Exception ignored) {}",
+                "restoreLogEntry();")) {
+            assertThat(rule.analyze(analyze("class Service { @Transactional void process() { try { repository.save(a); "
+                    + "dangerous(); } catch (RuntimeException e) { " + body + " } } }"))).as(body).hasSize(1);
+        }
+        for (String body : List.of("if (retry) throw e; else tx.setRollbackOnly();",
+                "if (retry) tx.setRollbackOnly(); else tx.setRollbackOnly();",
+                "tx.setRollbackOnly(); if (retry) return;",
+                "if (true) throw e;")) {
+            assertThat(rule.analyze(analyze("class Service { @Transactional void process() { try { repository.save(a); "
+                    + "dangerous(); } catch (RuntimeException e) { " + body + " } } }"))).as(body).isEmpty();
+        }
+    }
+
     private AnalysisContext analyze(String sourceText) throws Exception {
         Path root = tempDir.resolve("src/main/java");
         Files.createDirectories(root);
