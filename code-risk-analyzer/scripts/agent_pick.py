@@ -70,6 +70,8 @@ def _module(name):
 
 
 usage = _module('usage_report')
+guidance = _module('convention_guidance')
+convention = _module('convention_check')
 
 
 # --- project, routing and key helpers ---
@@ -783,6 +785,8 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
         say('ai: 직전 검사에서 실패한 내용을 이번 요청에 함께 보냅니다')
     prompt = ('직전 작업 뒤 자동 검사에서 실패한 내용이다. 요청과 관련되면 함께 고쳐라:\n' + '\n'.join(pending[:40])
               + '\n\n요청: ' + task) if pending else task
+    if check_plan(task)['convention']:
+        prompt = guidance.prepare(cwd, find_project, convention.version, say) + prompt
     try:
         snapshot_root = find_project(cwd)
     except ValueError:

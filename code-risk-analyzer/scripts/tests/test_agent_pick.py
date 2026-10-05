@@ -173,7 +173,35 @@ class MainTests(unittest.TestCase):
 
     def main(self, *argv, now=NOW):
         return pick.main(list(argv), environ=self.environ, now=now, which=lambda cli: '/bin/' + cli, popen=self.popen,
-                         cwd=self.home, say=self.lines.append)
+            cwd=self.home, say=self.lines.append)
+
+    def test_guidance_is_available_before_both_clis_and_is_not_a_task_edit(self):
+        project = Path(self.home)
+        (project/'gradlew').touch()
+        (project/'build.gradle').touch()
+        files = {'conventions/README.md': b'guide', 'templates/README.md': b'examples'}
+        prompts = []
+        def popen(argv, **options):
+            self.assertTrue((project/'AGENTS.md').is_file())
+            self.assertEqual(b'guide', (project/'docs/build-convention/conventions/README.md').read_bytes())
+            result = FakeProcess([])
+            result.stdin = type('Stdin', (), {'write': lambda _, text: prompts.append(text), 'close': lambda _: None})()
+            return result
+        with patch.object(pick.guidance, 'bundle', return_value=files), patch.object(pick.convention, 'version', return_value='1.2.0'), \
+                patch.object(pick, 'checks', return_value=[]) as checks:
+            for name in ('claude', 'codex'):
+                self.assertEqual(0, pick.main([name, '작성해줘'], environ=self.environ, now=NOW,
+                    which=lambda cli: '/bin/' + cli, popen=popen, cwd=self.home, say=self.lines.append))
+                self.assertEqual([], checks.call_args.args[2])
+        self.assertEqual(2, len(prompts))
+        self.assertTrue(all('컨벤션 지침' in prompt and str(project/'docs/build-convention/conventions/README.md') in prompt
+                            for prompt in prompts))
+
+    def test_guidance_is_not_deployed_for_help_or_opted_out_tasks(self):
+        self.outputs = [FakeProcess([])]
+        with patch.object(pick.guidance, 'prepare', side_effect=AssertionError('must not deploy')):
+            self.assertEqual(0, self.main('--why'))
+            self.assertEqual(0, self.main('claude', '검사 없이 설명해줘'))
 
     def test_a_task_runs_headless_in_the_folder_and_prints_progress(self):
         # given: no usage recorded, so Codex is chosen
