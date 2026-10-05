@@ -11,11 +11,23 @@ final class BookMapper {
     }
 
     static Book toDomain(final BookEntity entity) {
-        return Book.restore(new BookId(entity.getBookId()), new Isbn(entity.getIsbn()), new BookTitle(entity.getTitle()));
+        final String storedId = entity.getPublicId();
+        final String storedIsbn = entity.getIsbn();
+        final String storedTitle = entity.getTitle();
+        final BookId id = BookId.parse(storedId);
+        final Isbn isbn = Isbn.of(storedIsbn);
+        final BookTitle title = BookTitle.of(storedTitle);
+        return Book.restore(id, isbn, title);
     }
 
     static BookEntity toEntity(final Book domain) {
-        return BookEntity.create(domain.id().value(), domain.isbn().value(), domain.title().value());
+        final BookId id = domain.id();
+        final Isbn isbn = domain.isbn();
+        final BookTitle title = domain.title();
+        return BookEntity.create(
+                id.value(),
+                isbn.value(),
+                title.value());
     }
 
 }

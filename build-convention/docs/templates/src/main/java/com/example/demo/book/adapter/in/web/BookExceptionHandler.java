@@ -4,6 +4,7 @@ import com.example.demo.book.application.exception.BookApplicationException;
 import com.example.demo.book.application.exception.BookNotFoundException;
 import com.example.demo.book.application.exception.DuplicateIsbnException;
 import com.example.demo.book.application.exception.InvalidCommandException;
+import com.example.demo.book.application.exception.InvalidQueryException;
 import com.example.demo.book.domain.exception.BookDomainException;
 import com.example.demo.book.domain.exception.BookIdRequiredException;
 import com.example.demo.book.domain.exception.BookTitleRequiredException;
@@ -47,12 +48,16 @@ public final class BookExceptionHandler {
             case DuplicateIsbnException e -> respond(e, HttpStatus.CONFLICT, "DUPLICATE_ISBN");
             case BookNotFoundException e -> respond(e, HttpStatus.NOT_FOUND, "BOOK_NOT_FOUND");
             case InvalidCommandException e -> respond(e, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
+            case InvalidQueryException e -> respond(e, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
         };
     }
 
     private ProblemDetail respond(final RuntimeException exception, final HttpStatus status, final String code) {
-        log.info("도서 예외가 발생했습니다. type={}, code={}", exception.getClass().getSimpleName(), code);
-        return problemDetails.create(status, code, exception.getMessage());
+        final Class<?> exceptionType = exception.getClass();
+        final String typeName = exceptionType.getSimpleName();
+        log.info("도서 예외가 발생했습니다. type={}, code={}", typeName, code);
+        final String message = exception.getMessage();
+        return problemDetails.create(status, code, message);
     }
 
 }

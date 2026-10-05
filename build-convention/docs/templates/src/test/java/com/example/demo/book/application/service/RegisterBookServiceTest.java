@@ -1,8 +1,10 @@
 package com.example.demo.book.application.service;
 
+import com.example.demo.book.domain.vo.BookId;
+
 import com.example.demo.book.application.exception.DuplicateIsbnException;
-import com.example.demo.book.application.port.in.RegisterBookCommand;
-import com.example.demo.book.application.port.in.RegisterBookResult;
+import com.example.demo.book.application.port.in.command.RegisterBookCommand;
+import com.example.demo.book.application.port.in.result.RegisterBookResult;
 import com.example.demo.book.domain.event.BookRegistered;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +33,7 @@ class RegisterBookServiceTest {
         // then
         assertThat(result.isbn()).isEqualTo("9788966260959");
         assertThat(result.title()).isEqualTo("클린 코드");
-        assertThat(repository.findByBookId(result.bookId())).isPresent();
+        assertThat(repository.findByBookId(BookId.parse(result.bookId()))).isPresent();
         assertThat(events).singleElement()
                 .satisfies(event -> assertThat(event.bookId().value()).isEqualTo(result.bookId()));
     }

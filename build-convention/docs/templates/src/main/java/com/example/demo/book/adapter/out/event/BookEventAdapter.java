@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
-class BookEventAdapter implements BookEventPort {
+final class BookEventAdapter implements BookEventPort {
 
     private final ApplicationEventPublisher applicationEventPublisher;
 

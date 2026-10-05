@@ -1,4 +1,4 @@
-package com.example.demo.book.application.port.in;
+package com.example.demo.book.application.port.in.command;
 
 import com.example.demo.book.application.exception.InvalidCommandException;
 

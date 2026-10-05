@@ -16,10 +16,10 @@ class BookRegisteredTest {
     @DisplayName("도서 ID와 ISBN으로 등록 이벤트를 만든다")
     void create() {
         // given
-        final BookId bookId = new BookId("book-1");
+        final BookId bookId = BookId.parse("01900000-0000-7000-8000-000000000001");
 
         // when
-        final BookRegistered event = new BookRegistered(bookId, new Isbn("9788966260959"));
+        final BookRegistered event = new BookRegistered(bookId, Isbn.of("9788966260959"));
 
         // then
         assertThat(event.bookId()).isEqualTo(bookId);
@@ -30,11 +30,11 @@ class BookRegisteredTest {
     @DisplayName("도서 ID나 ISBN이 없으면 예외가 발생한다")
     void required() {
         // given
-        final Isbn isbn = new Isbn("9788966260959");
+        final Isbn isbn = Isbn.of("9788966260959");
 
         // when & then
         assertThatThrownBy(() -> new BookRegistered(null, isbn)).isInstanceOf(BookIdRequiredException.class);
-        assertThatThrownBy(() -> new BookRegistered(new BookId("book-1"), null)).isInstanceOf(IsbnRequiredException.class);
+        assertThatThrownBy(() -> new BookRegistered(BookId.parse("01900000-0000-7000-8000-000000000001"), null)).isInstanceOf(IsbnRequiredException.class);
     }
 
 }

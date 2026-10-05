@@ -52,7 +52,14 @@ public final class Book {
 
     @Override
     public boolean equals(final Object other) {
-        return this == other || other instanceof Book book && id.equals(book.id);
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof final Book book)) {
+            return false;
+        }
+        final BookId otherId = book.id;
+        return id.equals(otherId);
     }
 
     @Override

@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "books", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_books_book_id", columnNames = "bookId"),
+        @UniqueConstraint(name = "uk_books_public_id", columnNames = "public_id"),
         @UniqueConstraint(name = "uk_books_isbn", columnNames = "isbn")
 })
 @Getter
@@ -20,8 +20,8 @@ public class BookEntity extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 32)
-    private String bookId;
+    @Column(name = "public_id", nullable = false, length = 36)
+    private String publicId;
 
     @Column(nullable = false, length = 13)
     private String isbn;
@@ -29,14 +29,14 @@ public class BookEntity extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String title;
 
-    private BookEntity(final String bookId, final String isbn, final String title) {
-        this.bookId = bookId;
+    private BookEntity(final String publicId, final String isbn, final String title) {
+        this.publicId = publicId;
         this.isbn = isbn;
         this.title = title;
     }
 
-    public static BookEntity create(final String bookId, final String isbn, final String title) {
-        return new BookEntity(bookId, isbn, title);
+    public static BookEntity create(final String publicId, final String isbn, final String title) {
+        return new BookEntity(publicId, isbn, title);
     }
 
 }

@@ -17,7 +17,7 @@ class IsbnTest {
         final String value = " 9788966260959 ";
 
         // when
-        final Isbn isbn = new Isbn(value);
+        final Isbn isbn = Isbn.of(value);
 
         // then
         assertThat(isbn.value()).isEqualTo("9788966260959");
@@ -30,15 +30,15 @@ class IsbnTest {
         final String shortValue = "978896626095";
 
         // when & then
-        assertThatThrownBy(() -> new Isbn(null))
+        assertThatThrownBy(() -> Isbn.of(null))
                 .isInstanceOf(IsbnRequiredException.class)
                 .hasMessage("ISBN은 필수입니다.");
-        assertThatThrownBy(() -> new Isbn(" "))
+        assertThatThrownBy(() -> Isbn.of(" "))
                 .isInstanceOf(IsbnRequiredException.class);
-        assertThatThrownBy(() -> new Isbn(shortValue))
+        assertThatThrownBy(() -> Isbn.of(shortValue))
                 .isInstanceOf(InvalidIsbnException.class)
                 .hasMessage("ISBN은 숫자 13자리여야 합니다.");
-        assertThatThrownBy(() -> new Isbn("978896626095X"))
+        assertThatThrownBy(() -> Isbn.of("978896626095X"))
                 .isInstanceOf(InvalidIsbnException.class);
     }
 

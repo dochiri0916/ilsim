@@ -4,6 +4,7 @@ import com.example.demo.book.application.exception.BookApplicationException;
 import com.example.demo.book.application.exception.BookNotFoundException;
 import com.example.demo.book.application.exception.DuplicateIsbnException;
 import com.example.demo.book.application.exception.InvalidCommandException;
+import com.example.demo.book.application.exception.InvalidQueryException;
 import com.example.demo.book.domain.exception.BookDomainException;
 import com.example.demo.book.domain.exception.BookIdRequiredException;
 import com.example.demo.book.domain.exception.BookTitleRequiredException;
@@ -17,13 +18,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.ProblemDetail;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class BookExceptionHandlerTest {
 
-    private final BookExceptionHandler handler = new BookExceptionHandler(new ProblemDetails(Clock.systemUTC()));
+    private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
+    private final BookExceptionHandler handler = new BookExceptionHandler(
+            new ProblemDetails(Clock.fixed(NOW, ZoneOffset.UTC)));
 
     @Test
     @DisplayName("도메인 예외는 모두 400과 예외별 코드, 예외 메시지로 바뀐다")
@@ -43,7 +48,7 @@ class BookExceptionHandlerTest {
 
             // then
             assertThat(problem.getStatus()).isEqualTo(400);
-            assertThat(problem.getProperties()).containsEntry("code", code);
+            assertThat(problem.getProperties()).containsEntry("code", code).containsEntry("timestamp", NOW);
             assertThat(problem.getDetail()).isEqualTo(exception.getMessage());
         });
     }
@@ -55,7 +60,8 @@ class BookExceptionHandlerTest {
         final Map<BookApplicationException, Integer> statuses = Map.of(
                 new DuplicateIsbnException(), 409,
                 new BookNotFoundException(), 404,
-                new InvalidCommandException("입력이 잘못되었습니다."), 400);
+                new InvalidCommandException("입력이 잘못되었습니다."), 400,
+                new InvalidQueryException("조회 입력이 잘못되었습니다."), 400);
 
         // when
         statuses.forEach((exception, status) -> {

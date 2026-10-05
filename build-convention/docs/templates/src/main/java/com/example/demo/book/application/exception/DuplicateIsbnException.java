@@ -6,4 +6,8 @@ public final class DuplicateIsbnException extends BookApplicationException {
         super("이미 등록된 ISBN입니다.");
     }
 
+    public DuplicateIsbnException(final Throwable cause) {
+        super("이미 등록된 ISBN입니다.", cause);
+    }
+
 }

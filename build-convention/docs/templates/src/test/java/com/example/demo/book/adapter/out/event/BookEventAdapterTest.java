@@ -19,7 +19,7 @@ class BookEventAdapterTest {
         // given
         final List<Object> published = new ArrayList<>();
         final BookEventAdapter adapter = new BookEventAdapter(published::add);
-        final BookRegistered event = new BookRegistered(new BookId("book-1"), new Isbn("9788966260959"));
+        final BookRegistered event = new BookRegistered(BookId.parse("01900000-0000-7000-8000-000000000001"), Isbn.of("9788966260959"));
 
         // when
         adapter.publish(event);

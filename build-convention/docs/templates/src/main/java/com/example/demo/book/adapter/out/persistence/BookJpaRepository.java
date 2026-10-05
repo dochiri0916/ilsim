@@ -6,7 +6,7 @@ import java.util.Optional;
 
 interface BookJpaRepository extends JpaRepository<BookEntity, Long> {
 
-    Optional<BookEntity> findByBookId(String bookId);
+    Optional<BookEntity> findByPublicId(String publicId);
 
     boolean existsByIsbn(String isbn);
 

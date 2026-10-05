@@ -1,7 +1,9 @@
 package com.example.demo.book.application.service;
 
+import com.example.demo.book.application.port.in.query.GetBookQuery;
+
 import com.example.demo.book.application.exception.BookNotFoundException;
-import com.example.demo.book.application.port.in.GetBookResult;
+import com.example.demo.book.application.port.in.result.GetBookResult;
 import com.example.demo.book.domain.Book;
 import com.example.demo.book.domain.vo.BookTitle;
 import com.example.demo.book.domain.vo.Isbn;
@@ -20,10 +22,10 @@ class GetBookServiceTest {
     @DisplayName("저장된 도서를 ID로 조회한다")
     void findsBook() {
         // given
-        final Book book = repository.create(Book.create(new Isbn("9788966260959"), new BookTitle("클린 코드")));
+        final Book book = repository.create(Book.create(Isbn.of("9788966260959"), BookTitle.of("클린 코드")));
 
         // when
-        final GetBookResult result = service.getBook(book.id().value());
+        final GetBookResult result = service.getBook(new GetBookQuery(book.id().value()));
 
         // then
         assertThat(result.bookId()).isEqualTo(book.id().value());
@@ -35,10 +37,10 @@ class GetBookServiceTest {
     @DisplayName("없는 도서를 조회하면 예외가 발생한다")
     void notFound() {
         // given
-        final String bookId = "missing";
+        final String bookId = "01900000-0000-7000-8000-000000000099";
 
         // when & then
-        assertThatThrownBy(() -> service.getBook(bookId))
+        assertThatThrownBy(() -> service.getBook(new GetBookQuery(bookId)))
                 .isInstanceOf(BookNotFoundException.class)
                 .hasMessage("도서를 찾을 수 없습니다.");
     }

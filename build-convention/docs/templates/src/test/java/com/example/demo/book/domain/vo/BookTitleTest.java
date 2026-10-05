@@ -17,8 +17,8 @@ class BookTitleTest {
         final String longest = "가".repeat(100);
 
         // when
-        final BookTitle shortest = new BookTitle(" 가 ");
-        final BookTitle longTitle = new BookTitle(longest);
+        final BookTitle shortest = BookTitle.of(" 가 ");
+        final BookTitle longTitle = BookTitle.of(longest);
 
         // then
         assertThat(shortest.value()).isEqualTo("가");
@@ -32,13 +32,13 @@ class BookTitleTest {
         final String tooLong = "가".repeat(101);
 
         // when & then
-        assertThatThrownBy(() -> new BookTitle(null))
+        assertThatThrownBy(() -> BookTitle.of(null))
                 .isInstanceOf(BookTitleRequiredException.class)
                 .hasMessage("도서 제목은 필수입니다.");
-        assertThatThrownBy(() -> new BookTitle(" "))
+        assertThatThrownBy(() -> BookTitle.of(" "))
                 .isInstanceOf(InvalidBookTitleException.class)
                 .hasMessage("도서 제목은 1자 이상 100자 이하여야 합니다.");
-        assertThatThrownBy(() -> new BookTitle(tooLong))
+        assertThatThrownBy(() -> BookTitle.of(tooLong))
                 .isInstanceOf(InvalidBookTitleException.class);
     }
 

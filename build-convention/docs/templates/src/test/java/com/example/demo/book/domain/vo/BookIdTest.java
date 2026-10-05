@@ -1,5 +1,7 @@
 package com.example.demo.book.domain.vo;
 
+import com.example.demo.book.domain.vo.BookId;
+
 import com.example.demo.book.domain.exception.BookIdRequiredException;
 import com.example.demo.book.domain.exception.InvalidBookIdException;
 import org.junit.jupiter.api.DisplayName;
@@ -11,17 +13,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class BookIdTest {
 
     @Test
-    @DisplayName("앞뒤 공백을 지운 값으로 만들고 generate는 32자 ID를 만든다")
+    @DisplayName("UUID v7을 파싱하고 generate는 UUID v7 식별자를 만든다")
     void create() {
         // given
-        final String value = " book-1 ";
+        final String value = "01900000-0000-7000-8000-000000000001";
 
         // when
-        final BookId id = new BookId(value);
+        final BookId id = BookId.parse(value);
 
         // then
-        assertThat(id.value()).isEqualTo("book-1");
-        assertThat(BookId.generate().value()).hasSize(32).doesNotContain("-");
+        assertThat(id.value()).isEqualTo("01900000-0000-7000-8000-000000000001");
+        final String generated = BookId.generate().value();
+        assertThat(generated).hasSize(36).matches("[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}");
+        assertThat(BookId.parse(value)).isEqualTo(id).hasSameHashCodeAs(id);
     }
 
     @Test
@@ -31,10 +35,13 @@ class BookIdTest {
         final String blank = "  ";
 
         // when & then
-        assertThatThrownBy(() -> new BookId(null))
+        assertThatThrownBy(() -> BookId.parse(null))
                 .isInstanceOf(BookIdRequiredException.class)
                 .hasMessage("도서 ID는 필수입니다.");
-        assertThatThrownBy(() -> new BookId(blank))
+        assertThatThrownBy(() -> BookId.parse("01900000-0000-4000-8000-000000000001"))
+                .isInstanceOf(InvalidBookIdException.class)
+                .hasMessage("유효하지 않은 도서 ID입니다.");
+        assertThatThrownBy(() -> BookId.parse(blank))
                 .isInstanceOf(InvalidBookIdException.class)
                 .hasMessage("유효하지 않은 도서 ID입니다.");
     }
