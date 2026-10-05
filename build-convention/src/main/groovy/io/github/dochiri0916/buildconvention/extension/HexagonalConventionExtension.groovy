@@ -9,7 +9,11 @@ class HexagonalConventionExtension {
 
     boolean enforceDomainEntitySeparation = true
     boolean enforceDomainStaticFactoryMethod = true
+    /** Legacy DSL compatibility; sealed exception ownership is always enforced. */
+    @Deprecated
     boolean enforceContextExceptionConsolidation = true
+    /** Legacy DSL compatibility; specific final failures no longer require an allowlist. */
+    @Deprecated
     Set<String> exceptionTypeSplitAllowlist = [] as Set
     boolean enforceCrossContextIdentifierIsolation = true
     Set<String> publishedLanguagePackagePrefixes = [] as Set

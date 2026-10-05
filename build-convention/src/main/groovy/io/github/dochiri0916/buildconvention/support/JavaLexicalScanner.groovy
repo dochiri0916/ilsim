@@ -80,6 +80,63 @@ class JavaLexicalScanner {
         return -1
     }
 
+    /** Preserve offsets and newlines while removing comments and every Java literal form. */
+    static String codeOnly(String source) {
+        if (source == null) {
+            return ''
+        }
+        char[] masked = source.toCharArray()
+        State state = State.CODE
+        for (int index = 0; index < source.length(); index++) {
+            char current = source.charAt(index)
+            char next = index + 1 < source.length() ? source.charAt(index + 1) : (char) 0
+            int tokenLength = 1
+            boolean hide = state != State.CODE
+            if (state == State.CODE) {
+                if (current == '/' as char && next == '/' as char) {
+                    state = State.LINE_COMMENT
+                    tokenLength = 2
+                    hide = true
+                } else if (current == '/' as char && next == '*' as char) {
+                    state = State.BLOCK_COMMENT
+                    tokenLength = 2
+                    hide = true
+                } else if (startsWithTripleQuote(source, index)) {
+                    state = State.TEXT_BLOCK
+                    tokenLength = 3
+                    hide = true
+                } else if (current == '"' as char) {
+                    state = State.STRING
+                    hide = true
+                } else if (current == '\'' as char) {
+                    state = State.CHARACTER
+                    hide = true
+                }
+            } else if (state == State.LINE_COMMENT && (current == '\n' as char || current == '\r' as char)) {
+                state = State.CODE
+            } else if (state == State.BLOCK_COMMENT && current == '*' as char && next == '/' as char) {
+                state = State.CODE
+                tokenLength = 2
+            } else if (state == State.TEXT_BLOCK && startsWithTripleQuote(source, index) && !isEscaped(source, index)) {
+                state = State.CODE
+                tokenLength = 3
+            } else if ((state == State.STRING && current == '"' as char
+                    || state == State.CHARACTER && current == '\'' as char) && !isEscaped(source, index)) {
+                state = State.CODE
+            }
+            if (hide) {
+                for (int offset = 0; offset < tokenLength; offset++) {
+                    int position = index + offset
+                    if (!(masked[position] in ['\n' as char, '\r' as char])) {
+                        masked[position] = ' ' as char
+                    }
+                }
+            }
+            index += tokenLength - 1
+        }
+        return new String(masked)
+    }
+
     private static boolean startsWithTripleQuote(String source, int index) {
         return index + 2 < source.length()
                 && source.charAt(index) == '"' as char

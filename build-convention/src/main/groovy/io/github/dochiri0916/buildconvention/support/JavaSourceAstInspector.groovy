@@ -3,10 +3,14 @@ package io.github.dochiri0916.buildconvention.support
 import com.sun.source.tree.AnnotationTree
 import com.sun.source.tree.AssignmentTree
 import com.sun.source.tree.ClassTree
+import com.sun.source.tree.CatchTree
 import com.sun.source.tree.CompilationUnitTree
+import com.sun.source.tree.IfTree
+import com.sun.source.tree.Tree
 import com.sun.source.tree.LiteralTree
 import com.sun.source.tree.MemberSelectTree
 import com.sun.source.tree.MethodTree
+import com.sun.source.tree.MethodInvocationTree
 import com.sun.source.tree.VariableTree
 import com.sun.source.util.JavacTask
 import com.sun.source.util.SourcePositions
@@ -19,6 +23,7 @@ import javax.tools.DiagnosticCollector
 import javax.tools.JavaCompiler
 import javax.tools.JavaFileObject
 import javax.tools.StandardJavaFileManager
+import javax.tools.SimpleJavaFileObject
 import javax.tools.ToolProvider
 import java.nio.charset.StandardCharsets
 
@@ -26,6 +31,43 @@ class JavaSourceAstInspector {
 
     static Inspection inspect(File file) {
         return inspectAll([file]).get(normalizedPath(file))
+    }
+
+    /** Parse immutable source snapshots such as Git index blobs without consulting the worktree. */
+    static Inspection inspectSource(String fileName, String source) {
+        File logicalFile = new File(fileName)
+        JavaCompiler compiler = ToolProvider.systemJavaCompiler
+        if (compiler == null) return Inspection.failed(logicalFile, ['the system Java compiler is unavailable'])
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>()
+        StandardJavaFileManager manager = compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)
+        try {
+            def input = new TextSource(fileName, source)
+            JavacTask task = (JavacTask) compiler.getTask(null, manager, diagnostics, ['-proc:none'], null, [input])
+            List<CompilationUnitTree> units = task.parse().toList()
+            List<String> errors = diagnostics.diagnostics.findAll { it.kind == Diagnostic.Kind.ERROR }
+                    .collect { "line ${it.lineNumber}: ${it.getMessage(Locale.ROOT)}" }
+            if (!errors.empty) return Inspection.failed(logicalFile, errors)
+            if (units.empty) return Inspection.failed(logicalFile, ['no compilation unit was parsed'])
+            return inspectCompilationUnit(logicalFile, units.first(), Trees.instance(task).sourcePositions, source)
+        } catch (RuntimeException exception) {
+            return Inspection.failed(logicalFile, [exception.message ?: exception.class.simpleName])
+        } finally {
+            manager.close()
+        }
+    }
+
+    private static final class TextSource extends SimpleJavaFileObject {
+        private final String text
+
+        TextSource(String fileName, String text) {
+            super(new URI('memory', null, '/' + fileName.replace('\\', '/'), null), JavaFileObject.Kind.SOURCE)
+            this.text = text
+        }
+
+        @Override
+        CharSequence getCharContent(boolean ignoreEncodingErrors) {
+            return text
+        }
     }
 
     static Map<String, Inspection> inspectAll(Collection<File> files) {
@@ -101,9 +143,10 @@ class JavaSourceAstInspector {
     private static Inspection inspectCompilationUnit(
             File file,
             CompilationUnitTree unit,
-            SourcePositions sourcePositions
+            SourcePositions sourcePositions,
+            String snapshot = null
     ) {
-        String source = file.getText(StandardCharsets.UTF_8.name())
+        String source = snapshot == null ? file.getText(StandardCharsets.UTF_8.name()) : snapshot
         String packageName = unit.packageName?.toString() ?: ''
         Set<String> allImports = unit.imports
                 .collect { imported -> imported.qualifiedIdentifier.toString() }
@@ -163,7 +206,14 @@ class JavaSourceAstInspector {
                             extractMethodHeader(unit, sourcePositions, source, method),
                             extractMethodBody(unit, sourcePositions, source, method),
                             method.returnType == null,
-                            method.body != null
+                            method.body != null,
+                            method.parameters.collect { parameter -> parameter.name.toString() },
+                            method.parameters.collect { parameter -> parameter.modifiers.flags.contains(Modifier.FINAL) },
+                            inspectControlFlow(method),
+                            method.body?.toString(),
+                            method.parameters.collect { parameter -> parameter.modifiers.annotations.collect { annotation -> inspectAnnotation(annotation) } },
+                            inspectInvocations(method.body),
+                            inspectCatches(method)
                     )
         }
         String qualifiedName = packageName.isBlank() ? simpleName : "${packageName}.${simpleName}"
@@ -193,8 +243,61 @@ class JavaSourceAstInspector {
                 implementedTypes,
                 superType,
                 nestedTypes,
-                qualifiedTypeReferences
+                qualifiedTypeReferences,
+                type.permitsClause.collect { permittedType -> normalizeAstType(permittedType.toString()) }
         )
+    }
+
+    private static List<InvocationModel> inspectInvocations(Tree body) {
+        List<InvocationModel> calls = []
+        if (body == null) return calls
+        new TreeScanner<Void, Void>() {
+            @Override
+            Void visitMethodInvocation(MethodInvocationTree invocation, Void unused) {
+                calls.add(new InvocationModel(invocation.methodSelect.toString(),
+                        invocation.arguments.collect { it.toString() },
+                        invocation.arguments.collect { it instanceof LiteralTree ? ((LiteralTree) it).value : null }))
+                return super.visitMethodInvocation(invocation, unused)
+            }
+        }.scan(body, null)
+        return calls
+    }
+
+    private static List<CatchModel> inspectCatches(MethodTree method) {
+        List<CatchModel> catches = []
+        if (method.body == null) return catches
+        new TreeScanner<Void, Void>() {
+            @Override
+            Void visitCatch(CatchTree caught, Void unused) {
+                catches.add(new CatchModel(normalizeAstType(caught.parameter.type.toString()),
+                        caught.parameter.name.toString(), caught.block.toString(), inspectInvocations(caught.block)))
+                return super.visitCatch(caught, unused)
+            }
+        }.scan(method.body, null)
+        return catches
+    }
+
+    private static Map<String, Object> inspectControlFlow(MethodTree method) {
+        Map<String, Object> facts = [depth: 0, hasElse: false]
+        new TreeScanner<Void, Integer>() {
+            @Override
+            Void scan(Tree tree, Integer depth) {
+                if (tree == null) {
+                    return null
+                }
+                int nestedDepth = depth
+                if (tree.kind.name() in ['IF', 'FOR_LOOP', 'ENHANCED_FOR_LOOP', 'WHILE_LOOP',
+                                         'DO_WHILE_LOOP', 'SWITCH', 'SWITCH_EXPRESSION', 'TRY', 'SYNCHRONIZED']) {
+                    nestedDepth++
+                    facts.depth = Math.max((int) facts.depth, nestedDepth)
+                }
+                if (tree instanceof IfTree && ((IfTree) tree).elseStatement != null) {
+                    facts.hasElse = true
+                }
+                return super.scan(tree, nestedDepth)
+            }
+        }.scan(method.body, 0)
+        return facts
     }
 
     private static Set<String> inspectQualifiedTypeReferences(ClassTree type) {
@@ -271,15 +374,26 @@ class JavaSourceAstInspector {
 
     private static AnnotationModel inspectAnnotation(AnnotationTree annotation) {
         Map<String, String> arguments = new LinkedHashMap<>()
+        Set<String> literalArguments = new LinkedHashSet<>()
         annotation.arguments.each { argument ->
             if (argument instanceof AssignmentTree) {
                 AssignmentTree assignment = (AssignmentTree) argument
                 arguments.put(assignment.variable.toString(), annotationValue(assignment.expression))
+                if (assignment.expression instanceof LiteralTree) literalArguments.add(assignment.variable.toString())
             } else {
                 arguments.put('value', annotationValue(argument))
+                if (argument instanceof LiteralTree) literalArguments.add('value')
             }
         }
-        return new AnnotationModel(annotation.annotationType.toString(), arguments)
+        List<AnnotationModel> nested = []
+        new TreeScanner<Void, Void>() {
+            @Override
+            Void visitAnnotation(AnnotationTree child, Void unused) {
+                nested.add(inspectAnnotation(child))
+                return null
+            }
+        }.scan(annotation.arguments, null)
+        return new AnnotationModel(annotation.annotationType.toString(), arguments, nested, literalArguments)
     }
 
     private static String annotationValue(Object expression) {
@@ -297,7 +411,9 @@ class JavaSourceAstInspector {
                 field.modifiers.flags.contains(Modifier.STATIC),
                 field.modifiers.flags.contains(Modifier.FINAL),
                 field.modifiers.flags.collect { modifier -> modifier.name() }.toSet(),
-                field.modifiers.annotations.collect { annotation -> inspectAnnotation(annotation) }
+                field.modifiers.annotations.collect { annotation -> inspectAnnotation(annotation) },
+                field.initializer?.toString(),
+                field.initializer instanceof LiteralTree ? ((LiteralTree) field.initializer).value : null
         )
     }
 
@@ -368,6 +484,7 @@ class JavaSourceAstInspector {
         final String superType
         final List<TypeModel> nestedTypes
         final Set<String> qualifiedTypeReferences
+        final List<String> permittedTypes
 
         private TypeModel(
                 String qualifiedName,
@@ -382,7 +499,8 @@ class JavaSourceAstInspector {
                 List<String> implementedTypes,
                 String superType,
                 List<TypeModel> nestedTypes,
-                Set<String> qualifiedTypeReferences
+                Set<String> qualifiedTypeReferences,
+                List<String> permittedTypes
         ) {
             this.qualifiedName = qualifiedName
             this.simpleName = simpleName
@@ -395,6 +513,7 @@ class JavaSourceAstInspector {
             this.methods = Collections.unmodifiableList(new ArrayList<>(methods))
             this.implementedTypes = Collections.unmodifiableList(new ArrayList<>(implementedTypes))
             this.superType = superType
+            this.permittedTypes = Collections.unmodifiableList(new ArrayList<>(permittedTypes))
             this.nestedTypes = Collections.unmodifiableList(new ArrayList<>(nestedTypes))
             this.qualifiedTypeReferences = Collections.unmodifiableSet(
                     new LinkedHashSet<>(qualifiedTypeReferences)
@@ -410,15 +529,21 @@ class JavaSourceAstInspector {
         final String qualifiedName
         final String simpleName
         final Map<String, String> arguments
+        final List<AnnotationModel> nestedAnnotations
+        final Set<String> literalArguments
 
-        private AnnotationModel(String qualifiedName, Map<String, String> arguments) {
+        private AnnotationModel(String qualifiedName, Map<String, String> arguments, List<AnnotationModel> nestedAnnotations, Set<String> literalArguments) {
             this.qualifiedName = qualifiedName.replaceAll(/\s+/, '')
             this.simpleName = this.qualifiedName.substring(this.qualifiedName.lastIndexOf('.') + 1)
             this.arguments = Collections.unmodifiableMap(new LinkedHashMap<>(arguments))
+            this.nestedAnnotations = Collections.unmodifiableList(new ArrayList<>(nestedAnnotations))
+            this.literalArguments = Collections.unmodifiableSet(new LinkedHashSet<>(literalArguments))
         }
     }
 
     static final class FieldModel {
+        final String initializer
+        final Object literalInitializer
         final String name
         final String type
         final boolean staticField
@@ -432,8 +557,12 @@ class JavaSourceAstInspector {
                 boolean staticField,
                 boolean finalField,
                 Set<String> modifiers,
-                List<AnnotationModel> annotations
+                List<AnnotationModel> annotations,
+                String initializer,
+                Object literalInitializer
         ) {
+            this.initializer = initializer
+            this.literalInitializer = literalInitializer
             this.name = name
             this.type = type
             this.staticField = staticField
@@ -447,6 +576,32 @@ class JavaSourceAstInspector {
         }
     }
 
+    static final class InvocationModel {
+        final String selector
+        final List<String> arguments
+        final List<Object> literalArguments
+
+        private InvocationModel(String selector, List<String> arguments, List<Object> literalArguments) {
+            this.selector = selector
+            this.arguments = Collections.unmodifiableList(new ArrayList<>(arguments))
+            this.literalArguments = Collections.unmodifiableList(new ArrayList<>(literalArguments))
+        }
+    }
+
+    static final class CatchModel {
+        final String parameterType
+        final String parameterName
+        final String codeBody
+        final List<InvocationModel> invocations
+
+        private CatchModel(String parameterType, String parameterName, String codeBody, List<InvocationModel> invocations) {
+            this.parameterType = parameterType
+            this.parameterName = parameterName
+            this.codeBody = codeBody
+            this.invocations = Collections.unmodifiableList(new ArrayList<>(invocations))
+        }
+    }
+
     static final class MethodModel {
         final String name
         final String returnType
@@ -455,8 +610,16 @@ class JavaSourceAstInspector {
         final List<AnnotationModel> annotations
         final String declarationHeader
         final String body
+        final String codeBody
         final boolean constructor
         final boolean hasBody
+        final List<String> parameterNames
+        final List<List<AnnotationModel>> parameterAnnotations
+        final List<Boolean> finalParameters
+        final int controlDepth
+        final List<InvocationModel> invocations
+        final List<CatchModel> catches
+        final boolean hasElse
 
         private MethodModel(
                 String name,
@@ -467,7 +630,14 @@ class JavaSourceAstInspector {
                 String declarationHeader,
                 String body,
                 boolean constructor,
-                boolean hasBody
+                boolean hasBody,
+                List<String> parameterNames,
+                List<Boolean> finalParameters,
+                Map<String, Object> controlFlow,
+                String codeBody,
+                List<List<AnnotationModel>> parameterAnnotations,
+                List<InvocationModel> invocations,
+                List<CatchModel> catches
         ) {
             this.name = name
             this.returnType = returnType
@@ -476,8 +646,16 @@ class JavaSourceAstInspector {
             this.annotations = Collections.unmodifiableList(new ArrayList<>(annotations))
             this.declarationHeader = declarationHeader
             this.body = body
+            this.codeBody = codeBody
+            this.parameterAnnotations = Collections.unmodifiableList(parameterAnnotations.collect { parameterItems -> Collections.unmodifiableList(new ArrayList<>(parameterItems)) })
             this.constructor = constructor
             this.hasBody = hasBody
+            this.parameterNames = Collections.unmodifiableList(new ArrayList<>(parameterNames))
+            this.finalParameters = Collections.unmodifiableList(new ArrayList<>(finalParameters))
+            this.controlDepth = (int) controlFlow.depth
+            this.hasElse = (boolean) controlFlow.hasElse
+            this.invocations = Collections.unmodifiableList(new ArrayList<>(invocations))
+            this.catches = Collections.unmodifiableList(new ArrayList<>(catches))
         }
 
         AnnotationModel annotation(String simpleName) {

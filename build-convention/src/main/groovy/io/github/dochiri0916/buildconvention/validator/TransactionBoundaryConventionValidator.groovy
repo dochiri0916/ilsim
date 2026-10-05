@@ -67,10 +67,12 @@ class TransactionBoundaryConventionValidator {
         boolean applicationService = SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
                 && packageName.contains('.service')
 
-        if (hasTransactionalAnnotation(type) && !applicationService) {
+        // outbox-inbox-conventions: publication, inbox and cleanup transactions are owned by global messaging infrastructure.
+        boolean messagingInfrastructure = packageName.contains('.global.messaging')
+        if (hasTransactionalAnnotation(type) && !applicationService && !messagingInfrastructure) {
             violations.add("${path} @Transactional is only allowed on concrete application services")
         }
-        if (usesForbiddenTransactionControl(source, type)) {
+        if (!messagingInfrastructure && usesForbiddenTransactionControl(source, type)) {
             violations.add("${path} must not use REQUIRES_NEW, NESTED, NOT_SUPPORTED, or TransactionTemplate")
         }
         if (!applicationService) {

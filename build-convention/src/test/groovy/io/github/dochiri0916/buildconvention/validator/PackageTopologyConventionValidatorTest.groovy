@@ -145,24 +145,24 @@ class PackageTopologyConventionValidatorTest {
         // then
         assert violations.any { it.contains("must be under application root package 'com.example'") }
         assert violations.any { it.contains('root package may contain only the application bootstrap class') }
-        assert violations.any { it.contains('Auth.java') && it.contains('global package must be limited to global.exception, global.persistence, global.configuration, global.domain(.exception), or global.application.exception') }
+        assert violations.any { it.contains('Auth.java') && it.contains('global package must be limited to global.exception, global.persistence, global.configuration, global.domain.vo/exception/outbox, global.messaging, or global.application.exception') }
         assert violations.any { it.contains('package must be context-first') }
         assert violations.any { it.contains("package 'common' is not a bounded context") }
         assert violations.any { it.contains("bounded context package 'order' must contain") }
         assert violations.any { it.contains('package must follow {context}/domain') }
-        assert violations.any { it.contains('order.domain package must use model, vo, event, or exception') }
+        assert violations.any { it.contains('order.domain package must use model, vo, event, outbox, or exception') }
         assert violations.any { it.contains('order.application package must declare a valid child package') }
         assert violations.any { it.contains('order.application package must use port, exception, or service') }
         assert violations.any { it.contains('order.application.port package must use in or out') }
         assert violations.any { it.contains('order.adapter package must declare a valid child package') }
         assert violations.any { it.contains('order.adapter package must use in or out') }
-        assert violations.any { it.contains('order.adapter.in package must use bootstrap or web') }
-        ['InDto', 'PlaceUseCase', 'FindQuery'].each { String name ->
-            assert violations.any { it.contains("${name}.java") && it.contains('port.in package may only add command or result') }
+        assert violations.any { it.contains('order.adapter.in package must use bootstrap, messaging, or web') }
+        ['InDto', 'PortInRoot'].each { String name ->
+            assert violations.any { it.contains("${name}.java") && it.contains('port.in package must use usecase, command, query, or result') }
         }
-        assert violations.any { it.contains('WebMapper.java') && it.contains('adapter.in.web package must use request, response, or exception') }
-        assert violations.any { it.contains('DeepRequest.java') && it.contains('adapter.in.web package must use request, response, or exception') }
-        ['DomainRoot', 'PortInRoot', 'PlaceCommand', 'PlaceResult', 'OrderController', 'PlaceRequest', 'PlaceResponse',
+        assert violations.any { it.contains('WebMapper.java') && it.contains('adapter.in.web package must use request or response') }
+        assert violations.any { it.contains('DeepRequest.java') && it.contains('adapter.in.web package must use request or response') }
+        ['DomainRoot', 'PlaceUseCase', 'FindQuery', 'PlaceCommand', 'PlaceResult', 'OrderController', 'PlaceRequest', 'PlaceResponse',
          'Money', 'ApiError', 'JpaAuditingConfig', 'BaseEntity', 'AppProperties', 'AppConfig', 'JpaConfig'].each { String name ->
             assert !violations.any { it.contains("${name}.java") }
         }
@@ -193,7 +193,7 @@ class PackageTopologyConventionValidatorTest {
         )
 
         // then
-        assert violations.any { it.contains('order.domain package must use model, vo, event, or exception') }
+        assert violations.any { it.contains('order.domain package must use model, vo, event, outbox, or exception') }
     }
 
     @Test
@@ -243,7 +243,7 @@ class PackageTopologyConventionValidatorTest {
                 }
                 ''')
         writeType(project, 'com/example/catalog/product/domain/model/Product.java', 'com.example.catalog.product.domain.model', 'Product')
-        writeType(project, 'com/example/catalog/product/application/port/in/GetProductUseCase.java', 'com.example.catalog.product.application.port.in', 'GetProductUseCase')
+        writeType(project, 'com/example/catalog/product/application/port/in/usecase/GetProductUseCase.java', 'com.example.catalog.product.application.port.in.usecase', 'GetProductUseCase')
         writeType(project, 'com/example/catalog/category/adapter/in/web/CategoryController.java', 'com.example.catalog.category.adapter.in.web', 'CategoryController')
         writeType(project, 'com/example/catalog/shared/domain/model/Shared.java', 'com.example.catalog.shared.domain.model', 'Shared')
         writeType(project, 'com/example/catalog/product/feature/Feature.java', 'com.example.catalog.product.feature', 'Feature')
@@ -259,7 +259,7 @@ class PackageTopologyConventionValidatorTest {
         }
         assert violations.any { it.contains('Shared.java') && it.contains("package 'shared' is not a bounded context module") }
         assert violations.any { it.contains('Feature.java') && it.contains('package must follow {context}/domain') }
-        assert violations.any { it.contains('Job.java') && it.contains('catalog.product.adapter.in package must use bootstrap or web') }
+        assert violations.any { it.contains('Job.java') && it.contains('catalog.product.adapter.in package must use bootstrap, messaging, or web') }
         assert violations.any { it.contains('Deep.java') && it.contains('package must follow {context}/domain') }
     }
 

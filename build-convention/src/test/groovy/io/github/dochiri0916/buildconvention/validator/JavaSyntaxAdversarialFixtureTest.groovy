@@ -23,8 +23,8 @@ class JavaSyntaxAdversarialFixtureTest {
         writeAggregate(project, 'Cart')
         writeRepositoryPort(project, 'OrderRepositoryPort', 'Order')
         writeRepositoryPort(project, 'CartRepositoryPort', 'Cart')
-        writeJava(project, 'src/main/java/com/example/sales/application/port/in/CheckoutUseCase.java', '''
-                package com.example.sales.application.port.in;
+        writeJava(project, 'src/main/java/com/example/sales/application/port/in/usecase/CheckoutUseCase.java', '''
+                package com.example.sales.application.port.in.usecase;
 
                 public interface CheckoutUseCase {
                     void checkout();
@@ -33,7 +33,7 @@ class JavaSyntaxAdversarialFixtureTest {
         writeJava(project, 'src/main/java/com/example/sales/application/service/CheckoutService.java', '''
                 package com.example.sales.application.service;
 
-                import com.example.sales.application.port.in.CheckoutUseCase;
+                import com.example.sales.application.port.in.usecase.CheckoutUseCase;
                 import com.example.sales.application.port.out.CartRepositoryPort;
                 import com.example.sales.application.port.out.OrderRepositoryPort;
                 import lombok.RequiredArgsConstructor;
@@ -94,7 +94,7 @@ class JavaSyntaxAdversarialFixtureTest {
 
                     @Test
                     @DisplayName("복잡한 문자열 뒤의 결과를 검증한다")
-                    void parsesComplexBody() {
+                    void parses_complex_body() {
                         // given
                         String quotedBrace = "escaped quote \\" and brace }";
                         char closingBrace = '}';
@@ -121,7 +121,7 @@ class JavaSyntaxAdversarialFixtureTest {
         List<String> violations = validate(project)
 
         // then
-        assert !violations.any { it.contains("test method 'parsesComplexBody'") }
+        assert !violations.any { it.contains("test method 'parses_complex_body'") }
     }
 
     @Test

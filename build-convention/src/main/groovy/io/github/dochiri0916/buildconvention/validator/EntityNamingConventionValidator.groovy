@@ -37,7 +37,8 @@ class EntityNamingConventionValidator {
 
                 String className = type.simpleName
 
-                if (!className.endsWith('Entity')) {
+                boolean messagingEntry = className.endsWith('Entry') && JavaSourceArchitectureValidator.isMessagingRecordPackage(packageName)
+                if (!className.endsWith('Entity') && !messagingEntry) {
                     violations.add("${project.relativePath(file)} JPA entity '${className}' must end with Entity")
                 }
 

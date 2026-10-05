@@ -176,6 +176,42 @@ class EntityNamingConventionValidatorTest {
         assert !violations.any { it.contains('must declare @Table') }
     }
 
+    @Test
+    @DisplayName('outbox inbox 패키지의 Entry Entity는 Entry 접미사를 허용하고 그 밖에서는 거부한다')
+    void allowsEntrySuffixOnlyInOutboxAndInboxPackages() {
+        // given
+        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
+        writeJava(project, 'com/example/order/adapter/out/persistence/outbox/OrderOutboxEntry.java', '''
+                package com.example.order.adapter.out.persistence.outbox;
+
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Table;
+
+                @Entity
+                @Table(name = "order_outbox")
+                public class OrderOutboxEntry {
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntry.java', '''
+                package com.example.order.adapter.out.persistence;
+
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Table;
+
+                @Entity
+                @Table(name = "orders")
+                public class OrderEntry {
+                }
+                ''')
+
+        // when
+        List<String> violations = EntityNamingConventionValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("'OrderOutboxEntry'") }
+        assert violations.any { it.contains("JPA entity 'OrderEntry' must end with Entity") }
+    }
+
     private static void writeJava(Project project, String path, String source) {
         File file = new File(project.projectDir, "src/main/java/${path}")
         file.parentFile.mkdirs()

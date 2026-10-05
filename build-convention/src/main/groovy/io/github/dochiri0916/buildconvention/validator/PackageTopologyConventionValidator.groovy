@@ -23,6 +23,7 @@ class PackageTopologyConventionValidator {
             'model',
             'vo',
             'event',
+            'outbox',
             'exception'
     ] as Set
     private static final Set<String> APPLICATION_CHILD_SEGMENTS = [
@@ -34,15 +35,16 @@ class PackageTopologyConventionValidator {
             'in',
             'out'
     ] as Set
-    // UseCases live directly in port.in; Commands and Results either beside them or in these children.
+    // Inbound contracts are always separated by role.
     private static final Set<String> APPLICATION_PORT_IN_CHILD_SEGMENTS = [
+            'usecase',
             'command',
+            'query',
             'result'
     ] as Set
     private static final Set<String> WEB_ADAPTER_CHILD_SEGMENTS = [
             'request',
-            'response',
-            'exception'
+            'response'
     ] as Set
     private static final Set<String> ADAPTER_CHILD_SEGMENTS = [
             'in',
@@ -50,13 +52,15 @@ class PackageTopologyConventionValidator {
     ] as Set
     private static final Set<String> ADAPTER_IN_CHILD_SEGMENTS = [
             'bootstrap',
+            'messaging',
             'web'
     ] as Set
     // Packages that may hold their own subpackages, and shared-kernel packages that may not.
-    private static final Set<String> GLOBAL_TREE_PACKAGES = ['exception', 'persistence', 'configuration'] as Set
+    private static final Set<String> GLOBAL_TREE_PACKAGES = ['exception', 'persistence', 'configuration', 'messaging'] as Set
     private static final List<List<String>> GLOBAL_EXACT_PACKAGES = [
-            ['domain'],
+            ['domain', 'vo'],
             ['domain', 'exception'],
+            ['domain', 'outbox'],
             ['application', 'exception']
     ].asImmutable()
 
@@ -199,6 +203,9 @@ class PackageTopologyConventionValidator {
 
         if (segments.size() < 3) {
             // An aggregate root may sit directly in the domain package, beside its vo/model/exception packages.
+            if (layerName == 'application' && typeName ==~ /[A-Z][A-Za-z0-9]*(?:ResultMapper|EventMapper)/) {
+                return
+            }
             if (layerName != 'domain') {
                 violations.add("${path} ${contextName}.${layerName} package must declare a valid child package")
             }
@@ -215,7 +222,7 @@ class PackageTopologyConventionValidator {
             List<String> violations
     ) {
         if (!isAllowedGlobalPackage(segments)) {
-            violations.add("${project.relativePath(file)} global package must be limited to global.exception, global.persistence, global.configuration, global.domain(.exception), or global.application.exception")
+            violations.add("${project.relativePath(file)} global package must be limited to global.exception, global.persistence, global.configuration, global.domain.vo/exception/outbox, global.messaging, or global.application.exception")
         }
     }
 
@@ -236,7 +243,7 @@ class PackageTopologyConventionValidator {
         String path = project.relativePath(file)
         String childName = segments[2]
         if (layerName == 'domain' && !DOMAIN_CHILD_SEGMENTS.contains(childName)) {
-            violations.add("${path} ${contextName}.domain package must use model, vo, event, or exception")
+            violations.add("${path} ${contextName}.domain package must use model, vo, event, outbox, or exception")
         }
         if (layerName == 'application' && !APPLICATION_CHILD_SEGMENTS.contains(childName)) {
             violations.add("${path} ${contextName}.application package must use port, exception, or service")
@@ -247,16 +254,20 @@ class PackageTopologyConventionValidator {
             }
         }
         if (layerName == 'application' && childName == 'port' && segments.size() >= 4 && segments[3] == 'in') {
-            if (segments.size() > 5 || (segments.size() == 5 && !APPLICATION_PORT_IN_CHILD_SEGMENTS.contains(segments[4]))) {
-                violations.add("${path} ${contextName}.application.port.in package may only add command or result")
+            if (segments.size() != 5 || !APPLICATION_PORT_IN_CHILD_SEGMENTS.contains(segments[4])) {
+                violations.add("${path} ${contextName}.application.port.in package must use usecase, command, query, or result")
             }
+        }
+        if (layerName == 'application' && childName == 'port' && segments.size() >= 4 && segments[3] == 'out'
+                && (segments.size() > 5 || (segments.size() == 5 && segments[4] != 'event'))) {
+            violations.add("${path} ${contextName}.application.port.out package may only add event")
         }
         if (layerName == 'adapter' && !ADAPTER_CHILD_SEGMENTS.contains(childName)) {
             violations.add("${path} ${contextName}.adapter package must use in or out")
         }
         if (layerName == 'adapter' && childName == 'in') {
             if (segments.size() < 4 || !ADAPTER_IN_CHILD_SEGMENTS.contains(segments[3])) {
-                violations.add("${path} ${contextName}.adapter.in package must use bootstrap or web")
+                violations.add("${path} ${contextName}.adapter.in package must use bootstrap, messaging, or web")
             } else if (segments[3] == 'web') {
                 validateWebAdapterChildPackage(path, contextName, segments, convention, violations)
             }
@@ -276,7 +287,7 @@ class PackageTopologyConventionValidator {
             children = children.drop(1)
         }
         if (!children.isEmpty() && (children.size() > 1 || !WEB_ADAPTER_CHILD_SEGMENTS.contains(children.first()))) {
-            violations.add("${path} ${contextName}.adapter.in.web package must use request, response, or exception")
+            violations.add("${path} ${contextName}.adapter.in.web package must use request or response")
         }
     }
 

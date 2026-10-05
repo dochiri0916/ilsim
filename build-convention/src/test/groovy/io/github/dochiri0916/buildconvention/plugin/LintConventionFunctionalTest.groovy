@@ -119,11 +119,11 @@ class LintConventionFunctionalTest {
         writeJava('com/example/order/adapter/out/external/GetValidationService.java', '''
                 package com.example.order.adapter.out.external;
                 @org.springframework.stereotype.Component
-                public class GetValidationService { public int value() { return 7; } }
+                public final class GetValidationService { public int value() { return 7; } }
                 ''')
         writeJava('com/example/order/adapter/in/web/ValidationController.java', '''
                 package com.example.order.adapter.in.web;
-                public class ValidationController { public int value() { return 8; } }
+                public final class ValidationController { public int value() { return 8; } }
                 ''')
         File test = new File(tempDir, 'src/test/java/com/example/GreetingApplicationTest.java')
         test.text = test.text.replace('import static org.junit.jupiter.api.Assertions.assertEquals;', '''
@@ -302,7 +302,7 @@ class LintConventionFunctionalTest {
                 class GreetingApplicationTest {
                     @Test
                     @DisplayName("값을 반환한다")
-                    void returnsValue() {
+                    void returns_value() {
                         // given
                         GreetingApplication application = new GreetingApplication();
                         // when

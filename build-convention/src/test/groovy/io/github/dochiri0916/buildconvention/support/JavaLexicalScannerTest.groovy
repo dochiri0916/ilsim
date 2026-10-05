@@ -55,4 +55,23 @@ class JavaLexicalScannerTest {
         // then
         assert results.every { result -> result == -1 }
     }
+    @Test
+    @DisplayName('리터럴과 주석을 제거해도 코드 위치와 CR LF 개행을 유지한다')
+    void masks_literals_and_preserves_code_offsets() {
+        // given
+        String source = "call(); /* hidden */ \"http://host\"; '/'; // hidden\r\nnext();"
+
+        // when
+        String code = JavaLexicalScanner.codeOnly(source)
+
+        // then
+        assert code.length() == source.length()
+        assert code.startsWith('call();')
+        assert code.endsWith('next();')
+        assert code.contains('\r\n')
+        assert !code.contains('hidden')
+        assert !code.contains('host')
+        assert JavaLexicalScanner.codeOnly(null) == ''
+    }
+
 }

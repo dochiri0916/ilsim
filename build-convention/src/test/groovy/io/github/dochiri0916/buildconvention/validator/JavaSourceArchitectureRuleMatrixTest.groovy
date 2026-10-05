@@ -36,14 +36,14 @@ class JavaSourceArchitectureRuleMatrixTest {
                 public interface OrderRepositoryPort {
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/LegacyOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/LegacyOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public class LegacyOrderUseCase {
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/CreateLegacyOrderCommand.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/command/CreateLegacyOrderCommand.java', '''
+                package com.example.order.application.port.in.command;
 
                 public class CreateLegacyOrderCommand {
                 }
@@ -445,8 +445,8 @@ class JavaSourceArchitectureRuleMatrixTest {
                 public class ProductEntity {
                     @Id
                     private Long id;
-                    @Column(unique = false, length = 36)
-                    private String productId;
+                    @Column(name = "public_id", nullable = false, unique = false, length = 32)
+                    private String publicId;
                 }
                 ''')
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderPersistenceAdapter.java', '''
@@ -488,15 +488,15 @@ class JavaSourceArchitectureRuleMatrixTest {
         assertContains(violations, "JPA entity 'OrderEntity' must not expose public constructors")
         assertContains(violations, "JPA entity 'OrderEntity' must not use object relation mappings")
         assertContains(violations, "JPA technical key must be named 'id', not 'technicalKey'")
-        assertContains(violations, "JPA entity 'OrderEntity' must declare private String orderId or publicId with @Column")
+        assertContains(violations, "JPA entity 'OrderEntity' must declare private String publicId with @Column(name = 'public_id')")
         assertContains(violations, "JPA entity 'OrderEntity' must not hold entity reference field 'customer'")
         assertContains(violations, "JPA reference field 'customerPublicId' must use '{target}Id' naming")
         assertContains(violations, "JPA reference field 'memberId' must store identifier VO value as String")
         assertContains(violations, "JPA entity 'OrderEntity' argument constructors must be private")
         assertContains(violations, "JPA entity 'OrderEntity' must expose a static factory returning 'OrderEntity'")
         assertContains(violations, "JPA technical key 'id' must declare @Getter(AccessLevel.NONE)")
-        assertContains(violations, "JPA domain identifier column 'productId' must be unique")
-        assertContains(violations, "JPA domain identifier column 'productId' must have length = 32")
+        assertContains(violations, "JPA domain identifier column 'publicId' must be unique")
+        assertContains(violations, "JPA domain identifier column 'publicId' must have length = 36")
         assertContains(violations, "persistence adapter 'OrderPersistenceAdapter' must declare @Repository")
         assertContains(violations, "persistence adapter 'OrderPersistenceAdapter' must implement an outbound Port")
         assertContains(violations, "mapper 'OrderMapper' must be final")

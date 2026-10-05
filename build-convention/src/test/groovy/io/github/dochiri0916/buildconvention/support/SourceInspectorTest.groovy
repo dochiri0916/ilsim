@@ -18,7 +18,7 @@ class SourceInspectorTest {
         String source = '''
                 package com.example.order.application.service
 
-                import com.example.order.application.port.in.PlaceOrderUseCase
+                import com.example.order.application.port.in.usecase.PlaceOrderUseCase
                 import static java.util.Objects.requireNonNull
 
                 final class PlaceOrderService {
@@ -32,7 +32,7 @@ class SourceInspectorTest {
         // then
         assert packageName == 'com.example.order.application.service'
         assert imports == [
-                'com.example.order.application.port.in.PlaceOrderUseCase',
+                'com.example.order.application.port.in.usecase.PlaceOrderUseCase',
                 'java.util.Objects.requireNonNull'
         ]
     }

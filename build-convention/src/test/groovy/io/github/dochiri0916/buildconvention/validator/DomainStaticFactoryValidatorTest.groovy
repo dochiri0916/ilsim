@@ -108,8 +108,8 @@ class DomainStaticFactoryValidatorTest {
     }
 
     @Test
-    @DisplayName('Value Object record는 of 팩토리 없이 생성자로 만들어도 된다')
-    void acceptsValueObjectRecordsCreatedWithNewOrOf() {
+    @DisplayName('Value Object record는 of 팩터리가 있어도 거부한다')
+    void rejectsValueObjectRecordsCreatedWithNewOrOf() {
         // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/domain/vo/Money.java', '''
@@ -146,7 +146,7 @@ class DomainStaticFactoryValidatorTest {
         List<String> violations = DomainStaticFactoryValidator.validate(project, new HexagonalConventionExtension())
 
         // then
-        assert violations.isEmpty()
+        assert violations.count { it.contains('final class with a private constructor') } == 2
     }
 
     @Test
@@ -260,6 +260,31 @@ class DomainStaticFactoryValidatorTest {
                 project,
                 new HexagonalConventionExtension()
         )
+
+        // then
+        assert violations.isEmpty()
+    }
+
+    @Test
+    @DisplayName('domain.outbox의 불변 모델은 정적 팩토리 검사에서 제외한다')
+    void allowsImmutableOutboxModelWithoutStaticFactory() {
+        // given
+        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
+        writeJava(project, 'com/example/order/domain/outbox/OrderOutbox.java', '''
+                package com.example.order.domain.outbox;
+
+                public abstract class OrderOutbox {
+
+                    private final String eventId;
+
+                    protected OrderOutbox(final String eventId) {
+                        this.eventId = eventId;
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = DomainStaticFactoryValidator.validate(project, new HexagonalConventionExtension())
 
         // then
         assert violations.isEmpty()

@@ -32,14 +32,17 @@ class DomainStaticFactoryValidator {
                 return
             }
 
-            // Value object records are created with their canonical constructor; only classes need static factories.
+            // Events and Outbox records keep their canonical constructors; value objects are classes.
             inspection.types.each { JavaSourceAstInspector.TypeModel type ->
-                if (type.kind != 'CLASS') {
+                if (type.kind == 'RECORD' && (packageName.contains('.domain.vo') || packageName.endsWith('.global.domain'))) {
+                    violations.add("${project.relativePath(file)} domain Value Object '${type.simpleName}' must be a final class with a private constructor")
+                }
+                if (type.kind != 'CLASS' || packageName.contains('.domain.outbox')) {
                     return
                 }
 
                 String className = type.simpleName
-                if (className.endsWith('Exception') || className.endsWith('Service')) {
+                if (className.endsWith('Exception') || className.endsWith('Service') || className.endsWith('Policy')) {
                     return
                 }
 
@@ -62,7 +65,7 @@ class DomainStaticFactoryValidator {
 
     private static boolean hasNonPrivateConstructor(JavaSourceAstInspector.TypeModel type) {
         return constructors(type).any { constructor ->
-            constructor.modifiers.contains('PUBLIC') || constructor.modifiers.contains('PROTECTED')
+            !constructor.modifiers.contains('PRIVATE')
         }
     }
 
@@ -82,6 +85,7 @@ class DomainStaticFactoryValidator {
                     && method.modifiers.contains('PUBLIC')
                     && method.modifiers.contains('STATIC')
                     && rawSimpleType(method.returnType) == type.simpleName
+                    && (method.name in ['of', 'generate', 'parse', 'empty', 'create', 'restore'])
         }
     }
 

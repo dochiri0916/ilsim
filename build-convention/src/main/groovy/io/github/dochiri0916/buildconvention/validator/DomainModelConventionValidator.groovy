@@ -25,12 +25,18 @@ final class DomainModelConventionValidator {
             violations.add("${path} domain aggregate must declare identifier field 'id' of an identifier VO type")
             return violations
         }
+        if (!['create', 'restore'].every { name -> type.methods.any { method ->
+            method.name == name && method.modifiers.containsAll(['PUBLIC', 'STATIC'])
+                    && simplify(method.returnType) == type.simpleName
+        } }) {
+            violations.add("${path} domain aggregate must expose create and restore factories")
+        }
         if (!hasPrivateFinalState(type)) {
             violations.add("${path} domain aggregate state must use private final fields")
         }
         if (!hasEqualsAndHashCode(type)) {
             violations.add("${path} domain aggregate with identifier VO must override equals and hashCode using id")
-        } else if (hasNonIdStateInEqualityMethods(type)) {
+        } else if (hasNonIdStateInEqualityMethods(type) || !equalityUsesId(type)) {
             violations.add("${path} domain aggregate equals and hashCode must use identifier field 'id' only")
         }
         if (hasRestoreSideEffect(type)) {
@@ -39,7 +45,20 @@ final class DomainModelConventionValidator {
         if (hasInPlaceMutation(type)) {
             violations.add("${path} domain aggregate state changes must return a new aggregate instead of mutating this")
         }
+        if (type.methods.any { method ->
+            !method.constructor && !method.modifiers.contains('STATIC')
+                    && simplify(method.returnType) == type.simpleName
+                    && (method.body =~ /\b(?:generate|randomUUID)\s*\(/).find()
+        }) {
+            violations.add("${path} domain aggregate state changes must preserve its identifier")
+        }
         return violations
+    }
+
+    private static boolean equalityUsesId(JavaSourceAstInspector.TypeModel type) {
+        type.methods.findAll { method -> method.name in ['equals', 'hashCode'] }.every { method ->
+            (method.body =~ /\bid\b/).find()
+        }
     }
 
     private static boolean isAggregate(String packageName, JavaSourceAstInspector.TypeModel type) {
@@ -47,6 +66,7 @@ final class DomainModelConventionValidator {
                 && (packageName.endsWith('.domain.model') || packageName.contains('.domain.model.')
                 || packageName.endsWith('.domain'))
                 && !type.simpleName.endsWith('Exception')
+                && !packageName.endsWith('.global.domain')
                 && type.fields.any { field -> !field.staticField }
     }
 

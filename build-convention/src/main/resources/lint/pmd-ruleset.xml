@@ -34,6 +34,13 @@
         <!-- tool-test-lab convention: `abstract sealed` exception bases. -->
         <exclude name="ModifierOrder"/>
         <exclude name="CallSuperInConstructor"/>
+        <!-- test-conventions: test method names use snake_case; other method naming rules stay unchanged. -->
+        <exclude name="MethodNamingConventions"/>
+    </rule>
+    <rule ref="category/java/codestyle.xml/MethodNamingConventions">
+        <properties>
+            <property name="junit5TestPattern" value="[a-z][a-z0-9]*(_[a-z0-9]+)*"/>
+        </properties>
     </rule>
     <rule ref="category/java/design.xml">
         <exclude name="LoosePackageCoupling"/>

@@ -19,20 +19,20 @@ class MigrationConventionValidatorTest {
         writeSql(project, 'db/migration/V1__create_tables.sql', '''
                 create table members (
                     id bigint primary key,
-                    member_id varchar(32) not null unique
+                    public_id varchar(36) not null unique
                 );
 
                 create table orders (
                     id bigint primary key,
-                    order_id varchar(32) not null unique,
-                    member_id varchar(32) not null
+                    public_id varchar(36) not null unique,
+                    member_id varchar(36) not null
                 );
                 ''')
         writeSql(project, 'db/migration/V2__add_order_member_reference.sql', '''
                 create index idx_orders_member_id on orders(member_id);
                 alter table orders
                     add constraint fk_orders_member
-                    foreign key (member_id) references members(member_id);
+                    foreign key (member_id) references members(public_id);
                 ''')
 
         // when
@@ -52,8 +52,8 @@ class MigrationConventionValidatorTest {
                 -- build-convention: external-reference deliveries.remote_member_id
                 create table deliveries (
                     id bigint primary key,
-                    delivery_id varchar(32) not null unique,
-                    remote_member_id varchar(32) not null
+                    public_id varchar(36) not null unique,
+                    remote_member_id varchar(36) not null
                 );
                 create index idx_deliveries_remote_member_id on deliveries(remote_member_id);
                 ''')
@@ -64,6 +64,28 @@ class MigrationConventionValidatorTest {
         // then
         assert !violations.any { it.contains("reference column 'remote_member_id' must have an explicit foreign key") }
         assert !violations.any { it.contains("reference column 'remote_member_id' must have an index") }
+    }
+
+    @Test
+    @DisplayName('public_id는 36자·필수·단일 유니크이고 복합 제약으로 우회하지 못한다')
+    void rejects_public_identifier_schema_bypasses() {
+        // given
+        Project project = sampleProject('public-identifier')
+        String sql = '''
+            create table orders (id bigint primary key,
+                public_id varchar(36) not null,
+                source varchar(50), constraint uk_orders_public_id unique(public_id));
+        '''
+        writeSql(project, 'db/migration/V1__orders.sql', sql)
+        // when
+        // then
+        assert MigrationConventionValidator.validate(project).empty
+        [['varchar(36)', 'varchar(32)', 'char/varchar(36)'],
+         ['not null', '', 'must be not null'],
+         ['unique(public_id)', 'unique(public_id, source)', 'must have a unique constraint']].each { variant ->
+            writeSql(project, 'db/migration/V1__orders.sql', sql.replace(variant[0], variant[1]))
+            assert MigrationConventionValidator.validate(project).any { it.contains(variant[2]) }
+        }
     }
 
     private Project sampleProject(String name) {

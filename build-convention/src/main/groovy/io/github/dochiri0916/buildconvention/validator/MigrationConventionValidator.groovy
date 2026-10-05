@@ -49,8 +49,11 @@ class MigrationConventionValidator {
             String path = project.relativePath(file)
 
             extractIdentifierColumns(tableName, body).each { IdentifierColumn column ->
-                if (column.length != 32) {
-                    violations.add("${path} table '${tableName}' identifier column '${column.name}' must be char/varchar(32)")
+                if (column.length != 36) {
+                    violations.add("${path} table '${tableName}' identifier column '${column.name}' must be char/varchar(36)")
+                }
+                if (column.primaryDomainIdentifier && !column.required) {
+                    violations.add("${path} table '${tableName}' domain identifier column 'public_id' must be not null")
                 }
                 if (column.primaryDomainIdentifier && !column.unique) {
                     violations.add("${path} table '${tableName}' domain identifier column '${column.name}' must have a unique constraint")
@@ -59,7 +62,7 @@ class MigrationConventionValidator {
 
             Set<String> technicalReferenceColumns = extractTechnicalReferenceColumns(body)
             technicalReferenceColumns.each { String column ->
-                violations.add("${path} table '${tableName}' reference column '${column}' must store identifier value as char/varchar(32), not DB technical id")
+                violations.add("${path} table '${tableName}' reference column '${column}' must store identifier value as char/varchar(36), not DB technical id")
             }
         }
     }
@@ -74,7 +77,7 @@ class MigrationConventionValidator {
         sqlSources.each { SqlSource source ->
             String path = project.relativePath(source.file)
             List<IdentifierColumn> identifierColumns = extractIdentifierColumns(source.normalizedSql)
-            identifierColumns.findAll { IdentifierColumn column -> !column.unique }.each { IdentifierColumn column ->
+            identifierColumns.findAll { IdentifierColumn column -> !column.primaryDomainIdentifier && !column.unique }.each { IdentifierColumn column ->
                 if (!hasIndexForColumn(cumulativeSql, column)) {
                     violations.add("${path} reference column '${column.name}' must have an index")
                 }
@@ -110,8 +113,12 @@ class MigrationConventionValidator {
                 .toLowerCase(Locale.ROOT)
     }
 
-    private static boolean hasUniqueIdentifier(String tableBody, String column) {
+    private static boolean hasUniqueIdentifier(String tableBody, String column, boolean singleton) {
         String quotedColumn = Pattern.quote(column)
+        if (singleton) {
+            return (tableBody =~ /\b${quotedColumn}\b[^,;]*\bunique\b/).find()
+                    || (tableBody =~ /\bunique\s*\(\s*${quotedColumn}\s*\)/).find()
+        }
         return (tableBody =~ /\b${quotedColumn}\b[^,;]*\bunique\b/).find()
                 || (tableBody =~ /\bunique\s*\([^)]*\b${quotedColumn}\b[^)]*\)/).find()
                 || (tableBody =~ /\bconstraint\b[^,;]*\bunique\s*\([^)]*\b${quotedColumn}\b[^)]*\)/).find()
@@ -130,7 +137,7 @@ class MigrationConventionValidator {
 
     private static List<IdentifierColumn> extractIdentifierColumns(String tableName, String tableBody) {
         List<IdentifierColumn> columns = []
-        String primaryIdentifierName = singularize(tableName) + '_id'
+        String primaryIdentifierName = 'public_id'
         def columnMatcher = tableBody =~ /(?:^|,)\s*([a-z][a-z0-9_]*_id)\s+(char|varchar)\s*\(\s*(\d+)\s*\)([^,;]*)/
         while (columnMatcher.find()) {
             String column = columnMatcher.group(1)
@@ -138,8 +145,9 @@ class MigrationConventionValidator {
                     tableName,
                     column,
                     Integer.parseInt(columnMatcher.group(3)),
-                    hasUniqueIdentifier(tableBody, column),
-                    column == primaryIdentifierName
+                    hasUniqueIdentifier(tableBody, column, column == primaryIdentifierName),
+                    column == primaryIdentifierName,
+                    (columnMatcher.group(4) =~ /\bnot\s+null\b/).find()
             ))
         }
         return columns
@@ -171,21 +179,12 @@ class MigrationConventionValidator {
         return pattern.matcher(sql).find()
     }
 
-    private static String singularize(String tableName) {
-        if (tableName.endsWith('ies')) {
-            return tableName.substring(0, tableName.length() - 3) + 'y'
-        }
-        if (tableName.endsWith('s') && tableName.length() > 1) {
-            return tableName.substring(0, tableName.length() - 1)
-        }
-        return tableName
-    }
-
     private static class IdentifierColumn {
         final String table
         final String name
         final int length
         final boolean unique
+        final boolean required
         final boolean primaryDomainIdentifier
 
         private IdentifierColumn(
@@ -193,13 +192,15 @@ class MigrationConventionValidator {
                 String name,
                 int length,
                 boolean unique,
-                boolean primaryDomainIdentifier
+                boolean primaryDomainIdentifier,
+                boolean required
         ) {
             this.table = table
             this.name = name
             this.length = length
             this.unique = unique
             this.primaryDomainIdentifier = primaryDomainIdentifier
+            this.required = required
         }
     }
 

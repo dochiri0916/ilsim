@@ -338,7 +338,8 @@ class ArchitectureConventionEnhancementTest {
                     }
 
                     static String toLineEntityKey() {
-                        return UUID.randomUUID().toString();
+                        final UUID key = UUID.randomUUID();
+                        return key.toString();
                     }
                 }
                 ''')
@@ -505,8 +506,8 @@ class ArchitectureConventionEnhancementTest {
                     Optional<OrderId> find(OrderId orderId);
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/FindOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/FindOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface FindOrderUseCase {
                     void find();
@@ -516,7 +517,7 @@ class ArchitectureConventionEnhancementTest {
                 package com.example.order.application.service;
 
                 import com.example.order.application.exception.OrderNotFoundException;
-                import com.example.order.application.port.in.FindOrderUseCase;
+                import com.example.order.application.port.in.usecase.FindOrderUseCase;
                 import com.example.order.application.port.out.OrderRepositoryPort;
                 import lombok.RequiredArgsConstructor;
                 import org.springframework.stereotype.Service;
@@ -557,8 +558,8 @@ class ArchitectureConventionEnhancementTest {
                 public record Order() {
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/GetOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/GetOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface GetOrderUseCase {
                     void get();
@@ -567,7 +568,7 @@ class ArchitectureConventionEnhancementTest {
         writeJava(project, 'com/example/order/adapter/in/web/OrderController.java', '''
                 package com.example.order.adapter.in.web;
 
-                import com.example.order.application.port.in.GetOrderUseCase;
+                import com.example.order.application.port.in.usecase.GetOrderUseCase;
                 import com.example.order.domain.model.Order;
 
                 public final class OrderController {
@@ -597,8 +598,8 @@ class ArchitectureConventionEnhancementTest {
         // given
         Project project = sampleProject('service-collaborator')
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/CreateOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/CreateOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface CreateOrderUseCase {
                     void create();
@@ -614,7 +615,7 @@ class ArchitectureConventionEnhancementTest {
         writeJava(project, 'com/example/order/application/service/CreateOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.CreateOrderUseCase;
+                import com.example.order.application.port.in.usecase.CreateOrderUseCase;
                 import com.example.order.application.port.out.OrderRepositoryPort;
                 import java.time.Clock;
                 import lombok.RequiredArgsConstructor;
@@ -656,8 +657,8 @@ class ArchitectureConventionEnhancementTest {
         // given
         Project project = sampleProject('multiline-final-service')
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/RunOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RunOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RunOrderUseCase {
                     void run();
@@ -666,7 +667,7 @@ class ArchitectureConventionEnhancementTest {
         writeJava(project, 'com/example/order/application/service/RunOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RunOrderUseCase;
+                import com.example.order.application.port.in.usecase.RunOrderUseCase;
                 import org.springframework.stereotype.Service;
                 import org.springframework.transaction.annotation.Transactional;
 
@@ -898,18 +899,20 @@ class ArchitectureConventionEnhancementTest {
                     private java.lang.Long id;
 
                     @jakarta.persistence.Column(
-                        length = 32,
+                        name = "public_id",
+                        nullable = false,
+                        length = 36,
                         unique = true
                     )
                     @java.lang.Deprecated
-                    private java.lang.String orderId;
+                    private java.lang.String publicId;
 
-                    private OrderEntity(final java.lang.String orderId) {
-                        this.orderId = orderId;
+                    private OrderEntity(final java.lang.String publicId) {
+                        this.publicId = publicId;
                     }
 
-                    static OrderEntity from(final java.lang.String orderId) {
-                        return new OrderEntity(orderId);
+                    static OrderEntity from(final java.lang.String publicId) {
+                        return new OrderEntity(publicId);
                     }
                 }
                 ''')
@@ -924,9 +927,9 @@ class ArchitectureConventionEnhancementTest {
         assert !violations.any { it.contains("JPA entity 'OrderEntity' must declare @NoArgsConstructor") }
         assert !violations.any { it.contains("JPA entity 'OrderEntity' must declare private Long id with @Id") }
         assert !violations.any { it.contains("JPA technical key 'id' must declare @Getter(AccessLevel.NONE)") }
-        assert !violations.any { it.contains("must declare private String orderId with @Column") }
-        assert !violations.any { it.contains("domain identifier column 'orderId' must be unique") }
-        assert !violations.any { it.contains("domain identifier column 'orderId' must have length = 32") }
+        assert !violations.any { it.contains("must declare private String publicId with @Column") }
+        assert !violations.any { it.contains("domain identifier column 'publicId' must be unique") }
+        assert !violations.any { it.contains("domain identifier column 'publicId' must have length = 36") }
         assert !violations.any { it.contains("argument constructors must be private") }
         assert !violations.any { it.contains("must expose a static factory returning 'OrderEntity'") }
     }
@@ -1228,6 +1231,50 @@ class ArchitectureConventionEnhancementTest {
         // then
         assert violations.any { it.contains("API DTO 'GetOrderResponse' must not expose domain/application types") }
         assert violations.any { it.contains('domain must not depend on global.exception') }
+    }
+
+    @Test
+    @DisplayName('Response 변환 내부의 Result 일급 컬렉션은 허용하고 필드·공개 반환 노출은 거부한다')
+    void allows_result_collection_mapping_without_contract_leaks() {
+        // given
+        Project project = sampleProject('response-result-collection-mapping')
+        writeApplication(project)
+        String response = '''            package com.example.order.adapter.in.web.response;
+            import com.example.order.application.port.in.result.GetOrderResult;
+            import com.example.order.application.port.in.result.OrderResultItems;
+            import java.util.List;
+            public record GetOrderResponse(List<String> ids) {
+                public GetOrderResponse { ids = List.copyOf(ids); }
+                public static GetOrderResponse from(final GetOrderResult result) {
+                    final OrderResultItems items = result.items();
+                    return new GetOrderResponse(items.values());
+                }
+            }
+        '''
+        String path = 'com/example/order/adapter/in/web/response/GetOrderResponse.java'
+        writeJava(project, path, response)
+
+        // when
+        List<String> allowed = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !allowed.any { it.contains('must not expose domain/application types') }
+        writeJava(project, path, response.replace('List<String> ids', 'OrderResultItems ids'))
+        assert JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension()).any {
+            it.contains('must not expose domain/application types')
+        }
+        writeJava(project, path, response.replace('final GetOrderResult result', 'final fake.GetOrderResult result'))
+        assert JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension()).any {
+            it.contains('must not expose domain/application types')
+        }
+        writeJava(project, path, response.replace('public static GetOrderResponse from', 'private static GetOrderResponse from'))
+        assert JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension()).any {
+            it.contains('must not expose domain/application types')
+        }
+        writeJava(project, path, response.replace('public static GetOrderResponse from', 'public OrderResultItems leak() { return null; } public static GetOrderResponse from'))
+        assert JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension()).any {
+            it.contains('must not expose domain/application types')
+        }
     }
 
     private Project sampleProject(String name) {

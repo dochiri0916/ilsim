@@ -30,8 +30,8 @@ class JavaSourceArchitectureValidatorTest {
                     }
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                 }
@@ -39,7 +39,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
 
                 public final class RegisterOrderService implements RegisterOrderUseCase {
                 }
@@ -70,8 +70,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'accepts component registered service and outbound adapter'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                 }
@@ -79,7 +79,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
                 import org.springframework.stereotype.Service;
 
                 @Service
@@ -143,8 +143,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'accepts method level transaction and required args constructor injection'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                     void register();
@@ -160,7 +160,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
                 import com.example.order.application.port.out.OrderRepositoryPort;
                 import lombok.RequiredArgsConstructor;
                 import org.springframework.stereotype.Service;
@@ -191,8 +191,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'rejects class level transaction and missing method level transaction'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                     void register();
@@ -201,7 +201,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
                 import org.springframework.stereotype.Service;
                 import org.springframework.transaction.annotation.Transactional;
 
@@ -225,8 +225,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'rejects invalid transaction read only boundaries'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/GetOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/GetOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface GetOrderUseCase {
                     void getOrder();
@@ -235,7 +235,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/GetOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.GetOrderUseCase;
+                import com.example.order.application.port.in.usecase.GetOrderUseCase;
                 import org.springframework.stereotype.Service;
                 import org.springframework.transaction.annotation.Transactional;
 
@@ -248,8 +248,8 @@ class JavaSourceArchitectureValidatorTest {
                     }
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/UpdateOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/UpdateOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface UpdateOrderUseCase {
                     void updateOrder();
@@ -265,7 +265,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/UpdateOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.UpdateOrderUseCase;
+                import com.example.order.application.port.in.usecase.UpdateOrderUseCase;
                 import com.example.order.application.port.out.OrderRepositoryPort;
                 import lombok.RequiredArgsConstructor;
                 import org.springframework.stereotype.Service;
@@ -296,8 +296,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'rejects unsafe transaction controls and side effects'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                     void register();
@@ -306,7 +306,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
                 import lombok.RequiredArgsConstructor;
                 import org.springframework.stereotype.Service;
                 import org.springframework.transaction.TransactionDefinition;
@@ -352,21 +352,21 @@ class JavaSourceArchitectureValidatorTest {
     void 'rejects query use case without read only transaction even when method is execute'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/GetOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/GetOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface GetOrderUseCase {
                     GetOrderResult execute(GetOrderQuery query);
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/GetOrderQuery.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/query/GetOrderQuery.java', '''
+                package com.example.order.application.port.in.query;
 
                 public record GetOrderQuery(String orderId) {
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/GetOrderResult.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/result/GetOrderResult.java', '''
+                package com.example.order.application.port.in.result;
 
                 public record GetOrderResult(String orderId) {
                 }
@@ -374,9 +374,9 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/GetOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.GetOrderQuery;
-                import com.example.order.application.port.in.GetOrderResult;
-                import com.example.order.application.port.in.GetOrderUseCase;
+                import com.example.order.application.port.in.query.GetOrderQuery;
+                import com.example.order.application.port.in.result.GetOrderResult;
+                import com.example.order.application.port.in.usecase.GetOrderUseCase;
                 import org.springframework.stereotype.Service;
                 import org.springframework.transaction.annotation.Transactional;
 
@@ -400,8 +400,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'rejects side effect outbound port calls inside transaction'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                     void register();
@@ -417,7 +417,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
                 import com.example.order.application.port.out.OrderEventPublisherPort;
                 import lombok.RequiredArgsConstructor;
                 import org.springframework.stereotype.Service;
@@ -462,15 +462,15 @@ class JavaSourceArchitectureValidatorTest {
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert violations.any { it.contains('order.application.port package must use in or out') }
-        assert violations.any { it.contains('order.adapter.in package must use bootstrap or web') }
+        assert violations.any { it.contains('order.adapter.in package must use bootstrap, messaging, or web') }
     }
 
     @Test
     void 'rejects field injection without required args constructor'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                     void register();
@@ -486,7 +486,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
                 import com.example.order.application.port.out.OrderRepositoryPort;
                 import org.springframework.beans.factory.annotation.Autowired;
                 import org.springframework.stereotype.Service;
@@ -516,15 +516,15 @@ class JavaSourceArchitectureValidatorTest {
     void 'rejects service implementing multiple use cases and adapter implementing multiple ports'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                     void register();
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/CancelOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/command/CancelOrderUseCase.java', '''
+                package com.example.order.application.port.in.command;
 
                 public interface CancelOrderUseCase {
                     void cancel();
@@ -533,8 +533,8 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/OrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.CancelOrderUseCase;
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.CancelOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
                 import org.springframework.stereotype.Service;
                 import org.springframework.transaction.annotation.Transactional;
 
@@ -712,8 +712,8 @@ class JavaSourceArchitectureValidatorTest {
                     CREATED
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/RegisterOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/RegisterOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface RegisterOrderUseCase {
                 }
@@ -721,7 +721,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/order/application/service/RegisterOrderService.java', '''
                 package com.example.order.application.service;
 
-                import com.example.order.application.port.in.RegisterOrderUseCase;
+                import com.example.order.application.port.in.usecase.RegisterOrderUseCase;
                 import org.springframework.stereotype.Service;
 
                 @Service
@@ -782,8 +782,8 @@ class JavaSourceArchitectureValidatorTest {
     void 'requires inbound port types and web adapter types in their dedicated packages'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/PlaceOrderUseCase.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/usecase/PlaceOrderUseCase.java', '''
+                package com.example.order.application.port.in.usecase;
 
                 public interface PlaceOrderUseCase {
                 }
@@ -800,8 +800,8 @@ class JavaSourceArchitectureValidatorTest {
                 public record PlaceOrderCommand() {
                 }
                 ''')
-        writeJava(project, 'com/example/order/application/port/in/usecase/CancelOrderUseCase.java', '''
-                package com.example.order.application.port.in.usecase;
+        writeJava(project, 'com/example/order/application/port/in/command/CancelOrderUseCase.java', '''
+                package com.example.order.application.port.in.command;
 
                 public interface CancelOrderUseCase {
                 }
@@ -828,11 +828,11 @@ class JavaSourceArchitectureValidatorTest {
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         assert !violations.any { it.contains("'PlaceOrderUseCase'") }
-        assert violations.any { it.contains("port.in.command type 'PlaceOrderQuery' must end with Command") }
-        assert violations.any { it.contains('PlaceOrderCommand.java order.application.port.in package may only add command or result') }
-        assert violations.any { it.contains("inbound port 'CancelOrderUseCase' must live directly in application..port.in package") }
+        assert violations.any { it.contains("inbound contract 'PlaceOrderQuery' must live in application.port.in.query package") }
+        assert violations.any { it.contains("inbound contract 'PlaceOrderCommand' must live in application.port.in.command package") }
+        assert violations.any { it.contains("inbound contract 'CancelOrderUseCase' must live in application.port.in.usecase package") }
         assert violations.any { it.contains("controller 'OrderController' must live directly in adapter.in.web package") }
-        assert violations.any { it.contains("adapter.in.web package may contain only Controller, ExceptionHandler, or ControllerAdvice types; place 'OrderMapper'") }
+        assert !violations.any { it.contains('OrderMapper.java') && it.contains('adapter.in.web package may contain') }
         assert violations.any { it.contains("adapter.in.web.request type 'PlaceOrderHelper' must end with Request") }
     }
 
@@ -862,7 +862,7 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
-    void 'rejects non record domain vo types and accepts record value objects'() {
+    void 'rejects record value objects and accepts immutable class value objects'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/vo/Money.java', '''
@@ -875,14 +875,22 @@ class JavaSourceArchitectureValidatorTest {
                 package com.example.order.domain.vo;
 
                 public final class Quantity {
+                    private final int value;
+                    private Quantity(final int value) {
+                        if (value < 0) throw new InvalidQuantityException();
+                        this.value = value;
+                    }
+                    public static Quantity of(final int value) { return new Quantity(value); }
+                    public boolean equals(final Object object) { return object instanceof Quantity other && value == other.value; }
+                    public int hashCode() { return Integer.hashCode(value); }
                 }
                 ''')
 
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert violations.any { it.contains("domain value object 'Quantity' in domain.vo package must be a record or enum") }
-        assert !violations.any { it.contains("'Money'") && it.contains('domain.vo') }
-        assert !violations.any { it.contains('Money.java') && it.contains('package') }
+        assert !violations.any { it.contains("Quantity.java") }
+        assert violations.any { it.contains("domain value object 'Money' in domain.vo package must be a final class or enum") }
+        assert violations.any { it.contains('Money.java') && it.contains('final class with a private constructor') }
     }
 
     @Test
@@ -1240,15 +1248,15 @@ class JavaSourceArchitectureValidatorTest {
     void 'rejects controller that exposes application result directly'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/order/application/port/in/GetOrderResult.java', '''
-                package com.example.order.application.port.in;
+        writeJava(project, 'com/example/order/application/port/in/result/GetOrderResult.java', '''
+                package com.example.order.application.port.in.result;
                 public record GetOrderResult(String id) {
                 }
                 ''')
         writeJava(project, 'com/example/order/adapter/in/web/OrderController.java', '''
                 package com.example.order.adapter.in.web;
 
-                import com.example.order.application.port.in.GetOrderResult;
+                import com.example.order.application.port.in.result.GetOrderResult;
 
                 public final class OrderController {
 
@@ -1506,14 +1514,14 @@ class JavaSourceArchitectureValidatorTest {
       void 'rejects raw command value repository lookups before VO normalization'() {
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/member/application/port/in/RegisterMemberCommand.java', '''
-                package com.example.member.application.port.in;
+        writeJava(project, 'com/example/member/application/port/in/command/RegisterMemberCommand.java', '''
+                package com.example.member.application.port.in.command;
 
                 public record RegisterMemberCommand(String email) {
                 }
                 ''')
-        writeJava(project, 'com/example/member/application/port/in/RegisterMemberUseCase.java', '''
-                package com.example.member.application.port.in;
+        writeJava(project, 'com/example/member/application/port/in/usecase/RegisterMemberUseCase.java', '''
+                package com.example.member.application.port.in.usecase;
 
                 public interface RegisterMemberUseCase {
                     void register(RegisterMemberCommand command);
@@ -1529,8 +1537,8 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/member/application/service/RegisterMemberService.java', '''
                 package com.example.member.application.service;
 
-                import com.example.member.application.port.in.RegisterMemberCommand;
-                import com.example.member.application.port.in.RegisterMemberUseCase;
+                import com.example.member.application.port.in.command.RegisterMemberCommand;
+                import com.example.member.application.port.in.usecase.RegisterMemberUseCase;
                 import com.example.member.application.port.out.MemberRepositoryPort;
                 import lombok.RequiredArgsConstructor;
                 import org.springframework.stereotype.Service;
@@ -1636,8 +1644,8 @@ class JavaSourceArchitectureValidatorTest {
       void 'rejects modifying multiple aggregate repositories in one transaction'() {
           Project project = sampleProject()
           writeApplication(project)
-          writeJava(project, 'com/example/order/application/port/in/PlaceOrderUseCase.java', '''
-                  package com.example.order.application.port.in;
+          writeJava(project, 'com/example/order/application/port/in/usecase/PlaceOrderUseCase.java', '''
+                  package com.example.order.application.port.in.usecase;
 
                   public interface PlaceOrderUseCase {
                       void place();
@@ -1660,7 +1668,7 @@ class JavaSourceArchitectureValidatorTest {
           writeJava(project, 'com/example/order/application/service/PlaceOrderService.java', '''
                   package com.example.order.application.service;
 
-                  import com.example.order.application.port.in.PlaceOrderUseCase;
+                  import com.example.order.application.port.in.usecase.PlaceOrderUseCase;
                   import com.example.order.application.port.out.CartRepositoryPort;
                   import com.example.order.application.port.out.OrderRepositoryPort;
                   import lombok.RequiredArgsConstructor;
@@ -1763,14 +1771,15 @@ class JavaSourceArchitectureValidatorTest {
     void 'accepts domain exceptions with messages and rejects requireNonNull in value object constructors'() {
         Project project = sampleProject()
         writeApplication(project)
+        writeExceptionBase(project, 'com.example.member.domain.exception', 'MemberDomainException', ['InvalidMemberIdException'])
         writeJava(project, 'com/example/member/domain/exception/InvalidMemberIdException.java', '''
                 package com.example.member.domain.exception;
 
-                public final class InvalidMemberIdException extends RuntimeException {
+                public final class InvalidMemberIdException extends MemberDomainException {
 
                     private static final long serialVersionUID = 1L;
 
-                    public InvalidMemberIdException(String message) {
+                    public InvalidMemberIdException(final String message) {
                         super(message);
                     }
                 }
@@ -1805,14 +1814,15 @@ class JavaSourceArchitectureValidatorTest {
     void 'accepts application exceptions created with messages'() {
         Project project = sampleProject()
         writeApplication(project)
+        writeExceptionBase(project, 'com.example.order.application.exception', 'OrderApplicationException', ['EmptyCartException'])
         writeJava(project, 'com/example/order/application/exception/EmptyCartException.java', '''
                 package com.example.order.application.exception;
 
-                public final class EmptyCartException extends RuntimeException {
+                public final class EmptyCartException extends OrderApplicationException {
 
                     private static final long serialVersionUID = 1L;
 
-                    public EmptyCartException(String message) {
+                    public EmptyCartException(final String message) {
                         super(message);
                     }
                 }
@@ -1945,7 +1955,7 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
-    void 'accepts target id or publicId as JPA domain identifier and rejects other public id names'() {
+    void 'requires publicId for own identity and preserves target id names for references'() {
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/member/adapter/out/persistence/MemberEntity.java', '''
@@ -2003,7 +2013,7 @@ class JavaSourceArchitectureValidatorTest {
                     @Id
                     private Long id;
 
-                    @Column(nullable = false, unique = true, length = 32)
+                    @Column(name = "public_id", nullable = false, unique = true, length = 36)
                     private String publicId;
 
                     @Column(nullable = false, length = 32)
@@ -2023,7 +2033,7 @@ class JavaSourceArchitectureValidatorTest {
 
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        assert !violations.any { it.contains("JPA entity 'MemberEntity' must declare private String memberId") }
+        assert violations.any { it.contains("JPA entity 'MemberEntity' must declare private String publicId") }
         assert !violations.any { it.contains("JPA reference field 'orderId' must store identifier VO value as String") }
         assert !violations.any { it.contains("JPA entity 'OrderEntity' must declare") }
         assert !violations.any { it.contains("JPA reference field 'publicId'") }
@@ -2354,80 +2364,50 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
-    void 'rejects multiple concrete exceptions in one Context layer by default'() {
+    @DisplayName('기존 분할 허용 설정으로 sealed 예외 계층을 우회할 수 없다')
+    void rejects_exception_hierarchy_bypass() {
+        // given
         Project project = sampleProject()
-        writeJava(project, 'com/example/product/domain/exception/ProductDomainException.java', '''
-                package com.example.product.domain.exception;
-
-                import com.example.global.exception.DomainException;
-
-                public final class ProductDomainException extends DomainException {
-                    private ProductDomainException() {
-                    }
-
-                    public static ProductDomainException invalidName() {
-                        return new ProductDomainException();
-                    }
-                }
-                ''')
-        writeJava(project, 'com/example/product/domain/exception/InvalidProductNameException.java', '''
-                package com.example.product.domain.exception;
-
-                import com.example.global.exception.DomainException;
-
-                public final class InvalidProductNameException extends DomainException {
-                    private InvalidProductNameException() {
-                    }
-
-                    public static InvalidProductNameException invalid() {
-                        return new InvalidProductNameException();
-                    }
-                }
-                ''')
-
-        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
-
-        assert violations.any { it.contains('com.example.product:domain must declare one concrete domain exception') }
+        writeJava(project, 'com/example/product/domain/exception/InvalidProductNameException.java', """
+            package com.example.product.domain.exception;
+            public final class InvalidProductNameException extends RuntimeException {
+                public InvalidProductNameException() { super("상품 이름이 올바르지 않습니다"); }
+            }
+        """)
+        HexagonalConventionExtension convention = new HexagonalConventionExtension(
+                enforceContextExceptionConsolidation: false,
+                exceptionTypeSplitAllowlist: ['com.example.product:domain'] as Set)
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
+        // then
+        assert violations.any { it.contains("concrete domain exception 'InvalidProductNameException' must extend its own context") }
     }
 
     @Test
-    void 'allows multiple concrete exceptions when the Context layer is explicitly allowlisted'() {
+    @DisplayName('의미별 여러 final 예외가 동일한 sealed 기반을 상속하면 허용한다')
+    void accepts_multiple_specific_sealed_exceptions() {
+        // given
         Project project = sampleProject()
-        writeJava(project, 'com/example/product/domain/exception/ProductDomainException.java', '''
+        writeApplication(project)
+        writeJava(project, 'com/example/product/domain/exception/ProductDomainException.java', """
+            package com.example.product.domain.exception;
+            public abstract sealed class ProductDomainException extends RuntimeException
+                    permits InvalidProductNameException, ProductNameRequiredException {
+                protected ProductDomainException(final String message) { super(message); }
+            }
+        """)
+        ['InvalidProductNameException', 'ProductNameRequiredException'].each { name ->
+            writeJava(project, "com/example/product/domain/exception/${name}.java", """
                 package com.example.product.domain.exception;
-
-                import com.example.global.exception.DomainException;
-
-                public final class ProductDomainException extends DomainException {
-                    private ProductDomainException() {
-                    }
-
-                    public static ProductDomainException invalidName() {
-                        return new ProductDomainException();
-                    }
+                public final class ${name} extends ProductDomainException {
+                    public ${name}() { super("상품 이름을 확인해주세요"); }
                 }
-                ''')
-        writeJava(project, 'com/example/product/domain/exception/InvalidProductNameException.java', '''
-                package com.example.product.domain.exception;
-
-                import com.example.global.exception.DomainException;
-
-                public final class InvalidProductNameException extends DomainException {
-                    private InvalidProductNameException() {
-                    }
-
-                    public static InvalidProductNameException invalid() {
-                        return new InvalidProductNameException();
-                    }
-                }
-                ''')
-        HexagonalConventionExtension convention = new HexagonalConventionExtension(
-                exceptionTypeSplitAllowlist: ['com.example.product:domain'] as Set
-        )
-
-        List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
-
-        assert !violations.any { it.contains('must declare one concrete domain exception') }
+            """)
+        }
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+        // then
+        assert violations.empty
     }
 
     @Test
@@ -2436,23 +2416,28 @@ class JavaSourceArchitectureValidatorTest {
         // given
         Project project = sampleProject()
         writeApplication(project)
-        writeJava(project, 'com/example/global/domain/Money.java', '''
-                package com.example.global.domain;
+        writeExceptionBase(project, 'com.example.global.domain.exception', 'GlobalDomainException', ['IllegalMoneyException'])
+        writeExceptionBase(project, 'com.example.member.domain.exception', 'MemberDomainException', ['IllegalMemberIdException'])
+        writeJava(project, 'com/example/global/domain/vo/Money.java', '''
+                package com.example.global.domain.vo;
 
                 import com.example.global.domain.exception.IllegalMoneyException;
 
-                public record Money(long amount) {
-                    public Money {
-                        if (amount < 0) {
-                            throw new IllegalMoneyException();
-                        }
+                public final class Money {
+                    private final long amount;
+                    private Money(final long amount) {
+                        if (amount < 0) throw new InvalidMoneyException();
+                        this.amount = amount;
                     }
+                    public static Money of(final long amount) { return new Money(amount); }
+                    public boolean equals(final Object object) { return object instanceof Money other && amount == other.amount; }
+                    public int hashCode() { return Long.hashCode(amount); }
                 }
                 ''')
         writeJava(project, 'com/example/global/domain/exception/IllegalMoneyException.java', '''
                 package com.example.global.domain.exception;
 
-                public final class IllegalMoneyException extends RuntimeException {
+                public final class IllegalMoneyException extends GlobalDomainException {
                     public IllegalMoneyException() {
                         super("금액은 0 이상이어야 합니다.");
                     }
@@ -2520,22 +2505,22 @@ class JavaSourceArchitectureValidatorTest {
                 public record CategorySummary(String categoryId, String name) {
                 }
                 ''')
-        writeJava(project, 'com/example/catalog/product/application/port/in/RegisterProductUseCase.java', '''
-                package com.example.catalog.product.application.port.in;
+        writeJava(project, 'com/example/catalog/product/application/port/in/usecase/RegisterProductUseCase.java', '''
+                package com.example.catalog.product.application.port.in.usecase;
 
                 @FunctionalInterface
                 public interface RegisterProductUseCase {
                     RegisterProductResult register(RegisterProductCommand command);
                 }
                 ''')
-        writeJava(project, 'com/example/catalog/product/application/port/in/RegisterProductCommand.java', '''
-                package com.example.catalog.product.application.port.in;
+        writeJava(project, 'com/example/catalog/product/application/port/in/command/RegisterProductCommand.java', '''
+                package com.example.catalog.product.application.port.in.command;
 
                 public record RegisterProductCommand(String categoryId, long price) {
                 }
                 ''')
-        writeJava(project, 'com/example/catalog/product/application/port/in/RegisterProductResult.java', '''
-                package com.example.catalog.product.application.port.in;
+        writeJava(project, 'com/example/catalog/product/application/port/in/result/RegisterProductResult.java', '''
+                package com.example.catalog.product.application.port.in.result;
 
                 public record RegisterProductResult(String categoryId) {
                 }
@@ -2545,10 +2530,10 @@ class JavaSourceArchitectureValidatorTest {
 
                 import com.example.catalog.category.application.port.out.CategoryLookupPort;
                 import com.example.catalog.category.domain.model.CategoryId;
-                import com.example.catalog.product.application.port.in.RegisterProductCommand;
-                import com.example.catalog.product.application.port.in.RegisterProductResult;
-                import com.example.catalog.product.application.port.in.RegisterProductUseCase;
-                import com.example.global.domain.Money;
+                import com.example.catalog.product.application.port.in.command.RegisterProductCommand;
+                import com.example.catalog.product.application.port.in.result.RegisterProductResult;
+                import com.example.catalog.product.application.port.in.usecase.RegisterProductUseCase;
+                import com.example.global.domain.vo.Money;
                 import lombok.RequiredArgsConstructor;
                 import org.springframework.stereotype.Service;
                 import org.springframework.transaction.annotation.Transactional;
@@ -2564,7 +2549,7 @@ class JavaSourceArchitectureValidatorTest {
                     public RegisterProductResult register(final RegisterProductCommand command) {
                         final CategoryId categoryId = new CategoryId(command.categoryId());
                         categoryLookupPort.exists(categoryId);
-                        new Money(command.price());
+                        Money.of(command.price());
                         return new RegisterProductResult(categoryId.value());
                     }
                 }
@@ -2573,17 +2558,23 @@ class JavaSourceArchitectureValidatorTest {
                 package com.example.catalog.product.adapter.in.web;
 
                 import org.springframework.web.bind.annotation.RestControllerAdvice;
+                import org.springframework.core.Ordered;
+                import org.springframework.core.annotation.Order;
 
                 @RestControllerAdvice
+                @Order(Ordered.HIGHEST_PRECEDENCE)
                 public final class ProductExceptionHandler {
                 }
                 ''')
-        writeJava(project, 'com/example/catalog/product/adapter/in/web/exception/ProductApiControllerAdvice.java', '''
-                package com.example.catalog.product.adapter.in.web.exception;
+        writeJava(project, 'com/example/catalog/product/adapter/in/web/ProductApiControllerAdvice.java', '''
+                package com.example.catalog.product.adapter.in.web;
 
                 import org.springframework.web.bind.annotation.RestControllerAdvice;
+                import org.springframework.core.Ordered;
+                import org.springframework.core.annotation.Order;
 
                 @RestControllerAdvice
+                @Order(Ordered.HIGHEST_PRECEDENCE)
                 public final class ProductApiControllerAdvice {
                 }
                 ''')
@@ -2608,7 +2599,7 @@ class JavaSourceArchitectureValidatorTest {
         writeJava(project, 'com/example/member/domain/exception/IllegalMemberIdException.java', '''
                 package com.example.member.domain.exception;
 
-                public final class IllegalMemberIdException extends RuntimeException {
+                public final class IllegalMemberIdException extends MemberDomainException {
                     public IllegalMemberIdException() {
                         super("회원 ID는 필수입니다.");
                     }
@@ -2705,14 +2696,432 @@ class JavaSourceArchitectureValidatorTest {
         // then
         assert !violations.any { it.contains('OrderPlaced.java') && it.contains('order.domain package must use') }
         assert violations.any { it.contains('WebConfig.java global package must be limited') }
-        assert violations.any { it.contains('FindOrderQuery.java order.application.port.in package may only add command or result') }
-        assert violations.any { it.contains("application..port.in type 'OrderLookup' must end with UseCase, Command, or Result") }
-        assert violations.any { it.contains('OrderScheduler.java order.adapter.in package must use bootstrap or web') }
+        assert !violations.any { it.contains('FindOrderQuery.java') && it.contains('package must use') }
+        assert violations.any { it.contains('OrderLookup.java order.application.port.in package must use usecase, command, query, or result') }
+        assert violations.any { it.contains('OrderScheduler.java order.adapter.in package must use bootstrap, messaging, or web') }
         assert violations.any { it.contains("domain exception base 'OrderDomainException' must be sealed") }
         assert violations.any { it.contains("domain exception base 'OrderDomainException' must keep constructors protected") }
         assert violations.any { it.contains("domain exception 'OpenOrderException' must be final") }
         assert violations.any { it.contains("application exception 'OrderFailedException' must extend RuntimeException or its context's sealed") }
         assert violations.any { it.contains("must not use wildcard import 'com.example.order.domain.model.*'") }
+    }
+
+    private static void writeExceptionBase(Project project, String packageName, String baseName, List<String> children) {
+        writeJava(project, packageName.replace('.', '/') + '/' + baseName + '.java', """
+            package ${packageName};
+            public abstract sealed class ${baseName} extends RuntimeException permits ${children.join(', ')} {
+                protected ${baseName}(final String message) { super(message); }
+            }
+        """)
+    }
+
+    @Test
+    @DisplayName('테스트 메서드 이름이 snake_case가 아니면 거부한다')
+    void rejects_test_method_names_that_are_not_snake_case() {
+        // given
+        Project project = sampleProject()
+        writeTestJava(project, 'com/example/order/NamingTest.java', '''
+                package com.example.order;
+
+                import org.junit.jupiter.api.DisplayName;
+                import org.junit.jupiter.api.Test;
+
+                class NamingTest {
+
+                    @Test
+                    @DisplayName("주문을 거절한다")
+                    void rejectsOrder() {
+                        // given
+                        int actual = 1;
+
+                        // when
+                        actual++;
+
+                        // then
+                        assert actual == 2;
+                    }
+
+                    @Test
+                    @DisplayName("주문을 승인한다")
+                    void approves_order_when_stock_is_sufficient() {
+                        // given
+                        int actual = 1;
+
+                        // when
+                        actual++;
+
+                        // then
+                        assert actual == 2;
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert violations.any { it.contains("test method 'rejectsOrder' must be named in snake_case") }
+        assert !violations.any { it.contains("test method 'approves_order_when_stock_is_sufficient'") }
+    }
+
+    @Test
+    @DisplayName('유니크 제약 이름이 uk_ 형식이 아니면 거부한다')
+    void rejects_unique_constraint_names_without_uk_prefix() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
+                package com.example.order.adapter.out.persistence;
+
+                import jakarta.persistence.Column;
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Id;
+                import jakarta.persistence.Table;
+                import jakarta.persistence.UniqueConstraint;
+                import lombok.AccessLevel;
+                import lombok.Getter;
+                import lombok.NoArgsConstructor;
+
+                @Entity
+                @Table(name = "orders", uniqueConstraints = @UniqueConstraint(name = "orders_public_id_key", columnNames = "public_id"))
+                @Getter
+                @NoArgsConstructor(access = AccessLevel.PROTECTED)
+                public class OrderEntity {
+
+                    @Getter(AccessLevel.NONE)
+                    @Id
+                    private Long id;
+
+                    @Column(name = "public_id", nullable = false, length = 36)
+                    private String publicId;
+
+                    private OrderEntity(final Long id, final String publicId) {
+                        this.id = id;
+                        this.publicId = publicId;
+                    }
+
+                    static OrderEntity create(final String publicId) {
+                        return new OrderEntity(null, publicId);
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert violations.any { it.contains("JPA unique constraint 'orders_public_id_key' must be named uk_{table}_{column}") }
+    }
+
+    @Test
+    @DisplayName('outbox 패키지의 Entry는 일반 Entity 형태 규칙에서 제외하되 final 금지는 유지한다')
+    void exempts_outbox_entry_from_generic_entity_shape_rules() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/adapter/out/persistence/outbox/OrderOutboxEntry.java', '''
+                package com.example.order.adapter.out.persistence.outbox;
+
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Table;
+
+                @Entity
+                @Table(name = "order_outbox")
+                public class OrderOutboxEntry {
+                    public OrderOutboxEntry(final String eventId) {
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("JPA entity 'OrderOutboxEntry'") }
+    }
+
+    @Test
+    @DisplayName('domain.outbox의 추상 기반 클래스는 final 집계 루트 규칙에서 제외한다')
+    void allows_abstract_outbox_base_class_and_rejects_other_non_final_domain_classes() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/domain/outbox/OrderOutbox.java', '''
+                package com.example.order.domain.outbox;
+
+                public abstract class OrderOutbox {
+                    private final String eventId;
+
+                    protected OrderOutbox(final String eventId) {
+                        this.eventId = eventId;
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/model/Basket.java', '''
+                package com.example.order.domain.model;
+
+                public class Basket {
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("domain class 'OrderOutbox'") }
+        assert violations.any { it.contains("domain class 'Basket' must be a record or final aggregate root") }
+    }
+
+    @Test
+    @DisplayName('MockMvc andExpect 검증은 관찰 가능한 결과 검증으로 인정한다')
+    void accepts_mockmvc_and_expect_as_observable_assertion() {
+        // given
+        Project project = sampleProject()
+        writeTestJava(project, 'com/example/order/WebTest.java', '''
+                package com.example.order;
+
+                import org.junit.jupiter.api.DisplayName;
+                import org.junit.jupiter.api.Test;
+
+                class WebTest {
+
+                    @Test
+                    @DisplayName("충돌은 409로 응답한다")
+                    void responds_conflict() {
+                        // given
+                        final var request = new Object();
+
+                        // when
+                        final var result = perform(request);
+
+                        // then
+                        result.andExpect(status().isConflict());
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("test method 'responds_conflict'") }
+    }
+
+    @Test
+    @DisplayName('공개 통합 이벤트 계약은 Port 접미사 없이 공통 마커 인터페이스를 구현할 수 있다')
+    void allows_public_integration_event_contract_with_shared_marker() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/global/messaging/IntegrationEvent.java', '''
+                package com.example.global.messaging;
+
+                public interface IntegrationEvent {
+                    String eventType();
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/out/event/OrderIntegrationEvent.java', '''
+                package com.example.order.application.port.out.event;
+
+                import com.example.global.messaging.IntegrationEvent;
+
+                public interface OrderIntegrationEvent extends IntegrationEvent {
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("'OrderIntegrationEvent'") }
+        assert !violations.any { it.contains("IntegrationEvent' is not allowed") }
+    }
+
+    @Test
+    @DisplayName('global.messaging 인프라는 발행·수신 트랜잭션을 직접 관리할 수 있다')
+    void allows_messaging_infrastructure_to_manage_transactions() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/global/messaging/persistence/OutboxDispatcher.java', '''
+                package com.example.global.messaging.persistence;
+
+                import org.springframework.transaction.support.TransactionTemplate;
+
+                public final class OutboxDispatcher {
+                    private final TransactionTemplate transaction;
+
+                    public OutboxDispatcher(final TransactionTemplate transaction) {
+                        this.transaction = transaction;
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains('REQUIRES_NEW, NESTED, NOT_SUPPORTED, or TransactionTemplate') }
+    }
+
+    @Test
+    @DisplayName('projection 조회 모델 Entity는 일반 Entity 형태 규칙에서 제외한다')
+    void exempts_projection_entity_from_generic_entity_shape_rules() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/adapter/out/persistence/projection/CartSnapshotEntity.java', '''
+                package com.example.order.adapter.out.persistence.projection;
+
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Id;
+                import jakarta.persistence.Table;
+
+                @Entity
+                @Table(name = "order_cart_snapshots")
+                public class CartSnapshotEntity {
+                    @Id
+                    private String memberId;
+
+                    public CartSnapshotEntity(final String memberId) {
+                        this.memberId = memberId;
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("JPA entity 'CartSnapshotEntity'") }
+    }
+
+    @Test
+    @DisplayName('접두어가 붙은 revision 메타데이터 필드는 원시 타입을 허용한다')
+    void allows_prefixed_revision_metadata_fields_as_raw_scalars() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/domain/Order.java', '''
+                package com.example.order.domain;
+
+                public final class Order {
+                    private final long cartRevision;
+
+                    private Order(final long cartRevision) {
+                        this.cartRevision = cartRevision;
+                    }
+
+                    public static Order create(final long cartRevision) {
+                        return new Order(cartRevision);
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("domain field 'cartRevision'") }
+    }
+
+    @Test
+    @DisplayName('List.copyOf로 방어적 복사한 일급 컬렉션을 허용한다')
+    void accepts_first_class_collection_copied_with_list_copy_of() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/domain/vo/OrderLines.java', '''
+                package com.example.order.domain.vo;
+
+                import java.util.List;
+
+                public final class OrderLines {
+                    private final List<OrderLine> values;
+
+                    private OrderLines(final List<OrderLine> values) {
+                        this.values = List.copyOf(values);
+                    }
+
+                    public static OrderLines of(final List<OrderLine> values) {
+                        return new OrderLines(values);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/vo/OrderLine.java', '''
+                package com.example.order.domain.vo;
+
+                public final class OrderLine {
+                    private OrderLine() {
+                    }
+
+                    public static OrderLine of() {
+                        return new OrderLine();
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("domain collection field 'values'") }
+    }
+
+    @Test
+    @DisplayName('Request는 toCommand 안에서 Command의 일급 컬렉션을 만들 수 있지만 다른 공개 메서드로 노출하지 못한다')
+    void allows_request_to_build_command_collections_only_inside_to_command() {
+        // given
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/application/port/in/command/RegisterCommand.java', '''
+                package com.example.order.application.port.in.command;
+
+                public record RegisterCommand(String name, CategoryPublicIds ids) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/application/port/in/command/CategoryPublicIds.java', '''
+                package com.example.order.application.port.in.command;
+
+                import java.util.Set;
+
+                public record CategoryPublicIds(Set<String> values) {
+                    public CategoryPublicIds {
+                        values = Set.copyOf(values);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/request/RegisterRequest.java', '''
+                package com.example.order.adapter.in.web.request;
+
+                import com.example.order.application.port.in.command.CategoryPublicIds;
+                import com.example.order.application.port.in.command.RegisterCommand;
+                import jakarta.validation.constraints.NotBlank;
+                import java.util.Set;
+
+                public record RegisterRequest(@NotBlank(message = "이름은 필수입니다.") String name) {
+                    public RegisterCommand toCommand() {
+                        final CategoryPublicIds ids = new CategoryPublicIds(Set.of());
+                        return new RegisterCommand(name, ids);
+                    }
+                }
+                ''')
+        writeJava(project, 'com/example/order/adapter/in/web/request/LeakyRequest.java', '''
+                package com.example.order.adapter.in.web.request;
+
+                import com.example.order.application.port.in.command.CategoryPublicIds;
+                import com.example.order.application.port.in.command.RegisterCommand;
+                import jakarta.validation.constraints.NotBlank;
+                import java.util.Set;
+
+                public record LeakyRequest(@NotBlank(message = "이름은 필수입니다.") String name) {
+                    public RegisterCommand toCommand() {
+                        return new RegisterCommand(name, ids());
+                    }
+
+                    public CategoryPublicIds ids() {
+                        return new CategoryPublicIds(Set.of());
+                    }
+                }
+                ''')
+
+        // when
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        // then
+        assert !violations.any { it.contains("API DTO 'RegisterRequest'") }
+        assert violations.any { it.contains("API DTO 'LeakyRequest'") }
     }
 
     private Project sampleProject() {

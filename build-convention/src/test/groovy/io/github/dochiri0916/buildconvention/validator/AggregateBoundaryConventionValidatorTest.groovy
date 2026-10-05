@@ -56,8 +56,8 @@ class AggregateBoundaryConventionValidatorTest {
         writeAggregate(project, 'Order')
         writeRepositoryPort(project, 'OrderRepositoryPort', 'Order')
         writeRepositoryPort(project, 'OrderArchiveRepositoryPort', 'Order')
-        writeJava(project, 'com/example/sales/application/port/in/ArchiveOrderUseCase.java', '''
-                package com.example.sales.application.port.in;
+        writeJava(project, 'com/example/sales/application/port/in/usecase/ArchiveOrderUseCase.java', '''
+                package com.example.sales.application.port.in.usecase;
 
                 public interface ArchiveOrderUseCase {
                     void archive();
@@ -66,7 +66,7 @@ class AggregateBoundaryConventionValidatorTest {
         writeJava(project, 'com/example/sales/application/service/ArchiveOrderService.java', '''
                 package com.example.sales.application.service;
 
-                import com.example.sales.application.port.in.ArchiveOrderUseCase;
+                import com.example.sales.application.port.in.usecase.ArchiveOrderUseCase;
                 import com.example.sales.application.port.out.OrderArchiveRepositoryPort;
                 import com.example.sales.application.port.out.OrderRepositoryPort;
                 import lombok.RequiredArgsConstructor;

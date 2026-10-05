@@ -13,7 +13,7 @@ class DomainAggregateConventionValidatorTest {
     File tempDir
 
     @Test
-    @DisplayName('Product 형태의 불변 Aggregate와 식별자 컬렉션을 허용한다')
+    @DisplayName('Product 형태의 불변 Aggregate와 일급 컬렉션을 허용한다')
     void acceptsImmutableAggregateWithIdentifierCollection() {
         // given
         Project project = sampleProject('valid-product')
@@ -27,25 +27,31 @@ class DomainAggregateConventionValidatorTest {
                 public final class Product {
                     private final ProductId id;
                     private final ProductName name;
-                    private final Set<CategoryId> categoryIds;
+                    private final CategorySelection categoryIds;
 
-                    private Product(final ProductId id, final ProductName name, final Set<CategoryId> categoryIds) {
-                        this.id = Objects.requireNonNull(id);
-                        this.name = Objects.requireNonNull(name);
-                        this.categoryIds = Set.copyOf(categoryIds);
+                    private Product(final ProductId id, final ProductName name, final CategorySelection categoryIds) {
+                        final ProductId validatedId = Objects.requireNonNull(id);
+                        this.id = validatedId;
+                        final ProductName validatedName = Objects.requireNonNull(name);
+                        this.name = validatedName;
+                        final CategorySelection validatedCategoryids = Objects.requireNonNull(categoryIds);
+                        this.categoryIds = validatedCategoryids;
                     }
 
-                    public static Product create(final String name, final Set<CategoryId> categoryIds) {
-                        return new Product(ProductId.generate(), ProductName.from(name), categoryIds);
+                    public static Product create(final String name, final CategorySelection categoryIds) {
+                        final ProductId id = ProductId.generate();
+                        final ProductName productName = ProductName.from(name);
+                        return new Product(id, productName, categoryIds);
                     }
 
-                    public static Product restore(final ProductId id, final ProductName name, final Set<CategoryId> categoryIds) {
+                    public static Product restore(final ProductId id, final ProductName name, final CategorySelection categoryIds) {
                         return new Product(id, name, categoryIds);
                     }
 
                     @Override
                     public boolean equals(final Object other) {
-                        return other instanceof Product product && id.equals(product.id);
+                        return other instanceof Product product && id.equals(
+                                product.id);
                     }
 
                     @Override
@@ -103,7 +109,7 @@ class DomainAggregateConventionValidatorTest {
     }
 
     @Test
-    @DisplayName('Map의 key와 value Value Object 및 이름이 다른 생성자 인자를 허용한다')
+    @DisplayName('Aggregate의 Map도 일급 컬렉션으로 감싸야 한다')
     void acceptsMapValueObjectsAndRenamedConstructorParameter() {
         // given
         Project project = sampleProject('map-value-objects')
@@ -147,7 +153,7 @@ class DomainAggregateConventionValidatorTest {
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
         // then
-        assert !violations.any { violation -> violation.contains("Product.java domain collection field 'tags'") }
+        assert violations.any { violation -> violation.contains("domain field 'tags' must use a first-class collection") }
     }
 
     @Test
