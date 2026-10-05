@@ -84,6 +84,8 @@ tasks.withType(JavaCompile).configureEach {
 
 test {
     useJUnitPlatform()
+    inputs.dir('docs/templates').withPropertyName('conventionTemplates')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 jacoco {
