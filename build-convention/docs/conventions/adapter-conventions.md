@@ -24,3 +24,8 @@
 - 전송 기술의 교체 경계와 Kafka 규칙은 [BC 이벤트](bounded-context-events.md), 전달·멱등성·재시도 규칙은 [Outbox/Inbox](outbox-inbox-conventions.md) 컨벤션을 따른다.
 
 패키지 배치는 [패키지 구조](package-structure.md), 영속성 어댑터의 세부 규칙은 [영속성](persistence-conventions.md) 컨벤션을 따른다.
+
+## 웹 변환 보완
+
+- Request에서 Query로의 단순 변환은 public 인스턴스 `toQuery()`에 둔다. 분기·반복이 필요한 Request 변환은 웹 Mapper로 분리한다.
+- Response 필드나 공개 반환 타입으로 애플리케이션 모델을 노출하지 않는다. `Response.from(Result)`의 내부 변환에서는 같은 BC의 Result DTO·일급 컬렉션을 참조할 수 있다.

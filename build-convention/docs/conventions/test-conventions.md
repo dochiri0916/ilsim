@@ -16,3 +16,24 @@
 - 테스트 메서드 이름은 `snake_case`로 작성하고 테스트 조건과 기대 결과를 드러낸다. 예: `rejects_order_when_stock_is_insufficient`.
 
 테스트 대상의 업무 규칙과 책임은 [도메인](domain-conventions.md), [애플리케이션](application-conventions.md), [어댑터](adapter-conventions.md) 컨벤션을 따른다. DB 통합 검증은 [영속성](persistence-conventions.md), [Querydsl](querydsl-conventions.md) 컨벤션을 함께 따른다.
+
+## 작성 흐름과 검증 대상
+
+기능·버그 수정·업무 규칙 변경에는 다음 흐름을 적용한다.
+
+1. 정상·실패·경계·상태 전이·외부 Port 실패를 설계한다. 메시지나 코드가 계약인 경우 해당 기대 결과도 설계한다.
+2. 실패하는 테스트를 먼저 작성하고 대상 테스트를 실행한다.
+3. 최소 구현으로 통과시킨다.
+4. 리팩터링 후 대상 테스트와 [전체 검증](validation-conventions.md)을 수행한다.
+
+| 계층 | 검증 대상 |
+|---|---|
+| Domain | VO 불변식, Aggregate 상태 전이, 계약에 포함된 예외 정보 |
+| Application | UseCase 흐름과 결과, 필요한 외부 Port 계약 |
+| Persistence Adapter | Port 계약, Entity-Domain 매핑, migration 제약 |
+| Web Adapter | 요청 검증, UseCase 호출 계약, 공통 오류 응답 |
+| Architecture | build-convention과 ArchUnit 규칙 |
+
+- 예외 assertion은 `// when & then`으로 동작과 결과 검증을 함께 표현할 수 있다.
+- `assertDoesNotThrow`만으로 기대 동작을 검증하지 않는다. 결과·상태 또는 요구사항에 포함된 상호작용을 검증한다.
+- `@Disabled`, assumption, 넓은 예외 catch로 실패를 숨기지 않는다.

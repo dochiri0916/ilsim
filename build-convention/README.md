@@ -38,6 +38,23 @@ com.example.project/
 
 `docs/templates` contains the `book` context in `com.example.demo`. See [template execution requirements](docs/templates/README.md) for dependencies and the verified scope.
 
+### Consumer guidance through `ai`
+
+The published plugin JAR includes guidance, detailed convention documents, and reference template sources.
+Before starting Claude or Codex, `ai` copies this bundle from the locally published plugin version used by its
+convention check into the consumer project's `docs/build-convention/` and adds a managed block to `AGENTS.md`.
+Both CLIs also receive the guidance path in the task prompt. Existing instructions outside the block are preserved;
+template sources stay in documentation and are never copied into production source directories.
+The entry point is [conventions/README.md](docs/conventions/README.md); detailed rules live in that directory.
+
+`docs/build-convention/.ai-guidance.json` records the plugin version and file hashes. Unchanged files are not
+rewritten. Locally edited or conflicting documents prevent that project's synchronization and produce a notice;
+unrelated documents are preserved. Independent Gradle projects get separate bundles, while modules share their
+Gradle root's guidance. A project applying its own plugin version must check it against the recorded guidance version.
+
+Run the repository's `install.sh` again if an older local JAR has no guidance bundle. Missing guidance does not
+prevent the AI task or its post-task checks. Requests disabling convention checks skip guidance deployment too.
+
 ### Request and persistence flow
 
 ```text

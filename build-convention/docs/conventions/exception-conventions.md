@@ -16,3 +16,31 @@
 - 업무 예외는 `info` 또는 `warn`, 저장소·미처리 예외는 `error`로 기록한다. 기술 오류는 요청 URI·HTTP 메서드와 원인 예외의 스택 트레이스를 포함한다.
 
 계층별 책임은 [도메인](domain-conventions.md), [애플리케이션](application-conventions.md), [어댑터](adapter-conventions.md), 저장소의 flush와 트랜잭션 실패 처리는 [영속성](persistence-conventions.md), 예외 검증은 [테스트](test-conventions.md) 컨벤션을 따른다.
+
+## 예외 선언과 웹 경계 보완
+
+- 기반 예외의 `permits`에는 실제 존재하는 모든 final 직계 예외를 명시한다. 구체 예외는 public constructor와 문자열 메시지를 사용할 수 있다.
+- 공통 `ErrorCode`, `ErrorKind`, `BusinessException` 계약을 만들지 않는다.
+- 웹 처리기는 sealed 예외를 `switch`로 나눠 상태와 코드를 매핑한다. Controller와 처리기에서 Spring `ProblemDetail` 팩터리를 직접 호출하지 않는다.
+- `ProblemDetail`, `HttpStatus`, `@RestControllerAdvice`는 `global.exception` 또는 `adapter.in.web`에만 둔다.
+- Domain·Application·Outbound Port는 DB·HTTP·SDK·Spring 기술 예외를 외부 계약으로 노출하지 않는다. 저장소 기술 예외는 어댑터에서 번역한다.
+- `@Valid @RequestBody` 입력 검증 실패도 공통 오류 응답 형식을 사용한다. 거부된 필드 값 대신 입력 형식을 확인하라는 공통 400 메시지를 제공한다.
+
+기반 예외 선언 예시:
+
+```java
+public abstract sealed class CartDomainException extends RuntimeException
+        permits CartIdRequiredException {
+    protected CartDomainException(final String message) {
+        super(message);
+    }
+}
+
+public final class CartIdRequiredException extends CartDomainException {
+    public CartIdRequiredException() {
+        super("장바구니 ID는 필수입니다.");
+    }
+}
+```
+
+실행 가능한 처리기와 공통 응답 예시는 [템플릿](../templates/README.md)을 참고한다.

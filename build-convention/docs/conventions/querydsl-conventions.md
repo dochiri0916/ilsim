@@ -15,3 +15,11 @@
 - 조회 트랜잭션은 [애플리케이션 컨벤션](application-conventions.md)을 따른다. 쿼리 실행과 변환은 어댑터에서 `RepositoryExceptionTranslator.execute(...)`로 감싼다.
 
 공통 규칙은 [애플리케이션](application-conventions.md), [어댑터](adapter-conventions.md), [영속성](persistence-conventions.md) 컨벤션을 따른다.
+
+## 검사 범위와 조회 안정성 보완
+
+- 가변 `JPAQuery`를 필드에 보관하거나 외부에 반환하지 않는다.
+- Q 타입의 Git 포함 여부는 프로젝트 아래 Java 파일의 Git index 스냅샷으로 검사한다. staging 후 작업 파일을 수정·삭제해도 검사 대상에서 빠지지 않는다. Git이 없는 소스 배포본에는 index 검사를 적용하지 않는다.
+- 유일 정렬 키는 `id`·`publicId` 또는 조회 Entity의 NOT NULL 단일 열 유니크 제약에 해당하는 키를 포함한다. 지역 정렬 변수와 인자 없는 지역 헬퍼도 검사한다.
+- offset 곱셈을 지역 변수·지역 헬퍼로 옮겨도 첫 곱셈부터 long으로 계산한다. 곱셈 후 long으로 캐스팅하지 않는다.
+- 외부 헬퍼의 offset 계산, 복합 유일 키 전체 정렬, 조인 후 실제 유일성, 목록/count의 동일 조건, N+1 방지는 DB 테스트와 코드 리뷰로 확인한다. 구현·검증 범위는 [coverage.json](coverage.json)을 참고한다.

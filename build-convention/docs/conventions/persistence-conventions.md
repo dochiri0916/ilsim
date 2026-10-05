@@ -13,3 +13,9 @@
 기존 DB의 컬럼·제약·타입 변경 절차는 [DB 변경 가이드](database-migration-conventions.md)를 따른다.
 
 세부 규칙은 [도메인](domain-conventions.md), [Querydsl](querydsl-conventions.md) 컨벤션을 따른다.
+
+## Entity와 Mapper 보완
+
+- JPA Entity는 공통 `BaseEntity`를 상속한다.
+- 동일 컬럼의 유니크 제약을 `@Table`과 `@Column(unique = true)`에 중복 선언하지 않는다.
+- Mapper는 `final` 유틸리티 클래스로 구조 변환만 담당한다. 자식 행 키 UUID는 만들 수 있지만 현재 시간은 생성하지 않는다.

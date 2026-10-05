@@ -67,3 +67,9 @@ adapter/
 - 내부 검색 조건은 `{Domain}SearchCondition`, Querydsl 조회 구현은 `{Domain}QueryRepository`, 영속성 내부 DTO는 `{Purpose}Row`로 이름을 짓는다.
 - 이벤트 계약과 전송 경계는 [BC 이벤트](bounded-context-events.md), 트랜잭션·멱등성·재시도는 [Outbox/Inbox](outbox-inbox-conventions.md) 컨벤션을 따른다.
 - 계층별 규칙은 [도메인](domain-conventions.md), [애플리케이션](application-conventions.md), [어댑터](adapter-conventions.md), [영속성](persistence-conventions.md), [Querydsl](querydsl-conventions.md) 컨벤션을 따른다.
+
+## 계층과 공통 영역 보완
+
+- `global`은 BC의 패키지를 import하지 않는다. `global.web`과 `common` 패키지는 만들지 않는다.
+- 묶음 Context는 한 단계까지만 허용하며, 같은 묶음의 모듈끼리는 Port와 Domain 모델을 직접 사용할 수 있다.
+- 다른 Context와의 통합은 Port와 Adapter에서 번역한다. Published Language가 필요하면 `publishedLanguagePackagePrefixes`로 명시한다.

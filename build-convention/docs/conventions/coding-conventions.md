@@ -11,3 +11,8 @@
 - 설정값은 `@Value` 대신 `record` 기반 `@ConfigurationProperties`로 바인딩한다.
 
 도메인 객체의 상태 불변성과 생성 규칙은 [도메인](domain-conventions.md), 예외의 상속 계층과 생성자 규칙은 [예외](exception-conventions.md) 컨벤션을 따른다.
+
+## 선언과 품질 보완
+
+- record compact constructor의 암시적 파라미터에는 `final`을 명시하지 않는다.
+- 줄 길이는 130자 이하로 유지하고 사용하지 않는 import는 제거한다.

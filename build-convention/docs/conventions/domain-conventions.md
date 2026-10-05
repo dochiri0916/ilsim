@@ -19,3 +19,9 @@
 - 클래스·파라미터 선언과 코드 스타일은 [공통 코드 컨벤션](coding-conventions.md)을 따른다.
 
 패키지 배치는 [패키지 구조](package-structure.md), 세부 규칙은 [애플리케이션](application-conventions.md), [어댑터](adapter-conventions.md), [영속성](persistence-conventions.md), [BC 이벤트](bounded-context-events.md) 컨벤션을 따른다.
+
+## 생성과 이벤트 보완
+
+- 도메인에서 Lombok을 사용하지 않는다. 생성·검증·상태 변경은 도메인 코드에 명시한다.
+- 도메인 이벤트 이름은 `BookRegistered`처럼 과거형으로 작성하고 `Event` 접미사를 붙이지 않는다. record compact constructor에서 null 등 이벤트의 유효성을 검증한다.
+- 업무 실패를 `IllegalArgumentException` 등 JDK 기본 예외로 표현하지 않는다. 해당 Context의 도메인 예외를 사용한다.

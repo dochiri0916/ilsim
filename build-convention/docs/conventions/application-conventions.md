@@ -14,3 +14,12 @@
 - 클래스·파라미터 선언, 의존성 주입과 코드 스타일은 [공통 코드 컨벤션](coding-conventions.md)을 따른다.
 
 관련 규칙은 [도메인](domain-conventions.md), [어댑터](adapter-conventions.md), [Querydsl](querydsl-conventions.md) 컨벤션을 따른다.
+
+## 서비스와 포트 보완
+
+- Application Service는 정확히 하나의 Inbound UseCase를 구현하고, Outbound Port 또는 무상태 Domain Service만 주입받는다.
+- Application은 같은 Context의 Domain, 자신이 소유한 Port, 공유 커널(`global.domain`, `global.application.exception`)을 사용한다. compile-time Lombok을 사용할 수 있다.
+- 트랜잭션은 public Application Service 메서드에 선언한다. 로그인·인증(`login`·`authenticate`)도 `readOnly = true`로 선언한다.
+- 트랜잭션 내부에서 외부 API·메시지·메일·파일 I/O를 수행하지 않는다.
+- Repository Port 메서드는 `save`, `create`, `update`, `find...`, `exists...`, `delete...`를 사용하고 `upsert`는 사용하지 않는다.
+- Command는 record compact constructor에서 입력을 검증하고, 실패 시 해당 Context의 `InvalidCommandException`을 던진다.

@@ -6,10 +6,8 @@
 
 소비 프로젝트가 따라야 하는 Java/Spring 상세 규칙은 다음 문서를 기준으로 한다.
 
-- `docs/AGENTS_GUIDANCE.md`
-- `docs/ARCHITECTURE.md`
-- `docs/ERROR_HANDLING.md`
-- `docs/TESTING.md`
+- `docs/conventions/README.md`
+- 변경 계층과 기술에 해당하는 `docs/conventions/` 상세 문서
 
 실제 validation rule 구현과 테스트가 최종 source of truth다.
 
@@ -90,7 +88,7 @@ Convention 내부에서도 책임을 분리한다.
 
 소비 프로젝트에 영향을 주는 규칙 의미가 바뀌면 관련 문서를 함께 갱신한다.
 
-특히 다음 변경은 `docs/AGENTS_GUIDANCE.md` 반영 여부를 확인한다.
+특히 다음 변경은 `docs/conventions/`의 해당 규칙과 안내 반영 여부를 확인한다.
 
 - Domain / Application / Adapter 규칙
 - package 규칙
