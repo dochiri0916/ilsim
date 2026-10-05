@@ -51,7 +51,16 @@ class ConventionTests(Temp):
                 path = self.project/convention.REPORT
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(value))
-            return subprocess.CompletedProcess(command, 1, stdout=output.format(project=self.project))
+                if '--init-script' in command:
+                    script = Path(command[command.index('--init-script') + 1])
+                    manifest = script.with_name(script.name.replace('.init.gradle', '.projects.json'))
+                    tasks = {'tests': 'test', 'architecture': 'validateArchitectureConventions', 'archUnit': 'validateArchUnitArchitecture',
+                             'checkstyle': 'checkstyleMain', 'changedCodeCoverage': 'validateChangedCodeCoverage'}
+                    manifest.write_text(json.dumps({'reports': [{'project': ':', 'file': str(path)}],
+                                                    'failures': [{'project': ':', 'task': tasks.get(name, name)}
+                                                                 for name, status in value['checks'].items() if status == 'FAIL']}))
+            code = 1 if value is None or value['status'] == 'FAIL' else 0
+            return subprocess.CompletedProcess(command, code, stdout=output.format(project=self.project))
         return run
 
     def main(self, value, *extra):
@@ -198,10 +207,69 @@ class ConventionTests(Temp):
         self.assertEqual((0, '컨벤션 검증: 통과'), (self.main(report())[0], self.main(report())[1].splitlines()[0]))
 
     def test_changed_coverage_without_git_is_reported_not_blocking(self):
-        code, output = self.main(dict(report(changedCodeCoverage='FAIL'), baseRef=None))
+        code, output = self.main(dict(report(changedCodeCoverage='FAIL'), baseRef=None, gitRepository=False))
         self.assertEqual(0, code)
         self.assertIn('Git 저장소가 아니어서', output)
         self.assertEqual(1, self.main(dict(report(changedCodeCoverage='FAIL'), baseRef='abc'))[0])
+
+    def test_git_coverage_failure_without_an_explicit_base_is_blocking(self):
+        subprocess.run(['git', 'init', '-b', 'main', str(self.project)], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(self.project), '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                        'commit', '--allow-empty', '-m', 'base'], check=True, capture_output=True)
+        result = convention.run(self.project, self.root/'out.json', process=self.process(report(changedCodeCoverage='FAIL')))
+        self.assertEqual('main', result['baseRef'])
+        self.assertTrue(result['gitRepository'])
+        self.assertEqual(['changedCodeCoverage'], convention.blocking(result))
+        self.assertNotIn('Git 저장소가 아니어서', convention.summary(result))
+        self.assertTrue(any('-PchangedCoverageBaseRef=main' in command for command, _ in self.commands))
+
+    def test_git_repository_without_default_refs_is_not_exempt(self):
+        code, text = self.main(dict(report(changedCodeCoverage='FAIL'), baseRef=None, gitRepository=True))
+        self.assertEqual(1, code)
+        self.assertIn('Git 비교 기준', text)
+
+    def test_enabled_checks_that_did_not_run_are_not_passed(self):
+        value = report(archUnit='SKIPPED')
+        self.assertEqual(1, self.main(value)[0])
+        value['skipped'] = {'archUnit': 'architecture disabled explicitly'}
+        self.assertEqual([], convention.blocking(value))
+
+    def test_subprojects_and_custom_build_directories_are_aggregated(self):
+        root = self.process(report())
+        def run(command, **kwargs):
+            root(command, **kwargs)
+            child = self.project/'child/custom-output/report.json'
+            child.parent.mkdir(parents=True)
+            child.write_text(json.dumps(report(tests='FAIL')))
+            script = Path(command[command.index('--init-script') + 1])
+            manifest = script.with_name(script.name.replace('.init.gradle', '.projects.json'))
+            value = json.loads(manifest.read_text())
+            value['reports'].append({'project': ':child', 'file': str(child)})
+            value['failures'].append({'project': ':child', 'task': 'test'})
+            manifest.write_text(json.dumps(value))
+            return subprocess.CompletedProcess(command, 1, stdout='> Task :child:test FAILED\n')
+        result = convention.run(self.project, self.root/'out.json', process=run)
+        self.assertEqual('FAIL', result['status'])
+        self.assertEqual(['tests'], convention.blocking(result))
+        self.assertEqual('FAIL', result['projects'][':child']['checks']['tests'])
+
+    def test_missing_child_report_and_unreported_gradle_failures_never_pass(self):
+        root = self.process(report())
+        def run(command, **kwargs):
+            root(command, **kwargs)
+            return subprocess.CompletedProcess(command, 1, stdout='Unexpected Gradle failure')
+        result = convention.run(self.project, self.root/'out.json', process=run)
+        self.assertEqual(['gradleExecution'], convention.blocking(result))
+        def missing(command, **kwargs):
+            root(command, **kwargs)
+            script = Path(command[command.index('--init-script') + 1])
+            manifest = script.with_name(script.name.replace('.init.gradle', '.projects.json'))
+            value = json.loads(manifest.read_text())
+            value['reports'].append({'project': ':child', 'file': str(self.project/'missing.json')})
+            manifest.write_text(json.dumps(value))
+            return subprocess.CompletedProcess(command, 1, stdout='')
+        with self.assertRaisesRegex(ValueError, ':child'):
+            convention.run(self.project, self.root/'out.json', process=missing)
 
 
 if __name__ == '__main__':

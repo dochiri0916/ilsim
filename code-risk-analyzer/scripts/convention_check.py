@@ -21,7 +21,8 @@ REPORT = Path('build/reports/build-convention/report.json')
 NAMES = {'architecture': '아키텍처', 'archUnit': '아키텍처(ArchUnit)', 'checkstyle': 'Checkstyle', 'pmd': 'PMD',
          'spotBugs': 'SpotBugs', 'migration': 'DB 마이그레이션', 'changedCodeCoverage': '변경 코드 커버리지',
          'coverageVerification': '전체 커버리지', 'tests': '테스트', 'compilation': '컴파일', 'javaVersion': 'Java 버전',
-         'conventionIntegrity': '검증 무력화 방지', 'mutationGate': '변이 테스트', 'coverageReport': '커버리지 리포트'}
+         'conventionIntegrity': '검증 무력화 방지', 'mutationGate': '변이 테스트', 'coverageReport': '커버리지 리포트',
+         'gradleExecution': 'Gradle 실행'}
 
 
 def version():
@@ -31,10 +32,10 @@ def version():
     return match.group(1)
 
 
-def init_script(plugin_version):
+def init_script(plugin_version, manifest=None):
     # The plugin must sit on the root build script classpath: it applies SpotBugs, PIT and others by plugin id,
     # which an init-script classpath would not resolve.
-    return f"""beforeProject {{ project ->
+    script = f"""beforeProject {{ project ->
     if (project == project.rootProject) {{
         project.buildscript.repositories {{
             mavenLocal()
@@ -55,6 +56,34 @@ allprojects {{
     }}
 }}
 """
+    if manifest is not None:
+        # Gradle supplies the actual project and build directories, including Java-only subprojects.
+        destination = json.dumps(str(manifest)).replace('$', '\\$')
+        script += f"""
+def failedConventionTasks = java.util.Collections.synchronizedList([])
+gradle.projectsEvaluated {{
+    def reports = gradle.rootProject.allprojects.findAll {{
+        it.pluginManager.hasPlugin('{PLUGIN_ID}')
+    }}.collect {{ project ->
+        def report = project.layout.buildDirectory.file('reports/build-convention/report.json').get().asFile
+        report.delete()
+        [project: project.path, file: report.absolutePath]
+    }}
+    new File({destination}).text = groovy.json.JsonOutput.toJson([reports: reports, failures: []])
+}}
+gradle.taskGraph.afterTask {{ task, state ->
+    if (state.failure != null) failedConventionTasks.add([project: task.project.path, task: task.name])
+}}
+gradle.buildFinished {{
+    def manifest = new File({destination})
+    if (manifest.isFile()) {{
+        def value = new groovy.json.JsonSlurper().parse(manifest)
+        value.failures = failedConventionTasks
+        manifest.text = groovy.json.JsonOutput.toJson(value)
+    }}
+}}
+"""
+    return script
 
 
 CHECKSTYLE = re.compile(r'\[ant:checkstyle\] \[(?:ERROR|WARN)\] (.+?):(\d+)(?::\d+)?: (.+)')
@@ -66,6 +95,9 @@ GROUPS = {'architecture': '아키텍처', 'convention': '컨벤션'}
 CONFIG = '.code-risk.yml'
 JAR = SCRIPTS.parent/'build'/'libs'/'code-risk-analyzer-0.0.1-SNAPSHOT.jar'
 COMPILE = ['./gradlew', 'testClasses']
+ARCHITECTURE_TASKS = {'validateHexagonalArchitecture', 'validateEntityNamingConvention',
+                      'validateDomainStaticFactoryConvention', 'validateArchitectureConventions',
+                      'validateArchUnitArchitecture', 'validateClaudeConventions'}
 
 
 class Unavailable(ValueError):
@@ -131,15 +163,36 @@ def violations(project, output):
     return list(unique.values())
 
 
+def git_base(project, requested=None):
+    """Resolve the same default refs as the plugin; lack of a ref is not lack of a repository."""
+    def git(*args):
+        return subprocess.run(['git', '-C', str(project), *args], stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, text=True, timeout=30)
+    inside = git('rev-parse', '--is-inside-work-tree')
+    if inside.returncode:
+        if any((folder/'.git').exists() for folder in [project, *project.parents]):
+            raise ValueError('Git 저장소 상태를 확인하지 못했습니다')
+        return requested, False
+    if requested:
+        return requested, True
+    for candidate in ('origin/main', 'origin/master', 'main', 'master'):
+        if git('rev-parse', '--verify', candidate + '^{commit}').returncode == 0:
+            return candidate, True
+    return None, True
+
+
 def run(project, output, base_ref=None, process=subprocess.run, off=None):
     """Run check once, copy the plugin report to `output` with the printed violations; returns the report.
 
     off maps a switched-off group to its reason: its checks are recorded as skipped and its violations left out.
     """
-    project, output = Path(project).resolve(), Path(output)
+    project, output = Path(project).resolve(), Path(output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
+    base_ref, git_repository = git_base(project, base_ref)
+    manifest = output.with_suffix('.projects.json')
+    manifest.unlink(missing_ok=True)
     script = output.with_suffix('.init.gradle')
-    script.write_text(init_script(version()), encoding='utf-8')
+    script.write_text(init_script(version(), manifest), encoding='utf-8')
     report = project/REPORT
     report.unlink(missing_ok=True)
     if (project/'build/classes/java/main').is_dir():
@@ -150,21 +203,55 @@ def run(project, output, base_ref=None, process=subprocess.run, off=None):
         command.append('-PchangedCoverageBaseRef=' + base_ref)
     result = process(command, cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=1800)
     lines = (result.stdout or '').splitlines()
-    if not report.is_file():
+    if not manifest.is_file():
         # Gradle's own failure headline says why check aborted before the plugin wrote its report.
         start = next((index + 1 for index, line in enumerate(lines) if line.strip() == '* What went wrong:'), None)
         cause = '\n'.join(line for line in lines[start:start + 3] if line.strip()) if start is not None else ''
         if any('build-convention' in line and ('Could not find' in line or 'Could not resolve' in line) for line in lines):
             raise Unavailable('build-convention을 찾지 못했습니다. install.sh로 설치하세요')
         raise ValueError('컨벤션 검사가 리포트를 만들기 전에 실패했습니다' + (f'\n{cause}' if cause else ''))
-    value = json.loads(report.read_text(encoding='utf-8'))
-    if not isinstance(value, dict) or value.get('status') not in ('PASS', 'FAIL') or not isinstance(value.get('checks'), dict):
+    inventory = json.loads(manifest.read_text(encoding='utf-8'))
+    if not isinstance(inventory, dict) or not isinstance(inventory.get('reports'), list) or not isinstance(inventory.get('failures'), list):
+        raise ValueError('컨벤션 프로젝트 목록 형식이 올바르지 않습니다')
+    if not inventory['reports']:
+        raise Unavailable('컨벤션 검증 대상 Java 프로젝트가 없습니다')
+    projects = {}
+    for entry in inventory['reports']:
+        path = Path(entry['file'])
+        if not path.is_file():
+            raise ValueError(f"컨벤션 검증 리포트가 없습니다: {entry['project']}")
+        value = json.loads(path.read_text(encoding='utf-8'))
+        if (not isinstance(value, dict) or value.get('status') not in ('PASS', 'FAIL')
+                or not isinstance(value.get('checks'), dict)
+                or any(status not in ('PASS', 'FAIL', 'SKIPPED', 'NOT_APPLIED') for status in value['checks'].values())):
+            raise ValueError('컨벤션 검증 리포트 형식이 올바르지 않습니다')
+        projects[entry['project']] = value
+    if len(projects) != len(inventory['reports']):
         raise ValueError('컨벤션 검증 리포트 형식이 올바르지 않습니다')
+    value = dict(projects.get(':') or next(iter(projects.values())))
+    ranks = {'NOT_APPLIED': 0, 'PASS': 1, 'SKIPPED': 2, 'FAIL': 3}
+    checks = {}
+    for item in projects.values():
+        for name, status in item['checks'].items():
+            checks[name] = max(checks.get(name, 'NOT_APPLIED'), status, key=ranks.get)
+    value['checks'] = checks
     off = off or {}
-    value['skipped'] = {name: off[group(name)] for name in value['checks'] if group(name) in off}
+    failures = inventory['failures']
+    unexpected = [item for item in failures
+                  if ('architecture' if item['task'] in ARCHITECTURE_TASKS else 'convention') not in off
+                  and not (item['task'] == 'validateChangedCodeCoverage' and not git_repository and not base_ref)]
+    # A nonzero Gradle exit is only ignorable when its recorded failures are explicitly switched off or need Git.
+    value['skipped'] = {name: off[group(name)] for name in checks if group(name) in off and name != 'gradleExecution'}
     value['violations'] = [item for item in violations(project, '\n'.join(lines))
                            if ('architecture' if item.get('rule', '').startswith('ARCH-') else 'convention') not in off]
     value['baseRef'] = base_ref
+    value['gitRepository'] = git_repository
+    value['gradleExitCode'] = result.returncode
+    if result.returncode and (unexpected or not failures) and not blocking(value):
+        value['checks']['gradleExecution'] = 'FAIL'
+    value['taskFailures'] = failures
+    value['projects'] = projects
+    value['status'] = 'FAIL' if blocking(value) else 'PASS'
     output.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
     return value
 
@@ -176,8 +263,11 @@ def failing(report):
 
 
 def blocking(report):
-    """Every failing check, except changed-code coverage when there was no Git revision to compare against."""
-    return [name for name in failing(report) if name != NO_BASE or report.get('baseRef')]
+    """Only a verified non-Git directory can exempt changed-code coverage."""
+    skipped = report.get('skipped') or {}
+    incomplete = [name for name, status in report['checks'].items() if status == 'SKIPPED' and name not in skipped]
+    return [name for name in sorted(set(failing(report) + incomplete))
+            if name != NO_BASE or report.get('baseRef') or report.get('gitRepository') is not False]
 
 
 def label(names):
@@ -197,7 +287,12 @@ def summary(report, before=None):
     for reason, names in reasons.items():
         lines.append(f'설정으로 건너뜀(SKIP): {label(names)} - {reason}')
     if NO_BASE in failing(report) and not report.get('baseRef'):
-        lines.append('Git 저장소가 아니어서 변경 코드 커버리지는 확인하지 못했습니다')
+        if report.get('gitRepository') is False:
+            if not blocking(report):
+                lines[0] = '컨벤션 검증: 완료 (변경 코드 커버리지 확인 불가)'
+            lines.append('Git 저장소가 아니어서 변경 코드 커버리지는 확인하지 못했습니다')
+        else:
+            lines.append('Git 비교 기준을 찾지 못해 변경 코드 커버리지를 검증하지 못했습니다')
     for item in report.get('violations', [])[:10]:
         lines.append(f"- {item['file']}{':' + str(item['line']) if 'line' in item else ''} {item['message']}")
     if len(report.get('violations', [])) > 10:
