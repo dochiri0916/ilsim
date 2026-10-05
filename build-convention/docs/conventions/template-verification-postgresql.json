@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-05",
+  "scope": "Historical verification of the previous template state on PostgreSQL, before MySQL qualified constraint handling and its additional regression tests; not current primary DB verification",
+  "environment": {
+    "java": 21,
+    "springBoot": "3.5.16",
+    "postgresql": "16.15",
+    "postgresImageDigest": "sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54",
+    "querydsl": "io.github.openfeign.querydsl:7.7"
+  },
+  "results": [
+    {
+      "suite": "com.example.demo.DemoApplicationTests",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.in.web.BookControllerTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.in.web.BookExceptionHandlerTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.in.web.BookSearchIntegrationTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.event.BookEventAdapterTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.persistence.BookPersistenceAdapterSearchTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.persistence.BookPersistenceAdapterTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.persistence.BookQueryRepositoryTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.port.in.command.RegisterBookCommandTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.port.in.query.SearchBooksQueryTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.port.out.BookSearchConditionTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.service.GetBookServiceTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.service.RegisterBookServiceTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.service.SearchBooksServiceTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.BookTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.event.BookRegisteredTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.vo.BookIdTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.vo.BookTitleTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.vo.IsbnTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.global.exception.GlobalApiControllerAdviceTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.global.persistence.RepositoryExceptionTranslatorTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0
+    }
+  ],
+  "total": {
+    "tests": 53,
+    "failures": 0,
+    "errors": 0
+  },
+  "followup": [
+    "Apply remaining Querydsl, events, Outbox/Inbox, tests and database migration requirements",
+    "Revalidate templates under the actual convention plugin after rollout"
+  ],
+  "generatedSources": [
+    "com.example.demo.book.adapter.out.persistence.QBookEntity",
+    "com.example.demo.global.persistence.QBaseEntity"
+  ]
+}

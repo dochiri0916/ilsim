@@ -27,7 +27,7 @@ com.example.project/
     │   ├── event/             # domain events: past-tense records without an Event suffix
     │   └── exception/
     ├── application/
-    │   ├── port/in/           # UseCase, Command, Result, command/, result/
+    │   ├── port/in/           # usecase/, command/, query/, result/
     │   ├── port/out/          # ports required by the use cases
     │   ├── service/
     │   └── exception/
@@ -36,7 +36,7 @@ com.example.project/
         └── out/persistence/   # repository adapters, JPA entities, and mappers
 ```
 
-`docs/templates` holds one complete context (`book` in `com.example.demo`) whose every file passes `check`; copy its shape for new code.
+`docs/templates` contains the `book` context in `com.example.demo`. See [template execution requirements](docs/templates/README.md) for dependencies and the verified scope.
 
 ### Request and persistence flow
 
@@ -66,9 +66,10 @@ The controller calls an inbound `*UseCase`; it does not depend on an Application
 
 ## Domain and application conventions
 
-- Aggregates and domain entities are immutable `final` classes. Value Objects and First-class Collections are `record` types.
-- Domain identifiers use `{Domain}Id` Value Objects. Domain models do not expose database technical IDs.
-- Create new aggregates with `create`; restore persisted state with `restore`. State-changing methods return a new aggregate.
+- Aggregates and domain entities are immutable `final` classes. Value Objects and First-class Collections are `final` classes with private constructors and `of` factories; state enums live in `domain.vo`.
+- Domain identifiers use `{Domain}Id` Value Objects wrapping UUID v7; constructors reject other UUID versions. Domain models do not expose database technical IDs.
+- Create new aggregates with `create`; restore persisted state with `restore`. State-changing methods preserve the identifier and return a new aggregate.
+- Domain collections use a single-field First-class Collection with defensive copying. Immutable Outbox records live in `global.domain.outbox` or context `domain.outbox`.
 - Aggregates refer to other aggregates by identifier, not by object reference. JPA relationships and lazy loading are not used to navigate between aggregates.
 - Application services place transactions on public methods; read methods use read-only transactions. They do not perform external I/O inside a transaction.
 - Repository ports may use `save`, `create`, or `update`; they do not use `upsert`.

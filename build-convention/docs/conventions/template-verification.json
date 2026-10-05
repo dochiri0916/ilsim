@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-05",
+  "scope": "Template Java compilation and all 59 template tests including actual HTTP/service/Querydsl/MySQL search, qualified unique constraint names and exception translation; no claim of all convention requirements being complete",
+  "environment": {
+    "java": 21,
+    "springBoot": "3.5.16",
+    "querydsl": "io.github.openfeign.querydsl:7.7",
+    "mysql": "8.4.10",
+    "mysqlConnectorJ": "9.7.0",
+    "mysqlImageDigest": "sha256:c831a0f11348d402b43d77453e17d770be2eef356615a2823fe0f5a0d6c8b9af"
+  },
+  "results": [
+    {
+      "suite": "com.example.demo.DemoApplicationTests",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.in.web.BookControllerTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.in.web.BookExceptionHandlerTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.in.web.BookSearchIntegrationTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.event.BookEventAdapterTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.persistence.BookPersistenceAdapterConflictTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.persistence.BookPersistenceAdapterSearchTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.persistence.BookPersistenceAdapterTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.adapter.out.persistence.BookQueryRepositoryTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.port.in.command.RegisterBookCommandTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.port.in.query.SearchBooksQueryTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.port.out.BookSearchConditionTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.service.GetBookServiceTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.service.RegisterBookServiceTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.application.service.SearchBooksServiceTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.BookTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.event.BookRegisteredTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.vo.BookIdTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.vo.BookTitleTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.book.domain.vo.IsbnTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.global.exception.GlobalApiControllerAdviceTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "suite": "com.example.demo.global.persistence.RepositoryExceptionTranslatorTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0
+    }
+  ],
+  "total": {
+    "tests": 59,
+    "failures": 0,
+    "errors": 0
+  },
+  "followup": [
+    "Apply remaining Querydsl, events, Outbox/Inbox, tests and database migration requirements",
+    "Revalidate templates under the actual convention plugin after rollout"
+  ],
+  "generatedSources": [
+    "com.example.demo.book.adapter.out.persistence.QBookEntity",
+    "com.example.demo.global.persistence.QBaseEntity"
+  ]
+}
