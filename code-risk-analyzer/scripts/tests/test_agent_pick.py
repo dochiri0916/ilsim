@@ -1,8 +1,11 @@
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import io
 import json
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -204,6 +207,65 @@ class MainTests(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertEqual(['claude', 'codex'], [argv[0] for argv, _ in self.started])
         self.assertTrue(any('codex로 같은 작업' in line for line in self.lines))
+
+    def test_fallback_keeps_files_changed_by_the_first_cli(self):
+        limited = [*CLAUDE_OK[:2], *events({'type': 'result', 'is_error': True, 'result': 'usage limit reached'})]
+        self.outputs = [FakeProcess(limited, code=1), FakeProcess(CODEX_OK)]
+        with patch.object(pick, 'choose', return_value=('claude', 'test', False)), patch.object(pick, 'checks', return_value=[]) as checks:
+            self.assertEqual(0, self.main('작업해줘'))
+        self.assertIn(str(Path(self.home).resolve()/'src/A.java'), checks.call_args.args[2])
+
+    def test_shell_changes_to_an_already_dirty_file_are_checked(self):
+        source = Path(self.home)/'src/main/java/A.java'
+        source.parent.mkdir(parents=True)
+        source.write_text('class A { int n = 1; }')
+        def popen(argv, **options):
+            source.write_text('class A { int n = 2; }')
+            return FakeProcess(CODEX_OK)
+        with patch.object(pick, 'checks', return_value=[]) as checks:
+            code = pick.main(['codex', '고쳐줘'], environ=self.environ, now=NOW, which=lambda cli: '/bin/' + cli,
+                             popen=popen, cwd=self.home, say=self.lines.append)
+        self.assertEqual(0, code)
+        self.assertIn(str(source.resolve()), checks.call_args.args[2])
+
+    def test_snapshot_keeps_java_packages_named_like_build_output(self):
+        source = Path(self.home)/'src/main/java/example/build/Task.java'
+        source.parent.mkdir(parents=True)
+        source.write_text('class Task {}')
+        generated = Path(self.home)/'build/Generated.java'
+        generated.parent.mkdir()
+        generated.write_text('class Generated {}')
+        snapshot = pick.worktree_snapshot(Path(self.home))
+        self.assertIn(str(source.resolve()), snapshot)
+        self.assertNotIn(str(generated.resolve()), snapshot)
+
+    def test_failed_checks_fail_the_command_and_are_saved(self):
+        self.outputs = [FakeProcess(CODEX_OK)]
+        with patch.object(pick, 'checks', return_value=['위험 분석: 실패 (종료 코드 3)']):
+            self.assertEqual(1, self.main('작업해줘'))
+        state = pick._load(pick._state_file(self.environ))
+        self.assertEqual(['위험 분석: 실패 (종료 코드 3)'], state[str(Path(self.home).resolve())]['checks'])
+
+    def test_stderr_larger_than_a_pipe_does_not_deadlock(self):
+        processes = []
+        def popen(argv, **options):
+            process = subprocess.Popen(argv, **options)
+            processes.append(process)
+            return process
+        program = ("import sys; sys.stderr.write('x' * 1048576 + '\\nusage limit reached\\n'); sys.stderr.flush(); "
+                   "print('{\"type\":\"thread.started\",\"thread_id\":\"large-stderr\"}', flush=True); sys.exit(1)")
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(pick.run, 'codex', [sys.executable, '-c', program], '', self.home, self.lines.append, popen)
+            try:
+                outcome = future.result(timeout=10)
+            finally:
+                for process in processes:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait(timeout=5)
+        self.assertEqual('large-stderr', outcome['session'])
+        self.assertTrue(outcome['limited'])
+        self.assertEqual('usage limit reached', outcome['error'])
 
     def test_failed_checks_go_to_the_next_task_once(self):
         prompts = []
@@ -423,6 +485,57 @@ class CheckTests(unittest.TestCase):
     def test_only_edited_production_java_files_are_scanned(self):
         edits = [str(self.project/'src/main/java/A.java'), 'src/test/java/ATest.java', '/elsewhere/B.java', 'README.md']
         self.assertEqual(['src/main/java/A.java'], pick.changed_sources(self.project, edits))
+
+    def test_module_sources_are_selected(self):
+        self.assertEqual(['module/src/main/java/A.java'], pick.changed_sources(self.project,
+                         ['module/src/main/java/A.java', 'module/src/test/java/ATest.java']))
+
+    def test_independent_projects_are_checked_from_the_repository_root(self):
+        (self.project/'gradlew').unlink()
+        edits = []
+        for name in ('one', 'two'):
+            project = self.project/name
+            project.mkdir()
+            (project/'gradlew').write_text('')
+            (project/'settings.gradle').write_text('')
+            edits.append(str(project/'src/main/java/A.java'))
+        pick.checks('위험 분석 빼고 고쳐줘', self.project, edits, self.lines.append, self.process, self.jar)
+        self.assertEqual({str(self.project/'one'), str(self.project/'two')}, {command[2] for command in self.commands})
+
+    def test_scan_errors_and_policy_failures_are_not_reported_as_success(self):
+        for code, diagnostic in ((1, 'CI-TEST-GAPS'), (1, 'CI-UNKNOWN'), (3, 'PARSE-001'), (3, 'RULE-001')):
+            with self.subTest(code=code, diagnostic=diagnostic):
+                lines = []
+                def process(command, **options):
+                    output = self.project/command[command.index('--output') + 1]
+                    output.write_text(json.dumps({'findings': [], 'diagnostics': [
+                        {'code': diagnostic, 'severity': 'ERROR' if code == 3 else 'WARNING', 'message': 'failed'}]}))
+                    return subprocess.CompletedProcess(command, code, stdout='')
+                with patch.object(pick, 'load_key', return_value=False):
+                    failures = pick.checks('컨벤션 없이 고쳐줘', self.project, ['src/main/java/A.java'], lines.append, process, self.jar)
+                self.assertTrue(failures)
+                self.assertIn(f'위험 분석: 실패 (종료 코드 {code})', lines)
+                self.assertTrue(any(diagnostic in line for line in failures))
+                self.assertFalse(any('HIGH·CRITICAL 없음' in line for line in lines))
+
+    def test_invalid_input_cannot_reuse_a_previous_scan_report(self):
+        output = self.project/'build/ai/scan.json'
+        output.parent.mkdir(parents=True)
+        output.write_text(json.dumps({'findings': []}))
+        def process(command, **options):
+            self.assertFalse(output.exists())
+            return subprocess.CompletedProcess(command, 2, stdout='Error: invalid config')
+        with patch.object(pick, 'load_key', return_value=False):
+            failures = pick.checks('컨벤션 없이 고쳐줘', self.project, ['src/main/java/A.java'], self.lines.append, process, self.jar)
+        self.assertTrue(failures)
+        self.assertTrue(any('invalid config' in line for line in failures))
+
+    def test_lower_severity_gate_details_are_kept_and_suppressed_findings_are_ignored(self):
+        finding = {'ruleId': 'TEST-001', 'severity': 'MEDIUM', 'status': 'REVIEW', 'title': 'Missing test',
+                   'location': {'file': 'src/main/java/A.java', 'startLine': 12}}
+        self.assertTrue(any('A.java:12 TEST-001' in line for line in pick.risk_summary({'findings': [finding]}, include_all=True)))
+        finding.update(severity='HIGH', status='SUPPRESSED')
+        self.assertEqual(['위험 분석: HIGH·CRITICAL 없음'], pick.risk_summary({'findings': [finding]}))
 
 
 if __name__ == '__main__':

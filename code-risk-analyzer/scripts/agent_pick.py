@@ -37,6 +37,8 @@ concurrency or transaction, else TIER_2). Without either the CLI's own default i
 config/models/routing-policy.json, so forbidden models and efforts are never chosen.
 """
 from datetime import datetime, timedelta, timezone
+from collections import deque
+import hashlib
 import importlib.util
 import json
 import os
@@ -46,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 
 SCRIPTS = Path(__file__).resolve().parent
 WINDOW = timedelta(hours=5)
@@ -421,6 +424,24 @@ def run(name, argv, task, cwd, say, popen=subprocess.Popen):
                         encoding='utf-8', errors='replace')
     except OSError as failure:
         return {'session': None, 'error': str(failure), 'limited': False, 'edits': [], 'rateLimit': None}
+    stderr_chunks = deque(maxlen=8)
+    stderr_limited = False
+
+    def drain_stderr():
+        nonlocal stderr_limited
+        carry = ''
+        if process.stderr is None:
+            return
+        try:
+            for chunk in iter(lambda: process.stderr.read(8192), ''):
+                stderr_chunks.append(chunk)
+                stderr_limited |= bool(LIMIT_ERROR.search(carry + chunk))
+                carry = chunk[-128:]
+        finally:
+            process.stderr.close()
+
+    stderr_reader = threading.Thread(target=drain_stderr, daemon=True)
+    stderr_reader.start()
     try:
         process.stdin.write(task)
         process.stdin.close()
@@ -437,12 +458,18 @@ def run(name, argv, task, cwd, say, popen=subprocess.Popen):
     except KeyboardInterrupt:
         # Ctrl+C reaches the CLI too; make sure it is gone before returning what it did so far.
         _stop(process)
+        stderr_reader.join(timeout=5)
+        if hasattr(process.stdout, 'close'):
+            process.stdout.close()
         return {'session': session, 'error': None, 'limited': False, 'edits': edits, 'rateLimit': rate_limit, 'cancelled': True}
-    stderr = process.stderr.read() if process.stderr else ''
     code = process.wait()
+    stderr_reader.join(timeout=5)
+    if hasattr(process.stdout, 'close'):
+        process.stdout.close()
+    stderr = ''.join(stderr_chunks)
     if code and not error:
         error = (stderr.strip().splitlines() or [f'exit {code}'])[-1]
-    return {'session': session, 'error': error, 'limited': bool(error and LIMIT_ERROR.search(error + ' ' + stderr)), 'edits': edits,
+    return {'session': session, 'error': error, 'limited': bool(error and (stderr_limited or LIMIT_ERROR.search(error))), 'edits': edits,
             'rateLimit': rate_limit}
 
 
@@ -475,9 +502,39 @@ def changed_sources(project, edits):
             relative = target.resolve().relative_to(project).as_posix()
         except ValueError:
             continue
-        if relative.startswith('src/main/') and relative.endswith('.java') and relative not in result:
+        if '/src/main/' in '/' + relative and relative.endswith('.java') and relative not in result:
             result.append(relative)
     return result
+
+
+def worktree_snapshot(root):
+    """Content snapshots also catch shell edits and modifications to files that were already dirty."""
+    excluded = {'.git', '.gradle', 'build', 'target', 'out', 'node_modules', '__pycache__'}
+    snapshot = {}
+    for directory, folders, files in os.walk(root, followlinks=False):
+        relative = '/' + Path(directory).relative_to(root).as_posix()
+        java_source = any(relative.endswith(source) or source + '/' in relative
+                          for source in ('/src/main/java', '/src/test/java'))
+        folders[:] = [name for name in folders if (name not in excluded or java_source) and name != '.git'
+                      and not (Path(directory)/name).is_symlink()]
+        for name in files:
+            path = Path(directory)/name
+            if path.is_symlink():
+                continue
+            try:
+                digest = hashlib.sha256()
+                with path.open('rb') as source:
+                    for chunk in iter(lambda: source.read(65536), b''):
+                        digest.update(chunk)
+                snapshot[str(path.resolve())] = digest.hexdigest()
+            except OSError:
+                # Keep unreadable entries visible rather than mistaking them for deleted files.
+                try:
+                    info = path.stat()
+                    snapshot[str(path.absolute())] = (info.st_mtime_ns, info.st_ctime_ns, info.st_size)
+                except OSError:
+                    snapshot[str(path.absolute())] = None
+    return snapshot
 
 
 def _jev(item):
@@ -491,8 +548,9 @@ def _jev(item):
     return ''
 
 
-def risk_summary(report, limit=5):
-    findings = [item for item in report.get('findings', []) if item.get('severity') in ('CRITICAL', 'HIGH')]
+def risk_summary(report, limit=5, include_all=False):
+    findings = [item for item in report.get('findings', []) if item.get('severity') in (SEVERITY_ORDER if include_all else ('CRITICAL', 'HIGH'))
+                and item.get('status') != 'SUPPRESSED']
     findings.sort(key=lambda item: SEVERITY_ORDER.index(item['severity']))
     notes = {item.get('code'): item.get('message') for item in report.get('diagnostics') or [] if isinstance(item, dict)}
     jev = ' (JEV 실패, 정적 결과만)' if 'JEV-001' in notes else ' (JEV 호출 한도 도달, 일부만 검토)' if 'JEV-002' in notes else ''
@@ -522,7 +580,21 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
     try:
         project = find_project(Path(cwd))
     except ValueError:
-        say('검사: Gradle 프로젝트가 아니라 건너뜀')
+        projects = set()
+        for path in edits:
+            target = Path(path)
+            target = target if target.is_absolute() else Path(cwd)/target
+            try:
+                target.resolve().relative_to(Path(cwd).resolve())
+                projects.add(find_project(target.resolve().parent))
+            except ValueError:
+                continue
+        if not projects:
+            say('검사: Gradle 프로젝트가 아니라 건너뜀')
+            return findings
+        for project in sorted(projects):
+            say(f'검사 대상: {project.relative_to(cwd)}')
+            findings += checks(task, project, edits, say, process, jar)
         return findings
     reports = project/REPORT_DIR
     reports.mkdir(parents=True, exist_ok=True)
@@ -549,6 +621,7 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
         else:
             (reports/'changed.txt').write_text('\n'.join(sources) + '\n', encoding='utf-8')
             output = REPORT_DIR/'scan.json'
+            (project/output).unlink(missing_ok=True)
             environ = dict(os.environ)
             with_jev = load_key(environ)
             if not with_jev:
@@ -558,13 +631,20 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
                               '--files-file', (REPORT_DIR/'changed.txt').as_posix(), '--jev', 'true' if with_jev else 'false'],
                              cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=1800, env=environ)
             try:
-                lines = risk_summary(json.loads((project/output).read_text(encoding='utf-8')))
-            except (OSError, ValueError):
+                report = json.loads((project/output).read_text(encoding='utf-8'))
+                if not isinstance(report, dict) or not isinstance(report.get('findings'), list):
+                    raise ValueError('invalid scan report')
+                lines = risk_summary(report, include_all=bool(result.returncode))
+                if result.returncode:
+                    lines[0] = f'위험 분석: 실패 (종료 코드 {result.returncode})'
+                    lines += [f"  - {item.get('code')}: {item.get('message')}" for item in report.get('diagnostics') or []
+                              if item.get('severity') == 'ERROR' or str(item.get('code', '')).startswith('CI-')][:10]
+            except (OSError, ValueError, AttributeError, TypeError):
                 lines = ['위험 분석: 실행 실패 - ' + next((line for line in reversed((result.stdout or '').splitlines())
                                                      if line.startswith('Error')), f'exit {result.returncode}')]
             for line in lines:
                 say(line)
-            if not lines[0].startswith('위험 분석: HIGH·CRITICAL 없음'):
+            if result.returncode or not lines[0].startswith('위험 분석: HIGH·CRITICAL 없음'):
                 failed = True
                 findings += lines
     else:
@@ -703,8 +783,18 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
         say('ai: 직전 검사에서 실패한 내용을 이번 요청에 함께 보냅니다')
     prompt = ('직전 작업 뒤 자동 검사에서 실패한 내용이다. 요청과 관련되면 함께 고쳐라:\n' + '\n'.join(pending[:40])
               + '\n\n요청: ' + task) if pending else task
+    try:
+        snapshot_root = find_project(cwd)
+    except ValueError:
+        snapshot_root = cwd
+    before = worktree_snapshot(snapshot_root)
+    all_edits = []
+
     def attempt(name, resume):
         outcome = run(name, command(name, model, effort, resume, mcp), _prompt(name, prompt), cwd, say, popen)
+        for path in outcome['edits']:
+            target = Path(path)
+            all_edits.append(str((target if target.is_absolute() else cwd/target).resolve()))
         if outcome.get('rateLimit'):
             usage.save_claude_limits(usage.claude_limits_file(environ), outcome['rateLimit'], now)
         return outcome
@@ -722,11 +812,13 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
             name = other
             model, effort = _setting(name, level, environ, say)
             outcome = attempt(name, None)
-    failures = [] if outcome['error'] else checks(task, cwd, outcome['edits'], say, process)
+    after = worktree_snapshot(snapshot_root)
+    all_edits += [path for path in before.keys() | after.keys() if before.get(path) != after.get(path)]
+    failures = checks(task, cwd, sorted(set(all_edits)), say, process)
     if outcome['session'] or failures or pending:
         conversations[str(cwd)] = {'provider': name, 'session': outcome['session'] or previous.get('session'),
                                    'at': now.isoformat() if outcome['session'] else previous.get('at', now.isoformat()),
-                                   'checks': failures if not outcome['error'] else pending}
+                                   'checks': failures if not outcome['error'] else list(dict.fromkeys([*pending, *failures]))}
         try:
             state_path.parent.mkdir(parents=True, exist_ok=True)
             state_path.write_text(json.dumps(conversations, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -735,7 +827,7 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
     if outcome['error']:
         say(f"ai: {name} 작업이 실패했습니다 - {outcome['error']}")
         return 1
-    return 0
+    return 1 if failures else 0
 
 
 if __name__ == '__main__':
