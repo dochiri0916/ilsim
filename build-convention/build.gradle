@@ -42,6 +42,11 @@ dependencies {
 }
 
 processResources {
+    from('docs') {
+        include 'CONVENTION_ROLLOUT.md'
+        include 'conventions/*.md', 'conventions/*.json', 'templates/README.md', 'templates/src/**'
+        into 'build-convention-guidance'
+    }
     filesMatching('build-convention-version.properties') {
         expand(pluginVersion: project.version)
     }
