@@ -82,7 +82,7 @@ def agents_text(text, version):
     block = (START + '\n'
              f'- ai 컨벤션 안내 버전: {version}. 프로젝트가 별도 플러그인 버전을 적용하면 일치 여부를 먼저 확인한다.\n'
              '- Java/Spring 작업 전 docs/build-convention/conventions/README.md를 읽는다.\n'
-             '- 관련 계층의 docs/build-convention/conventions 문서와 templates 예시를 확인한 뒤 작성한다.\n'
+             '- 상세 문서와 templates 예시는 이번에 수정하는 계층·기술에 해당하는 것만 읽고, 이미 읽은 문서는 다시 읽지 않는다.\n'
              '- 기존 프로젝트 지침과 명시적인 사용자 요청을 우선한다.\n'
              '- ai 작업 뒤 자동 검사가 실행되므로 같은 검사(./gradlew check 등)를 작업 중 반복하지 않는다.\n'
              '- 검증 실패를 해결하기 위해 규칙을 완화하거나 검사를 우회하지 않는다.\n' + END)
@@ -128,7 +128,7 @@ def sync(project, version, files):
     return f'{project}/docs/build-convention/conventions/README.md'
 
 
-def prepare(cwd, find_project, version, say):
+def prepare(cwd, find_project, version, say, brief=False):
     roots = projects(cwd, find_project)
     if not roots:
         return ''
@@ -146,6 +146,10 @@ def prepare(cwd, find_project, version, say):
             say(f'컨벤션 안내: {root} 갱신하지 못했습니다 - {error}')
     if not guides:
         return ''
-    return ('Java/Spring 코드를 작성하기 전에 다음 컨벤션 지침과 관련 상세 문서·템플릿을 읽어라. '
-            '기존 프로젝트 지침과 명시적 사용자 요청을 우선하고, 프로젝트가 별도 컨벤션 버전을 적용하면 '
-            '안내 버전과 일치하는지 확인하라:\n' + '\n'.join(guides) + '\n\n')
+    if brief:
+        # Plain value-object/DTO work: the entry document and one existing example are enough.
+        return ('Java/Spring 코드를 작성하기 전에 다음 컨벤션 README만 읽고, 상세 문서는 읽지 말고 같은 패키지의 기존 코드 하나를 '
+                '본보기로 따라라. 기존 프로젝트 지침과 명시적 사용자 요청을 우선한다:\n' + '\n'.join(guides) + '\n\n')
+    return ('Java/Spring 코드를 작성하기 전에 다음 컨벤션 README를 읽고, 이번에 수정하는 계층·기술에 해당하는 상세 문서·템플릿만 '
+            '읽어라(해당 없는 문서는 읽지 않는다). 기존 프로젝트 지침과 명시적 사용자 요청을 우선하고, 프로젝트가 별도 '
+            '컨벤션 버전을 적용하면 안내 버전과 일치하는지 확인하라:\n' + '\n'.join(guides) + '\n\n')

@@ -194,7 +194,7 @@ class MainTests(unittest.TestCase):
                     which=lambda cli: '/bin/' + cli, popen=popen, cwd=self.home, say=self.lines.append))
                 self.assertEqual([], checks.call_args.args[2])
         self.assertEqual(2, len(prompts))
-        self.assertTrue(all('컨벤션 지침' in prompt and str(project/'docs/build-convention/conventions/README.md') in prompt
+        self.assertTrue(all('컨벤션 README' in prompt and str(project/'docs/build-convention/conventions/README.md') in prompt
                             for prompt in prompts))
 
     def test_guidance_is_not_deployed_for_help_or_opted_out_tasks(self):
@@ -311,6 +311,45 @@ class MainTests(unittest.TestCase):
         self.assertIn('A.java:14 CON-001', prompts[1])
         self.assertTrue(prompts[1].endswith('요청: 검사 결과 고쳐줘'))
         self.assertEqual('다음 일', prompts[2])
+
+    def test_failed_checks_stay_saved_and_are_sent_only_with_a_request_about_them(self):
+        prompts = []
+
+        def popen(argv, **options):
+            process = FakeProcess(CLAUDE_OK)
+            process.stdin = type('Stdin', (), {'write': lambda _, text: prompts.append(text), 'close': lambda _: None})()
+            return process
+        results = [['위험 분석: HIGH·CRITICAL 1건'], [], []]
+        with patch.object(pick, 'checks', side_effect=lambda *args, **kwargs: results.pop(0)):
+            for minute, task in ((0, '추가해줘'), (5, '--no-verify record 말고 final class로 바꿔줘'), (10, '검사 결과 고쳐줘')):
+                pick.main(['claude', *task.split(' ', 1)] if task.startswith('--') else ['claude', task], environ=self.environ, now=NOW + timedelta(minutes=minute),
+                          which=lambda cli: '/bin/' + cli, popen=popen, cwd=self.home, say=self.lines.append)
+        self.assertEqual('record 말고 final class로 바꿔줘', prompts[1])
+        self.assertIn('위험 분석: HIGH·CRITICAL 1건', prompts[2])
+        self.assertIn('ai: 직전 검사 실패 1줄을 보관 중입니다 (전달하려면: ai 검사 결과 고쳐줘)', self.lines)
+
+    def test_verify_options_and_phrases_pick_the_level(self):
+        cases = {(('--no-verify',), '추가해줘'): 'none', (('--verify=compile',), '추가해줘'): 'compile',
+                 (('--verify=test',), '추가해줘'): 'test', (('--verify',), '검증하지마'): 'full', ((), '추가해줘'): 'full',
+                 ((), '추가해줘. 검증은 하지마'): 'none', ((), 'ID 만들고 검증 빼고'): 'none', ((), '컨벤션 검증하지마'): 'full'}
+        for (argv, task), expected in cases.items():
+            with self.subTest(argv=argv, task=task):
+                self.assertEqual(expected, pick.verify_level(list(argv), task))
+        self.assertEqual((None, '작업', False, False, False), pick._split(['--no-verify', '--verify=test', '작업']))
+
+    def test_no_verify_skips_guidance_and_checks(self):
+        self.outputs = [FakeProcess(CLAUDE_OK)]
+        with patch.object(pick.guidance, 'prepare', side_effect=AssertionError('no guidance')), \
+                patch.object(pick, 'worktree_snapshot', side_effect=[{}, {'A.java': 'x'}]):
+            self.main('claude', '--no-verify', '추가해줘')
+        self.assertIn('검사: 요청대로 건너뜀', self.lines)
+
+    def test_simple_generation_is_tier_1_and_risk_or_design_words_win(self):
+        self.assertEqual('TIER_1', pick.tier('ProductReferenceId VO 만들어줘')[0])
+        self.assertEqual('TIER_1', pick.tier('record 말고 final class로 바꿔줘')[0])
+        self.assertEqual('TIER_3', pick.tier('재고 VO 만들어줘')[0])
+        self.assertEqual('TIER_2', pick.tier('Lot VO 경계를 설계해줘')[0])
+        self.assertEqual('TIER_2', pick.tier('회원 탈퇴 API 추가해줘')[0])
 
     def test_mcp_is_off_and_answers_are_asked_to_be_short_unless_mcp_is_requested(self):
         claude = pick.command('claude', None, None, None)
@@ -498,11 +537,21 @@ class CheckTests(unittest.TestCase):
 
     def test_the_request_switches_off_only_the_named_check_for_this_command(self):
         cases = {'컨벤션 없이 추가해줘': ['scan'], '위험 분석 빼고 추가해줘': ['convention_check.py'],
-                 '리스크 검사 하지 말고 해줘': ['convention_check.py'], '검사 없이 해줘': []}
+                 '리스크 검사 하지 말고 해줘': ['convention_check.py'], '검사 없이 해줘': [], '검증은 하지마': [],
+                 '위험 분석 하지마': ['convention_check.py']}
         for task, expected in cases.items():
             with self.subTest(task=task):
                 self.commands = []
                 self.assertEqual(expected, self.run_checks(task))
+
+    def test_lighter_levels_run_only_gradle_compile_or_the_edited_classes_tests(self):
+        test_dir = self.project/'src/test/java/a'
+        test_dir.mkdir(parents=True)
+        (test_dir/'MoneyTest.java').write_text('')
+        for level in ('compile', 'test', 'none'):
+            pick.checks('추가해줘', self.project, ['src/main/java/a/Money.java'], self.lines.append, self.process, self.jar, level)
+        self.assertEqual([['./gradlew', '--console=plain', '-q', 'compileJava'],
+                          ['./gradlew', '--console=plain', '-q', 'test', '--tests', '*MoneyTest']], self.commands)
 
     def test_nothing_runs_without_a_change_or_outside_a_gradle_project(self):
         self.assertEqual([], self.run_checks('설명해줘', edits=()))

@@ -148,6 +148,15 @@ class GuidanceTests(unittest.TestCase):
         module.mkdir()
         self.assertEqual([first], guidance.projects(module, pick.find_project))
 
+    def test_plain_work_gets_a_readme_only_instruction_and_other_work_only_the_relevant_documents(self):
+        self.project()
+        with patch.object(guidance, 'bundle', return_value=FILES):
+            normal = guidance.prepare(self.root, pick.find_project, lambda: '1.2.0', lambda line: None)
+            brief = guidance.prepare(self.root, pick.find_project, lambda: '1.2.0', lambda line: None, brief=True)
+        self.assertIn('해당하는 상세 문서·템플릿만', normal)
+        self.assertIn('README만 읽고, 상세 문서는 읽지 말고', brief)
+        self.assertIn('conventions/README.md', brief)
+
     def test_unavailable_bundle_does_not_block_cli(self):
         self.project()
         lines = []

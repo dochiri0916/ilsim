@@ -17,7 +17,9 @@ After a task that changed files, build-convention (./gradlew check without editi
 (scan of the changed src/main files) run on the project. With TYPESAFE_API_KEY, JEV reviews the findings the
 static rules could not confirm (at most JEV_MAX_CALLS calls unless .code-risk.yml sets jev.max-calls); its opinion is
 advice only and never changes the result. "컨벤션 없이", "위험 분석 빼고" or
-"검사 없이" in the request switches that check off for that command only.
+"검사 없이"/"검증하지마" in the request switches that check off for that command only; --no-verify switches all
+of them off, --verify=compile|test|full picks how much runs (default full). A failed check is kept and sent to the
+model only with a request about the check result ("검사 결과 고쳐줘").
 
 Reads local records only (usage_report.py); no network, no tokens. Codex logs its 5-hour and weekly limit percentages
 with reset times. Claude Code logs none, but `claude -p` reports them while it works (rate_limit_event) and ai records
@@ -33,7 +35,7 @@ Rules, in order:
 
 Model and reasoning: capacity about to reset with plenty left (BOOST_LEFT percent or more) gets the TIER_4 route's
 strongest setting for the chosen CLI; otherwise a task sentence gets tier() (TIER_3 for risk words such as payment,
-concurrency or transaction, else TIER_2). Without either the CLI's own default is used. Routes come from
+concurrency or transaction; TIER_1 for plain value-object/DTO/rename work; else TIER_2). Without either the CLI's own default is used. Routes come from
 config/models/routing-policy.json, so forbidden models and efforts are never chosen.
 """
 from datetime import datetime, timedelta, timezone
@@ -84,7 +86,12 @@ FORBIDDEN_EFFORTS = ('max',)
 RISK = ('결제', '금액', '환불', '정산', '돈', '재고', '상태 전이', '상태전이', '동시', '트랜잭션', '롤백', '재시도', '메시지',
         '이벤트', '멱등', '중복', '락', '보안', '권한', '인증', '개인정보', '테넌트', 'tenant', 'sql', 'payment', 'stock',
         'inventory', 'concurren*', 'transaction', 'rollback', 'retr*', 'idempot*', 'security', 'auth*', 'lock', 'message')
-CONVENTION_OFF = re.compile(r'(컨벤션|코드\s*스타일|스타일\s*검사)\s*(검사|검증|확인)?\s*(없이|빼고|끄고|무시|안\s*지키|하지\s*말|말고)'
+# Plain repetitive work (value objects, DTOs, renames) runs on TIER_1 unless a risk or design word is present.
+SIMPLE = ('vo', '값 객체', '값객체', 'dto', 'getter', '게터', 'rename', '이름 변경', '이름변경', '필드 추가', 'mapper', '매퍼',
+          'referenceid', 'reference id', 'record 말고', 'final class')
+DESIGN = ('설계', '분석', '리팩터', '리팩토링', '검토', '성능', '아키텍처', '경계', 'design', 'refactor', 'analy*', 'review',
+          'architecture', 'performance')
+CONVENTION_OFF = re.compile(r'(컨벤션|코드\s*스타일|스타일\s*검사)\s*(검사|검증|확인)?\s*(없이|빼고|끄고|무시|안\s*지키|하지\s*(?:말|마)|말고)'
                             r'|no[-\s]?convention', re.I)
 KEY = 'TYPESAFE_API_KEY'
 KEY_LINE = re.compile(r'\s*(?:export\s+)?' + KEY + r'\s*=\s*(.*?)\s*')
@@ -111,6 +118,11 @@ def tier(text):
     found = _matches(text.lower(), RISK)
     if found:
         return 'TIER_3', '고위험 영역: ' + ', '.join(found)
+    if _matches(text.lower(), DESIGN):
+        return 'TIER_2', '설계·분석 요청'
+    simple = _matches(text.lower(), SIMPLE)
+    if simple:
+        return 'TIER_1', '단순 생성·수정: ' + ', '.join(simple)
     return 'TIER_2', '고위험 영역 단어 없음'
 
 
@@ -324,7 +336,7 @@ def launch_setting(name, tier, routing):
 CLAUDE_TOOLS = ['Read', 'Edit', 'Write', 'MultiEdit', 'Glob', 'Grep', 'TodoWrite', 'Bash(./gradlew *)', 'Bash(gradle *)',
                 'Bash(git status*)', 'Bash(git diff*)', 'Bash(git log*)', 'Bash(git show*)', 'Bash(ls*)', 'Bash(cat *)']
 # Answers cost output tokens: ask for the result only. MCP servers add their tool definitions to every request.
-CONCISE = ('답변은 핵심만 짧게: 바꾼 것과 사람이 확인할 것만 쓴다. 과정 설명, 코드 전문, 반복 요약은 쓰지 않는다.')
+CONCISE = ('답변은 핵심만 짧게: 바꾼 파일과 사람이 확인할 판단·주의 사항만 쓴다. 과정 설명, 코드 전문, 반복 요약은 쓰지 않는다.')
 NO_MCP_CLAUDE = ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']
 NO_MCP_CODEX = ['-c', 'mcp_servers={}']
 LIMIT_ERROR = re.compile(r'usage limit|rate limit|limit reached|quota|too many requests|\b429\b', re.I)
@@ -338,6 +350,7 @@ USAGE = ('사용법: 프로젝트 폴더에서\n'
          '  ai 회원 탈퇴 API 추가해줘      Claude·Codex 중 한도가 유리한 쪽이 이 폴더에서 작업하고 진행·결과만 보여 줌\n'
          '  ai 방금 거 테스트도 추가해줘    같은 폴더의 이전 대화를 이어서 (3시간 이내, 같은 CLI일 때)\n'
          '  ai --new ...                  새 대화로 시작\n'
+         '  ai --no-verify ...            작업 뒤 검사를 하지 않음 (--verify=compile|test|full: 검사 범위 선택, 기본 full)\n'
          '  ai claude ... / ai codex ...  직접 지정\n'
          '  ai --why                      지금 무엇을 왜 고르는지만 보기\n'
          '  ai --usage                    Claude·Codex 사용량과 한도 %')
@@ -476,9 +489,14 @@ def run(name, argv, task, cwd, say, popen=subprocess.Popen):
 
 
 # Checks run after every task that changed files; a request sentence can switch one off for that command only.
-RISK_OFF = re.compile(r'(위험|리스크|코드)\s*(분석|검사|스캔)\s*(없이|빼고|끄고|무시|하지\s*말|말고)|code-?risk\s*(없이|빼고|off)'
+RISK_OFF = re.compile(r'(위험|리스크|코드)\s*(분석|검사|스캔)\s*(없이|빼고|끄고|무시|하지\s*(?:말|마)|말고)|code-?risk\s*(없이|빼고|off)'
                       r'|no[-\s]?(risk|scan)', re.I)
-ALL_OFF = re.compile(r'(검사|검증|체크)\s*(는|를|은)?\s*(전부|다|모두)?\s*(없이|빼고|끄고|하지\s*말|말고)|no[-\s]?checks?', re.I)
+ALL_OFF = re.compile(r'(검사|검증|체크)\s*(는|를|은|도)?\s*(전부|다|모두)?\s*(없이|빼고|끄고|하지\s*(?:말|마)|말고|생략|스킵)'
+                     r'|no[-\s]?(?:checks?|verif\w*)', re.I)
+# A request about the last check result is the only one that gets the saved failures.
+FIX_CHECKS = re.compile(r'(검사|검증|체크|컨벤션|위험\s*분석|check|validation|lint)\s*(결과|오류|에러|실패)'
+                        r'|(아까|직전|방금)\s*(검사\s*)?(오류|에러|실패)|(오류|에러|실패)\s*(를|은|는)?\s*(고쳐|수정|해결)', re.I)
+VERIFY_LEVELS = ('none', 'compile', 'test', 'full')
 NAMED_CHECK = re.compile(r'(위험|리스크|코드|컨벤션|스타일|style|risk)\s*$', re.I)
 REPORT_DIR = Path('build')/'ai'
 # JEV reviews what the static rules could not confirm; each call is a TypeSafe request, capped unless the project sets one.
@@ -568,13 +586,50 @@ def risk_summary(report, limit=5, include_all=False):
     return lines
 
 
-def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
+def related_tests(project, edits):
+    """Simple names of the existing test classes for the edited production and test Java files."""
+    names = set()
+    for path in edits:
+        target = Path(path)
+        target = target if target.is_absolute() else project/target
+        if target.suffix != '.java' or 'src' not in target.parts:
+            continue
+        names.add(target.stem if target.stem.endswith('Test') else target.stem + 'Test')
+    existing = {file.stem for file in (project.glob('**/src/test/**/*.java')) if file.stem in names}
+    return sorted(existing)
+
+
+def verify(project, edits, level, say, process):
+    """The lighter verification levels: compile only, or compile plus the tests of the edited classes."""
+    tasks = ['compileJava']
+    if level == 'test':
+        tests = related_tests(project, edits)
+        if tests:
+            tasks = ['test', *[item for name in tests for item in ('--tests', f'*{name}')]]
+        else:
+            say('검사: 관련 테스트가 없어 컴파일만 실행')
+    say(f"검사: ./gradlew {' '.join(tasks)}...")
+    result = process(['./gradlew', '--console=plain', '-q', *tasks], cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                     text=True, timeout=3600)
+    if result.returncode == 0:
+        say('검사: 통과')
+        return []
+    lines = [line for line in (result.stdout or '').splitlines() if line.strip()][-14:]
+    for line in lines:
+        say(line)
+    return [f'검사: ./gradlew {tasks[0]} 실패', *lines]
+
+
+def checks(task, cwd, edits, say, process=subprocess.run, jar=None, level='full'):
     """build-convention and code-risk-analyzer on the project after a task that changed files; no model calls.
 
+    level none runs nothing, compile and test run only Gradle's compile and the edited classes' tests, full runs both checks.
     Returns the lines of the failed checks (empty when everything passed or nothing ran), for the next task to fix.
     """
     plan = check_plan(task)
     findings = []
+    if level == 'none':
+        plan = {'convention': False, 'risk': False}
     if not edits or not any(plan.values()):
         if edits:
             say('검사: 요청대로 건너뜀')
@@ -596,8 +651,10 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None):
             return findings
         for project in sorted(projects):
             say(f'검사 대상: {project.relative_to(cwd)}')
-            findings += checks(task, project, edits, say, process, jar)
+            findings += checks(task, project, edits, say, process, jar, level)
         return findings
+    if level in ('compile', 'test'):
+        return verify(project, edits, level, say, process)
     reports = project/REPORT_DIR
     reports.mkdir(parents=True, exist_ok=True)
     failed = False
@@ -676,9 +733,22 @@ def _split(argv):
     """(agent or None, task text, --why, --new, --mcp)."""
     argv = list(sys.argv[1:] if argv is None else argv)
     why, new, mcp = '--why' in argv, '--new' in argv, '--mcp' in argv
-    argv = [item for item in argv if item not in ('--why', '--new', '--mcp')]
+    argv = [item for item in argv if item not in ('--why', '--new', '--mcp', '--no-verify') and not item.startswith('--verify')]
     agent = argv.pop(0) if argv[:1] in (['claude'], ['codex']) else None
     return agent, ' '.join(argv).strip(), why, new, mcp
+
+
+def verify_level(argv, task):
+    """none / compile / test / full: an option wins, then a sentence that switches every check off, else full."""
+    for item in argv:
+        if item == '--no-verify':
+            return 'none'
+        if item == '--verify':
+            return 'full'
+        if item.startswith('--verify='):
+            return item.split('=', 1)[1] if item.split('=', 1)[1] in VERIFY_LEVELS else 'full'
+    plan = check_plan(task)
+    return 'full' if plan['convention'] or plan['risk'] else 'none'
 
 
 def _setting(name, tier, environ, say):
@@ -739,6 +809,7 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
             refresh_claude_limits(environ, now or datetime.now(timezone.utc), popen, say)
         return usage.main([], environ=environ, now=now)
     agent, task, why_only, new, mcp = _split(argv)
+    level = verify_level(list(sys.argv[1:] if argv is None else argv), task)
     if update is not None and task and not why_only:
         update(sys.argv[1:] if argv is None else list(argv))
     cwd = Path(cwd or os.getcwd()).resolve()
@@ -755,10 +826,10 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
     if name is None:
         say(f'ai: {why}')
         return 1
-    level = 'TIER_4' if boost else tier(task)[0] if task else None
-    model, effort = _setting(name, level, environ, say)
+    route = 'TIER_4' if boost else tier(task)[0] if task else None
+    model, effort = _setting(name, route, environ, say)
     setting = ' '.join(item for item in (model, effort) if item) or 'CLI 기본값'
-    say(f'ai: {name} ({why}) - {setting}' + (' [곧 초기화될 여유분이라 최고 설정]' if boost else f' [{level}]' if level else ''))
+    say(f'ai: {name} ({why}) - {setting}' + (' [곧 초기화될 여유분이라 최고 설정]' if boost else f' [{route}]' if route else ''))
     if why_only or not task:
         if not why_only:
             say(USAGE)
@@ -781,12 +852,15 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
     elif not new and previous.get('provider') not in (None, name):
         say(f"ai: 이전 대화({previous['provider']})는 이어지지 않아 새로 시작합니다")
     pending = previous.get('checks') or []
-    if pending:
+    sending = pending if FIX_CHECKS.search(task) else []
+    if sending:
         say('ai: 직전 검사에서 실패한 내용을 이번 요청에 함께 보냅니다')
-    prompt = ('직전 작업 뒤 자동 검사에서 실패한 내용이다. 요청과 관련되면 함께 고쳐라:\n' + '\n'.join(pending[:40])
-              + '\n\n요청: ' + task) if pending else task
-    if check_plan(task)['convention']:
-        prompt = guidance.prepare(cwd, find_project, convention.version, say) + prompt
+    elif pending:
+        say(f'ai: 직전 검사 실패 {len(pending)}줄을 보관 중입니다 (전달하려면: ai 검사 결과 고쳐줘)')
+    prompt = ('직전 작업 뒤 자동 검사에서 실패한 내용이다. 요청과 관련되면 함께 고쳐라:\n' + '\n'.join(sending[:40])
+              + '\n\n요청: ' + task) if sending else task
+    if level != 'none' and check_plan(task)['convention']:
+        prompt = guidance.prepare(cwd, find_project, convention.version, say, brief=tier(task)[0] == 'TIER_1') + prompt
     try:
         snapshot_root = find_project(cwd)
     except ValueError:
@@ -814,15 +888,19 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
         if other in installed:
             say(f'ai: {name} 한도에 걸려 {other}로 같은 작업을 이어서 합니다')
             name = other
-            model, effort = _setting(name, level, environ, say)
+            model, effort = _setting(name, route, environ, say)
             outcome = attempt(name, None)
     after = worktree_snapshot(snapshot_root)
     all_edits += [path for path in before.keys() | after.keys() if before.get(path) != after.get(path)]
-    failures = checks(task, cwd, sorted(set(all_edits)), say, process)
+    edited = sorted(set(all_edits))
+    failures = checks(task, cwd, edited, say, process, level=level)
+    ran = bool(edited) and level != 'none' and any(check_plan(task).values())
+    # Failures nobody asked about stay saved until a check runs again or a request about them sends them.
+    kept = failures if sending or ran or failures else pending
     if outcome['session'] or failures or pending:
         conversations[str(cwd)] = {'provider': name, 'session': outcome['session'] or previous.get('session'),
                                    'at': now.isoformat() if outcome['session'] else previous.get('at', now.isoformat()),
-                                   'checks': failures if not outcome['error'] else list(dict.fromkeys([*pending, *failures]))}
+                                   'checks': (kept if not outcome['error'] else list(dict.fromkeys([*pending, *failures])))[:40]}
         try:
             state_path.parent.mkdir(parents=True, exist_ok=True)
             state_path.write_text(json.dumps(conversations, ensure_ascii=False, indent=2), encoding='utf-8')
