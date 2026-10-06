@@ -894,6 +894,38 @@ class JavaSourceArchitectureValidatorTest {
     }
 
     @Test
+    void 'rejects value object records outside domain vo while keeping event and outbox records'() {
+        Project project = sampleProject()
+        writeJava(project, 'com/example/order/domain/OrderCode.java', '''
+                package com.example.order.domain;
+
+                public record OrderCode(String value) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/model/Quantity.java', '''
+                package com.example.order.domain.model;
+
+                public record Quantity(int value) {
+                }
+                ''')
+        writeJava(project, 'com/example/order/domain/event/OrderPlaced.java', '''
+                package com.example.order.domain.event;
+
+                public record OrderPlaced(String orderId) {
+                }
+                ''')
+
+        List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
+
+        ['OrderCode', 'Quantity'].each { String name ->
+            assert violations.any {
+                it.contains("${name}.java") && it.contains("domain Value Object '${name}' must be a final class with a private constructor")
+            }
+        }
+        assert !violations.any { it.contains('OrderPlaced.java') && it.contains('final class with a private constructor') }
+    }
+
+    @Test
     void 'rejects application dependency on another context domain vo'() {
         Project project = sampleProject()
         writeApplication(project)

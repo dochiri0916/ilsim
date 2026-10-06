@@ -873,6 +873,11 @@ class JavaSourceArchitectureValidator {
                     && !['class', 'enum'].contains(type.kind)) {
                 violations.add("${path} domain value object '${type.name}' in domain.vo package must be a final class or enum")
             }
+            // Only events and Outbox models are records; any other domain record is a Value Object written the wrong way.
+            if (type.kind == 'record' && !isDomainEventPackage(packageName, convention)
+                    && !packageName.contains('.domain.outbox') && !packageName.contains('.vo')) {
+                violations.add("${path} domain Value Object '${type.name}' must be a final class with a private constructor")
+            }
         }
 
         if (SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)) {
