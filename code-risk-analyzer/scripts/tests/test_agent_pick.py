@@ -552,6 +552,26 @@ class CheckTests(unittest.TestCase):
                 self.assertEqual({'convention': True, 'risk': True}, pick.check_plan(task))
                 self.assertEqual('full', pick.verify_level([], task))
 
+    def test_files_of_a_failed_scan_are_scanned_again_with_a_change_elsewhere(self):
+        for name in ('src/main/java/A.java', 'src/main/java/B.java', 'src/main/java/C.java'):
+            (self.project/name).parent.mkdir(parents=True, exist_ok=True)
+            (self.project/name).write_text('')
+        (self.project/'build/ai').mkdir(parents=True)
+        (self.project/'build/ai/changed.txt').write_text('src/main/java/B.java\nsrc/main/java/Gone.java\n')
+        pending = ['위험 분석: HIGH·CRITICAL 1건', '  - src/main/java/A.java:14 CON-001 Check-then-act race (review)']
+        pick.checks('컨벤션 없이 검사 결과 고쳐줘', self.project, ['src/test/java/ATest.java', 'src/main/java/C.java'],
+                    self.lines.append, self.process, self.jar, pending=pending)
+        self.assertEqual('src/main/java/C.java\nsrc/main/java/A.java\nsrc/main/java/B.java\n',
+                         (self.project/'build/ai/changed.txt').read_text())
+        self.commands = []
+        pick.checks('컨벤션 없이 고쳐줘', self.project, ['src/test/java/ATest.java'], self.lines.append, self.process, self.jar,
+                    pending=pending)
+        self.assertTrue(any('scan' in command for command in self.commands))
+        self.commands = []
+        pick.checks('컨벤션 없이 고쳐줘', self.project, ['src/test/java/ATest.java'], self.lines.append, self.process, self.jar,
+                    pending=['컨벤션 검증: 실패 - 테스트'])
+        self.assertEqual([], self.commands)
+
     def test_lighter_levels_run_only_gradle_compile_or_the_edited_classes_tests(self):
         test_dir = self.project/'src/test/java/a'
         test_dir.mkdir(parents=True)

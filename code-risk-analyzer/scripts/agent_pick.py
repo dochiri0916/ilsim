@@ -19,7 +19,8 @@ static rules could not confirm (at most JEV_MAX_CALLS calls unless .code-risk.ym
 advice only and never changes the result. "컨벤션 없이" or "위험 분석 빼고" in the request switches that check off
 for that command only; no sentence switches every check off ("입력값 검증 없이 저장되는 버그" is a task, not a
 switch). --no-verify switches all of them off, --verify=compile|test|full picks how much runs (default full). A failed check is kept and sent to the
-model only with a request about the check result ("검사 결과 고쳐줘").
+model only with a request about the check result ("검사 결과 고쳐줘"); the files of a failed scan are scanned again
+with the next change, so a fix elsewhere cannot clear them unscanned.
 
 Reads local records only (usage_report.py); no network, no tokens. Codex logs its 5-hour and weekly limit percentages
 with reset times. Claude Code logs none, but `claude -p` reports them while it works (rate_limit_event) and ai records
@@ -495,6 +496,7 @@ RISK_OFF = re.compile(r'(위험|리스크|코드)\s*(분석|검사|스캔)\s*(�
 FIX_CHECKS = re.compile(r'(검사|검증|체크|컨벤션|위험\s*분석|check|validation|lint)\s*(결과|오류|에러|실패)'
                         r'|(아까|직전|방금)\s*(검사\s*)?(오류|에러|실패)|(오류|에러|실패)\s*(를|은|는)?\s*(고쳐|수정|해결)', re.I)
 VERIFY_LEVELS = ('none', 'compile', 'test', 'full')
+RISK_LINE = re.compile(r'\s*- (\S+\.java):\d+ [A-Z]+-\d+ ')
 REPORT_DIR = Path('build')/'ai'
 # JEV reviews what the static rules could not confirm; each call is a TypeSafe request, capped unless the project sets one.
 JEV_MAX_CALLS = 20
@@ -504,6 +506,22 @@ SEVERITY_ORDER = ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO')
 def check_plan(task):
     """Which checks run for this command: both unless the sentence names one to switch off (--no-verify for all)."""
     return {'convention': not CONVENTION_OFF.search(task), 'risk': not RISK_OFF.search(task)}
+
+
+def unresolved_sources(project, pending, scanned):
+    """src/main Java files of the last failed risk scan, so a change elsewhere cannot clear its findings unscanned."""
+    if not any(line.startswith('위험 분석') for line in pending):
+        return []
+    names = [match.group(1) for match in map(RISK_LINE.match, pending) if match]
+    try:
+        names += scanned.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        pass
+    result = []
+    for name in names:
+        if '/src/main/' in '/' + name and name.endswith('.java') and name not in result and (project/name).is_file():
+            result.append(name)
+    return result
 
 
 def changed_sources(project, edits):
@@ -614,10 +632,11 @@ def verify(project, edits, level, say, process):
     return [f'검사: ./gradlew {tasks[0]} 실패', *lines]
 
 
-def checks(task, cwd, edits, say, process=subprocess.run, jar=None, level='full'):
+def checks(task, cwd, edits, say, process=subprocess.run, jar=None, level='full', pending=()):
     """build-convention and code-risk-analyzer on the project after a task that changed files; no model calls.
 
     level none runs nothing, compile and test run only Gradle's compile and the edited classes' tests, full runs both checks.
+    pending: the saved lines of the last failed checks; the files of a failed risk scan are scanned again.
     Returns the lines of the failed checks (empty when everything passed or nothing ran), for the next task to fix.
     """
     plan = check_plan(task)
@@ -645,7 +664,7 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None, level='full'
             return findings
         for project in sorted(projects):
             say(f'검사 대상: {project.relative_to(cwd)}')
-            findings += checks(task, project, edits, say, process, jar, level)
+            findings += checks(task, project, edits, say, process, jar, level, pending)
         return findings
     if level in ('compile', 'test'):
         return verify(project, edits, level, say, process)
@@ -667,6 +686,7 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None, level='full'
     if plan['risk']:
         jar = Path(jar) if jar else DEFAULT_JAR
         sources = changed_sources(project, edits)
+        sources += [path for path in unresolved_sources(project, pending, reports/'changed.txt') if path not in sources]
         if not jar.is_file():
             say('위험 분석: 분석기 jar가 없어 건너뜀 (install.sh)')
         elif not sources:
@@ -887,7 +907,7 @@ def main(argv=None, environ=os.environ, now=None, which=shutil.which, popen=subp
     after = worktree_snapshot(snapshot_root)
     all_edits += [path for path in before.keys() | after.keys() if before.get(path) != after.get(path)]
     edited = sorted(set(all_edits))
-    failures = checks(task, cwd, edited, say, process, level=level)
+    failures = checks(task, cwd, edited, say, process, level=level, pending=pending)
     ran = bool(edited) and level != 'none' and any(check_plan(task).values())
     # Failures nobody asked about stay saved until a check runs again or a request about them sends them.
     kept = failures if sending or ran or failures else pending
