@@ -16,9 +16,9 @@ tokens. Hitting a limit mid-task hands the same task to the other CLI.
 After a task that changed files, build-convention (./gradlew check without editing the build) and code-risk-analyzer
 (scan of the changed src/main files) run on the project. With TYPESAFE_API_KEY, JEV reviews the findings the
 static rules could not confirm (at most JEV_MAX_CALLS calls unless .code-risk.yml sets jev.max-calls); its opinion is
-advice only and never changes the result. "컨벤션 없이", "위험 분석 빼고" or
-"검사 없이"/"검증하지마" in the request switches that check off for that command only; --no-verify switches all
-of them off, --verify=compile|test|full picks how much runs (default full). A failed check is kept and sent to the
+advice only and never changes the result. "컨벤션 없이" or "위험 분석 빼고" in the request switches that check off
+for that command only; no sentence switches every check off ("입력값 검증 없이 저장되는 버그" is a task, not a
+switch). --no-verify switches all of them off, --verify=compile|test|full picks how much runs (default full). A failed check is kept and sent to the
 model only with a request about the check result ("검사 결과 고쳐줘").
 
 Reads local records only (usage_report.py); no network, no tokens. Codex logs its 5-hour and weekly limit percentages
@@ -491,13 +491,10 @@ def run(name, argv, task, cwd, say, popen=subprocess.Popen):
 # Checks run after every task that changed files; a request sentence can switch one off for that command only.
 RISK_OFF = re.compile(r'(위험|리스크|코드)\s*(분석|검사|스캔)\s*(없이|빼고|끄고|무시|하지\s*(?:말|마)|말고)|code-?risk\s*(없이|빼고|off)'
                       r'|no[-\s]?(risk|scan)', re.I)
-ALL_OFF = re.compile(r'(검사|검증|체크)\s*(는|를|은|도)?\s*(전부|다|모두)?\s*(없이|빼고|끄고|하지\s*(?:말|마)|말고|생략|스킵)'
-                     r'|no[-\s]?(?:checks?|verif\w*)', re.I)
 # A request about the last check result is the only one that gets the saved failures.
 FIX_CHECKS = re.compile(r'(검사|검증|체크|컨벤션|위험\s*분석|check|validation|lint)\s*(결과|오류|에러|실패)'
                         r'|(아까|직전|방금)\s*(검사\s*)?(오류|에러|실패)|(오류|에러|실패)\s*(를|은|는)?\s*(고쳐|수정|해결)', re.I)
 VERIFY_LEVELS = ('none', 'compile', 'test', 'full')
-NAMED_CHECK = re.compile(r'(위험|리스크|코드|컨벤션|스타일|style|risk)\s*$', re.I)
 REPORT_DIR = Path('build')/'ai'
 # JEV reviews what the static rules could not confirm; each call is a TypeSafe request, capped unless the project sets one.
 JEV_MAX_CALLS = 20
@@ -505,11 +502,8 @@ SEVERITY_ORDER = ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO')
 
 
 def check_plan(task):
-    """Which checks run for this command: both unless the sentence switches one (or all) off."""
-    # "검사 없이" alone switches every check off; "리스크 검사 없이" names one check, handled by its own pattern.
-    everything_off = any(not NAMED_CHECK.search(task[max(0, match.start() - 10):match.start()]) for match in ALL_OFF.finditer(task))
-    return {'convention': not everything_off and not CONVENTION_OFF.search(task),
-            'risk': not everything_off and not RISK_OFF.search(task)}
+    """Which checks run for this command: both unless the sentence names one to switch off (--no-verify for all)."""
+    return {'convention': not CONVENTION_OFF.search(task), 'risk': not RISK_OFF.search(task)}
 
 
 def changed_sources(project, edits):
@@ -739,7 +733,7 @@ def _split(argv):
 
 
 def verify_level(argv, task):
-    """none / compile / test / full: an option wins, then a sentence that switches every check off, else full."""
+    """none / compile / test / full: an option wins, then a sentence that switches both named checks off, else full."""
     for item in argv:
         if item == '--no-verify':
             return 'none'

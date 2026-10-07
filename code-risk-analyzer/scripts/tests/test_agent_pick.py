@@ -201,7 +201,7 @@ class MainTests(unittest.TestCase):
         self.outputs = [FakeProcess([])]
         with patch.object(pick.guidance, 'prepare', side_effect=AssertionError('must not deploy')):
             self.assertEqual(0, self.main('--why'))
-            self.assertEqual(0, self.main('claude', '검사 없이 설명해줘'))
+            self.assertEqual(0, self.main('claude', '컨벤션 없이 설명해줘'))
 
     def test_a_task_runs_headless_in_the_folder_and_prints_progress(self):
         # given: no usage recorded, so Codex is chosen
@@ -331,7 +331,8 @@ class MainTests(unittest.TestCase):
     def test_verify_options_and_phrases_pick_the_level(self):
         cases = {(('--no-verify',), '추가해줘'): 'none', (('--verify=compile',), '추가해줘'): 'compile',
                  (('--verify=test',), '추가해줘'): 'test', (('--verify',), '검증하지마'): 'full', ((), '추가해줘'): 'full',
-                 ((), '추가해줘. 검증은 하지마'): 'none', ((), 'ID 만들고 검증 빼고'): 'none', ((), '컨벤션 검증하지마'): 'full'}
+                 ((), '추가해줘. 검증은 하지마'): 'full', ((), 'ID 만들고 검증 빼고'): 'full', ((), '컨벤션 검증하지마'): 'full',
+                 ((), '컨벤션 없이 위험 분석 빼고 추가해줘'): 'none'}
         for (argv, task), expected in cases.items():
             with self.subTest(argv=argv, task=task):
                 self.assertEqual(expected, pick.verify_level(list(argv), task))
@@ -537,12 +538,19 @@ class CheckTests(unittest.TestCase):
 
     def test_the_request_switches_off_only_the_named_check_for_this_command(self):
         cases = {'컨벤션 없이 추가해줘': ['scan'], '위험 분석 빼고 추가해줘': ['convention_check.py'],
-                 '리스크 검사 하지 말고 해줘': ['convention_check.py'], '검사 없이 해줘': [], '검증은 하지마': [],
+                 '리스크 검사 하지 말고 해줘': ['convention_check.py'], '컨벤션 없이 위험 분석 빼고 해줘': [],
                  '위험 분석 하지마': ['convention_check.py']}
         for task, expected in cases.items():
             with self.subTest(task=task):
                 self.commands = []
                 self.assertEqual(expected, self.run_checks(task))
+
+    def test_no_sentence_switches_every_check_off(self):
+        for task in ('입력값 검증 없이 저장되는 버그 고쳐줘', '권한 체크 없이 호출되는 API 막아줘', 'null 체크 빼고 Optional로 바꿔줘',
+                     '중복 검사 하지 말고 unique 제약으로 바꿔줘', '검사 없이 해줘', '검증은 하지마', 'add the endpoint, no checks'):
+            with self.subTest(task=task):
+                self.assertEqual({'convention': True, 'risk': True}, pick.check_plan(task))
+                self.assertEqual('full', pick.verify_level([], task))
 
     def test_lighter_levels_run_only_gradle_compile_or_the_edited_classes_tests(self):
         test_dir = self.project/'src/test/java/a'
