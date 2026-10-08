@@ -253,6 +253,44 @@ class ConventionTests(Temp):
         self.assertEqual(['tests'], convention.blocking(result))
         self.assertEqual('FAIL', result['projects'][':child']['checks']['tests'])
 
+    def test_runtime_review_is_not_displayed_as_complete_convention_pass(self):
+        value = dict(report(), conventionReview={
+            'status': 'REVIEW', 'requirements': [{'id': 'QUERY-RESULTS', 'evidence': [
+                {'status': 'MISSING'}, {'status': 'EXECUTED'}]}], 'errors': []})
+        result = convention.run(self.project, self.root/'out.json', process=self.process(value))
+        self.assertEqual('PASS', result['status'])
+        self.assertIn('실행 의미 검토 필요', convention.summary(result))
+        self.assertIn('테스트 실행 근거 누락 1개', convention.summary(result))
+        self.assertEqual(':', result['conventionReview']['requirements'][0]['project'])
+
+    def test_runtime_reviews_are_aggregated_from_all_subprojects(self):
+        root = self.process(dict(report(), conventionReview={
+            'status': 'NOT_APPLIED', 'requirements': [], 'errors': []}))
+        def run(command, **kwargs):
+            result = root(command, **kwargs)
+            child = self.project/'child/report.json'
+            child.parent.mkdir(parents=True)
+            child.write_text(json.dumps(dict(report(), conventionReview={
+                'status': 'REVIEW', 'requirements': [{'id': 'INBOX-DELIVERY', 'evidence': []}],
+                'errors': ['invalid evidence']})))
+            script = Path(command[command.index('--init-script') + 1])
+            manifest = script.with_name(script.name.replace('.init.gradle', '.projects.json'))
+            inventory = json.loads(manifest.read_text())
+            inventory['reports'].append({'project': ':child', 'file': str(child)})
+            manifest.write_text(json.dumps(inventory))
+            return result
+        result = convention.run(self.project, self.root/'out.json', process=run)
+        self.assertEqual('REVIEW', result['conventionReview']['status'])
+        self.assertEqual(':child', result['conventionReview']['requirements'][0]['project'])
+        self.assertIn(':child: invalid evidence', convention.summary(result))
+
+    def test_runtime_review_report_cannot_claim_pass_or_have_invalid_shape(self):
+        for review in ({'status': 'PASS', 'requirements': [], 'errors': []},
+                       {'status': 'REVIEW', 'requirements': 'invalid', 'errors': []}):
+            with self.subTest(review=review), self.assertRaises(ValueError):
+                convention.run(self.project, self.root/'out.json', process=self.process(
+                    dict(report(), conventionReview=review)))
+
     def test_missing_child_report_and_unreported_gradle_failures_never_pass(self):
         root = self.process(report())
         def run(command, **kwargs):
