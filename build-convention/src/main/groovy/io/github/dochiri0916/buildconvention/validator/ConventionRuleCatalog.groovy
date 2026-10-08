@@ -17,6 +17,7 @@ final class ConventionRuleCatalog {
     static String ruleId(String violation) {
         List<Map<String, String>> rules = [
                 [id: 'ARCH-CODE-STYLE', pattern: '^code convention'],
+                [id: 'ARCH-MESSAGING', pattern: '^messaging'],
                 [id: 'ARCH-QUERYDSL', pattern: '^Querydsl'],
                 [id: 'ARCH-DOMAIN-AGGREGATE', pattern: 'domain Value Object factories|domain object .*state'],
                 [id: 'ARCH-SOURCE-SYNTAX', pattern: 'cannot be parsed|syntax|parse'],

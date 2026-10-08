@@ -5,6 +5,7 @@ import io.github.dochiri0916.buildconvention.support.BoundedContexts
 import io.github.dochiri0916.buildconvention.support.JavaSourceAstInspector
 import io.github.dochiri0916.buildconvention.support.JavaLexicalScanner
 import io.github.dochiri0916.buildconvention.support.SourceInspector
+import io.github.dochiri0916.buildconvention.support.SourceTypeIndex
 import io.github.dochiri0916.buildconvention.support.TechnicalDependencyCatalog
 import org.gradle.api.Project
 
@@ -169,6 +170,10 @@ class JavaSourceArchitectureValidator {
         ))
 
         Map<String, JavaSourceAstInspector.TypeModel> knownTypes = [:]
+        SourceTypeIndex typeIndex = new SourceTypeIndex(mainSourceFiles.collect { aggregateAnalysis.inspectionFor(it) }.findAll())
+        violations.addAll(DeclarationConventionValidator.validate(project, typeIndex))
+        violations.addAll(MessagingConventionValidator.validate(project, typeIndex))
+        violations.addAll(WebConversionFlowValidator.validate(project, typeIndex))
         mainSourceFiles.each { sourceFile ->
             def inspected = aggregateAnalysis.inspectionFor(sourceFile)
             if (inspected?.valid) inspected.types.each { knownTypes[it.qualifiedName] = it }

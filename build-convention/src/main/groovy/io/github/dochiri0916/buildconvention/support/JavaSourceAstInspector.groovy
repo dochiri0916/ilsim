@@ -244,7 +244,11 @@ class JavaSourceAstInspector {
                 superType,
                 nestedTypes,
                 qualifiedTypeReferences,
-                type.permitsClause.collect { permittedType -> normalizeAstType(permittedType.toString()) }
+                type.permitsClause.collect { permittedType -> normalizeAstType(permittedType.toString()) },
+                type.typeParameters.collect { parameter -> parameter.name.toString() },
+                type.typeParameters.collectEntries { parameter ->
+                    [(parameter.name.toString()): parameter.bounds.empty ? 'java.lang.Object' : normalizeAstType(parameter.bounds.first().toString())]
+                }
         )
     }
 
@@ -485,6 +489,8 @@ class JavaSourceAstInspector {
         final List<TypeModel> nestedTypes
         final Set<String> qualifiedTypeReferences
         final List<String> permittedTypes
+        final List<String> typeParameters
+        final Map<String, String> typeParameterBounds
 
         private TypeModel(
                 String qualifiedName,
@@ -500,7 +506,9 @@ class JavaSourceAstInspector {
                 String superType,
                 List<TypeModel> nestedTypes,
                 Set<String> qualifiedTypeReferences,
-                List<String> permittedTypes
+                List<String> permittedTypes,
+                List<String> typeParameters,
+                Map<String, String> typeParameterBounds
         ) {
             this.qualifiedName = qualifiedName
             this.simpleName = simpleName
@@ -514,6 +522,8 @@ class JavaSourceAstInspector {
             this.implementedTypes = Collections.unmodifiableList(new ArrayList<>(implementedTypes))
             this.superType = superType
             this.permittedTypes = Collections.unmodifiableList(new ArrayList<>(permittedTypes))
+            this.typeParameters = Collections.unmodifiableList(new ArrayList<>(typeParameters))
+            this.typeParameterBounds = Collections.unmodifiableMap(new LinkedHashMap<>(typeParameterBounds))
             this.nestedTypes = Collections.unmodifiableList(new ArrayList<>(nestedTypes))
             this.qualifiedTypeReferences = Collections.unmodifiableSet(
                     new LinkedHashSet<>(qualifiedTypeReferences)
