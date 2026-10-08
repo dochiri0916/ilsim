@@ -2,8 +2,10 @@ ARCH-APPLICATION-DEPENDENCY	X application must depend on a password port, not Sp
 ARCH-APPLICATION-DEPENDENCY	X application must not depend directly on another context application type 'X'; use an integration Port
 ARCH-APPLICATION-DEPENDENCY	X application must not depend on adapter/global error layer 'X'
 ARCH-APPLICATION-DEPENDENCY	X application must not depend on technical framework type 'X'
+ARCH-CODE-STYLE	X code convention @ConfigurationProperties type 'X' must be a record
 ARCH-CODE-STYLE	X code convention accessor 'X' must use the field name without get
 ARCH-CODE-STYLE	X code convention class 'X' must be final except inheritance bases, superclass proxies, and JPA entities
+ARCH-CODE-STYLE	X code convention interface 'X' with one inherited or declared abstract method must declare @FunctionalInterface
 ARCH-CODE-STYLE	X code convention method 'X' must declare every parameter final
 ARCH-CODE-STYLE	X code convention method 'X' must not use setter naming
 ARCH-CODE-STYLE	X code convention method 'X' must use at most one level of control-flow nesting
@@ -149,6 +151,18 @@ ARCH-GENERAL	X table 'X' domain identifier column 'public_id' must be not null
 ARCH-GENERAL	X table 'X' identifier column 'X' must be char/varchar(36)
 ARCH-GENERAL	X table 'X' reference column 'X' must store identifier value as char/varchar(36), not DB technical id
 ARCH-GENERAL	X web configuration must inject Interceptor/ArgumentResolver components instead of creating them with new
+ARCH-MESSAGING	X messaging Inbox must declare a required String consumer and an exact UNIQUE constraint on (event_id, consumer)
+ARCH-MESSAGING	X messaging MessageEnvelope must be a record with eventId, source, eventType, aggregateId, sequence, occurredAt and payload of their contract types
+ARCH-MESSAGING	X messaging Outbox must declare a singleton UNIQUE constraint on event_id
+ARCH-MESSAGING	X messaging consumer must keep EventListener and Kafka transport in a separate receiving transport adapter
+ARCH-MESSAGING	X messaging cross-context adapter dependency 'X' must be a public integration event consumed in adapter.in.messaging
+ARCH-MESSAGING	X messaging persistence Entity must not expose public fields or use JPA object relation mappings
+ARCH-MESSAGING	X messaging persistence eventId must be a private required String column with length = 36
+ARCH-MESSAGING	X messaging public integration event must expose a String aggregateId
+ARCH-MESSAGING	X messaging public integration event must not use a Port suffix
+ARCH-MESSAGING	X messaging public integration event must return an explicit versioned eventType such as catalog.product-changed.v1
+ARCH-MESSAGING	X messaging public integration event requires an EventMapper in its own application package
+ARCH-MESSAGING	X messaging public integration event requires its own application.port.out.IntegrationEventPort
 ARCH-NAMING	X adapter.in.web.request type 'X' must end with Request
 ARCH-NAMING	X adapter.in.web.response type 'X' must end with Response
 ARCH-NAMING	X domain event 'X' must use a past-tense name without Event suffix
@@ -254,6 +268,7 @@ ARCH-PORT-CONTRACT	X outbound port 'X' must end with Port or RepositoryPort
 ARCH-PORT-CONTRACT	X query UseCase 'X' must receive its query conditions through one Query contract
 ARCH-PORT-CONTRACT	X repository port 'X' must not declare X; use save, create, or update
 ARCH-PORT-CONTRACT	X repository port 'X' must not expose a persistence identifier
+ARCH-PORT-CONTRACT	X web adapter DTO conversion must not call services, UseCases, outbound ports or storage
 ARCH-QUALITY-GATE	X must not suppress PMD/Checkstyle/SpotBugs warnings; fix the violation or convention rule
 ARCH-QUERYDSL	X Querydsl @QueryProjection is only allowed on an internal public Row record
 ARCH-QUERYDSL	X Querydsl JPAQueryFactory must be injected from global.configuration.QuerydslConfiguration
@@ -301,9 +316,12 @@ ARCH-WEB-ADAPTER	X API DTO 'X' must not expose domain/application types directly
 ARCH-WEB-ADAPTER	X controller must not expose application types as response return values
 ARCH-WEB-ADAPTER	X controller must not expose domain types as response return values
 ARCH-WEB-ADAPTER	X inbound web adapter must not import outbound adapter type 'X'
+ARCH-WEB-ADAPTER	X web adapter DTO 'X' with application contract 'X' must provide X or a separate web Mapper conversion
+ARCH-WEB-ADAPTER	X web adapter DTO conversion with business branches must delegate to a separate web Mapper
 ARCH-WEB-ADAPTER	X web adapter Request conversion must be a public instance toCommand/toQuery returning its application contract
 ARCH-WEB-ADAPTER	X web adapter Request conversion must use a separate Mapper for complex conversion
 ARCH-WEB-ADAPTER	X web adapter Request field 'X' constraints must explicitly explain the reason in Korean
 ARCH-WEB-ADAPTER	X web adapter Request field 'X' must declare Jakarta input constraints (NotBlank/NotEmpty/numeric range)
 ARCH-WEB-ADAPTER	X web adapter Response conversion must be public static from(final XxxResult result)
+ARCH-WEB-ADAPTER	X web adapter controller must pass Request conversion or a web Mapper result to inbound contract 'X'
 ARCH-WEB-ADAPTER	X web adapter request body 'X' must declare @Valid @RequestBody

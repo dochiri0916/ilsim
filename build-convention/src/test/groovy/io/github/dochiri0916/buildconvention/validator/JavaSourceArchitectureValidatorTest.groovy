@@ -2946,6 +2946,7 @@ class JavaSourceArchitectureValidatorTest {
 
                 public interface IntegrationEvent {
                     String eventType();
+                    String aggregateId();
                 }
                 ''')
         writeJava(project, 'com/example/order/application/port/out/event/OrderIntegrationEvent.java', '''
