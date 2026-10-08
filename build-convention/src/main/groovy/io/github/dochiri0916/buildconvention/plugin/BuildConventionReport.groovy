@@ -2,6 +2,7 @@ package io.github.dochiri0916.buildconvention.plugin
 
 import com.github.spotbugs.snom.SpotBugsTask
 import groovy.json.JsonOutput
+import io.github.dochiri0916.buildconvention.validator.RuntimeConventionReview
 import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.plugins.quality.Checkstyle
@@ -51,7 +52,8 @@ class BuildConventionReport {
                 status       : checks.values().contains(Status.FAIL.name()) ? Status.FAIL.name() : Status.PASS.name(),
                 checks       : checks,
                 coverage     : coverage,
-                mutation     : mutation
+                mutation     : mutation,
+                conventionReview: RuntimeConventionReview.report(project)
         ]
         File output = project.layout.buildDirectory.file('reports/build-convention/report.json').get().asFile
         output.parentFile.mkdirs()
