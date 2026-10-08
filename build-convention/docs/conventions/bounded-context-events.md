@@ -15,3 +15,11 @@
 전달 보장·재시도·완료 판정·트랜잭션·소비자별 멱등성·ACK/offset 커밋·보관 규칙은 [Outbox/Inbox](outbox-inbox-conventions.md) 컨벤션을 따른다.
 
 패키지 배치는 [패키지 구조](package-structure.md), 계층별 책임은 [애플리케이션](application-conventions.md)·[어댑터](adapter-conventions.md) 컨벤션을 따른다.
+
+## 이벤트 구조 검사
+
+- `MessageEnvelope`는 위 필드와 타입을 가진 record다. 식별자·source·eventType·payload는 String, sequence는 long, occurredAt은 java.time.Instant다.
+- 구체 공개 이벤트는 public `eventType()`에서 `order.changed.v1` 형태의 버전 문자열을 직접 반환하거나 같은 타입의 static final 문자열 상수를 반환한다. Java 클래스 이름이나 동적으로 조립한 이름을 사용하지 않는다. `aggregateId`는 String 접근자로 제공한다.
+- 해당 application의 EventMapper는 도메인 이벤트를 받아 구체 공개 이벤트를 반환하는 public static 변환을 제공한다. 같은 application.port.out의 IntegrationEventPort는 해당 이벤트 또는 그 마커 계약을 받는다. 실제 발행과 값 변환의 의미는 EVENT-CONTRACT 시나리오로 검토한다.
+- 다른 Context의 공개 이벤트는 adapter.in.messaging에서만 참조한다. 소비자에는 @EventListener나 Kafka API를 두지 않고 수신 전송 어댑터로 분리한다.
+- 실제 sequence/revision 비교·재전달·Kafka key/group은 [실행 근거](runtime-verification.md)로 확인한다.

@@ -18,3 +18,11 @@ annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
 ISBN 중복 번역은 `uk_books_isbn`과 MySQL이 보고한 `books.uk_books_isbn`만 정확히 일치할 때 적용한다. 다른 테이블·제약·이름 접미사는 ISBN 중복으로 처리하지 않으며 원인을 보존한다. 이전 PostgreSQL 검증 기록은 `template-verification-postgresql.json`에 별도로 보관한다.
 
 UUID v7 발급에는 검증에 사용한 `com.github.f4b6a3:uuid-creator:6.1.1` 의존성이 필요하다. 기존 DB에서는 자체 식별자의 36자 UUID 저장을 위해 애플리케이션 시작 전에 컬럼과 제약을 마이그레이션한다.
+
+## 실행 근거 연결
+
+소비 프로젝트에서 템플릿을 사용할 때도 report.json의 conventionReview를 확인한다. [runtime-verification.md](../conventions/runtime-verification.md)의 선언 형식으로 해당 프로젝트에서 실제 실행한 테스트를 연결한다.
+
+- BookQueryRepositoryTest의 usesStablePagesAndSeparateCount(), sharesOptionalFilterAcrossListAndCount(), supportsLargeOffset()는 안정 정렬·목록/count 필터·큰 offset의 근거다.
+- BookSearchIntegrationTest의 searchesThroughRealLayers(), rejectsInvalidPagination()는 실제 HTTP 변환과 잘못된 페이지의 근거다.
+- 이 예제는 컬렉션 조인·자식 일괄 조회·기본/safe의 복수 구현·메시지 브로커·Outbox/Inbox 전달 보장을 검증하지 않는다. 해당 기능을 추가하면 소비 프로젝트의 DB/브로커 테스트와 운영 검토가 필요하다. 기존 template-verification 파일을 새 소비 프로젝트의 완료 근거로 복사하지 않는다.

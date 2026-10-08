@@ -30,3 +30,10 @@ Production·테스트·빌드 설정·migration을 변경하면 완료 전에 �
 - `scanForTestClasses = false`를 설정하거나 `testClassesDirs`에서 test source set 출력을 제거하지 않는다.
 - PIT `targetTests` 변경, `excludedGroups`·`includedGroups`·`includedTestMethods` 지정, `skipFailingTests = true`로 검증을 우회하지 않는다.
 - 예외적 제외가 필요하면 플러그인이 공식적으로 제공하는 규칙과 테스트를 확인한다. 특정 fixture만 통과시키기 위한 예외 처리를 추가하지 않는다.
+
+## 실행 의미 검토
+
+- report.json의 기존 status와 checks는 구조·품질 게이트 결과다. 추가된 conventionReview는 실행 의미를 별도로 나타낸다.
+- conventionReview.status=REVIEW를 PASS로 해석하지 않는다. 적용되는 기술이 없을 때만 NOT_APPLIED다. 파싱·근거 선언 오류는 REVIEW와 errors로 남긴다.
+- JUnit 실행 근거는 현재 성공·UP-TO-DATE·FROM-CACHE인 Test task의 XML에서만 연결한다. 실패·skip·미실행 task의 이전 결과는 근거로 쓰지 않는다. EXECUTED는 해당 테스트가 실행됐다는 뜻이며 요구사항의 의미적 정확성을 자동 보증하지 않는다.
+- [runtime-verification.md](runtime-verification.md)의 시나리오·실행 근거·코드/운영 검토를 함께 확인한다.

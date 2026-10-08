@@ -16,3 +16,9 @@
 
 - record compact constructor의 암시적 파라미터에는 `final`을 명시하지 않는다.
 - 줄 길이는 130자 이하로 유지하고 사용하지 않는 import는 제거한다.
+
+## 선언 검사 범위
+
+- `@ConfigurationProperties` 타입은 `record`로 작성한다. `@Value` 금지만 통과하는 일반 class 설정은 허용하지 않는다.
+- `@FunctionalInterface`는 Port 접미사와 관계없이 단일 추상 메서드 인터페이스에 적용한다. 로컬 소스의 상속·제네릭 치환·중첩 인터페이스와 JDK 상속을 검사하고 `Object`의 공개 메서드·static·private·default 메서드는 추상 메서드 개수에서 제외한다. sealed 인터페이스는 Java 함수형 인터페이스 대상이 아니다.
+- 검사 소스에 없는 외부 라이브러리의 상속 계약은 컴파일과 코드 리뷰로 확인한다.

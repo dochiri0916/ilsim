@@ -15,3 +15,5 @@
 [coverage.json](coverage.json)은 규칙별 구현·검증 근거와 pending/review 항목을 연결한다. 적용 기록은 [CONVENTION_ROLLOUT](../CONVENTION_ROLLOUT.md)에 있다. 정적 검사의 PASS가 업무 불변식·운영 안전성을 증명하지는 않으며, 문서에 없는 구조가 모두 자동 거부된다는 뜻도 아니다. 실제 검증 규칙의 구현과 테스트를 함께 확인한다.
 
 `ai`는 이 문서와 상세 규칙·템플릿을 검사에 사용하는 로컬 플러그인 JAR에서 배치한다. `docs/build-convention/.ai-guidance.json`의 버전을 확인하고, 프로젝트가 별도 플러그인 버전을 적용하면 일치 여부를 확인한다.
+
+실제 DB·브로커·HTTP 동작과 기본/safe 구현의 계약 일치는 [실행 의미 검토](runtime-verification.md)를 따른다. `conventionReview=REVIEW`와 `EXECUTED` 테스트 근거를 구조 검사 PASS와 구분한다.

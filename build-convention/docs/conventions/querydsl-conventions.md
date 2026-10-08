@@ -23,3 +23,8 @@
 - 유일 정렬 키는 `id`·`publicId` 또는 조회 Entity의 NOT NULL 단일 열 유니크 제약에 해당하는 키를 포함한다. 지역 정렬 변수와 인자 없는 지역 헬퍼도 검사한다.
 - offset 곱셈을 지역 변수·지역 헬퍼로 옮겨도 첫 곱셈부터 long으로 계산한다. 곱셈 후 long으로 캐스팅하지 않는다.
 - 외부 헬퍼의 offset 계산, 복합 유일 키 전체 정렬, 조인 후 실제 유일성, 목록/count의 동일 조건, N+1 방지는 DB 테스트와 코드 리뷰로 확인한다. 구현·검증 범위는 [coverage.json](coverage.json)을 참고한다.
+
+## 실행 근거
+
+- 실제 DB에서 페이지 범위·큰 offset·동률 정렬은 QUERY-PAGINATION으로, 목록/count 조건·조인 중복·자식 일괄 조회와 N+1은 QUERY-RESULTS로 확인한다.
+- 템플릿 테스트나 정적 검사 통과는 소비 프로젝트의 해당 동작을 증명하지 않는다. 해당 프로젝트에서 실행한 테스트를 [실행 근거](runtime-verification.md)에 연결한다.

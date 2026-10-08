@@ -29,3 +29,11 @@
 
 - Request에서 Query로의 단순 변환은 public 인스턴스 `toQuery()`에 둔다. 분기·반복이 필요한 Request 변환은 웹 Mapper로 분리한다.
 - Response 필드나 공개 반환 타입으로 애플리케이션 모델을 노출하지 않는다. `Response.from(Result)`의 내부 변환에서는 같은 BC의 Result DTO·일급 컬렉션을 참조할 수 있다.
+
+## 변환과 실행 근거
+
+- 대응하는 Command·Query·Result가 존재하면 DTO에 방향에 맞는 변환 메서드를 제공하거나 같은 웹 어댑터의 별도 Mapper에 명시적인 입력·반환 계약을 둔다. 대응 계약이 없는 DTO에 빈 계약을 추가하지 않는다.
+- DTO의 지역 헬퍼에서도 Service·UseCase·Outbound Port·저장소를 호출하지 않는다. 실제 HTTP 입력 → UseCase 인자와 Result → JSON 값의 일치는 WEB-CONVERSION 시나리오로 확인한다.
+- 같은 저장소 Port의 기본·safe 구현이 여러 개면 결과·제약 오류·flush·원인 보존의 일치를 PERSISTENCE-CONTRACT 시나리오로 확인한다. [실행 근거](runtime-verification.md)를 참고한다.
+
+- 컨트롤러의 실제 UseCase 계약에서 대응 Request·Response를 추론한다. Request 변환 또는 Mapper 반환을 지역 변수로 받아 호출하는 흐름도 검사하며, 사용하지 않는 변환 호출만 추가하고 직접 조립한 Command를 넘기는 형태는 거부한다. 복잡한 위임·반환 값의 실제 일치는 WEB-CONVERSION 테스트와 리뷰로 확인한다.

@@ -19,3 +19,10 @@
 - 폴링과 CDC는 BC 단위로 하나만 사용한다. CDC 전환 시 기존 이벤트 계약과 Inbox 멱등성을 유지하며, Outbox 삭제는 전달 진척·변경 로그 보존·복구 범위를 확인한 뒤 수행한다.
 
 모델·패키지 배치는 [도메인](domain-conventions.md)·[어댑터](adapter-conventions.md), PK와 저장 규칙은 [영속성](persistence-conventions.md), 메시지 계약과 순서 메타데이터는 [BC 이벤트](bounded-context-events.md) 컨벤션을 따른다.
+
+## 저장 제약과 실행 근거
+
+- JPA Outbox의 eventId는 private String이며 nullable=false, length=36으로 선언한다. event_id 단독 UNIQUE가 필요하다. 다른 컬럼을 함께 넣은 복합 UNIQUE는 단독 제약을 대신하지 않는다.
+- JPA Inbox는 필수 String consumer와 정확한 (event_id, consumer) UNIQUE를 선언한다. event_id만 유일하게 두거나 추가 컬럼을 포함한 제약은 소비자별 멱등성을 대신하지 않는다.
+- 상속한 MappedSuperclass 필드도 함께 검사한다. outbox/inbox/projection 패키지를 이유로 public 필드와 JPA 연관 관계·ElementCollection을 허용하지 않는다.
+- 원자성·브로커 확인·폴러 동시성·재시도·DLQ·보관·CDC는 구조 검사 PASS로 완료 처리하지 않는다. OUTBOX-DELIVERY와 INBOX-DELIVERY의 [실행 근거와 운영 리뷰](runtime-verification.md)를 기록한다.
