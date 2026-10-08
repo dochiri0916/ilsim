@@ -235,6 +235,18 @@ def run(project, output, base_ref=None, process=subprocess.run, off=None):
         for name, status in item['checks'].items():
             checks[name] = max(checks.get(name, 'NOT_APPLIED'), status, key=ranks.get)
     value['checks'] = checks
+    reviews = [(name, item['conventionReview']) for name, item in projects.items() if 'conventionReview' in item]
+    if reviews:
+        if any(not isinstance(review, dict) or review.get('status') not in ('REVIEW', 'NOT_APPLIED')
+               or not isinstance(review.get('requirements'), list) or not isinstance(review.get('errors'), list)
+               for _, review in reviews):
+            raise ValueError('컨벤션 실행 의미 검토 리포트 형식이 올바르지 않습니다')
+        value['conventionReview'] = {
+            'status': 'REVIEW' if any(review['status'] == 'REVIEW' for _, review in reviews) else 'NOT_APPLIED',
+            'scope': 'RUNTIME_SEMANTICS',
+            'requirements': [dict(item, project=name) for name, review in reviews for item in review['requirements']],
+            'errors': [f'{name}: {error}' for name, review in reviews for error in review['errors']],
+        }
     off = off or {}
     failures = inventory['failures']
     unexpected = [item for item in failures
@@ -277,6 +289,15 @@ def label(names):
 def summary(report, before=None):
     names = blocking(report)
     lines = ['컨벤션 검증: ' + ('통과' if not names else '실패 - ' + label(names))]
+    review = report.get('conventionReview') or {}
+    if review.get('status') == 'REVIEW':
+        if not names:
+            lines[0] = '컨벤션 검증: 구조·품질 검사 통과 (실행 의미 검토 필요)'
+        requirements = review.get('requirements') or []
+        missing = sum(item.get('status') == 'MISSING' for requirement in requirements
+                      for item in requirement.get('evidence', []))
+        lines.append(f'실행 의미 검토(REVIEW): {len(requirements)}개 대상, 테스트 실행 근거 누락 {missing}개')
+        lines.extend('- ' + str(error) for error in review.get('errors', []))
     if before is not None and names:
         existing = [name for name in names if name in failing(before)]
         if existing:
