@@ -75,6 +75,7 @@ def _module(name):
 usage = _module('usage_report')
 guidance = _module('convention_guidance')
 convention = _module('convention_check')
+autofix = _module('autofix')
 
 
 # --- project, routing and key helpers ---
@@ -666,6 +667,7 @@ def checks(task, cwd, edits, say, process=subprocess.run, jar=None, level='full'
             say(f'검사 대상: {project.relative_to(cwd)}')
             findings += checks(task, project, edits, say, process, jar, level, pending)
         return findings
+    autofix.apply(project, edits, say, process)
     if level in ('compile', 'test'):
         return verify(project, edits, level, say, process)
     reports = project/REPORT_DIR
