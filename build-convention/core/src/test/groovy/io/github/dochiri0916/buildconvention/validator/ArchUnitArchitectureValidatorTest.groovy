@@ -178,6 +178,25 @@ class ArchUnitArchitectureValidatorTest {
         assert violations.any { it.contains('application must not depend on technical framework types') }
     }
 
+    @Test
+    @DisplayName('컴파일된 클래스 디렉터리가 없으면 위반이 없다')
+    void accepts_project_without_compiled_classes() {
+        // given
+        Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
+        File regularFile = new File(tempDir, 'not-a-directory')
+        regularFile.text = 'x'
+
+        // when
+        List<String> violations = ArchUnitArchitectureValidator.validate(
+                project,
+                new HexagonalConventionExtension(),
+                [new File(tempDir, 'missing'), regularFile]
+        )
+
+        // then
+        assert violations.empty
+    }
+
     private File writeSource(String path, String source) {
         File file = new File(tempDir, "sources/${path}")
         file.parentFile.mkdirs()

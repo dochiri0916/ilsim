@@ -1,0 +1,42 @@
+plugins {
+    id 'java-gradle-plugin'
+    id 'com.gradle.plugin-publish'
+}
+
+dependencies {
+    api project(':core')
+    implementation 'com.github.spotbugs.snom:spotbugs-gradle-plugin:6.0.26'
+    implementation 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:1.19.0'
+}
+
+gradlePlugin {
+    website = 'https://github.com/dochiri0916/build-convention'
+    vcsUrl = 'https://github.com/dochiri0916/build-convention.git'
+
+    plugins {
+        javaConvention {
+            id = 'io.github.dochiri0916.build-convention.java'
+            implementationClass = 'io.github.dochiri0916.buildconvention.plugin.LintConventionPlugin'
+
+            displayName = 'Build Convention for Java'
+            description = 'Java/Spring architecture, testing, static analysis, and quality convention plugin.'
+            tags.set(['java', 'spring', 'architecture', 'testing', 'quality'])
+
+            compatibility(it) {
+                features {
+                    configurationCache = false
+                    isolatedProjects = false
+                }
+            }
+        }
+    }
+}
+
+test {
+    inputs.dir(rootProject.file('docs/templates')).withPropertyName('conventionTemplates')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(rootProject.file('docs/conventions')).withPropertyName('conventionDocuments')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(project(':core').file('src')).withPropertyName('coreSources')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+}

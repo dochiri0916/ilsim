@@ -1,0 +1,16 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+dependencies {
+    api project(':core')
+}
+
+gradlePlugin {
+    plugins {
+        kotlinConvention {
+            id = 'io.github.dochiri0916.build-convention.kotlin'
+            implementationClass = 'io.github.dochiri0916.buildconvention.kotlin.KotlinConventionPlugin'
+        }
+    }
+}

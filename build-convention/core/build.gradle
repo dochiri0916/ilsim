@@ -1,0 +1,28 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+dependencies {
+    implementation 'com.tngtech.archunit:archunit:1.4.1'
+    implementation 'org.ow2.asm:asm:9.8'
+}
+
+test {
+    // ProjectBuilder defines classes in java.lang's loader; java-gradle-plugin adds this for the plugin modules.
+    jvmArgs '--add-opens=java.base/java.lang=ALL-UNNAMED'
+}
+
+processResources {
+    filesMatching('build-convention-version.properties') {
+        expand(pluginVersion: project.version)
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+}

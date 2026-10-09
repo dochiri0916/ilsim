@@ -100,6 +100,14 @@ class SelfUpdateTests(unittest.TestCase):
         self.update()
         self.assertEqual(1, len(self.gradle.builds))
 
+    def test_plugin_module_change_rebuilds_the_plugin(self):
+        # given: the plugin sources live in the core and language modules
+        commit(self.home, {'build-convention/java/src/J.java': 'j', 'build-convention/core/src/C.java': 'c'}, 'modules')
+        # when
+        self.assertTrue(self.update())
+        # then
+        self.assertEqual([('build-convention', 'publishToMavenLocal')], self.gradle.builds)
+
     def test_fetch_waits_for_the_interval(self):
         # given: one check already happened
         self.update()

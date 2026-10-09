@@ -49,7 +49,7 @@ final class DeclarationConventionValidator {
                         complete = false
                         return
                     }
-                    Class parentClass = Class.forName(parentName, false, DeclarationConventionValidator.classLoader)
+                    Class parentClass = DeclarationConventionValidator.classLoader.loadClass(parentName)
                     List<String> values = syntax.contains('<') ? typeArguments(syntax.substring(syntax.indexOf('<') + 1, syntax.lastIndexOf('>'))) : []
                     Map externalBindings = [:]
                     parentClass.typeParameters.eachWithIndex { parameter, int position ->

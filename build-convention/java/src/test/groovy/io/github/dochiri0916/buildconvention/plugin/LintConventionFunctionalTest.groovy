@@ -375,7 +375,7 @@ class LintConventionFunctionalTest {
         new File(tempDir, 'build.gradle').text = '''
                 plugins {
                     id 'java'
-                    id 'io.github.dochiri0916.build-convention'
+                    id 'io.github.dochiri0916.build-convention.java'
                 }
                 '''.stripIndent().trim() + System.lineSeparator()
     }

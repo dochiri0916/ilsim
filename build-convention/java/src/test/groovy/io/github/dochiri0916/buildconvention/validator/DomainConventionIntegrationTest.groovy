@@ -15,7 +15,7 @@ class DomainConventionIntegrationTest {
     void validatesTemplates() {
         // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
-        File sourceRoot = new File('docs/templates/src/main/java')
+        File sourceRoot = new File('../docs/templates/src/main/java')
         sourceRoot.eachFileRecurse { File file ->
             if (file.name.endsWith('.java')) {
                 File target = new File(tempDir, 'src/main/java/' + sourceRoot.toPath().relativize(file.toPath()))

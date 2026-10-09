@@ -34,7 +34,8 @@ BUILD_TIMEOUT = 1800
 # Paths whose content decides whether a built artifact is current, and the Gradle task that rebuilds it.
 BUILDS = (
     ('code-risk-analyzer', ('src', 'build.gradle', 'settings.gradle', 'gradle'), 'bootJar'),
-    ('build-convention', ('src', 'config', 'build.gradle', 'settings.gradle', 'gradle'), 'publishToMavenLocal'),
+    ('build-convention', ('src', 'core', 'java', 'kotlin', 'config', 'build.gradle', 'settings.gradle', 'gradle'),
+     'publishToMavenLocal'),
 )
 
 

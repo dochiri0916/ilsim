@@ -11,6 +11,16 @@
 
 실제 validation rule 구현과 테스트가 최종 source of truth다.
 
+## Modules
+
+- `core/`: 언어와 무관한 확장·카탈로그·검증(ArchUnit, migration, rule ID). 언어별 모듈을 참조하지 않는다.
+- `java/`: Java 소스 검증, Checkstyle/PMD/SpotBugs 배선, anti-bypass, report. 플러그인 ID는 `io.github.dochiri0916.build-convention.java`다.
+- `kotlin/`: 자리만 잡은 모듈. Kotlin 규칙을 정의하기 전에는 적용 시 실패해야 하며, 검사 없이 통과시키지 않는다.
+- 루트: 기존 ID `io.github.dochiri0916.build-convention`(Java 컨벤션 적용)과 `ai`가 읽는 지침 묶음·버전. 산출물 좌표와 JAR 자원 경로를 유지한다.
+
+커버리지 기준은 모듈마다 따로 적용한다. 다른 모듈의 테스트로 기준을 채우지 않는다.
+`docs/conventions/coverage.json`의 경로는 이 디렉터리 기준(`java/src/...`, `core/src/...`)으로 쓴다.
+
 ## Rule Development
 
 새 validation rule을 추가하거나 기존 rule을 변경할 때 다음을 함께 검토한다.

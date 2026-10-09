@@ -38,4 +38,17 @@ class ConventionRuleCatalogTest {
         assert id == 'ARCH-DOMAIN-AGGREGATE'
         assert ConventionRuleCatalog.ruleId('latest contest failure') == 'ARCH-GENERAL'
     }
+
+    @Test
+    @DisplayName('비어 있는 위반 항목은 rule ID를 붙이지 않고 그대로 둔다')
+    void keeps_missing_violation_as_is() {
+        // given
+        List<String> violations = [null, 'transaction boundary must stay in application service']
+
+        // when
+        List<String> identified = ConventionRuleCatalog.withRuleIds(violations)
+
+        // then
+        assert identified == [null, '[ARCH-TRANSACTION-BOUNDARY] transaction boundary must stay in application service']
+    }
 }

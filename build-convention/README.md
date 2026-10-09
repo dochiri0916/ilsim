@@ -2,6 +2,19 @@
 
 Build Convention is a Gradle plugin for Java and Spring projects. It runs architecture, code quality, testing, coverage, and database migration checks as part of Gradle's `check` task.
 
+## Modules
+
+The build is split by language so each language's rules and tooling stay separate.
+
+| Directory | Artifact | Plugin ID | Contents |
+| --- | --- | --- | --- |
+| `core/` | `build-convention-core` | none | Language-neutral parts: the `hexagonalConvention` extension, bounded context and technical dependency catalogs, rule IDs, and the ArchUnit, migration, and coverage class checks |
+| `java/` | `build-convention-java` | `io.github.dochiri0916.build-convention.java` | Java source validators, Checkstyle/PMD/SpotBugs wiring, anti-bypass checks, and the report |
+| `kotlin/` | not published | `io.github.dochiri0916.build-convention.kotlin` | Placeholder: Kotlin rules are not defined, so applying it fails instead of passing unchecked code |
+| root | `build-convention` | `io.github.dochiri0916.build-convention` | The original ID, which applies the Java conventions, plus the guidance bundle and version that `ai` reads |
+
+Existing consumers keep using `io.github.dochiri0916.build-convention`. Rule documents and templates in `docs/` describe the Java conventions.
+
 ## Architecture
 
 The plugin enforces a practical hexagonal architecture with this dependency direction:

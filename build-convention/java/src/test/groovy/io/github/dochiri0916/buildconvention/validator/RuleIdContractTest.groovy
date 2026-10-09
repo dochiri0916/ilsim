@@ -10,7 +10,8 @@ import org.junit.jupiter.api.Test
  */
 class RuleIdContractTest {
 
-    private static final File SOURCE_ROOT = new File('src/main/groovy')
+    // Validators live in the core and Java modules; the contract covers both.
+    private static final List<File> SOURCE_ROOTS = [new File('src/main/groovy'), new File('../core/src/main/groovy')]
     private static final File GOLDEN = new File('src/test/resources/rule-id-contract.txt')
 
     @Test
@@ -31,7 +32,9 @@ class RuleIdContractTest {
 
     private static List<String> currentContract() {
         Set<String> lines = new TreeSet<>()
-        SOURCE_ROOT.eachFileRecurse { File file ->
+        List<File> files = []
+        SOURCE_ROOTS.each { File sourceRoot -> sourceRoot.eachFileRecurse { File file -> files.add(file) } }
+        files.each { File file ->
             if (!file.name.endsWith('.groovy') || !file.path.contains('/validator/')) {
                 return
             }

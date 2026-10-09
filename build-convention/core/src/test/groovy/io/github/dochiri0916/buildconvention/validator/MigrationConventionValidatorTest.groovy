@@ -88,6 +88,64 @@ class MigrationConventionValidatorTest {
         }
     }
 
+    @Test
+    @DisplayName('인덱스와 외래키가 없는 참조 식별자 컬럼을 거부한다')
+    void rejects_reference_column_without_index_and_foreign_key() {
+        // given
+        Project project = sampleProject('missing-reference-integrity')
+        writeSql(project, 'db/migration/V1__create_orders.sql', '''
+                create table orders (
+                    id bigint primary key,
+                    public_id varchar(36) not null unique,
+                    member_id varchar(36) not null
+                );
+                ''')
+
+        // when
+        List<String> violations = MigrationConventionValidator.validate(project)
+
+        // then
+        assert violations.any { it.contains("reference column 'member_id' must have an index") }
+        assert violations.any { it.contains("reference column 'member_id' must have an explicit foreign key") }
+    }
+
+    @Test
+    @DisplayName('DB 기술 ID를 저장하거나 참조하는 컬럼과 외래키를 거부한다')
+    void rejects_technical_identifier_references() {
+        // given
+        Project project = sampleProject('technical-reference')
+        writeSql(project, 'db/migration/V1__create_orders.sql', '''
+                create table orders (
+                    id bigint primary key,
+                    public_id varchar(36) not null unique,
+                    member_id bigint not null,
+                    foreign key (member_id) references members(id)
+                );
+                ''')
+
+        // when
+        List<String> violations = MigrationConventionValidator.validate(project)
+
+        // then
+        assert violations.any {
+            it.contains("reference column 'member_id' must store identifier value as char/varchar(36), not DB technical id")
+        }
+        assert violations.any { it.contains('foreign keys must reference a domain identifier column, not DB technical id') }
+    }
+
+    @Test
+    @DisplayName('migration 자원이 없는 프로젝트는 위반이 없다')
+    void accepts_project_without_resources() {
+        // given
+        Project project = sampleProject('no-resources')
+
+        // when
+        List<String> violations = MigrationConventionValidator.validate(project)
+
+        // then
+        assert violations.empty
+    }
+
     private Project sampleProject(String name) {
         File projectDir = new File(tempDir, name)
         projectDir.mkdirs()

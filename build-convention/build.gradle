@@ -6,46 +6,127 @@ plugins {
     id 'com.gradle.plugin-publish' version '2.2.1'
 }
 
-codenarc {
-    configFile = file('config/codenarc/codenarc.xml')
-    maxPriority1Violations = 0
-    maxPriority2Violations = 0
-    maxPriority3Violations = 0
-}
-
-tasks.withType(CodeNarc).configureEach {
-    reports {
-        html.required = true
-        text.required = true
-    }
-}
-
 group = 'io.github.dochiri0916'
 version = '1.2.0'
 
-repositories {
-    mavenCentral()
-    gradlePluginPortal()
+allprojects {
+    apply plugin: 'codenarc'
+    apply plugin: 'groovy'
+    apply plugin: 'jacoco'
+
+    group = rootProject.group
+    version = rootProject.version
+
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+
+    codenarc {
+        configFile = rootProject.file('config/codenarc/codenarc.xml')
+        maxPriority1Violations = 0
+        maxPriority2Violations = 0
+        maxPriority3Violations = 0
+    }
+
+    tasks.withType(CodeNarc).configureEach {
+        reports {
+            html.required = true
+            text.required = true
+        }
+    }
+
+    dependencies {
+        implementation gradleApi()
+        implementation localGroovy()
+
+        testImplementation platform('org.junit:junit-bom:5.10.0')
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 21
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    jacoco {
+        toolVersion = '0.8.12'
+    }
+
+    jacocoTestReport {
+        dependsOn test
+
+        reports {
+            xml.required = true
+            html.required = true
+            csv.required = false
+        }
+    }
+
+    jacocoTestCoverageVerification {
+        dependsOn test
+
+        violationRules {
+            rule {
+                limit {
+                    counter = 'LINE'
+                    value = 'COVEREDRATIO'
+                    minimum = 0.85
+                }
+
+                limit {
+                    counter = 'BRANCH'
+                    value = 'COVEREDRATIO'
+                    minimum = 0.80
+                }
+            }
+        }
+    }
+
+    check {
+        dependsOn jacocoTestReport
+        dependsOn jacocoTestCoverageVerification
+    }
+}
+
+subprojects {
+    // Artifacts keep the build-convention name: a bare `java` or `core` would collide in a shared Maven repository.
+    String artifactName = "build-convention-${project.name}"
+    base {
+        archivesName = artifactName
+    }
+    pluginManager.withPlugin('maven-publish') {
+        publishing.publications.withType(MavenPublication)
+                .matching { publication -> !publication.name.endsWith('PluginMarkerMaven') }
+                .configureEach { artifactId = artifactName }
+    }
 }
 
 dependencies {
-    implementation gradleApi()
-    implementation localGroovy()
-    implementation 'com.github.spotbugs.snom:spotbugs-gradle-plugin:6.0.26'
-    implementation 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:1.19.0'
-    implementation 'com.tngtech.archunit:archunit:1.4.1'
-    implementation 'org.ow2.asm:asm:9.8'
-
-    testImplementation platform('org.junit:junit-bom:5.10.0')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    api project(':java')
 }
 
+// This JAR keeps the coordinates `ai` reads: the guidance bundle, its version and the original plugin ID.
 processResources {
     from('docs') {
         include 'CONVENTION_ROLLOUT.md'
         include 'conventions/*.md', 'conventions/*.json', 'templates/README.md', 'templates/src/**'
         into 'build-convention-guidance'
+    }
+    from(project(':core').file('src/main/resources')) {
+        include 'build-convention-version.properties'
     }
     filesMatching('build-convention-version.properties') {
         expand(pluginVersion: project.version)
@@ -59,7 +140,7 @@ gradlePlugin {
     plugins {
         lintConvention {
             id = 'io.github.dochiri0916.build-convention'
-            implementationClass = 'io.github.dochiri0916.buildconvention.plugin.LintConventionPlugin'
+            implementationClass = 'io.github.dochiri0916.buildconvention.plugin.BuildConventionPlugin'
 
             displayName = 'Build Convention'
             description = 'Java/Spring architecture, testing, static analysis, and quality convention plugin.'
@@ -73,61 +154,4 @@ gradlePlugin {
             }
         }
     }
-}
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.release = 21
-}
-
-test {
-    useJUnitPlatform()
-    inputs.dir('docs/templates').withPropertyName('conventionTemplates')
-            .withPathSensitivity(PathSensitivity.RELATIVE)
-}
-
-jacoco {
-    toolVersion = '0.8.12'
-}
-
-jacocoTestReport {
-    dependsOn test
-
-    reports {
-        xml.required = true
-        html.required = true
-        csv.required = false
-    }
-}
-
-jacocoTestCoverageVerification {
-    dependsOn test
-
-    violationRules {
-        rule {
-            limit {
-                counter = 'LINE'
-                value = 'COVEREDRATIO'
-                minimum = 0.85
-            }
-
-            limit {
-                counter = 'BRANCH'
-                value = 'COVEREDRATIO'
-                minimum = 0.80
-            }
-        }
-    }
-}
-
-check {
-    dependsOn jacocoTestReport
-    dependsOn jacocoTestCoverageVerification
 }
