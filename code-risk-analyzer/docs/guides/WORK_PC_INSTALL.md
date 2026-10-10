@@ -5,7 +5,7 @@
 ## 시작 전 확인
 
 - **회사 정책**: `ai`는 프로젝트 코드와 요청을 Codex·Claude에, `TYPESAFE_API_KEY`가 있으면 위험 분석 항목의 메서드 소스를 JEV(TypeSafe)에도 보낸다. 회사 코드를 개인 구독 계정이나 외부 서비스로 보내도 되는지, 개인 저장소의 도구를 설치해도 되는지 먼저 확인한다. 허용되지 않으면 키를 두지 않거나 설치하지 않는다.
-- **도구**: JDK 25와 21(분석기·build-convention의 Gradle toolchain, 자동 다운로드 설정 없음), python3(3.9 이상, macOS 기본 포함), git, codex 또는 claude CLI. [`install.sh`](../../../install.sh)가 확인한다.
+- **도구**: JDK 21(분석기·build-convention의 Gradle toolchain, 자동 다운로드 설정 없음; 분석기 JAR 실행은 Java 21 이상), python3(3.9 이상, macOS 기본 포함), git, codex 또는 claude CLI. [`install.sh`](../../../install.sh)가 확인한다.
 - **네트워크**: github.com SSH(22번 포트)가 열려 있어야 한다. 막혀 있으면 아래 "SSH가 막힌 경우"를 쓴다.
 
 ## 1. 그 PC에서 키 만들기

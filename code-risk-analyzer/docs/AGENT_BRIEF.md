@@ -5,7 +5,7 @@
 ## 무엇인가
 
 - `ai` 명령([`scripts/agent_pick.py`](../scripts/agent_pick.py)): 프로젝트 폴더에서 `ai 작업 내용`을 받으면 Claude Code·Codex 중 요금제 한도가 유리한 쪽을 화면 없이 실행하고, 진행·답과 검사 결과만 보여 준다.
-- Java 25 Spring Boot 분석기(`code-risk-analyzer`): Java/Spring/JPA 코드의 위험 규칙과 테스트 적정성을 정적으로 분석한다. `ai`가 작업 뒤 바뀐 파일에 `scan`을 실행한다.
+- Java 21 이상에서 실행하는 Spring Boot 분석기(`code-risk-analyzer`): Java/Spring/JPA 코드의 위험 규칙과 테스트 적정성을 정적으로 분석한다. `ai`가 작업 뒤 바뀐 파일에 `scan`을 실행한다.
 - build-convention 검사([`scripts/convention_check.py`](../scripts/convention_check.py)): 대상 프로젝트의 빌드 파일을 고치지 않고 Gradle init script로 플러그인을 붙여 `check`를 실행한다.
 
 ## `ai` 흐름
@@ -30,6 +30,8 @@ ai --no-verify ... / ai --verify=compile|test|full ...   # 작업 뒤 검사 범
 ## 분석기 명령
 
 `CRA` = `java -jar build/libs/code-risk-analyzer-0.0.1-SNAPSHOT.jar` (`./gradlew bootJar`로 생성)
+
+빌드는 JDK 21 toolchain과 `--release 21`을 사용한다. 실행 JAR은 Java 21 이상에서 실행하며 소비 프로젝트에 분석기 의존성이나 Gradle 플러그인을 추가할 필요가 없다. `.code-risk.yml`이 없으면 기본 설정으로 검사한다.
 
 | 명령 | 용도 |
 |---|---|

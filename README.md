@@ -4,7 +4,7 @@ Claude Code·Codex를 한도에 맞춰 골라 쓰고(`ai`), 작업 뒤 컨벤션
 
 | 프로젝트 | 역할 | 실행 환경 |
 |---|---|---|
-| [Code Risk Analyzer](code-risk-analyzer/docs/README.md) | `ai` 명령, 코드 위험·테스트 적정성 정적 분석 | Java 25, 독립 Gradle 빌드 |
+| [Code Risk Analyzer](code-risk-analyzer/docs/README.md) | `ai` 명령, 코드 위험·테스트 적정성 정적 분석 | Java 21 이상, 독립 Gradle 빌드 |
 | [Build Convention](build-convention/README.md) | Java/Spring 아키텍처·품질·테스트·커버리지·변이 검증을 수행하는 Gradle 플러그인 | Java 21, 독립 Gradle 빌드 |
 
 `build-convention`은 필요한 대상 프로젝트에서 선택적으로 적용한다. `code-risk-analyzer`는 플러그인 적용 여부와 관계없이 독립적으로 사용할 수 있다. 현재 두 프로젝트의 빌드·배포와 보고서 형식은 각각 유지한다.

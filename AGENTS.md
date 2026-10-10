@@ -2,7 +2,7 @@
 
 이 저장소는 독립적인 두 Gradle 프로젝트를 하나의 Git 이력으로 관리한다.
 
-- `code-risk-analyzer/`: `ai` 명령(Claude·Codex 선택 실행과 작업 뒤 검사)과 코드 위험 정적 분석기. Java 25를 사용한다.
+- `code-risk-analyzer/`: `ai` 명령(Claude·Codex 선택 실행과 작업 뒤 검사)과 코드 위험 정적 분석기. Java 21을 기준으로 빌드하며 Java 21 이상에서 실행한다.
 - `build-convention/`: 선택적으로 적용하는 Gradle Convention Plugin. Java 21을 사용하며 해당 디렉터리의 `AGENTS.md`를 우선한다.
 
 ## 작업 원칙
