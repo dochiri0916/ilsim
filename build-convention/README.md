@@ -15,6 +15,26 @@ The build is split by language so each language's rules and tooling stay separat
 
 Existing consumers keep using `io.github.dochiri0916.build-convention`. Rule documents and templates in `docs/` describe the Java conventions.
 
+## Internal packages
+
+Each module groups files under `io.github.dochiri0916.buildconvention` by their role and the rules they check. Tests use the same package as the implementation they exercise. Cross-rule regression tests belong to the architecture or domain group they verify.
+
+| Package | Responsibility |
+| --- | --- |
+| `extension`, `catalog`, `context` | Shared configuration, rule/dependency catalogs, and bounded contexts |
+| `plugin`, `integrity`, `report` | Gradle task wiring, prevention of disabled checks, and machine reports |
+| `coverage` | Shared bytecode helpers for coverage inputs |
+| `source.java`, `source.kotlin` | Source discovery, parsing, type indexes, and syntax inspection |
+| `validator.architecture` | Architecture entry points, package topology, and ArchUnit |
+| `validator.domain.aggregate`, `.vo`, `.collection`, `.factory` | Domain identity/state, value objects, immutable collections, and construction contracts |
+| `validator.domain` | Domain-wide validation and integration tests |
+| `validator.application` | Application contracts and transaction boundaries |
+| `validator.adapter.web`, `.persistence` | Web conversion/errors and JPA/Querydsl adapter rules |
+| `validator.exception`, `.messaging`, `.migration` | Exception hierarchies, messaging contracts, and database changes |
+| `validator.quality`, `.review` | Code style/coverage checks and execution-evidence review |
+
+The Gradle modules determine which language owns a class. `core` contains language-neutral parts; Java and Kotlin validators share responsibility package names and keep distinct class names. Plugin IDs, task names, and report rule IDs remain the consumer interface.
+
 ## Architecture
 
 The plugin enforces a practical hexagonal architecture with this dependency direction:

@@ -3,6 +3,7 @@ package io.github.dochiri0916.buildconvention.plugin
 import static org.junit.jupiter.api.Assertions.assertThrows
 
 import io.github.dochiri0916.buildconvention.extension.HexagonalConventionExtension
+import javax.tools.ToolProvider
 import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.api.plugins.JavaPluginExtension
@@ -12,9 +13,20 @@ import org.gradle.testfixtures.ProjectBuilder
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import javax.tools.ToolProvider
 
 class LintConventionPluginTest {
+    @Test
+    @DisplayName('다른 언어 플러그인이 만든 공통 컨벤션 확장을 재사용한다')
+    void reusesExistingConventionExtension() {
+        Project project = ProjectBuilder.builder().build()
+        project.pluginManager.apply('java')
+        def convention = project.extensions.create('hexagonalConvention', HexagonalConventionExtension)
+        convention.basePackage = 'com.example.demo'
+        project.pluginManager.apply(LintConventionPlugin)
+        assert project.extensions.getByType(HexagonalConventionExtension).is(convention)
+        assert convention.basePackage == 'com.example.demo'
+    }
+
     @Test
     @DisplayName('아키텍처 검증 태스크와 이전 이름 호환 태스크를 등록한다')
     void 'plugin registers architecture convention task and legacy alias'() {

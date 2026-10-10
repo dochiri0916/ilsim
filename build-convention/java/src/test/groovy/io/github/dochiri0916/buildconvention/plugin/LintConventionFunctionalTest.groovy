@@ -1,15 +1,15 @@
 package io.github.dochiri0916.buildconvention.plugin
 
 import groovy.json.JsonSlurper
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+import javax.tools.ToolProvider
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import javax.tools.ToolProvider
-import java.util.jar.JarEntry
-import java.util.jar.JarOutputStream
 
 class LintConventionFunctionalTest {
 

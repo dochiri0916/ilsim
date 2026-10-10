@@ -10,7 +10,7 @@ gradlePlugin {
     plugins {
         kotlinConvention {
             id = 'io.github.dochiri0916.build-convention.kotlin'
-            implementationClass = 'io.github.dochiri0916.buildconvention.kotlin.KotlinConventionPlugin'
+            implementationClass = 'io.github.dochiri0916.buildconvention.plugin.KotlinConventionPlugin'
         }
     }
 }

@@ -94,6 +94,15 @@ Convention 내부에서도 책임을 분리한다.
 
 기존 helper나 abstraction으로 해결할 수 있으면 중복 구현을 만들지 않는다.
 
+패키지는 `io.github.dochiri0916.buildconvention` 아래에서 종류와 검증 책임으로 나눈다.
+
+- `plugin`, `integrity`, `report`: Gradle 연결·무력화 방지·보고서.
+- `source.java`, `source.kotlin`: 언어별 소스 수집·파싱·AST와 타입 분석.
+- `extension`, `catalog`, `context`, `coverage`: 언어 중립 설정·카탈로그·BC·커버리지 입력 도구.
+- `validator`: `architecture`, `domain`(aggregate·vo·collection·factory), `application`, `adapter`(web·persistence), `exception`, `messaging`, `migration`, `quality`, `review`별 검증.
+
+테스트도 검증 책임에 대응하는 패키지에 둔다. 패키지를 옮기면 import·플러그인 implementationClass·`docs/conventions/coverage.json`의 구현 및 테스트 근거 경로를 함께 갱신한다.
+
 ## Documentation
 
 소비 프로젝트에 영향을 주는 규칙 의미가 바뀌면 관련 문서를 함께 갱신한다.
