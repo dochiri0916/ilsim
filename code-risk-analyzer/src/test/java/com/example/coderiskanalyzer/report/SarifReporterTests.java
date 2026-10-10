@@ -53,6 +53,11 @@ class SarifReporterTests {
                 .path("startLine").asInt()).isEqualTo(12);
         assertThat(result.path("properties").path("status").asText()).isEqualTo("CONFIRMED");
         assertThat(result.path("properties").path("evidence").get(0).path("type").asText()).isEqualTo("CALL");
+        assertThat(run.path("properties").path("concurrencySpecification").path("rules")).hasSize(22);
+        assertThat(result.path("properties").path("concurrency").path("primarySpecificationRuleId").asText())
+                .isEqualTo("SPRING-CONC-017");
+        assertThat(result.path("properties").path("concurrency").path("outcome").asText())
+                .isEqualTo("POTENTIAL_RISK");
     }
 
     @Test
@@ -71,6 +76,8 @@ class SarifReporterTests {
 
         assertThat(withFinding.path("runs").get(0).path("results").get(0).path("locations").get(0)
                 .path("physicalLocation").has("region")).isFalse();
+        assertThat(withFinding.path("runs").get(0).path("results").get(0).path("properties").has("concurrency"))
+                .isFalse();
         assertThat(withoutFindings.path("runs").get(0).path("tool").path("driver").path("rules")).isEmpty();
         assertThat(withoutFindings.path("runs").get(0).path("results")).isEmpty();
     }

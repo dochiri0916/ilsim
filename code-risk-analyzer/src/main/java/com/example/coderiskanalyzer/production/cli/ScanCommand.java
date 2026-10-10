@@ -353,10 +353,10 @@ public class ScanCommand {
             timings.put("report", 0L);
             metrics = metrics(parsedCount, failedCount, projectModel, timings, completeness);
             long reportStart = System.nanoTime();
-            report = reporter.report(target, sourceFiles.size(), findings, diagnostics, metrics);
+            report = reporter.report(target, sourceFiles.size(), findings, diagnostics, metrics, analysis.concurrencyAssessments());
             timings.put("report", elapsedMillis(reportStart));
             metrics = metrics(parsedCount, failedCount, projectModel, timings, completeness);
-            report = reporter.report(target, sourceFiles.size(), findings, diagnostics, metrics);
+            report = reporter.report(target, sourceFiles.size(), findings, diagnostics, metrics, analysis.concurrencyAssessments());
         } catch (RuntimeException exception) {
             return new ScanResponse("Error: could not render report", 3,
                     append(diagnostics, new Diagnostic(DiagnosticSeverity.ERROR, "REPORT-001",
@@ -465,6 +465,10 @@ public class ScanCommand {
             Map<String, Object> evidence = new LinkedHashMap<>();
             evidence.put("evidence", finding.evidence().stream().map(item -> Map.of(
                     "type", item.type(), "message", item.message(), "attributes", item.attributes())).toList());
+            var assessment = finding.concurrencyAssessment();
+            if (assessment != null) evidence.put("concurrency", Map.of("outcome", assessment.outcome().name(),
+                    "evidencePath", assessment.evidencePath(), "assumptions", assessment.assumptions(),
+                    "missingEvidence", assessment.missingEvidence(), "safeguards", assessment.safeguards()));
             enclosingMethodSource(finding, model, secretFiles).ifPresent(source -> evidence.put("source", source));
             if (isUncertainTestGap(finding)) {
                 reviewed.add(withTestReview(finding, judge.reviewTestAdequacy(finding, evidence)));
@@ -481,7 +485,8 @@ public class ScanCommand {
             JudgeResult result = judge.judge(finding, evidence);
             if (result.reviewed() && result.probability() >= 0.9) {
                 reviewed.add(new Finding(finding.ruleId(), finding.category(), finding.severity(), Confidence.HIGH,
-                        finding.title(), finding.message(), finding.location(), finding.evidence(), FindingStatus.CONFIRMED));
+                        finding.title(), finding.message(), finding.location(), finding.evidence(), FindingStatus.CONFIRMED,
+                        finding.concurrencyAssessment()));
             } else reviewed.add(finding);
         }
         return List.copyOf(reviewed);
@@ -489,7 +494,7 @@ public class ScanCommand {
 
     /** Rules whose JEV opinion is attached as evidence only; status, severity and confidence stay static. SEC-005 is never sent. */
     public static final Set<String> RISK_REVIEW_RULES = Set.of("IDEM-002", "IDEM-003", "IDEM-004", "CON-001", "CON-002",
-            "CON-003", "CON-004", "TX-001", "TX-002", "TX-003", "TX-004", "TX-005",
+            "CON-003", "CON-004", "CON-005", "TX-001", "TX-002", "TX-003", "TX-004", "TX-005",
             "SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-006", "SEC-007", "REL-001");
 
     private java.util.Optional<Map<String, Object>> enclosingMethodSource(Finding finding, ProjectModel model, Set<Path> secretFiles) {
@@ -524,7 +529,7 @@ public class ScanCommand {
         var evidence = new ArrayList<>(finding.evidence());
         evidence.add(new Evidence("JEV_RISK_REVIEW", result.explanation(), finding.location(), attributes));
         return new Finding(finding.ruleId(), finding.category(), finding.severity(), finding.confidence(),
-                finding.title(), finding.message(), finding.location(), List.copyOf(evidence), finding.status());
+                finding.title(), finding.message(), finding.location(), List.copyOf(evidence), finding.status(), finding.concurrencyAssessment());
     }
 
     private boolean isUncertainTestGap(Finding finding) {
@@ -545,7 +550,7 @@ public class ScanCommand {
         var evidence = new ArrayList<>(finding.evidence());
         evidence.add(new Evidence("JEV_TEST_REVIEW", review.explanation(), finding.location(), attributes));
         return new Finding(finding.ruleId(), finding.category(), finding.severity(), finding.confidence(),
-                finding.title(), finding.message(), finding.location(), List.copyOf(evidence), finding.status());
+                finding.title(), finding.message(), finding.location(), List.copyOf(evidence), finding.status(), finding.concurrencyAssessment());
     }
 
     private Set<Path> readFilesFile(Path root, String fileList) throws IOException {
@@ -643,7 +648,8 @@ public class ScanCommand {
         if (!settings.enabled()) return List.of();
         if (settings.severity() == null) return findings;
         return findings.stream().map(finding -> new Finding(finding.ruleId(), finding.category(), settings.severity(),
-                finding.confidence(), finding.title(), finding.message(), finding.location(), finding.evidence(), finding.status())).toList();
+                finding.confidence(), finding.title(), finding.message(), finding.location(), finding.evidence(), finding.status(),
+                finding.concurrencyAssessment())).toList();
     }
 
     private String safeMessage(Exception exception) {

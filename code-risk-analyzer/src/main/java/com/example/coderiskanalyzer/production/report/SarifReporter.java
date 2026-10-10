@@ -11,11 +11,15 @@ import java.util.Map;
 import com.example.coderiskanalyzer.production.finding.Diagnostic;
 import com.example.coderiskanalyzer.production.finding.Finding;
 import com.example.coderiskanalyzer.production.finding.Severity;
+import com.example.coderiskanalyzer.production.baseline.FindingFingerprint;
+import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencyAssessment;
+import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencySpecCatalog;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /** Renders findings as SARIF 2.1.0 for CI and code-scanning integrations. */
@@ -26,6 +30,14 @@ public class SarifReporter implements Reporter {
     private final ObjectMapper objectMapper = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
             .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
+    private final ConcurrencySpecCatalog concurrencySpecification;
+
+    public SarifReporter() { this(new ConcurrencySpecCatalog()); }
+
+    @Autowired
+    public SarifReporter(ConcurrencySpecCatalog concurrencySpecification) {
+        this.concurrencySpecification = concurrencySpecification;
+    }
 
     @Override public String format() { return "sarif"; }
 
@@ -37,12 +49,18 @@ public class SarifReporter implements Reporter {
     @Override
     public String report(Path projectRoot, int filesScanned, List<Finding> findings,
                          List<Diagnostic> diagnostics, ScanMetrics metrics) {
+        return report(projectRoot, filesScanned, findings, diagnostics, metrics, List.of());
+    }
+
+    @Override
+    public String report(Path projectRoot, int filesScanned, List<Finding> findings,
+                         List<Diagnostic> diagnostics, ScanMetrics metrics, List<ConcurrencyAssessment> assessments) {
         Path root = projectRoot.toAbsolutePath().normalize();
         List<Rule> rules = findings.stream()
                 .collect(java.util.stream.Collectors.toMap(Finding::ruleId, finding -> finding,
                         (first, ignored) -> first, LinkedHashMap::new))
                 .values().stream().sorted(Comparator.comparing(Finding::ruleId))
-                .map(SarifReporter::toRule).toList();
+                .map(this::toRule).toList();
         Map<String, Integer> ruleIndexes = new LinkedHashMap<>();
         for (int index = 0; index < rules.size(); index++) ruleIndexes.put(rules.get(index).id(), index);
 
@@ -53,7 +71,8 @@ public class SarifReporter implements Reporter {
                 diagnostic.severity().name(), diagnostic.code(), diagnostic.message(),
                 diagnostic.file() == null ? null : relativeUri(root, diagnostic.file()))).toList();
         Map<String, Object> runProperties = Map.of("filesScanned", filesScanned, "metrics", metrics,
-                "diagnostics", sarifDiagnostics);
+                "diagnostics", sarifDiagnostics, "concurrencySpecification", concurrencySpecification.progress(),
+                "concurrencyAssessments", assessments.stream().map(item -> ConcurrencyAssessmentReport.from(root, item)).toList());
         SarifReport payload = new SarifReport("https://json.sarif.org/sarif-2.1.0.json", SARIF_VERSION,
                 List.of(new Run(new Tool(new Driver("Code Risk Analyzer", "0.0.1", rules)), results, runProperties)));
         try {
@@ -63,11 +82,13 @@ public class SarifReporter implements Reporter {
         }
     }
 
-    private static Rule toRule(Finding finding) {
+    private Rule toRule(Finding finding) {
         String description = finding.message();
         return new Rule(finding.ruleId(), finding.ruleId(), new Message(finding.title()),
                 new Message(description), new Configuration(toLevel(finding.severity())),
-                new Message(description), Map.of("category", finding.category().name()));
+                new Message(description), Map.of("category", finding.category().name(), "specificationRuleIds",
+                        concurrencySpecification.forAnalyzerRule(finding.ruleId()).stream()
+                                .map(ConcurrencySpecCatalog.Requirement::id).toList()));
     }
 
     private Result toResult(Path root, Finding finding, int ruleIndex) {
@@ -78,9 +99,16 @@ public class SarifReporter implements Reporter {
         List<SarifEvidence> evidence = finding.evidence().stream().map(item -> new SarifEvidence(
                 item.type(), item.message(), relativeUri(root, item.location().file()),
                 positive(item.location().startLine()), positive(item.location().startColumn()), item.attributes())).toList();
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("category", finding.category().name());
+        properties.put("confidence", finding.confidence().name());
+        properties.put("status", finding.status().name());
+        properties.put("evidence", evidence);
+        var concurrency = concurrencySpecification.forFinding(finding);
+        if (concurrency != null) properties.put("concurrency", concurrency);
         return new Result(finding.ruleId(), ruleIndex, toLevel(finding.severity()), new Message(finding.message()),
-                locations, Map.of("category", finding.category().name(), "confidence", finding.confidence().name(),
-                        "status", finding.status().name(), "evidence", evidence));
+                locations, properties, finding.concurrencyAssessment() == null ? null
+                        : Map.of("concurrency/v2", FindingFingerprint.stableOf(root, finding)));
     }
 
     private static Region region(int startLine, int startColumn, int endLine, int endColumn) {
@@ -120,7 +148,7 @@ public class SarifReporter implements Reporter {
                         Configuration defaultConfiguration, Message help, Map<String, Object> properties) {}
     private record Configuration(String level) {}
     private record Result(String ruleId, int ruleIndex, String level, Message message,
-                         List<Location> locations, Map<String, Object> properties) {}
+                         List<Location> locations, Map<String, Object> properties, Map<String, String> partialFingerprints) {}
     private record Location(PhysicalLocation physicalLocation) {}
     private record PhysicalLocation(ArtifactLocation artifactLocation, Region region) {}
     private record ArtifactLocation(String uri) {}

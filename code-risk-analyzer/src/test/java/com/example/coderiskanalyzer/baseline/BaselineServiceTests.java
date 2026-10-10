@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 
 import com.example.coderiskanalyzer.production.baseline.BaselineService;
+import com.example.coderiskanalyzer.production.analysis.AnalysisContext;
+import com.example.coderiskanalyzer.production.baseline.FindingFingerprint;
 import com.example.coderiskanalyzer.production.finding.Confidence;
 import com.example.coderiskanalyzer.production.finding.Evidence;
 import com.example.coderiskanalyzer.production.finding.Finding;
@@ -15,6 +17,12 @@ import com.example.coderiskanalyzer.production.finding.FindingStatus;
 import com.example.coderiskanalyzer.production.finding.RiskCategory;
 import com.example.coderiskanalyzer.production.finding.Severity;
 import com.example.coderiskanalyzer.production.model.SourceLocation;
+import com.example.coderiskanalyzer.production.model.ProgramModelBuilder;
+import com.example.coderiskanalyzer.production.parser.JavaSourceParser;
+import com.example.coderiskanalyzer.production.rule.concurrency.DoubleCheckedLockingRule;
+import com.example.coderiskanalyzer.production.source.SourceFile;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,5 +52,54 @@ class BaselineServiceTests {
                 "Remote call", "Review", location,
                 List.of(new Evidence("REMOTE", "Remote call", location, Map.of("method", "pay"))),
                 FindingStatus.REVIEW);
+    }
+
+    @Test
+    void semanticBaselineSurvivesLineMovesButDoesNotHideChangedPublicationOnTheSameLine() throws Exception {
+        String code = dcl("new Object()");
+        Finding before = dclFinding(code);
+        Path baseline = tempDir.resolve("baseline.json");
+        BaselineService service = new BaselineService();
+        service.create(tempDir, baseline, List.of(before));
+        assertThat(Files.readString(baseline)).contains("stableFingerprint", "v2|CON-005|");
+        Finding moved = dclFinding("\n\n// header\n" + code);
+        assertThat(service.excludeExisting(tempDir, baseline, List.of(moved))).isEmpty();
+        Finding changed = dclFinding(dcl("factory()"));
+        assertThat(FindingFingerprint.of(tempDir, changed)).isEqualTo(FindingFingerprint.of(tempDir, before));
+        assertThat(service.excludeExisting(tempDir, baseline, List.of(changed))).containsExactly(changed);
+    }
+
+    @Test
+    void readsLegacyBaselineAndAddsSemanticIdentityWhenRegenerated() throws Exception {
+        Finding finding = dclFinding(dcl("new Object()"));
+        Path baseline = tempDir.resolve("baseline.json");
+        BaselineService service = new BaselineService();
+        service.create(tempDir, baseline, List.of(finding));
+        ObjectMapper mapper = new ObjectMapper();
+        var json = mapper.readTree(Files.readString(baseline));
+        ((ObjectNode) json.path("findings").get(0)).remove("stableFingerprint");
+        Files.writeString(baseline, mapper.writeValueAsString(json));
+        assertThat(service.excludeExisting(tempDir, baseline, List.of(finding))).isEmpty();
+        Finding moved = dclFinding("\n" + dcl("new Object()"));
+        assertThat(service.excludeExisting(tempDir, baseline, List.of(moved))).containsExactly(moved);
+        service.create(tempDir, baseline, List.of(moved));
+        Finding movedAgain = dclFinding("\n\n" + dcl("new Object()"));
+        assertThat(service.excludeExisting(tempDir, baseline, List.of(movedAgain))).isEmpty();
+        assertThat(mapper.readTree(Files.readString(baseline)).path("version").asText()).isEqualTo("1");
+    }
+
+    private String dcl(String initializer) {
+        return "class Service { static Object instance; static Object get() { if (instance == null) synchronized(Service.class) {"
+                + " if (instance == null) instance = " + initializer + "; } return instance; }"
+                + " static Object factory() { return new Object(); } }";
+    }
+
+    private Finding dclFinding(String code) throws Exception {
+        Path root = tempDir.resolve("src/main/java");
+        Files.createDirectories(root);
+        Path file = root.resolve("Service.java");
+        Files.writeString(file, code);
+        var sources = new JavaSourceParser().parse(List.of(new SourceFile(root, file)));
+        return new DoubleCheckedLockingRule().analyze(new AnalysisContext(new ProgramModelBuilder().build(sources), sources)).getFirst();
     }
 }

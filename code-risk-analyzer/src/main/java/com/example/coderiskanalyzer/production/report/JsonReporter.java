@@ -6,15 +6,28 @@ import java.util.Map;
 
 import com.example.coderiskanalyzer.production.finding.Diagnostic;
 import com.example.coderiskanalyzer.production.finding.Finding;
+import com.example.coderiskanalyzer.production.baseline.FindingFingerprint;
+import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencyAssessment;
+import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencySpecCatalog;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class JsonReporter implements Reporter {
 
     private final ObjectMapper objectMapper = new ObjectMapper().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
+    private final ConcurrencySpecCatalog concurrencySpecification;
+
+    public JsonReporter() { this(new ConcurrencySpecCatalog()); }
+
+    @Autowired
+    public JsonReporter(ConcurrencySpecCatalog concurrencySpecification) {
+        this.concurrencySpecification = concurrencySpecification;
+    }
 
     @Override public String format() { return "json"; }
 
@@ -26,11 +39,19 @@ public class JsonReporter implements Reporter {
     @Override
     public String report(Path projectRoot, int filesScanned, List<Finding> findings,
                          List<Diagnostic> diagnostics, ScanMetrics metrics) {
+        return report(projectRoot, filesScanned, findings, diagnostics, metrics, List.of());
+    }
+
+    @Override
+    public String report(Path projectRoot, int filesScanned, List<Finding> findings,
+                         List<Diagnostic> diagnostics, ScanMetrics metrics, List<ConcurrencyAssessment> assessments) {
         var payload = new JsonReport("1", new Summary(filesScanned, findings.size()),
                 diagnostics.stream().map(diagnostic -> new JsonDiagnostic(diagnostic.severity().name(),
                         diagnostic.code(), diagnostic.message(), diagnostic.file() == null ? null
                                 : rootRelative(projectRoot, diagnostic.file()))).toList(),
                 metrics,
+                concurrencySpecification.progress(),
+                assessments.stream().map(item -> ConcurrencyAssessmentReport.from(projectRoot, item)).toList(),
                 findings.stream().map(finding -> toJsonFinding(projectRoot, finding)).toList());
         try {
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
@@ -46,7 +67,8 @@ public class JsonReporter implements Reporter {
                 new JsonLocation(path, finding.location().startLine()),
                 finding.evidence().stream().map(item -> new JsonEvidence(item.type(), item.message(),
                         new JsonLocation(rootRelative(root, item.location().file()),
-                                item.location().startLine()), item.attributes())).toList());
+                                item.location().startLine()), item.attributes())).toList(),
+                concurrencySpecification.forFinding(finding), FindingFingerprint.stableOf(root, finding));
     }
 
     private String rootRelative(Path root, Path file) {
@@ -57,13 +79,17 @@ public class JsonReporter implements Reporter {
     }
 
     private record JsonReport(String version, Summary summary, List<JsonDiagnostic> diagnostics,
-                              ScanMetrics metrics, List<JsonFinding> findings) {}
+                              ScanMetrics metrics, ConcurrencySpecCatalog.Progress concurrencySpecification,
+                              List<ConcurrencyAssessmentReport> concurrencyAssessments,
+                              List<JsonFinding> findings) {}
     private record Summary(int filesScanned, int findings) {}
     private record JsonLocation(String file, int startLine) {}
     private record JsonDiagnostic(String severity, String code, String message, String file) {}
     private record JsonFinding(String ruleId, String category, String severity, String confidence,
                                String status, String title, String message, JsonLocation location,
-                               List<JsonEvidence> evidence) {}
+                               List<JsonEvidence> evidence,
+                               @JsonInclude(JsonInclude.Include.NON_NULL) ConcurrencySpecCatalog.FindingMapping concurrency,
+                               @JsonInclude(JsonInclude.Include.NON_NULL) String fingerprint) {}
     private record JsonEvidence(String type, String message, JsonLocation location,
                                 java.util.Map<String, Object> attributes) {}
 }

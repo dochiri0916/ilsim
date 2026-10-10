@@ -5,10 +5,21 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.example.coderiskanalyzer.production.finding.Finding;
+import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencySpecCatalog;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ConsoleReporter implements Reporter {
+
+    private final ConcurrencySpecCatalog concurrencySpecification;
+
+    public ConsoleReporter() { this(new ConcurrencySpecCatalog()); }
+
+    @Autowired
+    public ConsoleReporter(ConcurrencySpecCatalog concurrencySpecification) {
+        this.concurrencySpecification = concurrencySpecification;
+    }
 
     @Override public String format() { return "console"; }
 
@@ -40,10 +51,14 @@ public class ConsoleReporter implements Reporter {
                     .map(item -> "  - " + item.message()
                             + (item.type().equals("EXECUTION_TEST") ? "\n    EXECUTION_TEST: " + item.attributes() : ""))
                     .collect(Collectors.joining(System.lineSeparator()));
+            var concurrency = concurrencySpecification.forFinding(finding);
+            String specification = concurrency == null ? "" : "%nConcurrency: %s  %s  %s  %s".formatted(
+                    String.join(", ", concurrency.specificationRuleIds()), concurrency.outcome(),
+                    concurrency.priority(), concurrency.implementationStatus());
             return "%s  %s  %s%n%s:%d%n%s%nConfidence: %s  Status: %s".formatted(
                     finding.severity(), finding.ruleId(), finding.title(), file,
                     finding.location().startLine(), finding.message() + System.lineSeparator() + evidence,
-                    finding.confidence(), finding.status());
+                    finding.confidence(), finding.status()) + specification;
         }).collect(Collectors.joining(System.lineSeparator() + System.lineSeparator()));
         return "Files scanned: " + filesScanned + System.lineSeparator() + "Findings: " + findings.size()
                 + System.lineSeparator() + System.lineSeparator() + body;

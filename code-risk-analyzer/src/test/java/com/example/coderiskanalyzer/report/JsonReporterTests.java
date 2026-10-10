@@ -37,5 +37,27 @@ class JsonReporterTests {
                 .isEqualTo("src/main/java/Service.java");
         assertThat(json.path("findings").get(0).path("evidence").get(0).path("attributes").path("method").asText())
                 .isEqualTo("save");
+        assertThat(json.path("concurrencySpecification").path("rules")).hasSize(22);
+        assertThat(json.path("concurrencySpecification").path("counts").path("PARTIAL").asInt()).isEqualTo(10);
+        var concurrency = json.path("findings").get(0).path("concurrency");
+        assertThat(concurrency.path("primarySpecificationRuleId").asText()).isEqualTo("SPRING-CONC-017");
+        assertThat(concurrency.path("implementationStatus").asText()).isEqualTo("PARTIAL");
+        assertThat(concurrency.path("outcome").asText()).isEqualTo("POTENTIAL_RISK");
+        assertThat(json.path("findings").get(0).path("status").asText()).isEqualTo("CONFIRMED");
+    }
+
+    @Test
+    void suppressedFindingRetainsBothSpecIdsWithoutDuplicatingTheResult() throws Exception {
+        Path root = Path.of("/workspace/project");
+        var location = new SourceLocation(root.resolve("Service.java"), 10, 1, 10, 10);
+        var finding = new Finding("CON-002", RiskCategory.CONCURRENCY, Severity.HIGH, Confidence.MEDIUM,
+                "Lost update", "Message", location, List.of(new Evidence("READ_MODIFY_WRITE", "Details", location,
+                Map.of())), FindingStatus.SUPPRESSED);
+        var json = new ObjectMapper().readTree(new JsonReporter().report(root, 1, List.of(finding)));
+        assertThat(json.path("findings")).hasSize(1);
+        var item = json.path("findings").get(0);
+        assertThat(item.path("status").asText()).isEqualTo("SUPPRESSED");
+        assertThat(item.path("concurrency").path("specificationRuleIds").toString())
+                .isEqualTo("[\"DB-CONC-009\",\"JPA-CONC-018\"]");
     }
 }

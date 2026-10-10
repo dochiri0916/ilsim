@@ -30,7 +30,7 @@ public class ScanApplicationRunner implements ApplicationRunner {
     public void run(ApplicationArguments arguments) {
         String[] args = arguments.getSourceArgs();
         if (args.length == 0) {
-            System.out.println("Usage: scan <project-path> [options] | baseline create <project-path> [--output file] | rules [rule-id] | validators <project-path>");
+            System.out.println("Usage: scan <project-path> [options] | baseline create <project-path> [--output file] | rules [rule-id] [--spec] [--format console|json] | validators <project-path>");
             exitCode.set(2);
             return;
         }
@@ -39,15 +39,7 @@ public class ScanApplicationRunner implements ApplicationRunner {
             return;
         }
         if (args[0].equals("rules")) {
-            if (args.length > 2) {
-                System.out.println("Error: rules accepts at most one rule ID");
-                exitCode.set(2);
-                return;
-            }
-            String ruleId = args.length > 1 ? args[1] : "";
-            String output = rulesCommand.rules(ruleId);
-            System.out.println(output);
-            if (output.startsWith("Error:")) exitCode.set(2);
+            runRules(args);
             return;
         }
         if (args[0].equals("validators")) {
@@ -83,6 +75,25 @@ public class ScanApplicationRunner implements ApplicationRunner {
         response.diagnostics().forEach(diagnostic -> System.err.println("%s %s: %s".formatted(
                 diagnostic.severity(), diagnostic.code(), diagnostic.message())));
         exitCode.set(response.exitCode());
+    }
+
+    private void runRules(String[] args) {
+        boolean hasId = args.length > 1 && !args[1].startsWith("--");
+        String error = validateOptions(args, hasId ? 2 : 1, java.util.Set.of("spec", "format"), java.util.Set.of("spec"));
+        if (error != null) {
+            System.out.println("Error: " + error);
+            exitCode.set(2);
+            return;
+        }
+        boolean spec = false;
+        for (int i = 1; i < args.length; i++) {
+            if (args[i].startsWith("--spec=")) spec = Boolean.parseBoolean(args[i].substring("--spec=".length()));
+            if (args[i].equals("--spec")) spec = i + 1 >= args.length || args[i + 1].startsWith("--")
+                    || Boolean.parseBoolean(args[i + 1]);
+        }
+        String output = rulesCommand.rules(hasId ? args[1] : "", spec, option(args, "format", "console"));
+        System.out.println(output);
+        if (output.startsWith("Error:")) exitCode.set(2);
     }
 
     /** Prints the validated validators setting of .code-risk.yml as JSON (null: not configured). */

@@ -52,6 +52,10 @@ tasks.named('test') {
 tasks.register('regressionWorkflowTests', Exec) {
     commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'scripts/tests', '-v'
 }
+tasks.register('verifyConcurrencyProgress', Exec) {
+    commandLine 'python3', 'scripts/render_concurrency_progress.py', '--check'
+}
 tasks.named('check') {
     dependsOn tasks.named('regressionWorkflowTests')
+    dependsOn tasks.named('verifyConcurrencyProgress')
 }

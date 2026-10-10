@@ -4,6 +4,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencySpecCatalog;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -21,6 +23,7 @@ public class RuleRegistry {
             Map.entry("CON-002", new Descriptor("Lost update risk", "A value is modified from previously read state without visible concurrency protection.")),
             Map.entry("CON-003", new Descriptor("Shared mutable singleton state", "Concurrent entry points mutate state stored on a singleton bean.")),
             Map.entry("CON-004", new Descriptor("Unsafe async state access", "An async method uses context bound to the caller thread.")),
+            Map.entry("CON-005", new Descriptor("Unsafe double-checked locking", "Double-checked publication lacks proven volatile visibility and initialization ordering.")),
             Map.entry("IDEM-001", new Descriptor("Message consumer side effect", "A message listener has side effects without visible deduplication.")),
             Map.entry("IDEM-002", new Descriptor("External side effect without idempotency key", "A retried external mutation has no visible idempotency key.")),
             Map.entry("IDEM-003", new Descriptor("Retryable non-idempotent operation", "A retryable method performs a persistent or external side effect.")),
@@ -33,14 +36,23 @@ public class RuleRegistry {
             Map.entry("REL-001", new Descriptor("Database and external side-effect consistency", "Database and remote side effects may succeed or fail independently.")));
 
     private final List<RuleMetadata> metadata;
+    private final ConcurrencySpecCatalog concurrencySpecification;
 
     public RuleRegistry(List<RiskRule> rules) {
+        this(rules, new ConcurrencySpecCatalog());
+    }
+
+    @Autowired
+    public RuleRegistry(List<RiskRule> rules, ConcurrencySpecCatalog concurrencySpecification) {
+        this.concurrencySpecification = concurrencySpecification;
         this.metadata = rules.stream().map(rule -> metadata(rule)).sorted(Comparator.comparing(RuleMetadata::id)).toList();
         long distinctIds = metadata.stream().map(RuleMetadata::id).distinct().count();
         if (distinctIds != metadata.size()) throw new IllegalArgumentException("Rule IDs must be unique");
     }
 
     public List<RuleMetadata> all() { return metadata; }
+
+    public ConcurrencySpecCatalog concurrencySpecification() { return concurrencySpecification; }
 
     public RuleMetadata find(String id) {
         return metadata.stream().filter(rule -> rule.id().equalsIgnoreCase(id)).findFirst().orElse(null);

@@ -39,6 +39,6 @@ public class SuppressionMatcher {
         combined.add(evidence);
         return new Finding(finding.ruleId(), finding.category(), finding.severity(), finding.confidence(),
                 finding.title(), finding.message(), finding.location(), combined,
-                FindingStatus.SUPPRESSED);
+                FindingStatus.SUPPRESSED, finding.concurrencyAssessment());
     }
 }

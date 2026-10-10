@@ -435,7 +435,7 @@ class ScanCommandTests {
     void everyAdvisoryRiskRuleHasAJevQuestionAndSecretsAreNeverReviewed() {
         assertThat(ScanCommand.RISK_REVIEW_RULES)
                 .allMatch(com.example.coderiskanalyzer.production.judge.jev.JevSemanticJudge::supportsRiskReview)
-                .contains("TX-001", "TX-005", "CON-003", "CON-004", "SEC-006", "SEC-007", "REL-001")
+                .contains("TX-001", "TX-005", "CON-003", "CON-004", "CON-005", "SEC-006", "SEC-007", "REL-001")
                 .doesNotContain("SEC-005", "IDEM-001");
     }
 

@@ -35,12 +35,15 @@ ai --no-verify ... / ai --verify=compile|test|full ...   # 작업 뒤 검사 범
 
 | 명령 | 용도 |
 |---|---|
-| `CRA scan <project> [--files-file f] [--baseline b] [--jev true] [--fail-on] [--format json --output f]` | 위험 21개 규칙 + `TEST-001` 적정성. 종료 1 게이트 실패, 2 입력 오류, 3 분석 실패 |
+| `CRA scan <project> [--files-file f] [--baseline b] [--jev true] [--fail-on] [--format json --output f]` | 위험 22개 규칙 + `TEST-001` 적정성. 종료 1 게이트 실패, 2 입력 오류, 3 분석 실패 |
 | `CRA baseline create <project>` | 기존 finding 기준선(`scan --baseline`용) |
-| `CRA rules [ID]` | 규칙 목록·설명 |
+| `CRA rules [ID] [--format json]` | 기존 규칙 목록·설명 및 동시성 명세 대응. 명세 ID로도 조회 가능 |
+| `CRA rules --spec [--format json]` | 동시성 명세 22개 우선순위·구현 진행 상태·근거·남은 작업(스캔 실행 여부와 별개) |
 | `CRA validators <project>` | `.code-risk.yml`의 `validators` 설정 검증(JSON, null: 미설정). 컨벤션 검사가 아키텍처·나머지 검사 on/off에 쓴다 |
 
-규칙: `SEC-001~007`(SQL·Command·Path·SSRF·비밀값·객체 권한·Tenant), `CON-001~004`, `IDEM-001~004`, `TX-001~005`, `REL-001`.
+규칙: `SEC-001~007`(SQL·Command·Path·SSRF·비밀값·객체 권한·Tenant), `CON-001~005`(005: Java DCL), `IDEM-001~004`, `TX-001~005`, `REL-001`.
+
+동시성 명세는 기존 ID와 CI 계약을 유지해 연결한다. 자체 규칙으로 10개 유형이 PARTIAL, 12개가 PLANNED이며 전체 명세 완료는 아니다. JSON/SARIF의 `concurrencySpecification`은 구현 진행표, finding의 `concurrency`는 증거에 따른 명세 대응·판정·우선순위다. `concurrencyAssessments`는 DCL의 보호 입증·누락 근거를 포함한 감사 기록이며 SAFE_BY_PROOF는 경고로 세지 않는다. DCL의 새 기준선은 줄 번호 없는 v2 지문을 병행 저장하고 기존 v1을 계속 읽는다. 자세한 범위·근거는 [CONCURRENCY_IMPLEMENTATION.md](guides/CONCURRENCY_IMPLEMENTATION.md)를 따른다.
 
 ## 지켜야 할 것
 

@@ -12,6 +12,9 @@ import com.example.coderiskanalyzer.production.finding.DiagnosticSeverity;
 import com.example.coderiskanalyzer.production.finding.Finding;
 import com.example.coderiskanalyzer.production.finding.Evidence;
 import com.example.coderiskanalyzer.production.finding.Severity;
+import com.example.coderiskanalyzer.production.rule.concurrency.ConcurrencyRiskRule;
+import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencyAssessment;
+import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencyOutcome;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -34,6 +37,7 @@ public class RuleEngine {
     public AnalysisResult analyzeDetailed(AnalysisContext context, Map<String, AnalyzerConfig.RuleSettings> settings) {
         List<Finding> candidates = new java.util.ArrayList<>();
         List<Diagnostic> diagnostics = new java.util.ArrayList<>();
+        List<ConcurrencyAssessment> assessments = new java.util.ArrayList<>();
         List<RiskRule> orderedRules = rules.stream().sorted(Comparator.comparing(RiskRule::id)).toList();
         java.util.Set<String> knownIds = new java.util.HashSet<>(orderedRules.stream().map(RiskRule::id).toList());
         knownIds.add("TEST-001");
@@ -44,7 +48,14 @@ public class RuleEngine {
             AnalyzerConfig.RuleSettings ruleSettings = settings.get(rule.id());
             if (ruleSettings != null && !ruleSettings.enabled()) continue;
             try {
-                for (Finding finding : rule.analyze(context)) {
+                List<Finding> ruleFindings;
+                if (rule instanceof ConcurrencyRiskRule concurrencyRule) {
+                    var evaluated = concurrencyRule.assess(context);
+                    ruleFindings = evaluated.stream().filter(item -> item.outcome() != ConcurrencyOutcome.SAFE_BY_PROOF)
+                            .map(concurrencyRule::finding).toList();
+                    assessments.addAll(evaluated);
+                } else ruleFindings = rule.analyze(context);
+                for (Finding finding : ruleFindings) {
                     candidates.add(ruleSettings == null || ruleSettings.severity() == null
                             ? finding : withSeverity(finding, ruleSettings.severity()));
                 }
@@ -54,12 +65,12 @@ public class RuleEngine {
                                 + "; analysis continued with remaining rules.", null));
             }
         }
-        return new AnalysisResult(deduplicate(candidates), diagnostics);
+        return new AnalysisResult(deduplicate(candidates), diagnostics, assessments);
     }
 
     private Finding withSeverity(Finding finding, Severity severity) {
         return new Finding(finding.ruleId(), finding.category(), severity, finding.confidence(), finding.title(),
-                finding.message(), finding.location(), finding.evidence(), finding.status());
+                finding.message(), finding.location(), finding.evidence(), finding.status(), finding.concurrencyAssessment());
     }
 
     private List<Finding> deduplicate(List<Finding> candidates) {
@@ -73,10 +84,13 @@ public class RuleEngine {
         List<Evidence> evidence = new java.util.ArrayList<>(first.evidence());
         for (var item : second.evidence()) if (!evidence.contains(item)) evidence.add(item);
         return new Finding(first.ruleId(), first.category(), first.severity(), first.confidence(), first.title(),
-                first.message(), first.location(), evidence, first.status());
+                first.message(), first.location(), evidence, first.status(), first.concurrencyAssessment());
     }
 
     private String fingerprint(Finding finding) {
+        if (finding.concurrencyAssessment() != null)
+            return com.example.coderiskanalyzer.production.baseline.FindingFingerprint.stableOf(
+                    finding.location().file().toAbsolutePath().normalize().getRoot(), finding);
         String sink = finding.evidence().stream().map(evidence -> {
             Object value = evidence.attributes().getOrDefault("sink",
                     evidence.attributes().getOrDefault("operation", evidence.attributes().get("method")));
