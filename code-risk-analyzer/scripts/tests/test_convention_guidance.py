@@ -11,7 +11,9 @@ pick = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pick)
 guidance = pick.guidance
 FILES = {'conventions/README.md': b'guidance v1', 'templates/README.md': b'templates',
-         'templates/src/main/java/example/Book.java': b'final class Book {}'}
+         'templates/src/main/java/example/Book.java': b'final class Book {}',
+         'conventions/kotlin-domain-conventions.md': b'Kotlin domain rules',
+         'templates/kotlin/src/main/kotlin/example/OrderId.kt': b'value class OrderId(val value: String)'}
 
 
 class GuidanceTests(unittest.TestCase):

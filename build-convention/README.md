@@ -1,6 +1,6 @@
 # Build Convention
 
-Build Convention is a Gradle plugin for Java and Spring projects. It runs architecture, code quality, testing, coverage, and database migration checks as part of Gradle's `check` task.
+Build Convention provides Gradle plugins for Java/Spring conventions and Kotlin/JVM domain conventions. The Java plugin runs architecture, code quality, testing, coverage, and database migration checks as part of Gradle's `check` task. The Kotlin plugin checks domain sources and compiled architecture.
 
 ## Modules
 
@@ -10,10 +10,10 @@ The build is split by language so each language's rules and tooling stay separat
 | --- | --- | --- | --- |
 | `core/` | `build-convention-core` | none | Language-neutral parts: the `hexagonalConvention` extension, bounded context and technical dependency catalogs, rule IDs, and the ArchUnit, migration, and coverage class checks |
 | `java/` | `build-convention-java` | `io.github.dochiri0916.build-convention.java` | Java source validators, Checkstyle/PMD/SpotBugs wiring, anti-bypass checks, and the report |
-| `kotlin/` | not published | `io.github.dochiri0916.build-convention.kotlin` | Placeholder: Kotlin rules are not defined, so applying it fails instead of passing unchecked code |
+| `kotlin/` | `build-convention-kotlin` | `io.github.dochiri0916.build-convention.kotlin` | Kotlin PSI domain/VO/collection rules, common ArchUnit checks, anti-bypass, and reports |
 | root | `build-convention` | `io.github.dochiri0916.build-convention` | The original ID, which applies the Java conventions, plus the guidance bundle and version that `ai` reads |
 
-Existing consumers keep using `io.github.dochiri0916.build-convention`. Rule documents and templates in `docs/` describe the Java conventions.
+Existing Java consumers keep using `io.github.dochiri0916.build-convention`. Kotlin/JVM consumers apply `io.github.dochiri0916.build-convention.kotlin`; mixed source modules can apply both language plugins. See [Kotlin domain conventions](docs/conventions/kotlin-domain-conventions.md) for their scope and the Kotlin templates. `ai` selects the language plugins from the Kotlin/JVM plugin and actual Java sources. Mixed modules write `report.json` and `report-kotlin.json` separately.
 
 ## Internal packages
 

@@ -116,13 +116,14 @@ subprojects {
 
 dependencies {
     api project(':java')
+    api project(':kotlin')
 }
 
 // This JAR keeps the coordinates `ai` reads: the guidance bundle, its version and the original plugin ID.
 processResources {
     from('docs') {
         include 'CONVENTION_ROLLOUT.md'
-        include 'conventions/*.md', 'conventions/*.json', 'templates/README.md', 'templates/src/**'
+        include 'conventions/*.md', 'conventions/*.json', 'templates/README.md', 'templates/src/**', 'templates/kotlin/src/**'
         into 'build-convention-guidance'
     }
     from(project(':core').file('src/main/resources')) {

@@ -153,6 +153,25 @@ class ConventionTests(Temp):
         self.assertIn("pluginManager.withPlugin('java')", script)
         self.assertIn("!pluginManager.hasPlugin('io.github.dochiri0916.build-convention')", script)
 
+    def test_kotlin_selection_waits_for_plugin_configuration_and_preserves_mixed_reports(self):
+        script = convention.init_script(convention.version(), self.root/'manifest.json')
+        self.assertIn("hasPlugin('org.jetbrains.kotlin.jvm')", script)
+        self.assertIn('afterEvaluate', script)
+        self.assertIn("pluginManager.apply('io.github.dochiri0916.build-convention.kotlin')", script)
+        self.assertIn("include '**/*.java'", script)
+        self.assertIn("['report.json', 'report-kotlin.json']", script)
+        self.assertIn("hasPlugin('io.github.dochiri0916.build-convention.java')", script)
+        self.assertIn('collectMany', script)
+        self.assertIn('validateKotlinDomainConventions', convention.ARCHITECTURE_TASKS)
+        self.assertIn('validateKotlinArchUnitArchitecture', convention.ARCHITECTURE_TASKS)
+
+    def test_kotlin_diagnostics_are_saved_with_the_rule_and_source_path(self):
+        text = " - [ARCH-DOMAIN-AGGREGATE] src/main/kotlin/com/example/order/domain/vo/OrderId.kt identifier VO must reject every UUID except version 7 and variant 2"
+        self.assertEqual([{'file': 'src/main/kotlin/com/example/order/domain/vo/OrderId.kt',
+                          'rule': 'ARCH-DOMAIN-AGGREGATE',
+                          'message': 'identifier VO must reject every UUID except version 7 and variant 2'}],
+                         convention.violations(self.project, text))
+
     def test_run_saves_report_with_printed_violations_and_base_ref(self):
         # given
         output = self.root/'session'/'convention-after.json'

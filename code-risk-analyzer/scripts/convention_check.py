@@ -1,7 +1,7 @@
 """Run build-convention on any Gradle project without editing its build files.
 
 A generated Gradle init script puts the plugin (published to mavenLocal by install.sh) on the build classpath and
-applies it to every Java project that does not apply it already. `check --continue` then writes the plugin's
+applies the language's plugin to each Java/Kotlin project. `check --continue` then writes the plugin's
 report, which is saved into the session with the violations Gradle printed. Any failing check fails the run.
 
 `validators` in the project's .code-risk.yml (read and validated by the analyzer jar) can switch off the architecture
@@ -17,6 +17,8 @@ import sys
 SCRIPTS = Path(__file__).resolve().parent
 CONVENTION = SCRIPTS.parent.parent/'build-convention'
 PLUGIN_ID = 'io.github.dochiri0916.build-convention'
+JAVA_PLUGIN_ID = 'io.github.dochiri0916.build-convention.java'
+KOTLIN_PLUGIN_ID = 'io.github.dochiri0916.build-convention.kotlin'
 REPORT = Path('build/reports/build-convention/report.json')
 NAMES = {'architecture': '아키텍처', 'archUnit': '아키텍처(ArchUnit)', 'checkstyle': 'Checkstyle', 'pmd': 'PMD',
          'spotBugs': 'SpotBugs', 'migration': 'DB 마이그레이션', 'changedCodeCoverage': '변경 코드 커버리지',
@@ -50,24 +52,43 @@ def init_script(plugin_version, manifest=None):
 
 allprojects {{
     pluginManager.withPlugin('java') {{
-        if (!pluginManager.hasPlugin('{PLUGIN_ID}')) {{
-            pluginManager.apply('{PLUGIN_ID}')
+        // Kotlin/JVM applies Java internally before its own plugin callback completes.
+        // Decide after configuration so a Kotlin-only module never receives the Java source rules.
+        afterEvaluate {{
+            boolean kotlinProject = pluginManager.hasPlugin('org.jetbrains.kotlin.jvm')
+            if (kotlinProject && !pluginManager.hasPlugin('{KOTLIN_PLUGIN_ID}')) {{
+                pluginManager.apply('{KOTLIN_PLUGIN_ID}')
+            }}
+            def main = extensions.findByType(org.gradle.api.tasks.SourceSetContainer)?.findByName('main')
+            boolean javaSources = main?.allJava?.srcDirs?.any {{ dir ->
+                !fileTree(dir) {{ include '**/*.java' }}.files.isEmpty()
+            }} ?: false
+            if ((!kotlinProject || javaSources) && !pluginManager.hasPlugin('{PLUGIN_ID}') &&
+                    !pluginManager.hasPlugin('{JAVA_PLUGIN_ID}')) {{
+                pluginManager.apply('{PLUGIN_ID}')
+            }}
         }}
     }}
 }}
 """
     if manifest is not None:
-        # Gradle supplies the actual project and build directories, including Java-only subprojects.
+        # Gradle supplies each module's reports; mixed modules preserve both language reports.
         destination = json.dumps(str(manifest)).replace('$', '\\$')
         script += f"""
 def failedConventionTasks = java.util.Collections.synchronizedList([])
 gradle.projectsEvaluated {{
     def reports = gradle.rootProject.allprojects.findAll {{
-        it.pluginManager.hasPlugin('{PLUGIN_ID}')
-    }}.collect {{ project ->
-        def report = project.layout.buildDirectory.file('reports/build-convention/report.json').get().asFile
-        report.delete()
-        [project: project.path, file: report.absolutePath]
+        it.pluginManager.hasPlugin('{PLUGIN_ID}') || it.pluginManager.hasPlugin('{JAVA_PLUGIN_ID}') ||
+                it.pluginManager.hasPlugin('{KOTLIN_PLUGIN_ID}')
+    }}.collectMany {{ project ->
+        boolean mixed = (project.pluginManager.hasPlugin('{PLUGIN_ID}') || project.pluginManager.hasPlugin('{JAVA_PLUGIN_ID}')) &&
+                project.pluginManager.hasPlugin('{KOTLIN_PLUGIN_ID}')
+        def names = mixed ? ['report.json', 'report-kotlin.json'] : ['report.json']
+        names.collect {{ name ->
+            def report = project.layout.buildDirectory.file('reports/build-convention/' + name).get().asFile
+            report.delete()
+            [project: name == 'report-kotlin.json' ? project.path + '/kotlin' : project.path, file: report.absolutePath]
+        }}
     }}
     new File({destination}).text = groovy.json.JsonOutput.toJson([reports: reports, failures: []])
 }}
@@ -97,7 +118,8 @@ JAR = SCRIPTS.parent/'build'/'libs'/'code-risk-analyzer-0.0.1-SNAPSHOT.jar'
 COMPILE = ['./gradlew', 'testClasses']
 ARCHITECTURE_TASKS = {'validateHexagonalArchitecture', 'validateEntityNamingConvention',
                       'validateDomainStaticFactoryConvention', 'validateArchitectureConventions',
-                      'validateArchUnitArchitecture', 'validateClaudeConventions'}
+                      'validateArchUnitArchitecture', 'validateClaudeConventions',
+                      'validateKotlinDomainConventions', 'validateKotlinArchUnitArchitecture'}
 
 
 class Unavailable(ValueError):
@@ -214,7 +236,7 @@ def run(project, output, base_ref=None, process=subprocess.run, off=None):
     if not isinstance(inventory, dict) or not isinstance(inventory.get('reports'), list) or not isinstance(inventory.get('failures'), list):
         raise ValueError('컨벤션 프로젝트 목록 형식이 올바르지 않습니다')
     if not inventory['reports']:
-        raise Unavailable('컨벤션 검증 대상 Java 프로젝트가 없습니다')
+        raise Unavailable('컨벤션 검증 대상 Java/Kotlin JVM 프로젝트가 없습니다')
     projects = {}
     for entry in inventory['reports']:
         path = Path(entry['file'])

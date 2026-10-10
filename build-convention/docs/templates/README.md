@@ -1,5 +1,7 @@
 # 템플릿 실행 조건
 
+`kotlin/src/main/kotlin`에는 주문 도메인 18개 파일과 UUID 입력 가드·발급 포트·어댑터 5개 파일이 있다. [Kotlin 도메인 기준](../conventions/kotlin-domain-conventions.md)에 따라 Kotlin/JVM 2.3.21·JDK 21에서 컴파일과 전체 `check`를 검증한다. ID는 입력 어댑터에서 검증하고 출력 어댑터에서 발급하며 도메인 VO는 UUID 래퍼로만 사용한다. 다른 BC의 재고 ID는 `StockReferenceId`다. Kotlin 표준 라이브러리에 `com.github.f4b6a3:uuid-creator:6.1.0`·`org.springframework:spring-context:6.2.12` 의존성을 추가한다. 이 예시는 주문 도메인·VO·예외와 ID 경계를 다루며 Java/Spring 템플릿 실행 조건과 구분한다.
+
 템플릿은 Java 21, Spring Boot 3.5.16과 MySQL 8.4.10에서 컴파일·실행 테스트했다. 결과와 검증 범위는 [template-verification.json](../conventions/template-verification.json)에 기록한다. 전체 컨벤션 적용과 소비 프로젝트의 플러그인 검증은 아직 진행 중이다.
 
 기존 Spring Web·Validation·Data JPA, Lombok, UUID Creator 의존성에 Querydsl 의존성을 추가한다. 다음은 검증에 사용한 구성이다.

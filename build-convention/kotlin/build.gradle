@@ -1,9 +1,20 @@
 plugins {
     id 'java-gradle-plugin'
+    id 'maven-publish'
 }
 
 dependencies {
     api project(':core')
+    implementation 'org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.21'
+    testImplementation gradleTestKit()
+    testImplementation project(':java')
+}
+
+test {
+    inputs.dir(rootProject.file('docs/templates/kotlin')).withPropertyName('kotlinTemplates')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+    maxHeapSize = '1g'
+    systemProperty 'kotlinConventionTemplates', rootProject.file('docs/templates/kotlin').absolutePath
 }
 
 gradlePlugin {

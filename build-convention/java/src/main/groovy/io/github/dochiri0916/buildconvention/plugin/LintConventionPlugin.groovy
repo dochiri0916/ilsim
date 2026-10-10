@@ -103,7 +103,8 @@ class LintConventionPlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {
         HexagonalConventionExtension convention =
-                project.extensions.create('hexagonalConvention', HexagonalConventionExtension)
+                project.extensions.findByType(HexagonalConventionExtension) ?:
+                        project.extensions.create('hexagonalConvention', HexagonalConventionExtension)
 
         configureJava21Convention(project)
         configureLombokConvention(project)

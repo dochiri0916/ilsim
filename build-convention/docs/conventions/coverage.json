@@ -2696,6 +2696,54 @@
         "JavaSourceArchitectureValidatorTest: rejects test method names that are not snake_case (PMD junit5TestPattern allows snake_case; LintConventionFunctionalTest passes check with snake_case tests)",
         "java/src/test/groovy/io/github/dochiri0916/buildconvention/validator/architecture/JavaSourceArchitectureValidatorTest.groovy"
       ]
+    },
+    {
+      "id": "kotlin-domain-conventions:id-vo",
+      "source": "kotlin-domain-conventions.md",
+      "line": 31,
+      "requirement": "ID VO는 `domain.vo` 바로 아래의 `{Domain}Id`이며 `@JvmInline value class`, `private constructor(val value: UUID)`, `override fun toString(): String = value.toString()`, `companion object`의 `fun of(value: UUID): {Domain}Id = {Domain}Id(value)`만 허용한다.",
+      "status": "verified",
+      "implementation": [
+        "kotlin/src/main/groovy/io/github/dochiri0916/buildconvention/validator/domain/vo/KotlinIdentifierRules.groovy",
+        "kotlin/src/main/groovy/io/github/dochiri0916/buildconvention/source/kotlin/KotlinContractSyntax.groovy"
+      ],
+      "evidence": [
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/validator/domain/vo/KotlinIdentifierRulesTest.groovy",
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/plugin/KotlinConventionFunctionalTest.groovy",
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/integrity/KotlinConventionIntegrityTest.groovy"
+      ]
+    },
+    {
+      "id": "kotlin-domain-conventions:uuid-input",
+      "source": "kotlin-domain-conventions.md",
+      "line": 32,
+      "requirement": "입력 검증은 같은 컨텍스트의 `adapter.in`에 있는 공개 최상위 `fun UUID.requireV7(field: String): UUID`로 수행한다. private const `UUID_V7 = 7`·`RFC_VARIANT = 2`, `if (version() != UUID_V7 || variant() != RFC_VARIANT) throw InvalidUuidV7Exception(field, this)`, `return this`를 사용한다.",
+      "status": "verified",
+      "implementation": [
+        "kotlin/src/main/groovy/io/github/dochiri0916/buildconvention/validator/adapter/identifier/KotlinIdentifierBoundaryRules.groovy",
+        "kotlin/src/main/groovy/io/github/dochiri0916/buildconvention/source/kotlin/KotlinContractSyntax.groovy"
+      ],
+      "evidence": [
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/validator/domain/vo/KotlinIdentifierRulesTest.groovy",
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/plugin/KotlinConventionFunctionalTest.groovy",
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/integrity/KotlinConventionIntegrityTest.groovy"
+      ]
+    },
+    {
+      "id": "kotlin-domain-conventions:uuid-generator",
+      "source": "kotlin-domain-conventions.md",
+      "line": 33,
+      "requirement": "자체 ID마다 `application.port.out.{Domain}IdGenerator`의 `fun generate(): {Domain}Id`와 `adapter.out.identifier.UuidV7{Domain}IdGenerator`가 필요하다. 발급 어댑터는 `@Component` final 클래스이며 해당 포트를 구현하고 `override fun generate(): {Domain}Id = {Domain}Id.of(UuidCreator.getTimeOrderedEpoch())`만 제공한다.",
+      "status": "verified",
+      "implementation": [
+        "kotlin/src/main/groovy/io/github/dochiri0916/buildconvention/validator/adapter/identifier/KotlinIdentifierBoundaryRules.groovy",
+        "kotlin/src/main/groovy/io/github/dochiri0916/buildconvention/source/kotlin/KotlinContractSyntax.groovy"
+      ],
+      "evidence": [
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/validator/domain/vo/KotlinIdentifierRulesTest.groovy",
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/plugin/KotlinConventionFunctionalTest.groovy",
+        "kotlin/src/test/groovy/io/github/dochiri0916/buildconvention/integrity/KotlinConventionIntegrityTest.groovy"
+      ]
     }
   ],
   "statusMeaning": {
