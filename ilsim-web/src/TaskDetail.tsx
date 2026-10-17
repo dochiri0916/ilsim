@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, type StageState } from './api'
 import { usePoll } from './usePoll'
 import { StatusBadge } from './StatusBadge'
+import { modelLabel, usd } from './taskView'
 
 const STAGE_LABEL: Record<string, string> = {
   REQUIREMENTS: '요구사항 분석',
@@ -41,6 +42,12 @@ export function TaskDetail({ id }: { id: string }) {
       <h2>{task.feature} <StatusBadge value={task.status} /></h2>
       <p className="muted pre">{task.requirement}</p>
       {task.branch && <p><small>브랜치: <code>{task.branch}</code></small></p>}
+      {!!task.costUsd && (
+        <p><small>
+          Claude 비용 {usd(task.costUsd)}
+          {Object.entries(task.costByModel ?? {}).map(([m, c]) => ` · ${modelLabel(m)} ${usd(c)}`)}
+        </small></p>
+      )}
 
       <ol className="stepper">
         {task.stages.map((s) => (
@@ -49,6 +56,7 @@ export function TaskDetail({ id }: { id: string }) {
               {STAGE_LABEL[s.stage]}
               <StatusBadge value={s.status} />
               {s.attempt > 1 && <small>시도 {s.attempt}</small>}
+              {!!s.costUsd && <small>{usd(s.costUsd)}</small>}
             </button>
           </li>
         ))}

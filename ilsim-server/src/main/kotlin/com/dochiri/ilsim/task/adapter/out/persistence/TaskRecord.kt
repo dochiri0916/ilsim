@@ -33,6 +33,8 @@ data class TaskRecord(
         val validation: Map<String, String>? = null,
         val routing: Map<String, String>? = null,
         val routingLog: List<String>? = null,
+        val costUsd: Double = 0.0,
+        val costByModel: Map<String, Double>? = null,
     )
 
     fun toTask(): Task {
@@ -40,7 +42,7 @@ data class TaskRecord(
             val stage = Stage.entries.firstOrNull { it.name == r.stage } ?: return@mapNotNull null
             StageState(
                 stage, StageStatus.valueOf(r.status), r.attempt, r.feedback, r.lastErrorKey, r.error, r.diff, r.artifactHash,
-                r.artifacts.orEmpty(), r.validation.orEmpty(), r.routing.orEmpty(), r.routingLog.orEmpty(),
+                r.artifacts.orEmpty(), r.validation.orEmpty(), r.routing.orEmpty(), r.routingLog.orEmpty(), r.costUsd, r.costByModel.orEmpty(),
             )
         }.associateBy { it.stage }
         // 저장본에 없는 단계는 새로 만든다(단계가 추가돼도 읽을 수 있게).
@@ -54,7 +56,7 @@ data class TaskRecord(
             t.stages.map { s ->
                 StageRecord(
                     s.stage.name, s.status.name, s.attempt, s.feedback, s.lastErrorKey, s.error, s.diff, s.artifactHash,
-                    LinkedHashMap(s.artifacts), LinkedHashMap(s.validation), LinkedHashMap(s.routing), ArrayList(s.routingLog),
+                    LinkedHashMap(s.artifacts), LinkedHashMap(s.validation), LinkedHashMap(s.routing), ArrayList(s.routingLog), s.costUsd, LinkedHashMap(s.costByModel),
                 )
             },
         )

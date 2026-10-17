@@ -237,4 +237,25 @@ class TaskExecutorFailureTest {
         run("IMPLEMENTATION", agent = writes("src/Main.java" to "class Main {}"))
         assertTrue(asked.last().contains("기존 테스트") && asked.last().contains("FooTest.java"))
     }
+
+    @Test
+    fun `실패한 실행도 쓴 비용과 모델을 결과에 싣는다`() {
+        val failed = run("REQUIREMENTS") { _, _, _, _ -> AgentRun(2, costUsd = 0.12) }
+        assertFalse(failed.passed)
+        assertEquals(0.12, failed.costUsd)
+        assertEquals("claude-sonnet-5-5", failed.model)
+
+        sink.result = null
+        val passed = run("REQUIREMENTS", agent = { w, t, p, l ->
+            writes(requirements).run(w, t, p, l).copy(costUsd = 0.3)
+        })
+        assertTrue(passed.passed)
+        assertEquals(0.3, passed.costUsd)
+    }
+
+    @Test
+    fun `Claude 를 실행하지 못하면 비용 없이 보고한다`() {
+        val r = run("REQUIREMENTS") { _, _, _, _ -> error("claude 없음") }
+        assertNull(r.costUsd)
+    }
 }

@@ -12,6 +12,8 @@ export interface StageState {
   validation: Record<string, string>
   routing?: Record<string, string>
   routingLog?: string[]
+  costUsd?: number
+  costByModel?: Record<string, number>
 }
 
 export interface Task {
@@ -23,6 +25,8 @@ export interface Task {
   status: 'ACTIVE' | 'COMPLETED' | 'BLOCKED'
   branch: string | null
   stages: StageState[]
+  costUsd?: number
+  costByModel?: Record<string, number>
 }
 
 export interface TaskEvent {

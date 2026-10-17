@@ -42,13 +42,17 @@ class TaskExecutor(
     /** 변이 테스트에서 살아남은 변이를 작업별로 모아 AI 변경 검토에 넘긴다(상위 10건). */
     private val survivors = mutableMapOf<String, List<String>>()
 
+    /** 이번 실행에서 Claude 가 쓴 비용. 실패해도 이미 쓴 비용이므로 결과에 항상 싣는다. */
+    private var runCost: Double? = null
+
     fun run(task: AssignedTask) {
+        runCost = null
         val result = try {
             execute(task)
         } catch (e: Exception) {
             StageResult(passed = false, retryable = false, error = e.message ?: e.toString())
         }
-        client.result(task.taskId, result)
+        client.result(task.taskId, result.copy(costUsd = runCost, model = task.model))
     }
 
     /** 코드를 쓰는 단계에는 승인된 기존 규칙을 함께 알려 준다. */
@@ -78,6 +82,7 @@ class TaskExecutor(
         val run = agent.run(worktree, task, promptWithRules(task)) { line ->
             StreamSummarizer.summarize(line).forEach { (type, data) -> client.event(task.taskId, task.stage, type, data) }
         }
+        runCost = run.costUsd
         if (run.timedOut) return StageResult(false, retryable = true, error = "claude 실행이 ${CLAUDE_TIMEOUT_MINUTES}분을 넘겨 중단했습니다. 범위를 줄여 다시 시도하세요", branch = branch)
         if (run.exit != 0) return StageResult(false, retryable = true, error = "claude 종료 코드 ${run.exit}", branch = branch)
 

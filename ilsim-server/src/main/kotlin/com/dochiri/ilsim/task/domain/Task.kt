@@ -36,6 +36,12 @@ class Task(
     fun stage(stage: Stage): StageState = stages.first { it.stage == stage }
 
     /** Runner 에 배정할 수 있는 상태인지. */
+    /** 작업 전체에서 쓴 Claude 비용(USD)과 모델별 내역. */
+    fun costUsd(): Double = stages.sumOf { it.costUsd }
+
+    fun costByModel(): Map<String, Double> =
+        stages.flatMap { it.costByModel.entries }.groupBy({ it.key }, { it.value }).mapValues { it.value.sum() }
+
     fun isRunnable(): Boolean = status == TaskStatus.ACTIVE && current()?.status == StageStatus.PENDING
 
     fun hitRunLimit(): Boolean = isRunnable() && runs >= MAX_TASK_RUNS
@@ -60,6 +66,7 @@ class Task(
         val stage = current()
         if (stage == null || stage.status != StageStatus.RUNNING) throw InvalidTaskStateException("실행 중인 단계가 없습니다")
         outcome.branch?.let { branch = it }
+        outcome.costUsd?.takeIf { it.isFinite() && it > 0 }?.let { stage.addCost(it, outcome.model ?: UNKNOWN_MODEL) }
         stage.record(outcome.diff, outcome.error, outcome.validation)
         when {
             outcome.passed -> {
@@ -109,6 +116,8 @@ class Task(
 
     companion object {
         const val MAX_ATTEMPTS: Int = 3
+
+        const val UNKNOWN_MODEL: String = "unknown"
 
         /** 사람이 개입하지 않은 채 한 작업에 배정할 수 있는 전체 횟수(단계 4개 × 시도 3회). */
         const val MAX_TASK_RUNS: Int = 12

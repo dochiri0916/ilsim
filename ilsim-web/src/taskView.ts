@@ -14,6 +14,17 @@ export const STAGE_SHORT: Record<string, string> = {
   IMPLEMENTATION: '구현',
 }
 
+/** 비용(USD)을 보기 좋게. 0 이면 빈 문자열. */
+export function usd(v?: number): string {
+  if (!v) return ''
+  return v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`
+}
+
+/** "claude-opus-5-5" → "opus" 처럼 모델 이름에서 등급만 남긴다. */
+export function modelLabel(id: string): string {
+  return id.match(/(haiku|sonnet|opus|fable)/)?.[1] ?? id
+}
+
 /** 아직 통과하지 못한 첫 단계. 모두 통과했으면 undefined. */
 export function currentStage(t: Task): StageState | undefined {
   return t.stages.find((s) => s.status !== 'PASSED')

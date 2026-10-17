@@ -41,6 +41,9 @@ data class StageResult(
     val artifacts: Map<String, String> = emptyMap(),
     val validation: Map<String, String> = emptyMap(),
     val branch: String? = null,
+    /** 이번 실행에서 쓴 Claude 비용(USD)과 모델. 서버가 단계·작업별로 합산한다. */
+    val costUsd: Double? = null,
+    val model: String? = null,
 )
 
 /** 실행기가 서버로 보내는 두 가지: 진행 이벤트와 단계 결과. 테스트에서 가짜로 바꾼다. */

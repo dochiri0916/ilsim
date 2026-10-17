@@ -3,7 +3,7 @@ import { api } from './api'
 import type { Task } from './api'
 import { StageDots } from './StageDots'
 import { StatusBadge } from './StatusBadge'
-import { STAGE_LABEL, ago, attentionText, currentStage, groupOf } from './taskView'
+import { STAGE_LABEL, ago, attentionText, currentStage, groupOf, usd } from './taskView'
 import { usePoll } from './usePoll'
 
 function TaskRow({ task, note }: { task: Task; note?: string }) {
@@ -13,7 +13,7 @@ function TaskRow({ task, note }: { task: Task; note?: string }) {
       <a href={`#/tasks/${task.id}`} className="task-row">
         <div className="task-head">
           <strong>{task.feature}</strong>
-          <small>{task.projectId} · {ago(task.createdAt)}</small>
+          <small>{task.projectId} · {ago(task.createdAt)}{task.costUsd ? ` · ${usd(task.costUsd)}` : ''}</small>
         </div>
         <StageDots task={task} />
         <div className="task-note">

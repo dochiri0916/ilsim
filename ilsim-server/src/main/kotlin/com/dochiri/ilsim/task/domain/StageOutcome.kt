@@ -9,4 +9,7 @@ data class StageOutcome(
     val artifacts: Map<String, String>?,
     val validation: Map<String, String>?,
     val branch: String?,
+    /** 이번 실행에서 쓴 Claude 비용(USD)과 쓴 모델. 알 수 없으면 null. */
+    val costUsd: Double? = null,
+    val model: String? = null,
 )

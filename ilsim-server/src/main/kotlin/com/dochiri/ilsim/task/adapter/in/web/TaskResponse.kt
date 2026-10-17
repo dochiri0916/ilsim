@@ -19,11 +19,13 @@ data class StageResponse(
     val artifactHash: String?,
     val artifacts: Map<String, String>,
     val validation: Map<String, String>,
+    val costUsd: Double,
+    val costByModel: Map<String, Double>,
 ) {
     companion object {
         fun from(s: StageState): StageResponse = StageResponse(
             s.stage.name, s.status.name, s.attempt, s.feedback, s.lastErrorKey, s.routing, s.routingLog.toList(),
-            s.error, s.diff, s.artifactHash, s.artifacts, s.validation,
+            s.error, s.diff, s.artifactHash, s.artifacts, s.validation, s.costUsd, s.costByModel,
         )
     }
 }
@@ -39,11 +41,13 @@ data class TaskResponse(
     val branch: String?,
     val runs: Int,
     val stages: List<StageResponse>,
+    val costUsd: Double,
+    val costByModel: Map<String, Double>,
 ) {
     companion object {
         fun from(t: Task): TaskResponse = TaskResponse(
             t.id, t.projectId, t.feature, t.requirement, t.createdAt, t.status.name, t.runnerId, t.branch, t.runs,
-            t.stages.map(StageResponse::from),
+            t.stages.map(StageResponse::from), t.costUsd(), t.costByModel(),
         )
     }
 }

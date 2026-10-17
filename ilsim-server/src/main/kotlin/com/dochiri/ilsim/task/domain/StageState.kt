@@ -16,6 +16,8 @@ class StageState(
     validation: Map<String, String> = emptyMap(),
     routing: Map<String, String> = emptyMap(),
     routingLog: List<String> = emptyList(),
+    costUsd: Double = 0.0,
+    costByModel: Map<String, Double> = emptyMap(),
 ) {
     @Volatile var status: StageStatus = status
         private set
@@ -46,6 +48,18 @@ class StageState(
 
     /** 모델 선택 이력: 시도마다 어떤 모델을 왜 골랐는지. */
     val routingLog: MutableList<String> = CopyOnWriteArrayList(routingLog)
+
+    /** 이 단계에서 쓴 Claude 비용 합계(USD). 실패한 시도와 재시도 비용도 포함한다. */
+    @Volatile var costUsd: Double = costUsd
+        private set
+
+    @Volatile var costByModel: Map<String, Double> = costByModel
+        private set
+
+    internal fun addCost(usd: Double, model: String) {
+        costUsd += usd
+        costByModel = costByModel + (model to (costByModel[model] ?: 0.0) + usd)
+    }
 
     internal fun start() {
         status = StageStatus.RUNNING

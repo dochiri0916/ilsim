@@ -75,6 +75,20 @@ class PersistenceTest {
     }
 
     @Test
+    fun `단계 비용은 서버를 다시 띄워도 유지된다`() {
+        val store = MemoryStore()
+        val first = service(store)
+        first.poll("r1", listOf(demo))
+        val task = first.create("demo", "slug", "slugify 추가")
+        first.poll("r1", listOf(demo))
+        first.report(task.id, ReportStageCommand(true, false, "diff", null, null, null, "b", 0.42, "claude-sonnet-5-5"))
+
+        val restored = service(store).find(task.id)!!
+        assertThat(restored.costUsd()).isEqualTo(0.42)
+        assertThat(restored.costByModel()).containsEntry("claude-sonnet-5-5", 0.42)
+    }
+
+    @Test
     fun `실행 중이던 단계는 대기로 되돌려 다시 배정한다`() {
         val store = MemoryStore()
         val first = service(store)
