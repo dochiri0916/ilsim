@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "specification": "java_mysql_concurrency_static_analysis_spec.md",
+  "specification": "docs/reference/java-mysql-concurrency-spec.md",
   "scope": "구현 진행 현황이다. PARTIAL·PLANNED는 명세 완료나 현재 스캔의 안전성을 뜻하지 않는다. 위험 scan은 Java 전용이며 build-convention은 선택 사항이다.",
   "workItems": [
     {

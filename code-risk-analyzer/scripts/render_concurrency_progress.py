@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / 'src/main/resources/concurrency/specification.json'
-DOCUMENT = ROOT / 'docs/guides/CONCURRENCY_IMPLEMENTATION.md'
+DOCUMENT = ROOT / 'docs/reference/concurrency.md'
 
 
 def link(path):
@@ -21,7 +21,7 @@ def render(catalog):
         '# 동시성 명세 통합과 구현 진행 현황', '',
         '> 이 문서는 `scripts/render_concurrency_progress.py`로 생성한다. '
         '진행 상태는 `src/main/resources/concurrency/specification.json`에서 수정한다.', '',
-        '[원본 명세](../../../java_mysql_concurrency_static_analysis_spec.md) · '
+        '[원본 명세](java-mysql-concurrency-spec.md) · '
         '[배포 카탈로그](../../src/main/resources/concurrency/specification.json)', '',
         catalog['scope'], '',
         '## 조회', '',
