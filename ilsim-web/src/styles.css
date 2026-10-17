@@ -83,3 +83,6 @@ summary { cursor: pointer; font-weight: 600; }
 .presence { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .presence.on { background: var(--ok); }
 .presence.off { background: var(--muted); }
+
+.login { display: flex; flex-direction: column; gap: 8px; max-width: 320px; }
+.login .err { margin: 0; font-size: 0.9rem; }

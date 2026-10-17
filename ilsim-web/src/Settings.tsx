@@ -2,6 +2,46 @@ import { useState } from 'react'
 import { api } from './api'
 import { usePoll } from './usePoll'
 
+/** 로그인 계정 목록과 추가. */
+function Accounts() {
+  const accounts = usePoll(api.accounts, 30000)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      await api.createAccount(username.trim(), password)
+      setUsername('')
+      setPassword('')
+      accounts.reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section>
+      <h2>계정</h2>
+      <p className="sub">이 화면에 로그인할 수 있는 계정입니다. 필요하면 더 추가하세요.</p>
+      <p>{accounts.data?.join(', ') ?? '불러오는 중…'}</p>
+      <form className="row" onSubmit={add}>
+        <input placeholder="아이디" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+        <input type="password" placeholder="비밀번호 (8자 이상)" autoComplete="new-password" value={password}
+          onChange={(e) => setPassword(e.target.value)} />
+        <button disabled={busy || !username.trim() || password.length < 8}>추가</button>
+      </form>
+      {error && <p className="err">{error}</p>}
+    </section>
+  )
+}
+
 /** JEV API 키 등록. 키는 서버가 암호화해 MySQL 에 저장하며 화면에는 마지막 4자리만 보인다. */
 export function Settings() {
   const settings = usePoll(api.settings, 10000)
@@ -37,6 +77,7 @@ export function Settings() {
   }
 
   return (
+    <>
     <section>
       <h2>JEV API 키</h2>
       <p className="sub">
@@ -61,5 +102,7 @@ export function Settings() {
       </form>
       {error && <p className="err">{error}</p>}
     </section>
+    <Accounts />
+    </>
   )
 }

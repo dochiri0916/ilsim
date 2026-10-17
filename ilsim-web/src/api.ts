@@ -40,28 +40,14 @@ export interface Project {
   online: boolean
 }
 
-const KEY = 'ilsim.token'
-
-export const tokenStore = {
-  get: () => {
-    try { return localStorage.getItem(KEY) ?? '' } catch { return '' }
-  },
-  set: (v: string) => {
-    try { localStorage.setItem(KEY, v) } catch { /* 저장 불가 환경 */ }
-  },
-  clear: () => {
-    try { localStorage.removeItem(KEY) } catch { /* 저장 불가 환경 */ }
-  },
-}
-
 export class Unauthorized extends Error {}
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', 'X-Ilsim-Token': tokenStore.get(), ...init?.headers },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'ilsim', ...init?.headers },
   })
-  if (res.status === 401) throw new Unauthorized()
+  if (res.status === 401 && !path.startsWith('/api/auth/')) throw new Unauthorized()
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error ?? `HTTP ${res.status}`)
@@ -77,7 +63,21 @@ export interface Settings {
   jev: { configured: boolean; last4: string | null; updatedAt: string | null }
 }
 
+export interface AuthState {
+  setup: boolean
+  user?: string
+}
+
 export const api = {
+  me: () => call<AuthState>('/api/auth/me'),
+  setup: (username: string, password: string) =>
+    call<AuthState>('/api/auth/setup', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  login: (username: string, password: string) =>
+    call<AuthState>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  logout: () => post('/api/auth/logout'),
+  accounts: () => call<string[]>('/api/accounts'),
+  createAccount: (username: string, password: string) =>
+    call<{ username: string }>('/api/accounts', { method: 'POST', body: JSON.stringify({ username, password }) }),
   settings: () => call<Settings>('/api/settings'),
   saveJevKey: (key: string) => call<Settings>('/api/settings/jev-key', { method: 'PUT', body: JSON.stringify({ key }) }),
   deleteJevKey: () => call<Settings>('/api/settings/jev-key', { method: 'DELETE' }),
