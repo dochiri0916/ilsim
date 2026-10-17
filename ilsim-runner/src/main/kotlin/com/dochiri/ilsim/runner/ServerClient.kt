@@ -43,7 +43,13 @@ data class StageResult(
     val branch: String? = null,
 )
 
-class ServerClient(private val baseUrl: String, private val token: String) {
+/** 실행기가 서버로 보내는 두 가지: 진행 이벤트와 단계 결과. 테스트에서 가짜로 바꾼다. */
+interface TaskSink {
+    fun event(taskId: String, stage: String, type: String, data: String)
+    fun result(taskId: String, result: StageResult)
+}
+
+class ServerClient(private val baseUrl: String, private val token: String) : TaskSink {
     private val http = HttpClient.newHttpClient()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -76,11 +82,11 @@ class ServerClient(private val baseUrl: String, private val token: String) {
         return json.parseToJsonElement(res.body()).jsonObject["key"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
     }
 
-    fun event(taskId: String, stage: String, type: String, data: String) {
+    override fun event(taskId: String, stage: String, type: String, data: String) {
         post("/runner/api/tasks/$taskId/events", json.encodeToString(EventRequest(stage, type, data)))
     }
 
-    fun result(taskId: String, result: StageResult) {
+    override fun result(taskId: String, result: StageResult) {
         val res = post("/runner/api/tasks/$taskId/result", json.encodeToString(result))
         check(res.statusCode() in 200..299) { "결과 전송 실패: HTTP ${res.statusCode()} ${res.body()}" }
     }

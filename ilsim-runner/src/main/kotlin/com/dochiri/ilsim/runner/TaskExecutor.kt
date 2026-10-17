@@ -27,15 +27,17 @@ import kotlin.io.path.readText
 /** 서버의 단계별 최대 시도 횟수(TaskService.MAX_ATTEMPTS)와 같아야 한다. */
 private const val MAX_ATTEMPTS = 3
 
-/** Claude 한 번의 실행에 허용하는 최대 시간. */
-private const val CLAUDE_TIMEOUT_MINUTES = 30L
 
 class TaskExecutor(
     private val config: RunnerConfig,
-    private val client: ServerClient,
+    private val client: TaskSink,
     private val workRoot: Path = Path.of(System.getProperty("user.home"), ".ilsim", "worktrees"),
-    private val architectures: ArchitectureStore = ArchitectureStore(ConfigStore()),
-    private val conventions: ConventionStore = ConventionStore(ConfigStore()),
+    private val configStore: ConfigStore = ConfigStore(),
+    private val agent: ClaudeAgent = ProcessClaudeAgent,
+    /** 도구 없이 한 번 묻는 AI 호출(변경 검토, 위험 검토). */
+    private val ask: (prompt: String, model: String) -> String = ClaudeCli::ask,
+    private val architectures: ArchitectureStore = ArchitectureStore(configStore),
+    private val conventions: ConventionStore = ConventionStore(configStore),
 ) {
     /** 변이 테스트에서 살아남은 변이를 작업별로 모아 AI 변경 검토에 넘긴다(상위 10건). */
     private val survivors = mutableMapOf<String, List<String>>()
@@ -53,7 +55,7 @@ class TaskExecutor(
     private fun promptWithRules(task: AssignedTask): String {
         if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return task.prompt
         val brief = RulesBrief.build(
-            architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(ConfigStore()).load(task.projectId),
+            architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId),
         )
         return if (brief == null) task.prompt else task.prompt + "\n\n" + brief
     }
@@ -73,30 +75,11 @@ class TaskExecutor(
         }
 
         log(task, "claude 실행 (model=${task.model}, attempt=${task.attempt})")
-        val claude = ProcessBuilder(
-            "claude", "-p", promptWithRules(task),
-            "--model", task.model,
-            "--effort", task.effort,
-            "--output-format", "stream-json", "--verbose",
-            "--permission-mode", "acceptEdits",
-            "--allowedTools", Gate.allowedTools(task.stage),
-        ).directory(worktree.toFile()).redirectErrorStream(true).start()
-        claude.outputStream.close()
-        // 멈추거나 끝없이 도는 실행이 작업 전체를 붙잡지 않도록 시간 상한을 둔다.
-        val timedOut = java.util.concurrent.atomic.AtomicBoolean(false)
-        val watchdog = Thread {
-            if (!claude.waitFor(CLAUDE_TIMEOUT_MINUTES, java.util.concurrent.TimeUnit.MINUTES)) {
-                timedOut.set(true)
-                claude.destroyForcibly()
-            }
-        }.apply { isDaemon = true; start() }
-        claude.inputStream.bufferedReader().forEachLine { line ->
+        val run = agent.run(worktree, task, promptWithRules(task)) { line ->
             StreamSummarizer.summarize(line).forEach { (type, data) -> client.event(task.taskId, task.stage, type, data) }
         }
-        val exit = claude.waitFor()
-        watchdog.interrupt()
-        if (timedOut.get()) return StageResult(false, retryable = true, error = "claude 실행이 ${CLAUDE_TIMEOUT_MINUTES}분을 넘겨 중단했습니다. 범위를 줄여 다시 시도하세요", branch = branch)
-        if (exit != 0) return StageResult(false, retryable = true, error = "claude 종료 코드 $exit", branch = branch)
+        if (run.timedOut) return StageResult(false, retryable = true, error = "claude 실행이 ${CLAUDE_TIMEOUT_MINUTES}분을 넘겨 중단했습니다. 범위를 줄여 다시 시도하세요", branch = branch)
+        if (run.exit != 0) return StageResult(false, retryable = true, error = "claude 종료 코드 ${run.exit}", branch = branch)
 
         val changed = changedFiles(worktree)
         val violations = Gate.pathViolations(task.stage, task.feature, changed)
@@ -147,10 +130,10 @@ class TaskExecutor(
             fun spec(path: String) = worktree.resolve(path).takeIf { it.exists() }?.readText()
             val prompt = ChangeAudit.prompt(
                 task.stage, spec(Gate.requirementsPath(task.feature)), spec(Gate.testSpecPath(task.feature)),
-                RulesBrief.build(architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(ConfigStore()).load(task.projectId)),
-                validation, diff, survivors.remove(task.taskId).orEmpty(),
+                RulesBrief.build(architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId)),
+                validation, diff, survivors.remove(task.taskId).orEmpty(), committedTests(task, worktree),
             )
-            val result = ChangeAudit.parse(ClaudeCli.ask(prompt, ClaudeModels.REVIEW))
+            val result = ChangeAudit.parse(ask(prompt, ClaudeModels.REVIEW))
             validation["ai-audit"] = if (result.verdict == "PASS") "PASSED" else "CONCERN"
             result.findings.forEach { log(task, "AI 검토 지적: [${it.type}] ${it.target} ${it.reason}") }
             AuditOutcome(mapOf("ai-audit.md" to ChangeAudit.render(result)), ChangeAudit.fixable(result))
@@ -159,6 +142,15 @@ class TaskExecutor(
             log(task, "AI 변경 검토를 건너뜀: ${e.message}")
             none
         }
+    }
+
+    /** 구현 단계의 검토가 이전 단계에서 커밋된 테스트를 볼 수 있게 한다. 이번 diff 에 이미 있는 파일은 제외한다. */
+    private fun committedTests(task: AssignedTask, worktree: Path): Map<String, String> {
+        if (task.stage != "IMPLEMENTATION") return emptyMap()
+        val inDiff = changedFiles(worktree).toSet()
+        return Shell.gitOk(worktree, "ls-files").lines()
+            .filter { it.isNotBlank() && Gate.isTestPath(it) && it !in inDiff }
+            .associateWith { worktree.resolve(it).readText() }
     }
 
     /** 단계별 검증을 실행한다. 실패 사유를 돌려주고, 통과하면 null. 결과는 [validation]에 기록한다. */
@@ -289,13 +281,13 @@ class TaskExecutor(
 
     /** 트랜잭션·동시성 위험을 이번 작업에서 바뀐 파일에만 적용한다. BLOCK 으로 지정된 규칙의 결과만 막는다. */
     private fun risk(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {
-        val config = RiskScanner.Store(ConfigStore()).load(task.projectId)
+        val config = RiskScanner.Store(configStore).load(task.projectId)
         val findings = RiskScanner.scan(worktree, StackDetector.detect(worktree), config, changedFiles(worktree).toSet())
         if (findings == null) {
             validation["risk"] = "UNKNOWN"
             return null
         }
-        val memory = ProjectMemory(ConfigStore())
+        val memory = ProjectMemory(configStore)
         val suppressed = memory.suppressed(task.projectId)
         aiReview(task, worktree, findings, config)
         NoiseDetector.proposals(config, findings, memory.load(task.projectId))
@@ -313,10 +305,10 @@ class TaskExecutor(
     private fun aiReview(task: AssignedTask, worktree: Path, findings: List<Violation>, config: RiskConfig) {
         val targets = findings.filter { it.severity == "REVIEW" && it.ruleId in config.aiReview }
         if (targets.isEmpty()) return
-        val opinions = RiskReviewer.Store(ConfigStore())
+        val opinions = RiskReviewer.Store(configStore)
         try {
             val known = opinions.load(task.projectId)
-            val updated = RiskReviewer.review(worktree, targets.take(20), known, ClaudeModels.REVIEW, false, JevRiskScreen.of(Jev.fromEnvironment(), worktree)) { ClaudeCli.ask(it, ClaudeModels.REVIEW) }
+            val updated = RiskReviewer.review(worktree, targets.take(20), known, ClaudeModels.REVIEW, false, JevRiskScreen.of(Jev.fromEnvironment(), worktree)) { ask(it, ClaudeModels.REVIEW) }
             opinions.save(task.projectId, updated)
             log(task, "AI 검토(승인한 규칙): ${targets.take(20).count { RiskReviewer.fingerprint(worktree, it) in updated }}건 의견")
         } catch (e: Exception) {

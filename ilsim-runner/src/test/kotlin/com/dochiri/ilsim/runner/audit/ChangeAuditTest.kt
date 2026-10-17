@@ -3,6 +3,7 @@ package com.dochiri.ilsim.runner.audit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ChangeAuditTest {
@@ -40,5 +41,13 @@ class ChangeAuditTest {
         assertEquals(2, r.findings.size)
         assertEquals(listOf("OMISSION"), ChangeAudit.fixable(r).map { it.type }, "구현 단계에서는 테스트를 고칠 수 없으므로 WEAK_TEST 는 승인자에게만 보인다")
         assertEquals(emptyList(), ChangeAudit.fixable(ChangeAudit.parse("""{"findings":[{"type":"WEAK_TEST","reason":"x"}]}""")))
+    }
+
+    @Test
+    fun `커밋된 테스트가 있으면 프롬프트에 포함하고 길이를 제한하며 없으면 넣지 않는다`() {
+        val with = ChangeAudit.prompt("IMPLEMENTATION", "REQ-1", "TC-1", null, emptyMap(), "diff", committedTests = mapOf("src/test/A.java" to "x".repeat(20_000)))
+        assertTrue(with.contains("기존 테스트") && with.contains("src/test/A.java"))
+        assertTrue(with.length < 20_000)
+        assertFalse(ChangeAudit.prompt("IMPLEMENTATION", "REQ-1", "TC-1", null, emptyMap(), "diff").contains("기존 테스트"))
     }
 }

@@ -12,6 +12,7 @@ object ChangeAudit {
     private const val DIFF_LIMIT = 24_000
     private const val SPEC_LIMIT = 6_000
     private const val BRIEF_LIMIT = 3_000
+    private const val TESTS_LIMIT = 10_000
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     @Serializable
@@ -27,10 +28,11 @@ object ChangeAudit {
      */
     fun fixable(r: Result): List<Finding> = r.findings.filter { it.type != "WEAK_TEST" }
 
-    fun prompt(stage: String, requirements: String?, testSpec: String?, rulesBrief: String?, validation: Map<String, String>, diff: String, survivors: List<String> = emptyList()): String = buildString {
+    fun prompt(stage: String, requirements: String?, testSpec: String?, rulesBrief: String?, validation: Map<String, String>, diff: String, survivors: List<String> = emptyList(), committedTests: Map<String, String> = emptyMap()): String = buildString {
         appendLine("당신은 AI Agent가 만든 변경을 독립적으로 검토하는 리뷰어다. 정적 검사(아키텍처, 컨벤션, 위험, 테스트 무력화)는 이미 통과했다.")
         appendLine("설계가 좋은지 나쁜지는 판단하지 마라. 아래 네 가지만 찾아라. 근거가 diff 에서 확인되는 것만 보고하고, 추측은 하지 마라.")
         appendLine("- OMISSION: 요구사항(REQ-n)이나 테스트 케이스(TC-n) 중 이 변경에서 다뤄지지 않은 것 (단계: $stage)")
+        if (committedTests.isNotEmpty()) appendLine("  (테스트는 이전 단계에서 승인·커밋되어 diff 에 없다. 아래 '기존 테스트'에 있으면 다뤄진 것이다. 이 단계에서는 구현이 요구사항을 만족하는지만 본다)")
         appendLine("- UNRELATED: 요구사항과 무관한 변경(불필요한 수정, 삭제, 포맷만 바꾼 대량 변경)")
         appendLine("- TEST_BYPASS: 테스트를 약화하거나 우회하는 변경(단언 완화, 기대값 변경, 조건부 통과, 목으로 핵심 로직 대체)")
         appendLine("- RULE: 아래 프로젝트 규칙을 어겼지만 정적 검사가 못 잡았을 것으로 보이는 변경")
@@ -39,6 +41,14 @@ object ChangeAudit {
         appendLine("문제가 없으면 {\"verdict\":\"PASS\",\"findings\":[]} 로 답하라.")
         requirements?.let { appendLine(); appendLine("## 요구사항"); appendLine(it.take(SPEC_LIMIT)) }
         testSpec?.let { appendLine(); appendLine("## 테스트 케이스"); appendLine(it.take(SPEC_LIMIT)) }
+        if (committedTests.isNotEmpty()) {
+            appendLine(); appendLine("## 기존 테스트 (이전 단계에서 커밋됨, 이 변경에 포함되지 않음)")
+            var left = TESTS_LIMIT
+            committedTests.forEach { (path, text) ->
+                if (left <= 0) return@forEach
+                appendLine("### $path"); appendLine(text.take(left)); left -= text.length
+            }
+        }
         rulesBrief?.let { appendLine(); appendLine(it.take(BRIEF_LIMIT)) }
         appendLine()
         appendLine("## 정적 검사 결과")
