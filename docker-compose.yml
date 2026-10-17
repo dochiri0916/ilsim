@@ -1,0 +1,26 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: ilsim-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ilsim-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ilsim}
+      MYSQL_USER: ${MYSQL_USER:-ilsim}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ilsim}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - ilsim-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-ilsim-root}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  ilsim-mysql-data:
