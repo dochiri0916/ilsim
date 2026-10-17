@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: ilsim-server
+  datasource:
+    # docker compose 의 MySQL. 기동 시점에 DB 가 없어도 서버는 뜨고, 키 저장 기능만 503 으로 응답한다.
+    url: ${ILSIM_DB_URL:jdbc:mysql://127.0.0.1:3306/ilsim?useUnicode=true&characterEncoding=utf8&connectionTimeZone=Asia/Seoul}
+    username: ${ILSIM_DB_USER:ilsim}
+    password: ${ILSIM_DB_PASSWORD:ilsim}
+    hikari:
+      initialization-fail-timeout: -1
+      connection-timeout: 3000
+  ai:
+    mcp:
+      server:
+        name: ilsim
+        version: 0.0.1
+        protocol: STREAMABLE
+server:
+  port: 8080
