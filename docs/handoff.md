@@ -12,11 +12,12 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
 - 어느 PC에서 써도 같은 기능을 제공해야 한다. PC 전용 설정(`settings.local.json`, `~/.claude` 메모리)에 기능을 두지 않는다.
 - 비밀번호·토큰·키는 이 파일에 적지 않는다.
 
-## 지금까지 (HEAD e672453, 푸시됨)
+## 지금까지
 
-웹 로그인, 서버 Kotlin 헥사고날+JPA, 루트 Gradle 통합, 실패 경로 테스트, Claude 비용 집계(단계·작업·모델별, 웹 표시).
+- e672453까지(푸시됨): 웹 로그인, 서버 Kotlin 헥사고날+JPA, 루트 Gradle 통합, 실패 경로 테스트, Claude 비용 집계(단계·작업·모델별, 웹 표시).
+- 92532ff(커밋, 푸시 안 함): 아래 1~13.
 
-## 미커밋 변경 (작업 트리에 있음, 검증 통과)
+## 92532ff에 들어간 변경 (검증 통과)
 
 1. 검토 호출(AI 변경 검토·위험 검토) 비용 집계: `ClaudeCli.askWithCost`, `StageResult.reviewCostUsd/reviewModel`. 수동 명령은 `CostTally`로 콘솔 출력.
 2. 계정: 웹 가입·계정추가 제거, 비밀번호 변경(`POST /api/auth/password`). 계정은 DB에 직접 INSERT(README).
