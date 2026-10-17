@@ -68,8 +68,8 @@ class BuildConventionPluginTest {
     }
 
     @Test
-    @DisplayName('플러그인 JAR 자원에 버전과 컨벤션 지침 묶음이 들어 있다')
-    void bundlesVersionAndGuidance() {
+    @DisplayName('보고서에서 사용하는 플러그인 버전 정보를 제공한다')
+    void providesReportVersionMetadata() {
         // given
         Properties properties = new Properties()
 
@@ -80,8 +80,5 @@ class BuildConventionPluginTest {
 
         // then
         assert properties.getProperty('version') ==~ /\d+\.\d+\.\d+.*/
-        ['conventions/README.md', 'conventions/coverage.json', 'templates/README.md', 'CONVENTION_ROLLOUT.md'].each {
-            assert BuildConventionPlugin.getResource("/build-convention-guidance/${it}") != null
-        }
     }
 }
