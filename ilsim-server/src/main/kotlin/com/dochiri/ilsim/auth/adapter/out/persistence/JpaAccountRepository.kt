@@ -2,9 +2,7 @@ package com.dochiri.ilsim.auth.adapter.out.persistence
 
 import com.dochiri.ilsim.auth.application.port.out.AccountRepository
 import com.dochiri.ilsim.auth.domain.Account
-import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 
 /** MySQL `accounts` 테이블. 테이블은 처음 쓸 때 만든다. */
@@ -31,33 +29,13 @@ class JpaAccountRepository(
         ready.set(true)
     }
 
-    override fun isEmpty(): Boolean {
-        ensureTable()
-        return accounts.count() == 0L
-    }
-
     override fun findByUsername(username: String): Account? {
         ensureTable()
         return accounts.findByUsername(username)?.let { Account(it.username, it.passwordHash) }
     }
 
-    override fun usernames(): List<String> {
+    override fun updatePasswordHash(username: String, passwordHash: String): Boolean {
         ensureTable()
-        return accounts.findAllByOrderByIdAsc().map { it.username }
-    }
-
-    override fun createFirst(account: Account): Boolean {
-        ensureTable()
-        return accounts.insertFirst(account.username, account.passwordHash, Instant.now()) == 1
-    }
-
-    override fun create(account: Account): Boolean {
-        ensureTable()
-        return try {
-            accounts.saveAndFlush(AccountEntity.of(account.username, account.passwordHash, Instant.now()))
-            true
-        } catch (e: DataIntegrityViolationException) {
-            false
-        }
+        return accounts.updatePasswordHash(username, passwordHash) == 1
     }
 }

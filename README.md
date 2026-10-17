@@ -37,3 +37,22 @@ cd build-convention
 | 분석기 명령·CI 정책·클래스패스·실행 증거 | [분석기 참고서](code-risk-analyzer/docs/reference/analysis.md) |
 | Java/Spring·Kotlin 소비 프로젝트 규칙과 템플릿 | [컨벤션 안내](build-convention/docs/conventions/README.md) |
 | 저장소 빌드와 검증, 이전 이력과 브랜치 | [저장소 개발과 이력](docs/repository.md) |
+
+## 웹 계정
+
+웹 로그인 계정은 관리자가 DB(`accounts` 테이블)에 직접 만든다. 화면에서는 가입이나 계정 추가를 할 수 없고, 로그인한 사용자가 자기 비밀번호만 바꿀 수 있다. 비밀번호는 BCrypt 해시로 넣는다.
+
+```bash
+htpasswd -bnBC 10 "" '비밀번호' | tr -d ':\n'   # 해시 생성
+```
+
+```sql
+INSERT INTO accounts (version, username, password_hash, created_at) VALUES (0, '아이디', '<해시>', NOW(3));
+```
+
+## 접속과 토큰
+
+- Runner 토큰: 서버가 처음 뜰 때 `~/.ilsim/token`(소유자만 읽기)을 만들고, Runner가 같은 파일을 읽는다. 환경 변수 `ILSIM_TOKEN`을 주면 그 값이 우선한다.
+- 서버는 기본으로 `127.0.0.1`에만 열린다. Tailscale처럼 다른 기기에서 직접 붙으려면 `ILSIM_BIND=0.0.0.0`.
+- 터널(Cloudflare Tunnel 등) 뒤에서 쓰면 `ILSIM_FORWARD_HEADERS=native`(접속자 IP를 `X-Forwarded-For`에서 읽음, 루프백에서 온 요청만 신뢰)와 `ILSIM_SECURE_COOKIE=true`(HTTPS 전용 쿠키)를 함께 준다. 개발 서버(Vite)는 `xfwd`로 헤더를 붙인다.
+- 로그인 실패 제한: 접속 IP당 5회 실패 시 1분, 계정당 20회 실패 시 15분 잠근다.

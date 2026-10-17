@@ -15,11 +15,11 @@ class ArchitectureTest {
 
     @ArchTest
     val `도메인은 프레임워크와 바깥 계층을 모른다`: ArchRule = noClasses().that().resideInAPackage("..domain..")
-        .should().dependOnClassesThat().resideInAnyPackage("..application..", "..adapter..", "..configuration..", *frameworks)
+        .should().dependOnClassesThat().resideInAnyPackage("..application..", "..adapter..", *frameworks)
 
     @ArchTest
     val `애플리케이션은 어댑터와 Spring 을 모른다`: ArchRule = noClasses().that().resideInAPackage("..application..")
-        .should().dependOnClassesThat().resideInAnyPackage("..adapter..", "..configuration..", "org.springframework..", "jakarta..", "tools.jackson..")
+        .should().dependOnClassesThat().resideInAnyPackage("..adapter..", "org.springframework..", "jakarta..", "tools.jackson..")
 
     @ArchTest
     val `인바운드와 아웃바운드 어댑터는 서로 쓰지 않는다`: ArchRule = noClasses().that().resideInAPackage("..adapter.out..")

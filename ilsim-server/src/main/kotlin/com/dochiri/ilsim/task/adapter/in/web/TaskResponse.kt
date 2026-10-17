@@ -4,6 +4,8 @@ import com.dochiri.ilsim.task.domain.ProjectStatus
 import com.dochiri.ilsim.task.domain.StageState
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
+import com.dochiri.ilsim.task.domain.vo.Stage
+import com.dochiri.ilsim.task.domain.vo.StageStatus
 import java.time.Instant
 
 data class StageResponse(
@@ -21,11 +23,16 @@ data class StageResponse(
     val validation: Map<String, String>,
     val costUsd: Double,
     val costByModel: Map<String, Double>,
+    /** 요구사항 단계에서 사용자가 보낸 대화 메시지. */
+    val messages: List<String>,
+    /** 대화를 이어 갈 수 있는지(요구사항 단계가 승인을 기다리는 중이고 횟수가 남았을 때). */
+    val conversable: Boolean,
 ) {
     companion object {
         fun from(s: StageState): StageResponse = StageResponse(
-            s.stage.name, s.status.name, s.attempt, s.feedback, s.lastErrorKey, s.routing, s.routingLog.toList(),
+            s.stage.name, s.status.name, s.attempt.value, s.feedback, s.lastErrorKey, s.routing, s.routingLog.toList(),
             s.error, s.diff, s.artifactHash, s.artifacts, s.validation, s.costUsd, s.costByModel,
+            s.messages, s.stage == Stage.REQUIREMENTS && s.status == StageStatus.WAITING_APPROVAL && s.messages.size < Task.MAX_MESSAGES,
         )
     }
 }
@@ -46,7 +53,8 @@ data class TaskResponse(
 ) {
     companion object {
         fun from(t: Task): TaskResponse = TaskResponse(
-            t.id, t.projectId, t.feature, t.requirement, t.createdAt, t.status.name, t.runnerId, t.branch, t.runs,
+            t.id.value, t.projectId.value, t.feature.value, t.requirement.value, t.createdAt, t.status.name,
+            t.runnerId?.value, t.branch?.value, t.runs.value,
             t.stages.map(StageResponse::from), t.costUsd(), t.costByModel(),
         )
     }

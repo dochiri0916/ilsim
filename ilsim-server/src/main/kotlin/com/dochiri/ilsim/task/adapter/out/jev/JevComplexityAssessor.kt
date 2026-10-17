@@ -17,7 +17,7 @@ class JevComplexityAssessor(private val jev: JevGateway) : ComplexityAssessor {
         val situation = linkedMapOf<String, Any?>(
             "stage" to state.stage.name,
             "attempt" to attempt,
-            "requirement" to task.requirement.take(REQUIREMENT_LIMIT),
+            "requirement" to task.requirement.value.take(REQUIREMENT_LIMIT),
         )
         state.feedback?.let { situation["previousFailure"] = it.take(FAILURE_LIMIT) }
         val answers = jev.evaluate(situation, mapOf("complexity" to COMPLEXITY, "risk" to RISK)) ?: return null

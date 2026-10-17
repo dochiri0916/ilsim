@@ -1,4 +1,4 @@
-package com.dochiri.ilsim.secret.configuration
+package com.dochiri.ilsim.secret.adapter.out.config
 
 import com.dochiri.ilsim.secret.adapter.out.crypto.AesGcmSecretEncryptor
 import com.dochiri.ilsim.secret.adapter.out.persistence.JpaSecretRepository

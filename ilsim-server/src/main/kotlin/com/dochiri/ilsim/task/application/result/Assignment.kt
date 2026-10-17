@@ -9,4 +9,6 @@ data class Assignment(
     val model: String,
     val effort: String,
     val prompt: String,
+    /** 요구사항 대화를 이어 갈 Claude 세션. 없으면 새 세션으로 시작한다. */
+    val resumeSessionId: String? = null,
 )

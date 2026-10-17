@@ -8,8 +8,8 @@ import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
-import com.dochiri.ilsim.task.domain.Stage
-import com.dochiri.ilsim.task.domain.StageStatus
+import com.dochiri.ilsim.task.domain.vo.Stage
+import com.dochiri.ilsim.task.domain.vo.StageStatus
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
 import java.time.Duration
@@ -32,7 +32,7 @@ class PersistenceTest {
         private fun check() = check(!down) { "db down" }
 
         override fun loadTasks(): List<Task> { check(); return tasks.values.map { json.readValue(it, TaskRecord::class.java).toTask() } }
-        override fun saveTask(task: Task) { check(); tasks[task.id] = json.writeValueAsString(TaskRecord.from(task)) }
+        override fun saveTask(task: Task) { check(); tasks[task.id.value] = json.writeValueAsString(TaskRecord.from(task)) }
         override fun loadEvents(taskId: String, limit: Int): List<TaskEvent> { check(); return events[taskId].orEmpty().toList() }
         override fun appendEvent(taskId: String, event: TaskEvent) { check(); events.getOrPut(taskId) { ArrayList() }.add(event) }
         override fun loadProjects(): Map<String, StoredProject> { check(); return projects }
@@ -52,25 +52,25 @@ class PersistenceTest {
         first.poll("r1", listOf(demo))
         val task = first.create("demo", "slug", "slugify 추가")
         first.poll("r1", listOf(demo))
-        first.addEvent(task.id, "REQUIREMENTS", "log", "시작")
+        first.addEvent(task.id.value, "REQUIREMENTS", "log", "시작")
         first.report(
-            task.id,
+            task.id.value,
             ReportStageCommand(true, false, "diff", null, mapOf("specs/slug/requirements.md" to "REQ-1"), mapOf("traceability" to "PASSED"), "branch-1"),
         )
-        first.approve(task.id)
+        first.approve(task.id.value)
 
         val second = service(store)
-        val restored = second.find(task.id)!!
-        assertThat(restored.feature).isEqualTo("slug")
-        assertThat(restored.requirement).isEqualTo("slugify 추가")
+        val restored = second.find(task.id.value)!!
+        assertThat(restored.feature.value).isEqualTo("slug")
+        assertThat(restored.requirement.value).isEqualTo("slugify 추가")
         assertThat(restored.createdAt).isEqualTo(task.createdAt)
-        assertThat(restored.branch).isEqualTo("branch-1")
+        assertThat(restored.branch?.value).isEqualTo("branch-1")
         val requirements = restored.stages.first()
         assertThat(requirements.status).isEqualTo(StageStatus.PASSED)
         assertThat(requirements.artifacts).containsEntry("specs/slug/requirements.md", "REQ-1")
         assertThat(requirements.validation).containsEntry("traceability", "PASSED")
         assertThat(restored.current()!!.stage).isEqualTo(Stage.TEST_CASES)
-        assertThat(second.events(task.id)).extracting<String?> { it.data }.containsExactly("시작")
+        assertThat(second.events(task.id.value)).extracting<String?> { it.data }.containsExactly("시작")
         assertThat(second.projects()).extracting<String> { it.project.id }.containsExactly("demo")
     }
 
@@ -81,9 +81,9 @@ class PersistenceTest {
         first.poll("r1", listOf(demo))
         val task = first.create("demo", "slug", "slugify 추가")
         first.poll("r1", listOf(demo))
-        first.report(task.id, ReportStageCommand(true, false, "diff", null, null, null, "b", 0.42, "claude-sonnet-5-5"))
+        first.report(task.id.value, ReportStageCommand(true, false, "diff", null, null, null, "b", 0.42, "claude-sonnet-5-5"))
 
-        val restored = service(store).find(task.id)!!
+        val restored = service(store).find(task.id.value)!!
         assertThat(restored.costUsd()).isEqualTo(0.42)
         assertThat(restored.costByModel()).containsEntry("claude-sonnet-5-5", 0.42)
     }
@@ -95,10 +95,10 @@ class PersistenceTest {
         first.poll("r1", listOf(demo))
         val task = first.create("demo", "slug", "x")
         assertThat(first.poll("r1", listOf(demo))).isNotNull()
-        assertThat(task.current()!!.status).isEqualTo(StageStatus.RUNNING)
+        assertThat(first.latest(task).current()!!.status).isEqualTo(StageStatus.RUNNING)
 
         val second = service(store)
-        assertThat(second.find(task.id)!!.current()!!.status).isEqualTo(StageStatus.PENDING)
+        assertThat(second.find(task.id.value)!!.current()!!.status).isEqualTo(StageStatus.PENDING)
         assertThat(second.poll("r1", listOf(demo))).isNotNull()
     }
 
@@ -110,8 +110,8 @@ class PersistenceTest {
         service.poll("r1", listOf(demo))
         val task = service.create("demo", "slug", "x")
         assertThat(service.poll("r1", listOf(demo))).isNotNull()
-        service.addEvent(task.id, "REQUIREMENTS", "log", "계속")
-        assertThat(service.events(task.id)).hasSize(1)
+        service.addEvent(task.id.value, "REQUIREMENTS", "log", "계속")
+        assertThat(service.events(task.id.value)).hasSize(1)
         assertThat(store.tasks).isEmpty()
     }
 

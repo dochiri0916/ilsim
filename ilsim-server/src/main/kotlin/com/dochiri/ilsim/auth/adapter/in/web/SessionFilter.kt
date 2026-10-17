@@ -27,7 +27,7 @@ class SessionFilter : OncePerRequestFilter() {
     private companion object {
         const val CSRF_HEADER = "X-Requested-With"
         const val CSRF_VALUE = "ilsim"
-        val PUBLIC = setOf("/api/status", "/api/auth/me", "/api/auth/setup", "/api/auth/login")
+        val PUBLIC = setOf("/api/status", "/api/auth/me", "/api/auth/login")
         val SAFE_METHODS = setOf("GET", "HEAD", "OPTIONS")
     }
 }

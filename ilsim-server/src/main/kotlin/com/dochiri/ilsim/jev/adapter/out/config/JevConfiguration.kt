@@ -1,4 +1,4 @@
-package com.dochiri.ilsim.jev.configuration
+package com.dochiri.ilsim.jev.adapter.out.config
 
 import com.dochiri.ilsim.jev.adapter.out.secret.SecretApiKeySource
 import com.dochiri.ilsim.jev.adapter.out.typesafe.TypeSafeJevGateway

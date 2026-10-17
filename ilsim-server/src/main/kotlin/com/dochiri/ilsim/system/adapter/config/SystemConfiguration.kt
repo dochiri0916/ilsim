@@ -1,4 +1,4 @@
-package com.dochiri.ilsim.system.configuration
+package com.dochiri.ilsim.system.adapter.config
 
 import com.dochiri.ilsim.system.adapter.`in`.mcp.PingTool
 import java.time.Clock

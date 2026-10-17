@@ -3,6 +3,7 @@ package com.dochiri.ilsim.task
 import com.dochiri.ilsim.task.application.port.out.ComplexityAssessor
 import com.dochiri.ilsim.task.application.port.out.StoredProject
 import com.dochiri.ilsim.task.application.port.out.TaskStore
+import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.Assessment
 import com.dochiri.ilsim.task.domain.StageState
 import com.dochiri.ilsim.task.domain.Task
@@ -40,3 +41,6 @@ object NoStore : TaskStore {
     override fun loadProjects(): Map<String, StoredProject> = emptyMap()
     override fun saveProject(id: String, project: StoredProject) {}
 }
+
+/** 작업은 불변이라 상태를 바꾼 뒤에는 서비스에서 다시 읽어야 최신 상태가 된다. */
+fun TaskService.latest(task: Task): Task = checkNotNull(find(task.id.value))

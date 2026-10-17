@@ -1,4 +1,4 @@
-package com.dochiri.ilsim.auth.configuration
+package com.dochiri.ilsim.auth.adapter.out.config
 
 import com.dochiri.ilsim.auth.adapter.out.persistence.AccountJpaRepository
 import com.dochiri.ilsim.auth.adapter.out.persistence.JpaAccountRepository

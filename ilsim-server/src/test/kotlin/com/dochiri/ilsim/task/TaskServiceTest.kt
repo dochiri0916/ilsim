@@ -5,10 +5,16 @@ import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
-import com.dochiri.ilsim.task.domain.Stage
-import com.dochiri.ilsim.task.domain.StageStatus
+import com.dochiri.ilsim.task.domain.StageState
+import com.dochiri.ilsim.task.domain.vo.Feature
+import com.dochiri.ilsim.task.domain.vo.ProjectId
+import com.dochiri.ilsim.task.domain.vo.Requirement
+import com.dochiri.ilsim.task.domain.vo.RunCount
+import com.dochiri.ilsim.task.domain.vo.Stage
+import com.dochiri.ilsim.task.domain.vo.TaskId
+import com.dochiri.ilsim.task.domain.vo.StageStatus
 import com.dochiri.ilsim.task.domain.Task
-import com.dochiri.ilsim.task.domain.TaskStatus
+import com.dochiri.ilsim.task.domain.vo.TaskStatus
 import com.dochiri.ilsim.task.domain.exception.InvalidTaskRequestException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -37,9 +43,9 @@ class TaskServiceTest {
         ReportStageCommand(passed = false, retryable = retryable, error = error, branch = "b")
 
     private fun toImplementation() {
-        poll(); service.report(task.id, pass()); service.approve(task.id)
-        poll(); service.report(task.id, pass()); service.approve(task.id)
-        poll(); service.report(task.id, pass())
+        poll(); service.report(task.id.value, pass()); service.approve(task.id.value)
+        poll(); service.report(task.id.value, pass()); service.approve(task.id.value)
+        poll(); service.report(task.id.value, pass())
     }
 
     @Test
@@ -52,21 +58,21 @@ class TaskServiceTest {
     @Test
     fun `승인 단계는 승인 전에는 다음 단계로 넘어가지 않는다`() {
         assertThat(poll()!!.stage).isEqualTo("REQUIREMENTS")
-        service.report(task.id, pass(mapOf("specs/slug/requirements.md" to "REQ-1")))
+        service.report(task.id.value, pass(mapOf("specs/slug/requirements.md" to "REQ-1")))
 
-        assertThat(task.current()!!.status).isEqualTo(StageStatus.WAITING_APPROVAL)
-        assertThat(task.current()!!.artifactHash).isNotBlank()
+        assertThat(service.latest(task).current()!!.status).isEqualTo(StageStatus.WAITING_APPROVAL)
+        assertThat(service.latest(task).current()!!.artifactHash).isNotBlank()
         assertThat(poll()).isNull()
 
-        service.approve(task.id)
+        service.approve(task.id.value)
         assertThat(poll()!!.stage).isEqualTo("TEST_CASES")
     }
 
     @Test
     fun `거절하면 피드백과 함께 같은 단계를 다시 실행한다`() {
         poll()
-        service.report(task.id, pass())
-        service.reject(task.id, "예외 상황 보강")
+        service.report(task.id.value, pass())
+        service.reject(task.id.value, "예외 상황 보강")
 
         val assignment = poll()!!
         assertThat(assignment.stage).isEqualTo("REQUIREMENTS")
@@ -77,29 +83,29 @@ class TaskServiceTest {
     fun `재시도 가능한 실패는 최대 횟수까지 재시도하고 이후 차단한다`() {
         repeat(Task.MAX_ATTEMPTS) {
             assertThat(poll()).isNotNull()
-            service.report(task.id, fail(true, "사유 $it".repeat(1) + "-" + "x".repeat(it)))
+            service.report(task.id.value, fail(true, "사유 $it".repeat(1) + "-" + "x".repeat(it)))
         }
-        assertThat(task.status).isEqualTo(TaskStatus.BLOCKED)
+        assertThat(service.latest(task).status).isEqualTo(TaskStatus.BLOCKED)
         assertThat(poll()).isNull()
 
-        service.retry(task.id)
-        assertThat(task.status).isEqualTo(TaskStatus.ACTIVE)
+        service.retry(task.id.value)
+        assertThat(service.latest(task).status).isEqualTo(TaskStatus.ACTIVE)
         assertThat(poll()).isNotNull()
     }
 
     @Test
     fun `재시도 불가 실패는 즉시 차단한다`() {
         poll()
-        service.report(task.id, fail(false))
-        assertThat(task.status).isEqualTo(TaskStatus.BLOCKED)
+        service.report(task.id.value, fail(false))
+        assertThat(service.latest(task).status).isEqualTo(TaskStatus.BLOCKED)
     }
 
     @Test
     fun `마지막 단계까지 통과하면 완료된다`() {
         toImplementation()
         poll()
-        service.report(task.id, pass())
-        assertThat(task.status).isEqualTo(TaskStatus.COMPLETED)
+        service.report(task.id.value, pass())
+        assertThat(service.latest(task).status).isEqualTo(TaskStatus.COMPLETED)
     }
 
     @Test
@@ -107,10 +113,10 @@ class TaskServiceTest {
         toImplementation()
         val first = poll()!!
         assertThat(first.stage).isEqualTo("IMPLEMENTATION")
-        service.report(task.id, fail(true, "Foo.kt:12 테스트 실패: expected 3"))
+        service.report(task.id.value, fail(true, "Foo.kt:12 테스트 실패: expected 3"))
 
         assertThat(poll()!!.attempt).isEqualTo(2)
-        service.report(task.id, fail(true, "Foo.kt:48 테스트 실패: expected 7"))
+        service.report(task.id.value, fail(true, "Foo.kt:48 테스트 실패: expected 7"))
 
         val third = poll()!!
         assertThat(third.attempt).isEqualTo(Task.MAX_ATTEMPTS)
@@ -121,8 +127,8 @@ class TaskServiceTest {
     @Test
     fun `사유가 달라지면 차례대로 시도한다`() {
         toImplementation()
-        poll(); service.report(task.id, fail(true, "테스트 실패"))
-        poll(); service.report(task.id, fail(true, "아키텍처 위반"))
+        poll(); service.report(task.id.value, fail(true, "테스트 실패"))
+        poll(); service.report(task.id.value, fail(true, "아키텍처 위반"))
         assertThat(poll()!!.attempt).isEqualTo(3)
     }
 
@@ -130,18 +136,26 @@ class TaskServiceTest {
     fun `거절은 사람의 개입이라 실행 횟수가 초기화된다`() {
         repeat(Task.MAX_TASK_RUNS) {
             poll()
-            service.report(task.id, pass())
-            service.reject(task.id, "다시")
+            service.report(task.id.value, pass())
+            service.reject(task.id.value, "다시")
         }
-        assertThat(task.runs).isZero()
+        assertThat(service.latest(task).runs.value).isZero()
         assertThat(poll()).isNotNull()
     }
 
     @Test
     fun `작업 전체 실행 횟수 상한에 닿으면 멈추고 재시도하면 초기화된다`() {
-        val exhausted = Task(
-            "id-limit", MutableClock().now, "demo", "limit", "x",
-            runs = Task.MAX_TASK_RUNS,
+        val exhausted = Task.restore(
+            id = TaskId.of("id-limit"),
+            createdAt = MutableClock().now,
+            projectId = ProjectId.of("demo"),
+            feature = Feature.of("limit"),
+            requirement = Requirement.of("x"),
+            status = TaskStatus.ACTIVE,
+            runnerId = null,
+            branch = null,
+            runs = RunCount.of(Task.MAX_TASK_RUNS),
+            stages = Stage.entries.map { StageState.initial(it) },
         )
         val store = object : com.dochiri.ilsim.task.application.port.out.TaskStore by NoStore {
             override fun loadTasks(): List<Task> = listOf(exhausted)
@@ -149,19 +163,19 @@ class TaskServiceTest {
         val restored = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), store, MutableClock(), "medium").also { it.restore() }
 
         assertThat(restored.poll("r1", listOf(demo))).isNull()
-        assertThat(exhausted.status).isEqualTo(TaskStatus.BLOCKED)
-        assertThat(exhausted.current()!!.error).contains("상한")
+        assertThat(restored.latest(exhausted).status).isEqualTo(TaskStatus.BLOCKED)
+        assertThat(restored.latest(exhausted).current()!!.error).contains("상한")
 
-        restored.retry(exhausted.id)
-        assertThat(exhausted.runs).isZero()
+        restored.retry(exhausted.id.value)
+        assertThat(restored.latest(exhausted).runs.value).isZero()
         assertThat(restored.poll("r1", listOf(demo))).isNotNull()
     }
 
     @Test
     fun `시도가 늘면 상위 모델로 올린다`() {
         val selector = ModelSelector(NoAssessor, ModelTier.SONNET)
-        val state = task.stage(Stage.IMPLEMENTATION)
-        assertThat(selector.select(task, state, 1)).isEqualTo(ModelTier.SONNET)
-        assertThat(selector.select(task, state, 3)).isEqualTo(ModelTier.OPUS)
+        val state = service.latest(task).stage(Stage.IMPLEMENTATION)
+        assertThat(selector.select(task, state, 1).tier).isEqualTo(ModelTier.SONNET)
+        assertThat(selector.select(task, state, 3).tier).isEqualTo(ModelTier.OPUS)
     }
 }

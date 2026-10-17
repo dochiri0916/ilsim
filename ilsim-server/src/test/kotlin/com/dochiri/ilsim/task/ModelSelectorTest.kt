@@ -4,14 +4,16 @@ import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.domain.Assessment
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.RoutingPolicy
-import com.dochiri.ilsim.task.domain.Stage
+import com.dochiri.ilsim.task.domain.vo.ProjectId
+import com.dochiri.ilsim.task.domain.vo.Stage
+import com.dochiri.ilsim.task.domain.vo.TaskId
 import com.dochiri.ilsim.task.domain.Task
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class ModelSelectorTest {
 
-    private fun newTask(requirement: String) = Task.create("id-1234567890", MutableClock().now, "demo", "slug", requirement)
+    private fun newTask(requirement: String) = Task.create(TaskId.of("id-1234567890"), MutableClock().now, ProjectId.of("demo"), "slug", requirement)
 
     @Test
     fun `정책은 평가 최소 모델 재시도로 등급을 정한다`() {
@@ -28,14 +30,14 @@ class ModelSelectorTest {
     @Test
     fun `쉬운 작업은 최소 모델로 위험한 작업은 상위 모델로 보내고 이력을 남긴다`() {
         val easy = newTask("쉬운 작업")
-        assertThat(ModelSelector(FakeAssessor(Assessment(0.4, 0.1)), ModelTier.HAIKU).select(easy, easy.stage(Stage.IMPLEMENTATION), 1))
+        assertThat(ModelSelector(FakeAssessor(Assessment(0.4, 0.1)), ModelTier.HAIKU).select(easy, easy.stage(Stage.IMPLEMENTATION), 1).tier)
             .isEqualTo(ModelTier.HAIKU)
 
         val risky = newTask("결제 취소")
-        val state = risky.stage(Stage.IMPLEMENTATION)
-        assertThat(ModelSelector(FakeAssessor(Assessment(2.8, 1.9)), ModelTier.SONNET).select(risky, state, 1)).isEqualTo(ModelTier.OPUS)
-        assertThat(state.routing).containsEntry("source", "jev").containsEntry("model", "opus")
-        assertThat(state.routingLog.first()).contains("시도 1", "opus", "JEV")
+        val decision = ModelSelector(FakeAssessor(Assessment(2.8, 1.9)), ModelTier.SONNET).select(risky, risky.stage(Stage.IMPLEMENTATION), 1)
+        assertThat(decision.tier).isEqualTo(ModelTier.OPUS)
+        assertThat(decision.state.routing).containsEntry("source", "jev").containsEntry("model", "opus")
+        assertThat(decision.state.routingLog.first()).contains("시도 1", "opus", "JEV")
     }
 
     @Test
@@ -44,9 +46,12 @@ class ModelSelectorTest {
         val selector = ModelSelector(assessor, ModelTier.HAIKU)
         val task = newTask("요구사항")
         val state = task.stage(Stage.IMPLEMENTATION)
-        assertThat(selector.select(task, state, 1)).isEqualTo(ModelTier.HAIKU)
-        assertThat(selector.select(task, state, 2)).isEqualTo(ModelTier.SONNET)
-        assertThat(selector.select(task, state, 3)).isEqualTo(ModelTier.OPUS)
+        val first = selector.select(task, state, 1)
+        val second = selector.select(task, first.state, 2)
+        val third = selector.select(task, second.state, 3)
+        assertThat(first.tier).isEqualTo(ModelTier.HAIKU)
+        assertThat(second.tier).isEqualTo(ModelTier.SONNET)
+        assertThat(third.tier).isEqualTo(ModelTier.OPUS)
         assertThat(assessor.calls).isEqualTo(1)
     }
 
@@ -55,8 +60,10 @@ class ModelSelectorTest {
         val selector = ModelSelector(NoAssessor, ModelTier.SONNET)
         val task = newTask("요구사항")
         val state = task.stage(Stage.IMPLEMENTATION)
-        assertThat(selector.select(task, state, 1)).isEqualTo(ModelTier.SONNET)
-        assertThat(selector.select(task, state, 3)).isEqualTo(ModelTier.OPUS)
-        assertThat(state.routingLog.first()).contains("규칙 기반", "키 없음")
+        val first = selector.select(task, state, 1)
+        val third = selector.select(task, first.state, 3)
+        assertThat(first.tier).isEqualTo(ModelTier.SONNET)
+        assertThat(third.tier).isEqualTo(ModelTier.OPUS)
+        assertThat(third.state.routingLog.first()).contains("규칙 기반", "키 없음")
     }
 }

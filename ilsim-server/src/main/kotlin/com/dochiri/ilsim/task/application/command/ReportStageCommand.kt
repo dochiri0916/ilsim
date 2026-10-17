@@ -12,6 +12,9 @@ data class ReportStageCommand(
     val branch: String? = null,
     val costUsd: Double? = null,
     val model: String? = null,
+    val reviewCostUsd: Double? = null,
+    val reviewModel: String? = null,
+    val sessionId: String? = null,
 ) {
-    fun toOutcome(): StageOutcome = StageOutcome(passed, retryable, diff, error, artifacts, validation, branch, costUsd, model)
+    fun toOutcome(): StageOutcome = StageOutcome(passed, retryable, diff, error, artifacts, validation, branch, costUsd, model, reviewCostUsd, reviewModel, sessionId)
 }

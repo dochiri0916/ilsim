@@ -2,23 +2,27 @@ import { useState } from 'react'
 import { api } from './api'
 import { usePoll } from './usePoll'
 
-/** 로그인 계정 목록과 추가. */
-function Accounts() {
-  const accounts = usePoll(api.accounts, 30000)
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
+/** 로그인한 계정의 비밀번호 변경. 계정 생성은 관리자가 DB 에서 직접 한다. */
+function Account() {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
   const [busy, setBusy] = useState(false)
+  const mismatch = confirm !== '' && confirm !== next
 
-  async function add(e: React.FormEvent) {
+  async function change(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
+    setDone(false)
     try {
-      await api.createAccount(username.trim(), password)
-      setUsername('')
-      setPassword('')
-      accounts.reload()
+      await api.changePassword(current, next)
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+      setDone(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -28,16 +32,20 @@ function Accounts() {
 
   return (
     <section>
-      <h2>계정</h2>
-      <p className="sub">이 화면에 로그인할 수 있는 계정입니다. 필요하면 더 추가하세요.</p>
-      <p>{accounts.data?.join(', ') ?? '불러오는 중…'}</p>
-      <form className="row" onSubmit={add}>
-        <input placeholder="아이디" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
-        <input type="password" placeholder="비밀번호 (8자 이상)" autoComplete="new-password" value={password}
-          onChange={(e) => setPassword(e.target.value)} />
-        <button disabled={busy || !username.trim() || password.length < 8}>추가</button>
+      <h2>비밀번호 변경</h2>
+      <p className="sub">계정은 관리자가 DB 에서 직접 만듭니다. 여기서는 내 비밀번호만 바꿀 수 있습니다.</p>
+      <form className="row" onSubmit={change}>
+        <input type="password" placeholder="현재 비밀번호" autoComplete="current-password" value={current}
+          onChange={(e) => setCurrent(e.target.value)} />
+        <input type="password" placeholder="새 비밀번호 (8자 이상)" autoComplete="new-password" value={next}
+          onChange={(e) => setNext(e.target.value)} />
+        <input type="password" placeholder="새 비밀번호 확인" autoComplete="new-password" value={confirm}
+          onChange={(e) => setConfirm(e.target.value)} />
+        <button disabled={busy || !current || next.length < 8 || next !== confirm}>변경</button>
       </form>
+      {mismatch && <p className="err">새 비밀번호가 서로 다릅니다</p>}
       {error && <p className="err">{error}</p>}
+      {done && <p className="sub">변경했습니다</p>}
     </section>
   )
 }
@@ -102,7 +110,7 @@ export function Settings() {
       </form>
       {error && <p className="err">{error}</p>}
     </section>
-    <Accounts />
+    <Account />
     </>
   )
 }

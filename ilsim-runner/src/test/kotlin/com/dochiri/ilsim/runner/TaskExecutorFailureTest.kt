@@ -258,4 +258,50 @@ class TaskExecutorFailureTest {
         val r = run("REQUIREMENTS") { _, _, _, _ -> error("claude 없음") }
         assertNull(r.costUsd)
     }
+
+    private fun resumeTask() = task("REQUIREMENTS").copy(resumeSessionId = "sess-1")
+
+    @Test
+    fun `이어 갈 세션이 있으면 그 세션으로 실행하고 새 세션 id 를 결과에 싣는다`() {
+        val seen = mutableListOf<String?>()
+        executor { w, t, p, l ->
+            seen += t.resumeSessionId
+            writes(requirements).run(w, t, p, l).copy(sessionId = "sess-1", costUsd = 0.05)
+        }.run(resumeTask())
+        val r = assertNotNull(sink.result)
+        assertTrue(r.passed)
+        assertEquals(listOf<String?>("sess-1"), seen)
+        assertEquals("sess-1", r.sessionId)
+    }
+
+    @Test
+    fun `이어 가기가 실패하면 새 세션으로 다시 하고 두 실행의 비용을 합친다`() {
+        val seen = mutableListOf<String?>()
+        executor { w, t, p, l ->
+            seen += t.resumeSessionId
+            if (t.resumeSessionId != null) AgentRun(1, costUsd = 0.01)
+            else writes(requirements).run(w, t, p, l).copy(sessionId = "new-sess", costUsd = 0.1)
+        }.run(resumeTask())
+        val r = assertNotNull(sink.result)
+        assertTrue(r.passed)
+        assertEquals(listOf<String?>("sess-1", null), seen)
+        assertEquals("new-sess", r.sessionId)
+        assertEquals(0.11, r.costUsd!!, 1e-9)
+        assertTrue(sink.events.any { it.contains("새 세션으로 다시") })
+    }
+
+    @Test
+    fun `시간 초과는 새 세션으로 다시 하지 않는다`() {
+        var calls = 0
+        executor { _, _, _, _ -> calls++; AgentRun(-1, timedOut = true) }.run(resumeTask())
+        assertEquals(1, calls)
+        assertTrue(assertNotNull(sink.result).error!!.contains("넘겨 중단"))
+    }
+
+    @Test
+    fun `세션이 없는 일반 실행은 실패해도 다시 하지 않는다`() {
+        var calls = 0
+        executor { _, _, _, _ -> calls++; AgentRun(2) }.run(task("REQUIREMENTS"))
+        assertEquals(1, calls)
+    }
 }

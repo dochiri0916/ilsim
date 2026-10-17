@@ -4,6 +4,7 @@ import com.dochiri.ilsim.task.application.command.ReportStageCommand
 import com.dochiri.ilsim.task.application.result.Assignment
 import com.dochiri.ilsim.task.domain.Project
 import com.dochiri.ilsim.task.domain.ProjectStatus
+import com.dochiri.ilsim.task.domain.Stats
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
 
@@ -12,6 +13,9 @@ interface ManageTaskUseCase {
     fun create(projectId: String, feature: String?, requirement: String?): Task
 
     fun approve(taskId: String)
+
+    /** 승인 전의 요구사항에 말을 건다. 같은 세션을 이어 문서를 고친다. */
+    fun message(taskId: String, text: String?)
 
     fun reject(taskId: String, feedback: String?)
 
@@ -26,6 +30,9 @@ interface QueryTaskUseCase {
     fun events(taskId: String): List<TaskEvent>
 
     fun projects(): List<ProjectStatus>
+
+    /** 모델별·단계별 사용 집계. */
+    fun stats(): Stats
 }
 
 /** Runner 가 일감을 받아 가고 진행과 결과를 보고한다. */

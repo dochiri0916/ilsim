@@ -62,7 +62,7 @@ private const val USAGE = """사용법:
   JEV
     ilsim-runner jev                             JEV 연결 확인 (환경 변수 TYPESAFE_API_KEY 필요)
   실행
-    ilsim-runner run                             서버에 연결해 작업 수행 (ILSIM_TOKEN 필요)"""
+    ilsim-runner run                             서버에 연결해 작업 수행 (토큰: ILSIM_TOKEN 또는 서버가 만든 ~/.ilsim/token)"""
 
 private const val AI_MODEL = ClaudeModels.REVIEW
 
@@ -117,30 +117,37 @@ private fun detect(args: Array<String>) {
 
 private fun architecture(store: ConfigStore, args: Array<String>) {
     if (args.size < 2) { println(USAGE); exitProcess(1) }
-    val registered = store.load().projects[args[1]]
-    val path = Path.of(registered?.path ?: args[1]).toAbsolutePath().normalize()
+    analyzeArchitecture(store, args[1], System.out)
+}
+
+/** [id] 가 등록된 프로젝트면 규칙을 저장하고 AI 검토까지 한다. 등록되지 않았으면 경로로 보고 분석만 한다. 출력은 [out] 으로 보낸다. */
+fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
+    val registered = store.load().projects[id]
+    val path = Path.of(registered?.path ?: id).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
     val archStore = ArchitectureStore(store)
     // 다시 분석해도 사용자가 내린 승인·거절과 AI 의견은 같은 규칙에 유지한다.
-    var model = RuleApproval.carryOver(registered?.let { archStore.load(args[1]) }, ArchitectureMiner.mine(path, profile))
+    var model = RuleApproval.carryOver(registered?.let { archStore.load(id) }, ArchitectureMiner.mine(path, profile))
     val self = if (model.rules.isEmpty()) null else ArchitectureChecker.check(path, profile, model)
     if (registered != null) {
-        println("저장: ${archStore.save(args[1], model)} (프로젝트 ${args[1]} 전용)")
-    } else println("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
-    print(ArchitectureReport.summary(model, self))
+        out.appendLine("저장: ${archStore.save(id, model)} (프로젝트 ${id} 전용)")
+    } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
+    out.append(ArchitectureReport.summary(model, self))
     if (registered != null && model.rules.isNotEmpty()) {
         // 정적으로 만든 규칙을 AI가 한 번 검토하고, 확실한 것만 승인한다. 애매한 것은 사용자에게 넘긴다.
+        val cost = CostTally()
         try {
             val docs = DocumentContext.build(path, DocPurpose.ARCHITECTURE)
-            if (!docs.isEmpty) println("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
-            model = ArchitectureReviewer.review(model, AI_MODEL, docs = docs) { ClaudeCli.ask(it, AI_MODEL) }
+            if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
+            model = ArchitectureReviewer.review(model, AI_MODEL, docs = docs) { cost.ask(it, AI_MODEL) }
             model = RuleApproval.autoApprove(model)
-            archStore.save(args[1], model)
-            println()
-            print(ArchitectureReport.triage(model, args[1]))
+            archStore.save(id, model)
+            out.appendLine()
+            out.append(ArchitectureReport.triage(model, id))
         } catch (e: Exception) {
-            println("AI 검토를 건너뜀: ${e.message} (규칙은 후보 상태로 저장됨)")
+            out.appendLine("AI 검토를 건너뜀: ${e.message} (규칙은 후보 상태로 저장됨)")
         }
+        cost.summary()?.let { out.appendLine(it) }
     }
 }
 
@@ -265,13 +272,15 @@ private fun reviewRisk(store: ConfigStore, args: Array<String>) {
         exitProcess(0)
     }
     val targets = findings.filter { it.ruleId in config.aiReview }
+    val cost = CostTally()
     try {
         val known = opinionStore.load(args[1])
-        val updated = RiskReviewer.review(path, targets, known, AI_MODEL, false, JevRiskScreen.of(Jev.fromEnvironment(), path)) { ClaudeCli.ask(it, AI_MODEL) }
+        val updated = RiskReviewer.review(path, targets, known, AI_MODEL, false, JevRiskScreen.of(Jev.fromEnvironment(), path)) { cost.ask(it, AI_MODEL) }
         opinionStore.save(args[1], updated)
         val reviewed = targets.filter { it.severity == "REVIEW" }.mapNotNull { updated[RiskReviewer.fingerprint(path, it)] }
         println("검토: 승인한 규칙(${config.aiReview.sorted().joinToString()})의 후보 ${targets.count { it.severity == "REVIEW" }}건 중 ${reviewed.size}건에 의견 (실제 위험 ${reviewed.count { it.verdict == "TRUE" }}, 오탐 ${reviewed.count { it.verdict == "FALSE" }}, 불확실 ${reviewed.count { it.verdict == "UNSURE" }})")
         println("자세한 내용: risk ${args[1]}")
+        cost.summary()?.let(::println)
     } catch (e: IllegalArgumentException) {
         println(e.message); exitProcess(1)
     } catch (e: IllegalStateException) {
@@ -355,30 +364,37 @@ private fun riskSet(store: ConfigStore, args: Array<String>) {
 
 private fun convention(store: ConfigStore, args: Array<String>) {
     if (args.size < 2) { println(USAGE); exitProcess(1) }
-    val registered = store.load().projects[args[1]]
-    val path = Path.of(registered?.path ?: args[1]).toAbsolutePath().normalize()
+    analyzeConvention(store, args[1], System.out)
+}
+
+/** [id] 가 등록된 프로젝트면 규칙을 저장하고 AI 검토까지 한다. 등록되지 않았으면 경로로 보고 분석만 한다. 출력은 [out] 으로 보낸다. */
+fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
+    val registered = store.load().projects[id]
+    val path = Path.of(registered?.path ?: id).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
-    val previous = registered?.let { ConventionStore(store).load(args[1]) }
+    val previous = registered?.let { ConventionStore(store).load(id) }
     val mined = ConventionMiner.mine(path, profile)
     // 다시 분석해도 사용자가 내린 승인·거절과 AI 의견은 같은 규칙에 유지한다.
     var model = ConventionApproval.carryOver(previous, mined)
     val self = if (model.rules.isEmpty()) null else ConventionChecker.check(path, profile, model)
     if (registered != null) {
-        println("저장: ${ConventionStore(store).save(args[1], model)} (프로젝트 ${args[1]} 전용)")
-    } else println("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
-    print(ConventionReport.summary(model, self))
+        out.appendLine("저장: ${ConventionStore(store).save(id, model)} (프로젝트 ${id} 전용)")
+    } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
+    out.append(ConventionReport.summary(model, self))
     if (registered != null && model.rules.isNotEmpty()) {
+        val cost = CostTally()
         try {
             val docs = DocumentContext.build(path, DocPurpose.CONVENTION)
-            if (!docs.isEmpty) println("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
-            model = ConventionReviewer.review(model, AI_MODEL, docs = docs) { ClaudeCli.ask(it, AI_MODEL) }
+            if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
+            model = ConventionReviewer.review(model, AI_MODEL, docs = docs) { cost.ask(it, AI_MODEL) }
             model = ConventionApproval.autoApprove(model)
-            ConventionStore(store).save(args[1], model)
-            println()
-            print(ConventionReport.triage(model, args[1]))
+            ConventionStore(store).save(id, model)
+            out.appendLine()
+            out.append(ConventionReport.triage(model, id))
         } catch (e: Exception) {
-            println("AI 검토를 건너뜀: ${e.message} (규칙은 후보 상태로 저장됨)")
+            out.appendLine("AI 검토를 건너뜀: ${e.message} (규칙은 후보 상태로 저장됨)")
         }
+        cost.summary()?.let { out.appendLine(it) }
     }
 }
 
@@ -431,8 +447,30 @@ private fun set(store: ConfigStore, args: Array<String>) {
     println("설정: ${args[1]} ${args[2]} = $command")
 }
 
+/** 웹의 분석 버튼: 아키텍처와 컨벤션 규칙을 차례로 다시 뽑는다. 앞이 실패해도 뒤는 돌린다. */
+private fun analyzeProject(store: ConfigStore, projectId: String): AnalysisResult {
+    val out = StringBuilder()
+    val errors = mutableListOf<String>()
+    for ((label, analyze) in listOf<Pair<String, (ConfigStore, String, Appendable) -> Unit>>(
+        "아키텍처" to ::analyzeArchitecture,
+        "컨벤션" to ::analyzeConvention,
+    )) {
+        out.appendLine("[$label]")
+        try {
+            analyze(store, projectId, out)
+        } catch (e: Exception) {
+            errors += "$label 분석 실패: ${e.message}"
+            out.appendLine(errors.last())
+        }
+        out.appendLine()
+    }
+    return AnalysisResult(errors.isEmpty(), out.toString().trimEnd(), errors.joinToString("\n").ifEmpty { null })
+}
+
 private fun run(store: ConfigStore) {
-    val token = System.getenv("ILSIM_TOKEN") ?: run { println("ILSIM_TOKEN 환경변수가 필요합니다"); exitProcess(1) }
+    val tokenFile = store.location.parent.resolve("token")
+    val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), tokenFile)
+        ?: run { println("토큰이 없습니다. 서버를 먼저 실행해 ${tokenFile} 을 만들거나 ILSIM_TOKEN 환경변수를 설정하세요"); exitProcess(1) }
     val config = store.load()
     val client = ServerClient(config.serverUrl, token)
     val executor = TaskExecutor(config, client)
@@ -440,6 +478,12 @@ private fun run(store: ConfigStore) {
     println("runner ${config.runnerId} -> ${config.serverUrl}, 프로젝트 ${report.map { it.id }}")
     while (true) {
         try {
+            client.claimAnalysis(AnalysisClaim(config.runnerId, report.map { it.id }))?.let { projectId ->
+                println("분석 수신: $projectId")
+                client.analysisResult(projectId, analyzeProject(store, projectId))
+                println("분석 종료: $projectId")
+                continue
+            }
             val task = client.poll(PollRequest(config.runnerId, report))
             if (task != null) {
                 println("작업 수신: ${task.taskId} (${task.projectId})")

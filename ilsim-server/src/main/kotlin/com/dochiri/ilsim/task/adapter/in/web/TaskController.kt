@@ -2,6 +2,7 @@ package com.dochiri.ilsim.task.adapter.`in`.web
 
 import com.dochiri.ilsim.task.application.port.`in`.ManageTaskUseCase
 import com.dochiri.ilsim.task.application.port.`in`.QueryTaskUseCase
+import com.dochiri.ilsim.task.domain.Stats
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -20,8 +21,13 @@ class TaskController(
 
     data class RejectRequest(val feedback: String? = null)
 
+    data class MessageRequest(val text: String? = null)
+
     @GetMapping("/projects")
     fun projects(): List<ProjectResponse> = query.projects().map(ProjectResponse::from)
+
+    @GetMapping("/stats")
+    fun stats(): Stats = query.stats()
 
     @PostMapping("/tasks")
     fun create(@RequestBody request: CreateTaskRequest): TaskResponse =
@@ -38,6 +44,9 @@ class TaskController(
 
     @PostMapping("/tasks/{id}/approve")
     fun approve(@PathVariable id: String) = manage.approve(id)
+
+    @PostMapping("/tasks/{id}/messages")
+    fun message(@PathVariable id: String, @RequestBody request: MessageRequest) = manage.message(id, request.text)
 
     @PostMapping("/tasks/{id}/reject")
     fun reject(@PathVariable id: String, @RequestBody request: RejectRequest) = manage.reject(id, request.feedback)

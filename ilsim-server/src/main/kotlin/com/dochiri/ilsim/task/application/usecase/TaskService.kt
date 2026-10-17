@@ -10,8 +10,12 @@ import com.dochiri.ilsim.task.application.result.Assignment
 import com.dochiri.ilsim.task.domain.Project
 import com.dochiri.ilsim.task.domain.ProjectStatus
 import com.dochiri.ilsim.task.domain.PromptTemplates
+import com.dochiri.ilsim.task.domain.Stats
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
+import com.dochiri.ilsim.task.domain.vo.ProjectId
+import com.dochiri.ilsim.task.domain.vo.RunnerId
+import com.dochiri.ilsim.task.domain.vo.TaskId
 import com.dochiri.ilsim.task.domain.exception.InvalidTaskRequestException
 import com.dochiri.ilsim.task.domain.exception.TaskNotFoundException
 import java.time.Clock
@@ -48,8 +52,8 @@ class TaskService(
                 savedSeen[id] = p.lastSeen
             }
             store.loadTasks().forEach { task ->
-                task.recoverAfterRestart()
-                tasks[task.id] = task
+                val recovered = task.recoverAfterRestart()
+                tasks[recovered.id.value] = recovered
             }
             if (tasks.isNotEmpty()) log.info("저장된 작업 {}건을 되살렸습니다", tasks.size)
         } catch (e: RuntimeException) {
@@ -59,14 +63,16 @@ class TaskService(
 
     override fun create(projectId: String, feature: String?, requirement: String?): Task {
         if (!projects.containsKey(projectId)) throw InvalidTaskRequestException("등록되지 않은 프로젝트: $projectId")
-        val task = Task.create(UUID.randomUUID().toString(), clock.instant(), projectId, feature, requirement)
-        tasks[task.id] = task
-        events[task.id] = Collections.synchronizedList(ArrayList())
+        val task = Task.create(TaskId.of(UUID.randomUUID().toString()), clock.instant(), ProjectId.of(projectId), feature, requirement)
+        tasks[task.id.value] = task
+        events[task.id.value] = Collections.synchronizedList(ArrayList())
         persist(task)
         return task
     }
 
     override fun find(taskId: String): Task? = tasks[taskId]
+
+    override fun stats(): Stats = Stats.of(tasks.values)
 
     override fun list(): List<Task> = tasks.values.sortedByDescending { it.createdAt }
 
@@ -103,22 +109,24 @@ class TaskService(
         reported.forEach { register(it, runnerId, now) }
         val ids = reported.map { it.id }.toSet()
 
-        tasks.values.filter { it.hitRunLimit() }.forEach {
-            it.stopForRunLimit()
-            persist(it)
-        }
-        val task = tasks.values
-            .filter { it.projectId in ids && it.isRunnable() }
+        tasks.values.filter { it.hitRunLimit() }.forEach { update(it.id.value) { task -> task.stopForRunLimit() } }
+        val chosen = tasks.values
+            .filter { it.projectId.value in ids && it.isRunnable() }
             .minByOrNull { it.createdAt } ?: return null
 
-        val stage = task.assign(runnerId)
-        val tier = selector.select(task, stage, stage.attempt)
-        val assignment = Assignment(
-            task.id, task.projectId, stage.stage.name, stage.attempt, task.feature,
-            tier.modelId, effort, PromptTemplates.build(task, stage.stage, stage.feedback),
+        val assigned = chosen.assign(RunnerId.of(runnerId))
+        val stage = checkNotNull(assigned.current())
+        val decision = selector.select(assigned, stage, stage.attempt.value)
+        val routed = assigned.updateCurrent(decision.state)
+        tasks[routed.id.value] = routed
+        persist(routed)
+        val pending = decision.state.pendingMessage
+        val prompt = if (pending != null) PromptTemplates.followUp(routed, pending, decision.state.feedback)
+        else PromptTemplates.build(routed, stage.stage, decision.state.feedback)
+        return Assignment(
+            routed.id.value, routed.projectId.value, stage.stage.name, stage.attempt.value, routed.feature.value,
+            decision.tier.modelId, effort, prompt, decision.state.sessionId.takeIf { pending != null },
         )
-        persist(task)
-        return assignment
     }
 
     private fun register(project: Project, runnerId: String, now: Instant) {
@@ -149,30 +157,36 @@ class TaskService(
 
     @Synchronized
     override fun report(taskId: String, command: ReportStageCommand) {
-        val task = require(taskId)
-        task.report(command.toOutcome())
-        persist(task)
+        update(taskId) { it.report(command.toOutcome()) }
     }
 
     @Synchronized
     override fun approve(taskId: String) {
-        val task = require(taskId)
-        task.approve()
-        persist(task)
+        update(taskId) { it.approve() }
+    }
+
+    @Synchronized
+    override fun message(taskId: String, text: String?) {
+        update(taskId) { it.message(text) }
     }
 
     @Synchronized
     override fun reject(taskId: String, feedback: String?) {
-        val task = require(taskId)
-        task.reject(feedback)
-        persist(task)
+        update(taskId) { it.reject(feedback) }
     }
 
     @Synchronized
     override fun retry(taskId: String) {
-        val task = require(taskId)
-        task.retry()
-        persist(task)
+        update(taskId) { it.retry() }
+    }
+
+    /** 작업을 바꾼 새 인스턴스로 교체하고 저장한다. 없는 작업이면 [TaskNotFoundException]. */
+    private fun update(taskId: String, change: (Task) -> Task): Task {
+        val current = tasks[taskId] ?: throw TaskNotFoundException(taskId)
+        val next = change(current)
+        tasks[taskId] = next
+        persist(next)
+        return next
     }
 
     private fun persist(task: Task) {
@@ -182,8 +196,6 @@ class TaskService(
             log.warn("작업 저장에 실패했습니다(메모리에서는 계속 동작): {}", e.message)
         }
     }
-
-    private fun require(id: String): Task = tasks[id] ?: throw TaskNotFoundException(id)
 
     private companion object {
         val log = LoggerFactory.getLogger(TaskService::class.java)

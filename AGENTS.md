@@ -16,6 +16,7 @@
 - Gradle은 저장소 루트의 Wrapper로 실행한다(`./gradlew :ilsim-server:test`). `build-convention`만 자체 Wrapper를 쓴다.
 - 요청 범위 밖 리팩터링이나 검증 규칙 완화를 하지 않는다.
 - 기존 커밋 SHA와 이력을 보존한다. 이력 재작성이나 squash는 명시적인 요청 없이 하지 않는다.
+- 세션을 시작하면 [세션 인수인계](docs/handoff.md)를 읽고, 작업을 마치면 갱신한다. PC 전용 설정에 기능을 두지 않는다.
 
 ## 응답 형식
 

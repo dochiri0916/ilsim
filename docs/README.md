@@ -36,6 +36,7 @@ Build Convention의 모듈·플러그인 ID·검사·보고서 개요는 [프로
 |---|---|
 | 빌드·검증, Git 이력·원본 저장소·보존 브랜치 | [저장소 개발과 이력](repository.md) |
 | 저장소 작업 지침 | [루트 AGENTS](../AGENTS.md) |
+| AI 세션 인수인계(진행 상태·로컬 실행 환경) | [세션 인수인계](handoff.md) |
 | 플러그인 개발 지침 | [Build Convention AGENTS](../build-convention/AGENTS.md) |
 | SARIF 스키마 출처·SHA-256 | [스키마 기록](../code-risk-analyzer/src/test/resources/schemas/README.md) |
 

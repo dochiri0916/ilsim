@@ -35,7 +35,7 @@ class TaskExecutor(
     private val configStore: ConfigStore = ConfigStore(),
     private val agent: ClaudeAgent = ProcessClaudeAgent,
     /** 도구 없이 한 번 묻는 AI 호출(변경 검토, 위험 검토). */
-    private val ask: (prompt: String, model: String) -> String = ClaudeCli::ask,
+    ask: ((prompt: String, model: String) -> String)? = null,
     private val architectures: ArchitectureStore = ArchitectureStore(configStore),
     private val conventions: ConventionStore = ConventionStore(configStore),
 ) {
@@ -45,14 +45,28 @@ class TaskExecutor(
     /** 이번 실행에서 Claude 가 쓴 비용. 실패해도 이미 쓴 비용이므로 결과에 항상 싣는다. */
     private var runCost: Double? = null
 
+    /** 이번 실행에서 Claude 가 연 세션. 요구사항 대화를 이어 갈 때 서버가 쓴다. */
+    private var runSession: String? = null
+
+    /** 이번 실행에서 AI 검토 호출에 쓴 비용. */
+    private var reviewCost: Double? = null
+
+    private val ask: (prompt: String, model: String) -> String = ask ?: { prompt, model ->
+        val a = ClaudeCli.askWithCost(prompt, model)
+        a.costUsd?.let { reviewCost = (reviewCost ?: 0.0) + it }
+        a.text
+    }
+
     fun run(task: AssignedTask) {
         runCost = null
+        runSession = null
+        reviewCost = null
         val result = try {
             execute(task)
         } catch (e: Exception) {
             StageResult(passed = false, retryable = false, error = e.message ?: e.toString())
         }
-        client.result(task.taskId, result.copy(costUsd = runCost, model = task.model))
+        client.result(task.taskId, result.copy(costUsd = runCost, model = task.model, reviewCostUsd = reviewCost, reviewModel = ClaudeModels.REVIEW, sessionId = runSession))
     }
 
     /** 코드를 쓰는 단계에는 승인된 기존 규칙을 함께 알려 준다. */
@@ -62,6 +76,11 @@ class TaskExecutor(
             architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId),
         )
         return if (brief == null) task.prompt else task.prompt + "\n\n" + brief
+    }
+
+    private fun accumulate(run: AgentRun) {
+        run.costUsd?.let { runCost = (runCost ?: 0.0) + it }
+        run.sessionId?.let { runSession = it }
     }
 
     private fun log(task: AssignedTask, msg: String) = client.event(task.taskId, task.stage, "log", msg)
@@ -79,10 +98,18 @@ class TaskExecutor(
         }
 
         log(task, "claude 실행 (model=${task.model}, attempt=${task.attempt})")
-        val run = agent.run(worktree, task, promptWithRules(task)) { line ->
+        val onLine: (String) -> Unit = { line ->
             StreamSummarizer.summarize(line).forEach { (type, data) -> client.event(task.taskId, task.stage, type, data) }
         }
-        runCost = run.costUsd
+        var run = agent.run(worktree, task, promptWithRules(task), onLine)
+        accumulate(run)
+        if (task.resumeSessionId != null && run.exit != 0 && !run.timedOut) {
+            // 이어 갈 세션을 잃었으면(기록 삭제 등) 새 세션으로 다시 한다. 지시문이 문서 경로를 알려 주므로 파일에서 이어진다.
+            log(task, "이전 세션을 이어 가지 못해 새 세션으로 다시 실행합니다")
+            val fresh = task.copy(resumeSessionId = null)
+            run = agent.run(worktree, fresh, promptWithRules(fresh), onLine)
+            accumulate(run)
+        }
         if (run.timedOut) return StageResult(false, retryable = true, error = "claude 실행이 ${CLAUDE_TIMEOUT_MINUTES}분을 넘겨 중단했습니다. 범위를 줄여 다시 시도하세요", branch = branch)
         if (run.exit != 0) return StageResult(false, retryable = true, error = "claude 종료 코드 ${run.exit}", branch = branch)
 

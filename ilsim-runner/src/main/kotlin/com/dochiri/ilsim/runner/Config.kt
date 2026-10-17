@@ -44,3 +44,12 @@ class ConfigStore(
 
     val location: Path get() = file
 }
+
+/**
+ * 서버에 보내는 토큰. 환경 변수 ILSIM_TOKEN 이 있으면 그 값, 없으면 서버가 만든 `~/.ilsim/token` 파일.
+ * 같은 PC 에서 서버를 먼저 띄우면 파일이 생기므로 따로 설정하지 않아도 된다.
+ */
+object RunnerToken {
+    fun resolve(env: String?, file: Path): String? =
+        env?.takeIf { it.isNotBlank() } ?: file.takeIf { it.exists() }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
+}

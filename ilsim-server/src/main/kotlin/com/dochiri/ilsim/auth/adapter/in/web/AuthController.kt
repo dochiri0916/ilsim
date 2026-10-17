@@ -2,8 +2,6 @@ package com.dochiri.ilsim.auth.adapter.`in`.web
 
 import com.dochiri.ilsim.auth.application.port.`in`.AuthUseCase
 import com.dochiri.ilsim.auth.application.usecase.AuthService
-import com.dochiri.ilsim.auth.domain.exception.SetupAlreadyDoneException
-import com.dochiri.ilsim.auth.domain.exception.DuplicateUsernameException
 import com.dochiri.ilsim.auth.domain.exception.InvalidAccountException
 import com.dochiri.ilsim.auth.domain.exception.LoginLockedException
 import jakarta.servlet.http.HttpServletRequest
@@ -20,19 +18,13 @@ class AuthController(private val auth: AuthUseCase) {
 
     data class Credentials(val username: String? = null, val password: String? = null)
 
-    /** user 가 없으면 로그인 전. setup 이 true 면 관리자 계정부터 만들어야 한다. */
-    data class AuthState(val setup: Boolean, val user: String? = null)
+    data class PasswordChange(val currentPassword: String? = null, val newPassword: String? = null)
 
-    /** 로그인 상태와 최초 설정 필요 여부. 화면이 어떤 입력을 보여 줄지 정한다. */
+    /** user 가 없으면 로그인 전. */
+    data class AuthState(val user: String? = null)
+
     @GetMapping("/api/auth/me")
-    fun me(req: HttpServletRequest): AuthState {
-        val user = req.getSession(false)?.getAttribute(SESSION_USER) as? String
-        return if (user != null) AuthState(false, user) else AuthState(auth.needsSetup())
-    }
-
-    @PostMapping("/api/auth/setup")
-    fun setup(@RequestBody body: Credentials, req: HttpServletRequest): AuthState =
-        start(req, auth.setup(body.username, body.password))
+    fun me(req: HttpServletRequest): AuthState = AuthState(req.getSession(false)?.getAttribute(SESSION_USER) as? String)
 
     @PostMapping("/api/auth/login")
     fun login(@RequestBody body: Credentials, req: HttpServletRequest): ResponseEntity<Any> {
@@ -50,24 +42,24 @@ class AuthController(private val auth: AuthUseCase) {
     private fun start(req: HttpServletRequest, user: String): AuthState {
         req.getSession(false)?.invalidate() // 세션 고정 공격 방지: 로그인마다 새 세션
         req.getSession(true).setAttribute(SESSION_USER, user)
-        return AuthState(false, user)
+        return AuthState(user)
     }
 
-    /** 로그인한 사용자만 부를 수 있다([SessionFilter]). */
-    @GetMapping("/api/accounts")
-    fun accounts(): List<String> = auth.usernames()
-
-    @PostMapping("/api/accounts")
-    fun createAccount(@RequestBody body: Credentials): Map<String, String> =
-        mapOf("username" to auth.createAccount(body.username, body.password))
+    /** 로그인한 사용자가 자기 비밀번호를 바꾼다. 계정 생성은 관리자가 DB 에서 직접 한다. */
+    @PostMapping("/api/auth/password")
+    fun changePassword(@RequestBody body: PasswordChange, req: HttpServletRequest): ResponseEntity<Any> {
+        val user = req.getSession(false)?.getAttribute(SESSION_USER) as? String
+            ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
+        if (!auth.changePassword(req.remoteAddr, user, body.currentPassword, body.newPassword)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to "현재 비밀번호가 맞지 않습니다"))
+        }
+        start(req, user) // 비밀번호를 바꾸면 세션도 새로 시작한다
+        return ResponseEntity.noContent().build()
+    }
 
     @ExceptionHandler(InvalidAccountException::class)
     fun invalid(e: InvalidAccountException): ResponseEntity<Map<String, String?>> =
         ResponseEntity.badRequest().body(mapOf("error" to e.message))
-
-    @ExceptionHandler(SetupAlreadyDoneException::class, DuplicateUsernameException::class)
-    fun conflict(e: RuntimeException): ResponseEntity<Map<String, String?>> =
-        ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to e.message))
 
     @ExceptionHandler(LoginLockedException::class)
     fun locked(e: LoginLockedException): ResponseEntity<Map<String, String?>> =

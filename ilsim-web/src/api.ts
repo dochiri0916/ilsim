@@ -14,6 +14,9 @@ export interface StageState {
   routingLog?: string[]
   costUsd?: number
   costByModel?: Record<string, number>
+  /** 요구사항 단계에서 사용자가 보낸 대화 메시지와, 지금 말을 걸 수 있는지 */
+  messages: string[]
+  conversable: boolean
 }
 
 export interface Task {
@@ -67,21 +70,77 @@ export interface Settings {
   jev: { configured: boolean; last4: string | null; updatedAt: string | null }
 }
 
+export interface RuleView {
+  id: string
+  kind: string
+  description: string
+  severity: string | null
+  approved: boolean
+  rejected: boolean
+  decidedBy: string | null
+  reviewVerdict: string | null
+  reviewReason: string | null
+}
+
+export interface MemoryView {
+  id: string
+  kind: string
+  ruleId: string
+  file: string
+  summary: string
+  recommendation: string
+  status: 'CANDIDATE' | 'ACTIVE' | 'SUPERSEDED' | string
+  createdAt: string | null
+  approvedAt: string | null
+  supersededReason: string | null
+}
+
+export interface Knowledge {
+  architecture: RuleView[]
+  convention: RuleView[]
+  memory: MemoryView[]
+}
+
+export interface Stats {
+  tasks: number
+  costUsd: number
+  byModel: Record<string, { stages: number; costUsd: number }>
+  byStage: { stage: string; stages: number; averageAttempts: number; costUsd: number }[]
+  escalatedStages: number
+}
+
+export interface Analysis {
+  projectId: string
+  status: 'REQUESTED' | 'RUNNING' | 'DONE' | 'FAILED'
+  requestedAt: string
+  startedAt: string | null
+  finishedAt: string | null
+  report: string | null
+  error: string | null
+}
+
+export type RuleSet = 'architecture' | 'convention'
+
 export interface AuthState {
-  setup: boolean
   user?: string
 }
 
 export const api = {
   me: () => call<AuthState>('/api/auth/me'),
-  setup: (username: string, password: string) =>
-    call<AuthState>('/api/auth/setup', { method: 'POST', body: JSON.stringify({ username, password }) }),
   login: (username: string, password: string) =>
     call<AuthState>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => post('/api/auth/logout'),
-  accounts: () => call<string[]>('/api/accounts'),
-  createAccount: (username: string, password: string) =>
-    call<{ username: string }>('/api/accounts', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  sendMessage: (taskId: string, text: string) => post(`/api/tasks/${taskId}/messages`, { text }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    post('/api/auth/password', { currentPassword, newPassword }),
+  stats: () => call<Stats>('/api/stats'),
+  knowledge: (projectId: string) => call<Knowledge>(`/api/projects/${projectId}/knowledge`),
+  decideRules: (projectId: string, set: RuleSet, ids: string[], decision: 'approve' | 'reject') =>
+    post(`/api/projects/${projectId}/knowledge/rules/${set}/${decision}`, { ids }),
+  decideMemory: (projectId: string, ids: string[], decision: 'approve' | 'reject') =>
+    post(`/api/projects/${projectId}/knowledge/memory/${decision}`, { ids }),
+  analysis: (projectId: string) => call<Analysis | undefined>(`/api/projects/${projectId}/knowledge/analysis`),
+  analyze: (projectId: string) => call<Analysis>(`/api/projects/${projectId}/knowledge/analysis`, { method: 'POST' }),
   settings: () => call<Settings>('/api/settings'),
   saveJevKey: (key: string) => call<Settings>('/api/settings/jev-key', { method: 'PUT', body: JSON.stringify({ key }) }),
   deleteJevKey: () => call<Settings>('/api/settings/jev-key', { method: 'DELETE' }),

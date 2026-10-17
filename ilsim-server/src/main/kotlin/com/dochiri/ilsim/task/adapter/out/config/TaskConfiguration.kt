@@ -1,4 +1,4 @@
-package com.dochiri.ilsim.task.configuration
+package com.dochiri.ilsim.task.adapter.out.config
 
 import com.dochiri.ilsim.jev.api.JevGateway
 import com.dochiri.ilsim.task.adapter.out.jev.JevComplexityAssessor

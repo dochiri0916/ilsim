@@ -1,16 +1,36 @@
 package com.dochiri.ilsim.task.domain
 
+import com.dochiri.ilsim.task.domain.vo.Stage
+
 /** 단계별로 Agent 에 보내는 지시문. */
 object PromptTemplates {
 
+    /** 요구사항 대화의 이어 가기 지시문. 같은 세션이 아니어도(세션을 잃어도) 파일에서 이어 갈 수 있게 문서 경로를 알려 준다. */
+    fun followUp(task: Task, message: String, feedback: String?): String {
+        val f = task.feature.value
+        val retry = if (feedback.isNullOrBlank()) "" else "\n\n## 직전 시도의 문제\n$feedback\n"
+        return """
+            사용자가 요구사항 문서에 대해 아래와 같이 말했다. 이 말을 반영해 `specs/$f/requirements.md`만 수정하라. 다른 파일은 수정하지 마라.
+
+            ## 사용자 메시지
+            $message
+            $retry
+            ## 규칙
+            - 기존 문서를 처음부터 다시 쓰지 말고 필요한 부분만 고친다. ID(REQ-n)는 유지한다.
+            - 사용자가 답한 `## 미결정 사항`은 본문 요구사항으로 옮기고 목록에서 지운다.
+            - 여전히 모호한 것은 `## 미결정 사항`에 질문으로 남긴다.
+            - 코드는 작성하지 않는다.
+            """.trimIndent() + "\n"
+    }
+
     fun build(task: Task, stage: Stage, feedback: String?): String {
-        val f = task.feature
+        val f = task.feature.value
         val body = when (stage) {
             Stage.REQUIREMENTS -> """
                 당신은 요구사항 분석가다. 아래 요구사항을 분석해 `specs/$f/requirements.md` 파일 하나만 작성하라. 다른 파일은 수정하지 마라.
 
                 ## 요구사항 원문
-                ${task.requirement}
+                ${task.requirement.value}
 
                 ## 작성 규칙
                 - 기존 코드와 문서를 읽어 영향 범위를 파악한 뒤 작성한다.
