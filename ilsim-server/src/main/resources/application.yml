@@ -9,6 +9,15 @@ spring:
     hikari:
       initialization-fail-timeout: -1
       connection-timeout: 3000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none # 테이블은 각 저장소가 처음 쓸 때 만든다(DB 가 늦게 떠도 서버는 뜬다)
+    database-platform: org.hibernate.dialect.MySQLDialect
+    properties:
+      hibernate:
+        boot.allow_jdbc_metadata_access: false
+        jdbc.time_zone: UTC
   ai:
     mcp:
       server:
@@ -17,3 +26,10 @@ spring:
         protocol: STREAMABLE
 server:
   port: 8080
+  servlet:
+    session:
+      timeout: 12h
+      cookie:
+        http-only: true
+        same-site: lax
+        name: ILSIM_SESSION
