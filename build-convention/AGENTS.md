@@ -13,10 +13,7 @@
 
 ## Modules
 
-- `core/`: 언어와 무관한 확장·카탈로그·검증(ArchUnit, migration, rule ID). 언어별 모듈을 참조하지 않는다.
-- `java/`: Java 소스 검증, Checkstyle/PMD/SpotBugs 배선, anti-bypass, report. 플러그인 ID는 `io.github.dochiri0916.build-convention.java`다.
-- `kotlin/`: Kotlin PSI 소스 기반 도메인·VO·일급 컬렉션 검증, 공통 ArchUnit 배선, anti-bypass와 report. 세부 기준은 `docs/conventions/kotlin-domain-conventions.md`다.
-- 루트: 기존 ID `io.github.dochiri0916.build-convention`(Java 컨벤션 적용)과 `ai`가 읽는 지침 묶음·버전. 산출물 좌표와 JAR 자원 경로를 유지한다.
+모듈별 역할·산출물·플러그인 ID는 [README의 Modules](README.md#modules)를 따른다. 루트 산출물 좌표와 JAR 자원 경로를 유지한다.
 
 커버리지 기준은 모듈마다 따로 적용한다. 다른 모듈의 테스트로 기준을 채우지 않는다.
 `docs/conventions/coverage.json`의 경로는 이 디렉터리 기준(`java/src/...`, `core/src/...`)으로 쓴다.
@@ -94,14 +91,7 @@ Convention 내부에서도 책임을 분리한다.
 
 기존 helper나 abstraction으로 해결할 수 있으면 중복 구현을 만들지 않는다.
 
-패키지는 `io.github.dochiri0916.buildconvention` 아래에서 종류와 검증 책임으로 나눈다.
-
-- `plugin`, `integrity`, `report`: Gradle 연결·무력화 방지·보고서.
-- `source.java`, `source.kotlin`: 언어별 소스 수집·파싱·AST와 타입 분석.
-- `extension`, `catalog`, `context`, `coverage`: 언어 중립 설정·카탈로그·BC·커버리지 입력 도구.
-- `validator`: `architecture`, `domain`(aggregate·vo·collection·factory), `application`, `adapter`(web·persistence), `exception`, `messaging`, `migration`, `quality`, `review`별 검증.
-
-테스트도 검증 책임에 대응하는 패키지에 둔다. 패키지를 옮기면 import·플러그인 implementationClass·`docs/conventions/coverage.json`의 구현 및 테스트 근거 경로를 함께 갱신한다.
+패키지별 책임과 테스트 배치는 [README의 Internal packages](README.md#internal-packages)를 따른다. 패키지를 옮기면 import·플러그인 implementationClass·`docs/conventions/coverage.json`의 구현 및 테스트 근거 경로를 함께 갱신한다.
 
 ## Documentation
 
@@ -136,4 +126,4 @@ Convention 내부에서도 책임을 분리한다.
 ```
 
 실패하면 검증을 우회하지 말고 실제 원인을 수정한다.
-규칙이 바뀌면 `docs/templates`도 새 규칙으로 전체 `check`를 통과하는지 확인한다. ask가 이 틀을 모델에 예시로 주고 `global` 파일을 프로젝트에 복사한다.
+규칙이 바뀌면 `docs/templates`도 새 규칙으로 전체 `check`를 통과하는지 확인한다. 템플릿은 소비 프로젝트가 참고하는 예시다.

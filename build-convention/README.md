@@ -8,12 +8,43 @@ The build is split by language so each language's rules and tooling stay separat
 
 | Directory | Artifact | Plugin ID | Contents |
 | --- | --- | --- | --- |
-| `core/` | `build-convention-core` | none | Language-neutral parts: the `hexagonalConvention` extension, bounded context and technical dependency catalogs, rule IDs, and the ArchUnit, migration, and coverage class checks |
+| `core/` | `build-convention-core` | none | Language-neutral parts (no dependency on language modules): the `hexagonalConvention` extension, bounded context and technical dependency catalogs, rule IDs, and the ArchUnit, migration, and coverage class checks |
 | `java/` | `build-convention-java` | `io.github.dochiri0916.build-convention.java` | Java source validators, Checkstyle/PMD/SpotBugs wiring, anti-bypass checks, and the report |
 | `kotlin/` | `build-convention-kotlin` | `io.github.dochiri0916.build-convention.kotlin` | Kotlin PSI domain/VO/collection rules, common ArchUnit checks, anti-bypass, and reports |
-| root | `build-convention` | `io.github.dochiri0916.build-convention` | The original ID, which applies the Java conventions, plus the guidance bundle and version that `ai` reads |
+| root | `build-convention` | `io.github.dochiri0916.build-convention` | The original ID, which applies the Java conventions |
 
-Existing Java consumers keep using `io.github.dochiri0916.build-convention`. Kotlin/JVM consumers apply `io.github.dochiri0916.build-convention.kotlin`; mixed source modules can apply both language plugins. See [Kotlin domain conventions](docs/conventions/kotlin-domain-conventions.md) for their scope and the Kotlin templates. `ai` selects the language plugins from the Kotlin/JVM plugin and actual Java sources. Mixed modules write `report.json` and `report-kotlin.json` separately.
+Existing Java consumers keep using `io.github.dochiri0916.build-convention`. Kotlin/JVM consumers apply `io.github.dochiri0916.build-convention.kotlin`; mixed source modules can apply both language plugins. See [Kotlin domain conventions](docs/conventions/kotlin-domain-conventions.md) for their scope and the Kotlin templates. Mixed modules write `report.json` and `report-kotlin.json` separately.
+
+## Usage
+
+Build, verify, and publish locally from this directory:
+
+```bash
+./gradlew clean check publishToMavenLocal --no-daemon
+```
+
+Add the local plugin repository to the consumer project's `settings.gradle`:
+
+```groovy
+pluginManagement {
+    repositories {
+        mavenLocal()
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+```
+
+Apply the plugin in the consumer project's `build.gradle`, then run its `./gradlew check`:
+
+```groovy
+plugins {
+    id 'java'
+    id 'io.github.dochiri0916.build-convention' version '1.2.0'
+}
+```
+
+Kotlin/JVM consumers use `io.github.dochiri0916.build-convention.kotlin` with their Kotlin/JVM plugin. Consumer rules and examples are maintained in [conventions](docs/conventions/README.md) and [templates](docs/templates/README.md).
 
 ## Internal packages
 
@@ -35,96 +66,13 @@ Each module groups files under `io.github.dochiri0916.buildconvention` by their 
 
 The Gradle modules determine which language owns a class. `core` contains language-neutral parts; Java and Kotlin validators share responsibility package names and keep distinct class names. Plugin IDs, task names, and report rule IDs remain the consumer interface.
 
-## Architecture
+## Architecture and consumer conventions
 
-The plugin enforces a practical hexagonal architecture with this dependency direction:
+The plugin enforces inward dependencies: `Domain <- Application <- Adapter`. The canonical package layout and request/persistence flow are in [package structure](docs/conventions/package-structure.md). Detailed domain and application rules are maintained in [consumer conventions](docs/conventions/README.md), including the [domain](docs/conventions/domain-conventions.md), [application](docs/conventions/application-conventions.md), [persistence](docs/conventions/persistence-conventions.md), and [exception](docs/conventions/exception-conventions.md) documents.
 
-```text
-Domain <- Application <- Adapter
-```
+The reference layout is the `tool-test-lab` repository; structures outside it are rejected.
 
-Dependencies point inward. Domain contains business rules and does not depend on Spring, JPA, Lombok, Application, or Adapter code. Application coordinates use cases and owns the ports it needs. Adapters connect those ports to web, persistence, and other external technologies.
-
-```text
-com.example.project/
-├── global/
-│   ├── configuration/         # @Configuration, properties/
-│   ├── domain/                # shared kernel values (Money, Quantity)
-│   ├── application/exception/ # shared application exceptions
-│   ├── exception/             # GlobalApiControllerAdvice, ProblemDetails
-│   └── persistence/           # shared persistence configuration (JPA auditing, base entities)
-└── {context}/                 # one bounded context, or {group}/{module}/
-    ├── domain/                # aggregate root may sit here directly
-    │   ├── model/
-    │   ├── vo/                # Value Objects and First-class Collections
-    │   ├── event/             # domain events: past-tense records without an Event suffix
-    │   └── exception/
-    ├── application/
-    │   ├── port/in/           # usecase/, command/, query/, result/
-    │   ├── port/out/          # ports required by the use cases
-    │   ├── service/
-    │   └── exception/
-    └── adapter/
-        ├── in/web/            # Controller, {Context}ExceptionHandler, request/, response/
-        └── out/persistence/   # repository adapters, JPA entities, and mappers
-```
-
-`docs/templates` contains the `book` context in `com.example.demo`. See [template execution requirements](docs/templates/README.md) for dependencies and the verified scope.
-
-### Consumer guidance through `ai`
-
-The published plugin JAR includes guidance, detailed convention documents, and reference template sources.
-Before starting Claude or Codex, `ai` copies this bundle from the locally published plugin version used by its
-convention check into the consumer project's `docs/build-convention/` and adds a managed block to `AGENTS.md`.
-Both CLIs also receive the guidance path in the task prompt. Existing instructions outside the block are preserved;
-template sources stay in documentation and are never copied into production source directories.
-The entry point is [conventions/README.md](docs/conventions/README.md); detailed rules live in that directory.
-
-`docs/build-convention/.ai-guidance.json` records the plugin version and file hashes. Unchanged files are not
-rewritten. Locally edited or conflicting documents prevent that project's synchronization and produce a notice;
-unrelated documents are preserved. Independent Gradle projects get separate bundles, while modules share their
-Gradle root's guidance. A project applying its own plugin version must check it against the recorded guidance version.
-
-Run the repository's `install.sh` again if an older local JAR has no guidance bundle. Missing guidance does not
-prevent the AI task or its post-task checks. Requests disabling convention checks skip guidance deployment too.
-
-### Request and persistence flow
-
-```text
-HTTP Request
-    │
-    ▼
-Web Adapter (Controller)
-    │ parses request and creates a UseCase command/query
-    ▼
-Inbound UseCase
-    │ implemented by one Application Service
-    ├──────────────► Domain model (business rules and state transitions)
-    │
-    └──────────────► Outbound Port
-                         ▲
-                         │ implemented by
-                    Persistence Adapter
-                         │ maps between Domain and JPA Entity
-                         ▼
-                      Database
-
-Application result ──► Web Adapter ──► HTTP Response
-```
-
-The controller calls an inbound `*UseCase`; it does not depend on an Application Service implementation. An Application Service implements one use case and depends only on outbound `*Port` interfaces or stateless Domain Services. The persistence adapter implements repository ports and maps between domain objects and JPA entities.
-
-## Domain and application conventions
-
-- Aggregates and domain entities are immutable `final` classes. Value Objects and First-class Collections are `final` classes with private constructors and `of` factories; state enums live in `domain.vo`.
-- Domain identifiers use `{Domain}Id` Value Objects wrapping UUID v7; constructors reject other UUID versions. Domain models do not expose database technical IDs.
-- Create new aggregates with `create`; restore persisted state with `restore`. State-changing methods preserve the identifier and return a new aggregate.
-- Domain collections use a single-field First-class Collection with defensive copying. Immutable Outbox records live in `global.domain.outbox` or context `domain.outbox`.
-- Aggregates refer to other aggregates by identifier, not by object reference. JPA relationships and lazy loading are not used to navigate between aggregates.
-- Application services place transactions on public methods; read methods use read-only transactions. They do not perform external I/O inside a transaction.
-- Repository ports may use `save`, `create`, or `update`; they do not use `upsert`.
-- Each context has `abstract sealed` Domain and Application exception bases with `final` subclasses. A per-context `{Context}ExceptionHandler` maps them to HTTP `ProblemDetail` responses.
-- The reference layout is the `tool-test-lab` repository; structures outside it are rejected.
+Reference sources and their dependencies and verified scope are in [templates](docs/templates/README.md).
 
 ## What the plugin checks
 

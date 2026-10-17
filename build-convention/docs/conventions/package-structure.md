@@ -73,3 +73,31 @@ adapter/
 - `global`은 BC의 패키지를 import하지 않는다. `global.web`과 `common` 패키지는 만들지 않는다.
 - 묶음 Context는 한 단계까지만 허용하며, 같은 묶음의 모듈끼리는 Port와 Domain 모델을 직접 사용할 수 있다.
 - 다른 Context와의 통합은 Port와 Adapter에서 번역한다. Published Language가 필요하면 `publishedLanguagePackagePrefixes`로 명시한다.
+
+## 요청과 영속성 흐름
+
+```text
+HTTP Request
+    │
+    ▼
+Web Adapter (Controller)
+    │ parses request and creates a UseCase command/query
+    ▼
+Inbound UseCase
+    │ implemented by one Application Service
+    ├──────────────► Domain model (business rules and state transitions)
+    │
+    └──────────────► Outbound Port
+                         ▲
+                         │ implemented by
+                    Persistence Adapter
+                         │ maps between Domain and JPA Entity
+                         ▼
+                      Database
+
+Application result ──► Web Adapter ──► HTTP Response
+```
+
+The controller calls an inbound `*UseCase`; it does not depend on an Application Service implementation. An Application Service implements one use case and depends only on outbound `*Port` interfaces or stateless Domain Services. The persistence adapter implements repository ports and maps between domain objects and JPA entities.
+
+도메인 루트는 `domain` 바로 아래에 둘 수 있으며 도메인 모델을 묶는 `domain.model`도 사용한다. Java 참조 템플릿의 루트는 `com.example.demo`, BC는 `book`이다.

@@ -12,9 +12,9 @@ Kotlin PSI로 main의 `.kt` 파일을 파싱한다. 기본 `src/main/kotlin`, ma
 
 - 클래스는 기본 final이며 상태는 `val`이다. `open`·`abstract`·`var`는 허용하지 않는다.
 - 일반 도메인 모델의 생성자는 private이다. 검증 경로를 우회하는 `data class.copy`와 인자를 받는 보조 생성자는 허용하지 않는다.
-- `id`를 가진 Aggregate는 `create` 또는 `register`, 그리고 `restore` companion 팩터리를 제공한다. 상태 변경과 복원은 전달된 ID를 유지하며 `restore`에서 ID·시간을 새로 생성하지 않는다.
+- `id`를 가진 Aggregate는 `create` 또는 `register`, 그리고 `restore` companion 팩터리를 제공한다. 상태 변경과 복원은 전달된 ID를 유지하며 `restore`에서 ID·시간을 새로 생성하지 않는다. Aggregate는 도메인 이벤트를 필드로 보관하지 않는다. 상태 변경이 이벤트를 내면 바뀐 Aggregate와 그 이벤트를 `{Aggregate}Change`로 함께 반환하며, 이벤트를 담을 수 있는 타입은 `domain.event`의 타입과 `{Aggregate}Change`뿐이다. 제네릭 인자 안의 이벤트 타입도 검사한다.
 - Aggregate의 `equals(Any?)`·`hashCode()`는 ID만 사용한다. 구성 값 객체와 일급 컬렉션은 모든 주 생성자 구성 값으로 동등성을 정의한다. 파생 금액 캐시는 동등성 구성 값에 추가하지 않는다.
-- enum 상태는 `domain.vo`에 두고 상태 변경 전에 도메인 예외를 던지는 가드를 둔다. enum의 전이 정책은 허용·거절 결과를 모두 가져야 하며 상수 `true`로 검증을 제거할 수 없다. 구체적인 업무 전이 표는 소비 프로젝트의 테스트로 확인한다.
+- enum 상태는 `domain.vo`에 두고 상태 변경 전에 도메인 예외를 던지는 가드를 둔다. enum의 전이 정책은 허용·거절 결과를 모두 가져야 하며 상수 `true`로 검증을 제거할 수 없다. 정책은 단일 식이나 `when`으로 쓸 수 있고, 검사기는 모든 상태 쌍에 대해 그 결과를 평가한다. 구체적인 업무 전이 표는 소비 프로젝트의 테스트로 확인한다.
 
 ## VO
 
@@ -44,7 +44,7 @@ ID VO의 nullable·String·Long 값, 일반/data/open 클래스, typealias, init
 
 일급 컬렉션은 하나의 컬렉션 구성 값과 선택적인 파생 캐시를 소유한다. 모든 생성 경로에서 `java.util.List/Set/Map.copyOf`로 변경 불가능한 스냅샷을 만든다. `toList()`만으로 변경 불가능성을 보장했다고 판단하지 않는다. 저장 컬렉션의 변경 메서드와 mutable 타입 노출을 거절한다.
 
-빈 입력은 직접 가드로 거절하거나 명시적인 `empty` 팩터리를 제공한다. 식별자를 가진 요소의 컬렉션은 init에서 로컬 HashSet과 forEach 가드로 중복 식별자를 거절한다. 숫자 fold 합산에는 `Math.addExact`를 사용한다. 금액 곱셈·업무 한도·모든 계산 경로의 오버플로까지 자동 증명하는 규칙은 아니다.
+빈 입력은 직접 가드로 거절하거나 명시적인 `empty` 팩터리를 제공한다. 식별자를 가진 요소의 컬렉션은 init에서 로컬 HashSet과 forEach 가드로 중복 식별자를 거절한다. 숫자 fold 합산에는 `Math.addExact`를 사용한다. `plus`·`minus` 연산자 안에서 `Math.addExact`·`subtractExact`로 넘침을 검사하는 도메인 값 객체로 합산할 수도 있으며, 이때 fold는 그 값 객체에서 시작하고 누적 값이 연산자의 왼쪽에 와야 한다. 금액 곱셈·업무 한도·모든 계산 경로의 오버플로까지 자동 증명하는 규칙은 아니다.
 
 도메인 예외의 기반은 sealed `RuntimeException`이며 protected 생성자를 사용한다. 구체 예외는 final로 기반 예외를 상속한다. 도메인 실패는 해당 BC 또는 공통 global의 도메인 예외로 표현하며 파싱 과정의 JDK 예외를 그대로 던지지 않는다.
 
@@ -54,4 +54,4 @@ ID VO의 nullable·String·Long 값, 일반/data/open 클래스, typealias, init
 
 태스크 disable·onlyIf·액션 변조·check 의존성 제거·`-x`·관련 컨벤션 플래그 완화는 무력화 방지 검사에서 실패한다. Kotlin 전용 플러그인은 Java 전용 Checkstyle/PMD/SpotBugs·coverage/mutation gate를 적용하지 않으며 보고서에 `NOT_APPLIED`로 표시한다. 소비 프로젝트의 기존 컴파일·테스트는 그대로 실행한다. 도메인 소스가 없으면 architecture는 `NOT_APPLIED`다.
 
-`ai`의 full 컨벤션 검사는 Kotlin/JVM 모듈에 이 플러그인을 선택하고 혼합 모듈의 두 보고서를 합산한다. `code-risk-analyzer scan`의 위험 분석은 계속 Java 소스를 대상으로 한다. Kotlin 컨벤션 PASS는 임의 업무 로직이나 보안 위험 전체를 검증했다는 의미가 아니다.
+Kotlin/JVM 모듈에는 Kotlin 플러그인을 적용하고, Java 소스도 있는 혼합 모듈에는 두 언어 플러그인을 함께 적용한다. `code-risk-analyzer scan`의 위험 분석은 Java 소스를 대상으로 한다. Kotlin 컨벤션 PASS는 임의 업무 로직이나 보안 위험 전체를 검증했다는 의미가 아니다.
