@@ -8,7 +8,10 @@ import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNameReferenceExpression
+import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
 
@@ -73,15 +76,45 @@ final class KotlinCollectionRules {
             }
         }
         calls.findAll { it.calleeExpression?.text == 'fold' }.each { fold ->
-            boolean unchecked = KotlinSourceAstInspector.nodes(fold, KtBinaryExpression).any { expression ->
+            List<KtBinaryExpression> arithmetic = KotlinSourceAstInspector.nodes(fold, KtBinaryExpression).findAll { expression ->
                 expression.operationReference.text in ['+', '-']
             }
+            boolean unchecked = arithmetic.any { !checkedValueOperator(fold, it, file, types) }
             boolean checked = KotlinSourceAstInspector.nodes(fold, KtDotQualifiedExpression).any { expression ->
                 KotlinSourceAstInspector.resolve(file, expression.receiverExpression?.text) == 'java.lang.Math' &&
                         expression.selectorExpression instanceof KtCallExpression &&
                         expression.selectorExpression.calleeExpression?.text == 'addExact'
             }
-            if (unchecked || !checked) violations.add("${prefix} numeric collection totals must use checked addition")
+            if (unchecked || arithmetic.isEmpty() && !checked) violations.add("${prefix} numeric collection totals must use checked addition")
+        }
+    }
+
+    /**
+     * A fold may use + or - only as the operator of a domain value type that checks overflow itself: the fold starts
+     * from that type, the accumulator is the left operand, and the operator body calls Math.addExact/subtractExact.
+     */
+    private static boolean checkedValueOperator(KtCallExpression fold, KtBinaryExpression arithmetic, KtFile file,
+                                                Map<String, KtClassOrObject> types) {
+        def lambda = fold.lambdaArguments.isEmpty() ? null : fold.lambdaArguments.first().getLambdaExpression()
+        String accumulator = lambda?.valueParameters?.isEmpty() == false ? lambda.valueParameters.first().name : null
+        def initial = fold.valueArguments.isEmpty() ? null : KotlinGuards.unwrap(fold.valueArguments.first().argumentExpression)
+        if (accumulator == null || !(initial instanceof KtDotQualifiedExpression)) return false
+        def valueType = types[KotlinSourceAstInspector.resolve(file, initial.receiverExpression?.text)]
+        if (valueType == null) return false
+        def left = KotlinGuards.unwrap(arithmetic.left)
+        boolean fromAccumulator = left instanceof KtNameReferenceExpression && left.referencedName == accumulator ||
+                left instanceof KtBinaryExpression && left.operationReference.text in ['+', '-'] &&
+                checkedValueOperator(fold, left, file, types)
+        if (!fromAccumulator) return false
+        boolean addition = arithmetic.operationReference.text == '+'
+        return valueType.declarations.any { declaration ->
+            declaration instanceof KtNamedFunction && declaration.hasModifier(KtTokens.OPERATOR_KEYWORD) &&
+                    declaration.name == (addition ? 'plus' : 'minus') && declaration.valueParameters.size() == 1 &&
+                    KotlinSourceAstInspector.nodes(declaration, KtDotQualifiedExpression).any { expression ->
+                        KotlinSourceAstInspector.resolve(declaration.containingKtFile, expression.receiverExpression?.text) == 'java.lang.Math' &&
+                                expression.selectorExpression instanceof KtCallExpression &&
+                                expression.selectorExpression.calleeExpression?.text == (addition ? 'addExact' : 'subtractExact')
+                    }
         }
     }
 

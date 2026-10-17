@@ -138,6 +138,180 @@ class KotlinDomainConventionValidatorTest {
         assert unreadable.violations.any { it.contains('cannot be parsed as Kotlin') }
     }
 
+    @Test
+    @DisplayName('when으로 쓴 전이 정책을 평가해 허용하고 결과가 고정된 when은 거부한다')
+    void evaluatesWhenTransitionPolicies() {
+        String policy = '= this == PENDING && target != PENDING'
+        verifyMutations([
+            ['vo/OrderStatus.kt', policy, '= when (this) {\n        PENDING -> target == COMPLETED || target == CANCELLED\n        COMPLETED, CANCELLED -> false\n    }', null],
+            ['vo/OrderStatus.kt', policy, '= when {\n        this == PENDING -> target != PENDING\n        else -> false\n    }', null],
+            ['vo/OrderStatus.kt', policy, '= when (this) {\n        PENDING -> true\n        else -> true\n    }', 'transition policy'],
+            ['vo/OrderStatus.kt', policy, '= when (this) {\n        PENDING -> false\n        COMPLETED, CANCELLED -> false\n    }', 'transition policy'],
+        ])
+    }
+
+    @Test
+    @DisplayName('넘침을 검사하는 값 객체의 연산자로 합산하는 fold를 허용하고 검사를 벗어난 합산은 거부한다')
+    void acceptsCheckedValueOperatorTotals() {
+        // given: the total is folded with OrderAmount.plus, which checks overflow itself
+        Project project = amountFixture()
+        assert analyze(project).violations.isEmpty()
+
+        // when: the operator stops checking overflow
+        project = amountFixture()
+        File amount = domainFile(project, 'vo/OrderAmount.kt')
+        amount.text = replaceOnce(amount.text, 'Math.addExact(value, other.value)', 'value + other.value')
+        assert analyze(project).violations.any { it.contains('checked addition') }
+
+        // when: the fold unwraps the value and adds primitives
+        project = amountFixture()
+        File items = domainFile(project, 'OrderItems.kt')
+        items.text = replaceOnce(items.text, 'total + OrderAmount.of(item.amount)', 'OrderAmount.of(total.value + item.amount)')
+        assert analyze(project).violations.any { it.contains('checked addition') }
+
+        // when: the fold starts from a primitive and only later wraps it
+        project = amountFixture()
+        items = domainFile(project, 'OrderItems.kt')
+        items.text = replaceOnce(items.text, 'values.fold(OrderAmount.ZERO) { total, item -> total + OrderAmount.of(item.amount) }',
+                'OrderAmount.of(values.fold(0L) { total, item -> total + item.amount })')
+        assert analyze(project).violations.any { it.contains('checked addition') }
+    }
+
+    @Test
+    @DisplayName('도메인 이벤트는 domain.event 타입과 Change 결과만 담을 수 있고 애그리거트는 보관할 수 없다')
+    void restrictsDomainEventCarriers() {
+        // given: OrderEvents in domain.event and OrderChange pairing the aggregate with its events
+        Project project = eventFixture()
+        assert analyze(project).violations.isEmpty()
+
+        // when: the aggregate keeps events behind a generic type
+        project = eventFixture()
+        File order = domainFile(project, 'Order.kt')
+        order.text = replaceOnce(order.text, '    val status: OrderStatus,\n',
+                '    val status: OrderStatus,\n    val events: List<com.example.saga.order.domain.event.OrderEvent>,\n')
+        assert analyze(project).violations.any { it.contains("aggregates must not retain domain events in 'events'") }
+
+        // when: a type that is neither an event collection nor a Change result carries events
+        project = eventFixture()
+        File change = domainFile(project, 'OrderChange.kt')
+        change.text = change.text.replace('OrderChange', 'OrderOutcome')
+        assert analyze(project).violations.any { it.contains("may be carried only by domain.event types and {Aggregate}Change results, not 'events'") }
+    }
+
+    private Project amountFixture() {
+        Project project = fixture()
+        domainFile(project, 'vo/OrderAmount.kt').text = '''\
+            package com.example.saga.order.domain.vo
+
+            import com.example.saga.order.domain.exception.OrderAmountOverflowException
+
+            @JvmInline
+            value class OrderAmount private constructor(
+                val value: Long
+            ) {
+
+                init {
+                    if (value < 0) throw OrderAmountOverflowException()
+                }
+
+                operator fun plus(other: OrderAmount): OrderAmount {
+                    val sum = try {
+                        Math.addExact(value, other.value)
+                    } catch (e: ArithmeticException) {
+                        throw OrderAmountOverflowException()
+                    }
+                    return OrderAmount(sum)
+                }
+
+                override fun toString(): String = value.toString()
+
+                companion object {
+                    val ZERO = OrderAmount(0L)
+
+                    fun of(value: Long): OrderAmount = OrderAmount(value)
+                }
+            }
+            '''.stripIndent()
+        File items = domainFile(project, 'OrderItems.kt')
+        String folded = (items.text =~ /(?s)totalAmount = values\.fold\(0L\) \{.*?\n        \}\n/)[0]
+        items.text = replaceOnce(replaceOnce(replaceOnce(items.text,
+                folded, 'totalAmount = values.fold(OrderAmount.ZERO) { total, item -> total + OrderAmount.of(item.amount) }\n'),
+                'val totalAmount: Long', 'val totalAmount: OrderAmount'),
+                'package com.example.saga.order.domain\n', 'package com.example.saga.order.domain\n\nimport com.example.saga.order.domain.vo.OrderAmount\n')
+        File order = domainFile(project, 'Order.kt')
+        order.text = replaceOnce(order.text, 'get() = items.totalAmount', 'get() = items.totalAmount.value')
+        return project
+    }
+
+    private Project eventFixture() {
+        Project project = fixture()
+        domainFile(project, 'event').mkdirs()
+        domainFile(project, 'event/OrderEvent.kt').text = '''\
+            package com.example.saga.order.domain.event
+
+            import com.example.saga.order.domain.vo.OrderId
+
+            sealed interface OrderEvent {
+                val orderId: OrderId
+            }
+
+            data class OrderCompleted(override val orderId: OrderId) : OrderEvent
+            '''.stripIndent()
+        domainFile(project, 'event/OrderEvents.kt').text = '''\
+            package com.example.saga.order.domain.event
+
+            class OrderEvents private constructor(
+                private val values: List<OrderEvent>
+            ) {
+
+                fun asList(): List<OrderEvent> = values
+
+                override fun equals(other: Any?): Boolean {
+                    if (this === other) return true
+                    if (other !is OrderEvents) return false
+                    return values == other.values
+                }
+
+                override fun hashCode(): Int = values.hashCode()
+
+                companion object {
+                    fun of(values: List<OrderEvent>): OrderEvents = OrderEvents(java.util.List.copyOf(values))
+
+                    fun empty(): OrderEvents = of(emptyList())
+                }
+            }
+            '''.stripIndent()
+        domainFile(project, 'OrderChange.kt').text = '''\
+            package com.example.saga.order.domain
+
+            import com.example.saga.order.domain.event.OrderEvents
+
+            class OrderChange private constructor(
+                val order: Order,
+                val events: OrderEvents,
+            ) {
+
+                override fun equals(other: Any?): Boolean {
+                    if (this === other) return true
+                    if (other !is OrderChange) return false
+                    return order == other.order && events == other.events
+                }
+
+                override fun hashCode(): Int = 31 * order.hashCode() + events.hashCode()
+
+                companion object {
+                    fun of(order: Order, events: OrderEvents): OrderChange = OrderChange(order, events)
+                }
+            }
+            '''.stripIndent()
+        return project
+    }
+
+    private static String replaceOnce(String text, String target, String replacement) {
+        assert text.count(target) == 1: target
+        return text.replace(target, replacement)
+    }
+
     private void verifyMutations(List<List<String>> mutations) {
         mutations.each { row ->
             Project project = fixture()

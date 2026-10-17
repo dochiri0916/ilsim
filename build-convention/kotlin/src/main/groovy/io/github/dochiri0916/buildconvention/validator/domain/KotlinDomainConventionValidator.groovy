@@ -11,6 +11,7 @@ import io.github.dochiri0916.buildconvention.validator.domain.collection.KotlinC
 import io.github.dochiri0916.buildconvention.validator.domain.vo.KotlinIdentifierRules
 import org.gradle.api.Project
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.psi.KtUserType
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassOrObject
@@ -156,9 +157,14 @@ final class KotlinDomainConventionValidator {
                 KotlinCollectionRules.validate(type, fields, file, path, types, violations)
                 if (aggregate) KotlinAggregateRules.validate(type, fields, file, path, types, violations)
             }
-            fields.findAll { field ->
-                KotlinSourceAstInspector.resolve(file, field.typeReference?.text).contains('.domain.event.')
-            }.each { field -> violations.add("[ARCH-DOMAIN-AGGREGATE] ${path} aggregates must not retain domain events in '${field.name}'") }
+            boolean eventCarrier = !aggregate && (pkg.tokenize('.').contains('event') || changeResult(type, fields, file, types))
+            fields.findAll { field -> referencesDomainEvent(field, file) }.each { field ->
+                if (aggregate) {
+                    violations.add("[ARCH-DOMAIN-AGGREGATE] ${path} aggregates must not retain domain events in '${field.name}'")
+                } else if (!eventCarrier) {
+                    violations.add("[ARCH-DOMAIN-AGGREGATE] ${path} domain events may be carried only by domain.event types and {Aggregate}Change results, not '${field.name}'")
+                }
+            }
         }
         validateThrows(type, file, path, types, violations)
         type.declarations.findAll { it instanceof KtClassOrObject && !(it instanceof KtEnumEntry) && !it.isCompanion() }.each { nested ->
@@ -187,6 +193,24 @@ final class KotlinDomainConventionValidator {
                     KotlinGuards.rejects(guards, [(field.name): quantity ? 1L : 0L], domainException)) {
                 violations.add("[ARCH-DOMAIN-AGGREGATE] ${path} ${quantity ? 'quantity must be positive' : 'price must be non-negative'}")
             }
+        }
+    }
+
+    /** Looks inside generic arguments, so List<OrderEvent> counts as an event reference. */
+    private static boolean referencesDomainEvent(KtParameter field, KtFile file) {
+        KotlinSourceAstInspector.nodes(field.typeReference, KtUserType).any { KtUserType reference ->
+            KotlinSourceAstInspector.resolve(file, reference.text).contains('.domain.event.')
+        }
+    }
+
+    /** {Aggregate}Change pairs the changed aggregate with the events that change produced. */
+    private static boolean changeResult(KtClass type, List<KtParameter> fields, KtFile file, Map<String, KtClassOrObject> types) {
+        if (!type.name?.endsWith('Change')) return false
+        String aggregateName = type.name.substring(0, type.name.length() - 'Change'.length())
+        return fields.any { KtParameter field ->
+            def fieldType = types[KotlinSourceAstInspector.resolve(file, field.typeReference?.text)]
+            fieldType instanceof KtClass && fieldType.name == aggregateName &&
+                    fieldType.primaryConstructorParameters.any { it.name == 'id' }
         }
     }
 

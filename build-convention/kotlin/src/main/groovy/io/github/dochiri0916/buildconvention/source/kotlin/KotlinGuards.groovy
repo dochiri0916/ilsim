@@ -14,6 +14,8 @@ import org.jetbrains.kotlin.psi.KtReturnExpression
 import org.jetbrains.kotlin.psi.KtThisExpression
 import org.jetbrains.kotlin.psi.KtThrowExpression
 import org.jetbrains.kotlin.psi.KtUnaryExpression
+import org.jetbrains.kotlin.psi.KtWhenConditionWithExpression
+import org.jetbrains.kotlin.psi.KtWhenExpression
 
 /** A deliberately bounded evaluator: unknown conditions cannot certify an invariant. */
 final class KotlinGuards {
@@ -95,6 +97,7 @@ final class KotlinGuards {
             if (receiver instanceof Map && receiver.containsKey(name)) return receiver[name]
             return null
         }
+        if (expression instanceof KtWhenExpression) return evaluateWhen(expression, bindings)
         if (expression instanceof KtBinaryExpression) {
             Object left = evaluate(expression.left, bindings)
             Object right = evaluate(expression.right, bindings)
@@ -109,6 +112,23 @@ final class KotlinGuards {
                 case '>': return left instanceof Number && right instanceof Number ? left > right : null
                 case '>=': return left instanceof Number && right instanceof Number ? left >= right : null
                 default: return null
+            }
+        }
+        return null
+    }
+
+    /** Branches are tried in order; an unknown subject, condition or branch result makes the whole when unknown. */
+    private static Object evaluateWhen(KtWhenExpression expression, Map<String, Object> bindings) {
+        boolean hasSubject = expression.subjectExpression != null
+        Object subject = hasSubject ? evaluate(expression.subjectExpression, bindings) : null
+        if (hasSubject && subject == null) return null
+        for (def entry : expression.entries) {
+            if (entry.isElse()) return evaluate(entry.expression, bindings)
+            for (def condition : entry.conditions) {
+                if (!(condition instanceof KtWhenConditionWithExpression)) return null
+                Object value = evaluate(condition.expression, bindings)
+                if (value == null || !hasSubject && !(value instanceof Boolean)) return null
+                if (hasSubject ? value == subject : value) return evaluate(entry.expression, bindings)
             }
         }
         return null
