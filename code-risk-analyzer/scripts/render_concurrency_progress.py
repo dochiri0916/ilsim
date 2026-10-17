@@ -94,7 +94,7 @@ def render(catalog):
               '따라서 현재 CI 게이트가 명세 6절의 DEFINITE_PATTERN 전용 게이트와 같다고 해석하지 않는다. '
               '억제 finding은 기존 SUPPRESSED 상태와 대응 정보를 함께 보존한다.', '',
               '## 진행표 검증', '', '```bash', 'python3 scripts/render_concurrency_progress.py --check',
-              './gradlew clean build --no-daemon', '```', '',
+              '../gradlew -p .. :code-risk-analyzer:clean :code-risk-analyzer:build --no-daemon', '```', '',
               '`check`는 진행 문서가 카탈로그와 일치하는지 검사한다. 테스트는 22개 ID의 완전성, '
               '실행 규칙·구현 파일·테스트 근거의 존재, 조건부 매핑, 중복 없는 대응, CLI·JSON·SARIF '
               '호환성을 확인한다. 이 검사들은 개별 동시성 규칙의 전체 런타임 검증을 대신하지 않는다.', '']

@@ -1,0 +1,18 @@
+[versions]
+kotlin = "2.3.0"
+spring-boot = "4.1.1"
+spring-dependency-management = "1.1.7"
+spring-ai = "2.0.1"
+jev-typesafe = "0.2.0"
+
+[libraries]
+# TypeSafe JEV 클라이언트. 서버, Runner, 분석기가 같은 버전을 쓴다.
+jev-typesafe = { module = "io.github.gudcks0305:jev-typesafe", version.ref = "jev-typesafe" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
+kotlin-jpa = { id = "org.jetbrains.kotlin.plugin.jpa", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "spring-dependency-management" }

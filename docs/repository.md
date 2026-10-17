@@ -2,18 +2,16 @@
 
 ## 빌드와 검증
 
-각 프로젝트의 Gradle Wrapper를 해당 디렉터리에서 실행한다.
-다음 두 명령 블록은 각각 저장소 루트에서 시작한다.
+저장소 루트의 Gradle Wrapper 하나로 `ilsim-server`, `ilsim-runner`, `code-risk-analyzer`를 한 빌드로 실행한다.
+`build-convention`은 복합 빌드(`includeBuild`)로 연결되어 있어 루트의 `check`가 함께 검증한다.
 
 ```bash
-cd code-risk-analyzer
-./gradlew clean build --no-daemon
+./gradlew clean build --no-daemon   # 모든 모듈 빌드와 테스트
+./gradlew check --no-daemon         # 모든 모듈과 build-convention 검증
+./gradlew :ilsim-server:test        # 모듈 하나만
 ```
 
-```bash
-cd build-convention
-./gradlew clean check --no-daemon
-```
+웹(`ilsim-web`)은 npm 프로젝트이므로 해당 디렉터리에서 `npm run build`로 검증한다.
 
 상세 실행 방법과 지원 범위는 각 프로젝트 문서를 따른다.
 

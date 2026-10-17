@@ -10,7 +10,7 @@
 
 ## 분석기 명령
 
-`CRA` = `java -jar build/libs/code-risk-analyzer-0.0.1-SNAPSHOT.jar` (`./gradlew bootJar`로 생성)
+`CRA` = `java -jar build/libs/code-risk-analyzer-0.0.1-SNAPSHOT.jar` (저장소 루트에서 `./gradlew :code-risk-analyzer:bootJar`로 생성)
 
 빌드는 JDK 21 toolchain과 `--release 21`을 사용한다. 실행 JAR은 Java 21 이상에서 실행하며 소비 프로젝트에 분석기 의존성이나 Gradle 플러그인을 추가할 필요가 없다. `.code-risk.yml`이 없으면 기본 설정으로 검사한다.
 

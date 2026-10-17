@@ -7,7 +7,7 @@ mkdir -p "$LOG"
 
 "$ROOT/scripts/dev-down.sh" >/dev/null 2>&1 || true
 
-(cd "$ROOT/ilsim-server" && nohup ./gradlew bootRun --console=plain >"$LOG/server.log" 2>&1 &)
+(cd "$ROOT" && nohup ./gradlew :ilsim-server:bootRun --console=plain >"$LOG/server.log" 2>&1 &)
 (cd "$ROOT/ilsim-web" && nohup npm run dev >"$LOG/web.log" 2>&1 &)
 
 for _ in $(seq 1 60); do
