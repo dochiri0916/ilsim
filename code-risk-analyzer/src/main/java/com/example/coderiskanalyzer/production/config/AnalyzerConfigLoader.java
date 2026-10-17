@@ -41,7 +41,7 @@ public class AnalyzerConfigLoader {
     }
 
     private AnalyzerConfig parse(Map<String, Object> root, Path projectRoot) {
-        validateKeys(root, Set.of("analysis", "rules", "suppressions", "report", "fail", "jev", "validators"), "configuration");
+        validateKeys(root, Set.of("analysis", "rules", "suppressions", "report", "fail", "jev"), "configuration");
         Map<String, Object> analysis = map(root.get("analysis"), "analysis");
         validateKeys(analysis, Set.of("source-roots", "excludes", "classpath"), "analysis");
         List<String> sourceRoots = strings(analysis.get("source-roots"), "analysis.source-roots");
@@ -131,20 +131,8 @@ public class AnalyzerConfigLoader {
                 booleanValue(fail.get("new-test-gaps"), false, "fail.new-test-gaps"), maxSurvived, exceptions,
                 booleanValue(fail.get("include-review"), false, "fail.include-review"),
                 booleanValue(fail.get("on-jev-failure"), false, "fail.on-jev-failure"), maxJevCalls);
-        Map<String, Object> validators = map(root.get("validators"), "validators");
-        validateKeys(validators, Set.of("architecture", "convention"), "validators");
-        var validatorSettings = new AnalyzerConfig.Validators(validator(validators, "architecture"),
-                validator(validators, "convention"));
         return new AnalyzerConfig(sourceRoots, excludes, classpath, rules, suppressions, reportFormat,
-                failSeverity, failConfidence, policy, validatorSettings);
-    }
-
-    private Boolean validator(Map<String, Object> validators, String name) {
-        if (!validators.containsKey(name)) return null;
-        Map<String, Object> settings = asMap(validators.get(name), "validators." + name);
-        validateKeys(settings, Set.of("enabled"), "validators." + name);
-        if (!settings.containsKey("enabled")) throw invalid("validators." + name + ".enabled is required");
-        return booleanValue(settings.get("enabled"), false, "validators." + name + ".enabled");
+                failSeverity, failConfidence, policy);
     }
 
     /**

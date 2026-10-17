@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 import com.example.coderiskanalyzer.production.cli.CliExitCode;
 import com.example.coderiskanalyzer.production.cli.RulesCommand;
 import com.example.coderiskanalyzer.production.cli.ScanApplicationRunner;
-import com.example.coderiskanalyzer.production.config.AnalyzerConfigLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,8 +56,16 @@ class RulesCommandTests {
         }
     }
 
+    @Test
+    void rejectsRemovedOrchestrationCommand() {
+        assertThat(run("validators", ".")).isEqualTo("Error: unknown command: validators");
+        assertThat(exitCode.getExitCode()).isEqualTo(2);
+        assertThat(run()).startsWith("Usage:").doesNotContain("validators");
+        assertThat(exitCode.getExitCode()).isEqualTo(2);
+    }
+
     private String run(String... args) {
-        var runner = new ScanApplicationRunner(null, exitCode, command, new AnalyzerConfigLoader());
+        var runner = new ScanApplicationRunner(null, exitCode, command);
         PrintStream original = System.out;
         var output = new ByteArrayOutputStream();
         try (var stream = new PrintStream(output, true, StandardCharsets.UTF_8)) {

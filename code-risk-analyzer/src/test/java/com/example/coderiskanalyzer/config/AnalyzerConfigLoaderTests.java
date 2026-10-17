@@ -166,27 +166,12 @@ class AnalyzerConfigLoaderTests {
     }
 
     @Test
-    void validatorsAreUnsetByDefaultAndAcceptOnlyAnExplicitEnabledFlag() throws Exception {
-        assertThat(new AnalyzerConfigLoader().load(tempDir).validators())
-                .isEqualTo(new AnalyzerConfig.Validators(null, null));
-        Files.writeString(tempDir.resolve(".code-risk.yml"), """
-                validators:
-                  architecture:
-                    enabled: false
-                """);
-        assertThat(new AnalyzerConfigLoader().load(tempDir).validators())
-                .isEqualTo(new AnalyzerConfig.Validators(false, null));
-        Files.writeString(tempDir.resolve(".code-risk.yml"),
-                "validators:\n  architecture: {enabled: true}\n  convention: {enabled: false}\n");
-        assertThat(new AnalyzerConfigLoader().load(tempDir).validators())
-                .isEqualTo(new AnalyzerConfig.Validators(true, false));
-        for (String invalid : java.util.List.of("validators:\n  style: {enabled: true}\n",
-                "validators:\n  architecture: {}\n", "validators:\n  architecture:\n",
-                "validators:\n  architecture: {enabled: 'no'}\n", "validators:\n  convention: {enabled: true, strict: true}\n",
-                "validators: false\n")) {
+    void rejectsRemovedOrchestrationSettings() throws Exception {
+        for (String invalid : java.util.List.of("validators:\n  architecture: {enabled: true}\n",
+                "validators:\n  convention: {enabled: false}\n", "validators: {}\n", "validators: false\n")) {
             Files.writeString(tempDir.resolve(".code-risk.yml"), invalid);
             assertThatThrownBy(() -> new AnalyzerConfigLoader().load(tempDir))
-                    .as(invalid).isInstanceOf(AnalyzerConfigException.class);
+                    .as(invalid).isInstanceOf(AnalyzerConfigException.class).hasMessageContaining("validators");
         }
     }
 }
