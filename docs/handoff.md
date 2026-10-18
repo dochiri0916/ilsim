@@ -90,7 +90,7 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
 - Codex 실행기·계정별 Agent(`accounts.agent`, `Task.agent`, 프로젝트 `agent`/`codex-model`)·Codex 사용량을 만들었으나, 사용자가 Claude 두 번째 계정을 결제하고 "코덱스 관련은 다 지워"라고 해 코드·테스트·README·웹에서 모두 제거했다(커밋된 적 없음). DB에서도 웹 계정 `codex`를 지우고 `accounts.agent` 열을 삭제했다. 남은 것은 Claude 계정별 사용량을 위한 `PlanUsage.provider`(`claude`, `claude@<계정>`)뿐이다. 작업 저장본 1건에 남은 `"agent"` 필드는 역직렬화가 무시한다.
 - `PLAN.md`의 Codex 문구도 사용자 지시로 지웠다(Claude Code만). 이 PC의 brew `codex` 제거(의존성 `openssl@3`도 자동 제거됨)와 `~/programming/test` 삭제는 권한 분류기가 거부해 사용자가 직접 실행해 끝냈고, `~/.codex`(2.1GB)도 사용자가 직접 지웠다(ChatGPT 데스크톱 앱이 실행 중인 상태라 앱이 다시 만들 수 있다).
 
-## 2026-10-18 Claude 여러 계정·공통 설정 (커밋 안 함)
+## 2026-10-18 Claude 여러 계정·공통 설정 (`c0e1987`, 푸시됨)
 
 - 사용자 결정: 본인 소유 Claude 구독 계정 여러 개를 일심에 등록하고, 새 세션을 열 때 남은 사용량을 비교해 계정을 고른다. 한도 초과가 난 뒤 다른 계정으로 우회하지 않는다(실행 중 한도 초과 → NETWORK → 단계 차단). 토큰·API 키가 아니라 `claude auth login` 로그인을 일심이 중계한다. 약관은 명시적 위반 근거는 없으나 공식 승인도 없다(위험 0 아님, 사용자 인지).
 - 확인한 사실(공식 문서 code.claude.com/docs/en/iam): `CLAUDE_CONFIG_DIR`별로 로그인·세션 기록·설정이 분리되고 macOS 키체인 항목도 디렉터리별로 따로 생긴다. `-p`에서 `ANTHROPIC_API_KEY`가 있으면 API 과금이 우선. `claude auth status --json`에 loggedIn·email·subscriptionType. CLI 바이너리 내부 조사는 권한 분류기가 거부해 하지 않았다.
@@ -101,7 +101,7 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
 - 검증: 루트 `./gradlew check` 통과(`ClaudeAccountsTest` 5, `ClaudeAccountTest` 3), 웹 빌드 통과. 사용자가 웹에서 `personal`(dochiri0916@gmail.com, pro) 로그인 완료 → DONE·usable. 키체인에 `Claude Code-credentials-edde1da4`가 따로 생기고 기본 `~/.claude` 로그인은 유지됨. 계정별 `/usage`(claude@personal 5시간 35%·주간 50%)와 Codex 사용량 보고 확인. 실제 작업에서의 `rate_limit_event`·두 계정 번갈아 실행은 미검증(두 번째 계정 구독 전).
   - 결제 전 확인(사용자 결정): sandbox 질문 작업 `4fe95bc9`(답변만, $0.024)이 `Claude 계정: personal`로 실행되고 세션 기록이 `~/.ilsim/claude-accounts/personal/projects`에 남았으며 서버에 `claude@personal:<id>`로 저장됨. 이후 사용자가 두 번째 계정을 결제하고 웹에서 `second`(second-account, pro)를 등록해 두 계정 모두 usable이고, Codex 제거 후 재시작한 서버·Runner에서 계정별 사용량(`claude@personal`, `claude@second`) 보고 확인. 처음 시도한 `second` 로그인은 claude.ai 승인 화면이 "Max 또는 Pro 구독 필요"로 막아 구독 없이 등록할 수 없음을 확인했고, 웹 API로 삭제했다(대기 중이던 로그인 프로세스는 15분 뒤 끝나고 Runner가 다음 동기화 때 디렉터리를 지운다).
 
-## 2026-10-18 JEV 모델 선택 평가·조정 (커밋 안 함)
+## 2026-10-18 JEV 모델 선택 평가·조정 (`c0e1987`, 푸시됨)
 
 - 사용자 요청: 모델별 작업 이력으로 JEV 선택이 맞았는지 파악하고 조정하는 기능. 서버 `task/domain/RoutingReview.kt`: 완료 실행마다 판정(FIT, OVER=같은 작업군에서 기준을 넘은 20% 이상 싼 조합이 있음, UNDER=실패 후 더 높은 조합으로 성공, UNKNOWN=환경 장애·근거 없음), 조합별 성공률·JEV 예측 평균·예측 차이·Brier·실측 비용·권장 보정(표본 ≥ minimumSamples일 때 −차이×n/(n+10), ±0.3), 작업군별 최다 사용·기준 통과 최저가 조합. 추가 AI 호출 없음.
 - 조정 `RoutingAdjustments`(조합별 사용 여부·성공 예측 보정)를 `routing_adjustments` 테이블에 쌓고 마지막 것을 `ModelSelector.adjustments`로 적용(`CostRoutingPolicy.choose`가 끈 조합 제외·보정 후 품질 기준 비교). 정책 버전은 바꾸지 않아 보정 표본이 이어지고, `ExecutionRecord.adjustmentVersion`에 적용 버전을 남긴다. API `GET /api/routing[?projectId]`, `PUT /api/routing/adjustments`, `POST .../recommended`, `POST .../{version}/restore`("none"=해제). 웹 "모델 선택" 탭.
