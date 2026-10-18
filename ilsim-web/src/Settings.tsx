@@ -1,6 +1,7 @@
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { ClaudeAccounts, ClaudeEnvironmentEditor } from './ClaudeSettings'
 import { usePoll } from './usePoll'
 
 /** 로그인한 계정의 비밀번호 변경. 계정 생성은 관리자가 DB 에서 직접 한다. */
@@ -182,6 +183,8 @@ export function Settings() {
       </form>
       {error && <p className="err">{error}</p>}
     </section>
+    <ClaudeAccounts />
+    <ClaudeEnvironmentEditor />
     <Account />
     <TwoFactor />
     </>

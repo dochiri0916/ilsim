@@ -64,7 +64,7 @@ data class Stats(
                     costUsd = group.sumOf { it.costUsd }, unknownCalls = group.sumOf { it.unknownCalls })
             }
             val escalated = stages.count { s -> s.executions.filter { e -> e.completed && (s.usage.isEmpty() || s.usage.any { u -> u.purpose == "WRITE" && u.executionId == e.id }) }.zipWithNext().any { (a, b) ->
-                fun tier(model: String) = ModelTier.entries.indexOfFirst { it.modelId == model }
+                fun tier(model: String) = ModelTier.of(model)?.ordinal ?: -1
                 tier(a.model) >= 0 && tier(b.model) > tier(a.model)
             } }
             val analysisCost = projectUsage.sumOf { it.chargedUsd ?: 0.0 }

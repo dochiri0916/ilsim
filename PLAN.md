@@ -12,7 +12,7 @@ Ilsim은 여러 프로젝트의 개발 환경을 중앙에서 관리하고, AI A
 
 **핵심 목표**
 
-- Claude Code, Codex 등 여러 AI Agent 통합 관리 // claude 만 쓸 듯
+- Claude Code 기반 AI Agent 관리(Claude 계정 여러 개)
 - 프로젝트별 아키텍처 및 코드 컨벤션 자동 분석
 - 프로젝트별 개발 정책 자동 생성 및 적용
 - AI 기반 요구사항 분석과 Spec 생성
@@ -107,7 +107,6 @@ Ilsim Platform
 │   ├── Company PC Runner
 │   ├── Personal PC Runner
 │   ├── Claude Local Adapter
-│   ├── Codex Local Adapter
 │   ├── Remote Agent Adapters
 │   └── Analysis Runner
 │
@@ -130,7 +129,7 @@ Ilsim Platform
 
 **Agent Runner**
 
-- Claude Code / Codex 실행
+- Claude Code 실행
 - Git Worktree 생성
 - 프로젝트 코드 탐색
 - 로컬 분석 도구 실행
@@ -344,7 +343,6 @@ specs/
 ### 7.1 지원 대상
 
 - Claude Code
-- Codex
 - 향후 추가할 AI Coding Agent
 
 ### 7.2 실행 환경
@@ -364,9 +362,7 @@ specs/
 ```text
 AgentExecutionPort
 ├── ClaudeLocalAdapter
-├── CodexLocalAdapter
-├── ClaudeRemoteAdapter
-└── CodexRemoteAdapter
+└── ClaudeRemoteAdapter
 ```
 
 각 Adapter는 지원 기능을 명시해야 한다.
@@ -815,7 +811,6 @@ iPhone Safari에서 웹사이트를 홈 화면에 추가해 사용하는 형태�
 ### Phase 2 — Agent 실행 및 Spec
 
 - [ ] Claude Code Local Adapter
-- [ ] Codex Local Adapter
 - [ ] Git Worktree 기반 작업 격리
 - [ ] Agent Task 상태 관리
 - [ ] GitHub Spec Kit 연동
@@ -928,7 +923,7 @@ Runner 연결
     ↓
 사용자 요구사항 입력
     ↓
-Claude Code / Codex 실행
+Claude Code 실행
     ↓
 요구사항 분석 및 질문
     ↓
@@ -947,7 +942,7 @@ MVP에서는 다음을 우선 사용한다.
 
 - Spring Boot + MySQL + Flyway
 - Spring Security
-- Claude Code / Codex Local Runner
+- Claude Code Local Runner
 - GitHub Spec Kit
 - ArchUnit
 - Checkstyle

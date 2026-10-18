@@ -19,20 +19,22 @@ data class CostRoutingPolicy(
     val comparisonEvery: Int = 5,
     val comparisonCandidates: Int = 15,
 ) {
-    fun choose(assessment: Assessment, minimum: ModelTier, chars: Int, history: List<ExecutionRecord>, workload: String, failed: Set<String> = emptySet()): CostRoute {
+    fun choose(assessment: Assessment, minimum: ModelTier, chars: Int, history: List<ExecutionRecord>, workload: String, failed: Set<String> = emptySet(),
+        adjustments: RoutingAdjustments = RoutingAdjustments()): CostRoute {
         // 저장된 실행 이력을 주기적으로 비교한다. 비교 자체에는 추가 모델 호출이 없다.
         val cutoff = history.size / comparisonEvery.coerceAtLeast(1) * comparisonEvery.coerceAtLeast(1)
         val recent = history.take(cutoff).filter { it.workload == workload && it.completed && it.failureKind !in ENVIRONMENT_FAILURES }.takeLast(historyLimit)
-        val control = recent.filter { sample -> options.firstOrNull { it.tier.modelId == sample.model && it.effort == sample.effort }?.let { conservative(assessment, it) } == true }
+        val control = recent.filter { sample -> options.firstOrNull { it.tier == ModelTier.of(sample.model) && it.effort == sample.effort }?.let { conservative(assessment, it) } == true }
         val options = options.filter { it.tier.ordinal >= minimum.ordinal }.sortedBy { estimate(it, chars) }.take(comparisonCandidates.coerceAtLeast(1))
         val candidates = options.mapNotNull { option ->
-            if (option.key in failed) return@mapNotNull null
-            val evaluation = assessment.candidates.firstOrNull { it.model == option.tier.modelId && it.effort == option.effort }
+            if (option.key in failed || !adjustments.allows(option)) return@mapNotNull null
+            val evaluation = assessment.candidates.firstOrNull { ModelTier.of(it.model) == option.tier && it.effort == option.effort }
             if (evaluation != null && (!evaluation.success.isFinite() || evaluation.success !in 0.0..1.0 || !evaluation.uncertainty.isFinite() || evaluation.uncertainty !in 0.0..1.0)) return@mapNotNull null
             val conservative = conservative(assessment, option)
             // 근거가 없는 조합은 검증된 보수적 범위만 허용한다.
             var success = evaluation?.let { (it.success - it.uncertainty).coerceIn(0.0, 1.0) } ?: if (conservative) 0.95 else 0.0
-            val samples = recent.filter { it.model == option.tier.modelId && it.effort == option.effort && it.policyVersion == version }
+            // 같은 계열의 이전 버전 이력도 이어받는다(새 버전을 바로 쓰기 위해).
+            val samples = recent.filter { ModelTier.of(it.model) == option.tier && it.effort == option.effort && it.policyVersion == version }
             if (!allowUnverified && !conservative && samples.count { it.passed } < minimumSamples) return@mapNotNull null
             if (!allowUnverified && !conservative && (control.size < minimumSamples ||
                     samples.count { it.passed }.toDouble() / samples.size < control.count { it.passed }.toDouble() / control.size)) return@mapNotNull null
@@ -40,6 +42,8 @@ data class CostRoutingPolicy(
                 val observed = (samples.count { it.passed } + success * 10) / (samples.size + 10.0)
                 success = observed
             }
+            // 사람이 정한 보정(예측이 실제보다 낙관적·비관적이던 만큼)을 마지막에 더한다.
+            success = adjustments.adjust(option, success)
             if (success < qualityThreshold) return@mapNotNull null
             val measured = samples.mapNotNull { it.actualCostUsd }.takeIf { it.size >= minimumSamples }?.average()
             val call = measured ?: estimate(option, chars)

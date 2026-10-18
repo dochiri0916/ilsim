@@ -51,7 +51,7 @@ object ProcessClaudeAgent : ClaudeAgent {
     private val version by lazy { runCatching { Shell.run(Path.of(System.getProperty("java.io.tmpdir")), "claude", "--version").output.trim().substringBefore(' ') }.getOrNull() }
 
     internal fun command(task: AssignedTask, prompt: String): List<String> =
-        listOf("claude", "-p") + (task.resumeSessionId?.let { listOf("--resume", it) } ?: emptyList()) + listOf(
+        listOf("claude", "-p") + (task.resumeSessionId?.let { listOf("--resume", ClaudeAccountScope.rawSession(it)) } ?: emptyList()) + listOf(
             "--model", task.model, "--effort", task.effort, "--output-format", "stream-json", "--verbose",
             "--permission-mode", "acceptEdits", "--tools", if (task.stage in setOf("REQUIREMENTS", "TEST_CASES")) "Read,Glob,Grep,Write,Edit" else "Read,Glob,Grep,Write,Edit,Bash",
             "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}",
@@ -103,7 +103,7 @@ object ProcessClaudeAgent : ClaudeAgent {
             tools += Regex("\"type\"\\s*:\\s*\"tool_use\"").findAll(line).count()
             errors.appendLine(line)
             if (errors.length > 8000) errors.delete(0, errors.length - 8000)
-            ClaudePlanUsage.parse(line)?.let(PlanUsageWatch::observe)
+            ClaudePlanUsage.parse(line)?.let { PlanUsageWatch.observe(it.copy(provider = ClaudeAccountScope.provider(ClaudeAccountScope.account))) }
             onLine(line)
         }
         val code = claude.waitFor()
@@ -119,14 +119,14 @@ object ProcessClaudeAgent : ClaudeAgent {
                 status = "RECOVERED", toolCalls = if (model == steps.values.first().model) tools else 0)
         } else parsed
         UsageScope.complete(pendingId, usage)
-        return AgentRun(exit, timedOut.get(), cost, session, failure, usage, actualModel, errors.toString().takeLast(1000).takeIf { exit != 0 })
+        return AgentRun(exit, timedOut.get(), cost, ClaudeAccountScope.tag(session), failure, usage, actualModel, errors.toString().takeLast(1000).takeIf { exit != 0 })
     }
 }
 
 object FailureKind {
     fun classify(text: String): String = when {
         Regex("(?i)(no conversation found|session (?:not found|does not exist)|could not find.*session)").containsMatchIn(text) -> "SESSION_MISSING"
-        Regex("(?i)(unauthorized|authentication|invalid api key|not logged in|permission denied)").containsMatchIn(text) -> "AUTH"
+        Regex("(?i)(unauthorized|authentication|invalid api key|not logged in|login expired|permission denied)").containsMatchIn(text) -> "AUTH"
         Regex("(?i)(rate.?limit|429|overloaded|connection|network|timed? out|503|502)").containsMatchIn(text) -> "NETWORK"
         Regex("(?i)(command not found|no such file|not executable|invalid (?:option|configuration)|exit code 12[67])").containsMatchIn(text) -> "ENVIRONMENT"
         else -> "MODEL"

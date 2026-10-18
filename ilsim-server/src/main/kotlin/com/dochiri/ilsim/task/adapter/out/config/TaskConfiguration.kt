@@ -77,5 +77,7 @@ class TaskConfiguration {
         @Value("\${ILSIM_EFFORT:medium}") effort: String,
         @Value("\${ILSIM_TASK_COST_ALERT_USD:0}") costAlertUsd: Double,
         reviewCostPolicy: ReviewCostPolicy,
-    ): TaskService = TaskService(selector, store, clock, ReasoningEffort.parse(effort), costAlertUsd, reviewCostPolicy).also { it.restore() }
+        jdbc: JdbcTemplate,
+    ): TaskService = TaskService(selector, store, clock, ReasoningEffort.parse(effort), costAlertUsd, reviewCostPolicy,
+        com.dochiri.ilsim.task.adapter.out.persistence.JdbcRoutingAdjustmentStore(jdbc)).also { it.restore() }
 }

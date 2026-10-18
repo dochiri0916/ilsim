@@ -1,7 +1,6 @@
 package com.dochiri.ilsim.runner
 
 import java.nio.file.Files
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -10,10 +9,11 @@ import kotlinx.serialization.json.JsonPrimitive
 @Serializable
 data class UsageWindowReport(val utilization: Double, val resetsAt: Long? = null)
 
-/** Claude 구독 플랜 사용량(5시간·7일). 서버로 보내 웹에 보여 준다. */
+/** 구독 플랜 사용량(5시간·7일). [provider]는 claude(기본 로그인) 또는 claude@<계정>(일심에 등록한 계정)으로, 계정마다 따로 보고한다. */
 @Serializable
 data class PlanUsageReport(
     val runnerId: String = "",
+    val provider: String = "claude",
     val status: String? = null,
     val fiveHour: UsageWindowReport? = null,
     val sevenDay: UsageWindowReport? = null,
@@ -85,35 +85,43 @@ object UsageCommand {
     }
 }
 
-/** 작업 중 Claude 실행이 남긴 가장 최근 사용량과, 토큰 없이 읽는 `/usage` 조회. 서버 보고는 [PlanUsageReporter] 한 스레드만 한다. */
+/**
+ * 작업 중 Claude 실행이 남긴 가장 최근 사용량과, 토큰 없이 읽는 조회. 계정(provider)마다 따로 둔다.
+ * 서버 보고는 [PlanUsageReporter] 한 스레드만 한다.
+ */
 object PlanUsageWatch {
-    private val latest = AtomicReference<PlanUsageReport?>(null)
-    private var reported: PlanUsageReport? = null
+    private val latest = java.util.concurrent.ConcurrentHashMap<String, PlanUsageReport>()
+    private val reported = mutableMapOf<String, PlanUsageReport>()
     /** 직접 조회했으면 값이 같아도 보내 웹의 기준 시각을 갱신한다. */
-    @Volatile private var probed = false
+    private val probed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    fun observe(usage: PlanUsageReport) = latest.set(usage)
+    fun observe(usage: PlanUsageReport) { latest[usage.provider] = usage }
+
+    fun latest(provider: String): PlanUsageReport? = latest[provider]
 
     /** 마지막으로 보낸 값과 다르면 [send] 로 보낸다. 보내다 실패하면 다음에 다시 보낸다. */
     fun reportChanged(send: (PlanUsageReport) -> Unit) {
-        val now = latest.get() ?: return
-        if (now == reported && !probed) return
-        send(now)
-        reported = now
-        probed = false
+        for ((provider, now) in latest.toMap()) {
+            if (now == reported[provider] && provider !in probed) continue
+            send(now)
+            reported[provider] = now
+            probed.remove(provider)
+        }
     }
 
-    /** `claude -p /usage` 로 읽는다. 모델을 부르지 않아 토큰이 들지 않는다. */
+    /** `claude -p /usage` 로 이 스레드의 Claude 계정([ClaudeAccountScope]) 사용량을 읽는다. 모델을 부르지 않아 토큰이 들지 않는다. */
     fun probe(): PlanUsageReport? {
         val dir = Files.createTempDirectory("ilsim-usage")
         try {
             val r = Shell.run(dir, "claude", "-p", "/usage", "--output-format", "json", timeoutMinutes = 2, maxChars = 200_000)
             check(r.exit == 0) { "claude /usage 실패(${r.exit}): ${r.output.takeLast(300)}" }
-            return UsageCommand.parse(ClaudeCli.parse(r.output).text)?.also { observe(it); probed = true }
+            return UsageCommand.parse(ClaudeCli.parse(r.output).text)?.copy(provider = ClaudeAccountScope.provider(ClaudeAccountScope.account))
+                ?.also { observe(it); probed.add(it.provider) }
         } finally {
             dir.toFile().deleteRecursively()
         }
     }
+
 }
 
 /** 작업 실행과 따로 도는 사용량 스레드. [interval] 마다, 그리고 웹에서 "지금 확인"을 누르면 바로 읽어 서버로 보낸다. */
@@ -124,13 +132,37 @@ class PlanUsageReporter(
 ) {
     fun start(): Thread = Thread(::loop, "plan-usage").apply { isDaemon = true; start() }
 
+    /** 공통 설정을 받아 계정 디렉터리에 깔고, 계정 상태를 보고하며, 웹에서 지운 계정을 정리한다. */
+    private fun syncAccounts() {
+        runCatching { client.claudeEnvironment() }.onSuccess { env ->
+            ClaudeAccounts.environment = env
+            ClaudeAccounts.names().forEach(ClaudeAccounts::applyEnvironment)
+        }.onFailure { println("Claude 설정 조회 실패: ${it.message}") }
+        val accounts = ClaudeAccounts.refresh()
+        runCatching { client.reportClaudeAccounts(runnerId, accounts) }.onSuccess { removed ->
+            removed.forEach { println("Claude 계정 삭제: $it"); ClaudeAccounts.remove(it) }
+        }.onFailure { println("Claude 계정 보고 실패: ${it.message}") }
+    }
+
     private fun loop() {
         var next = java.time.Instant.MIN
+        var nextModels = java.time.Instant.MIN
         while (true) {
             try {
+                // 한 시간마다 새 모델 버전을 확인한다(토큰 0). 서버도 같은 버전으로 배정하도록 보고한다.
+                if (java.time.Instant.now() >= nextModels) {
+                    nextModels = java.time.Instant.now().plus(java.time.Duration.ofHours(1))
+                    ModelDiscovery.refresh().takeIf { it.isNotEmpty() }?.let { found ->
+                        runCatching { client.reportModels(found) }.onFailure { println("모델 버전 보고 실패: ${it.message}") }
+                    }
+                }
                 if (client.claimUsageRefresh(runnerId) || java.time.Instant.now() >= next) {
                     next = java.time.Instant.now().plus(interval)
-                    runCatching { PlanUsageWatch.probe() }.onFailure { println("사용량 확인 실패: ${it.message}") }
+                    syncAccounts()
+                    // 등록한 계정이 있으면 그 계정들만, 없으면 기본 로그인의 사용량을 읽는다.
+                    (ClaudeAccounts.usable().ifEmpty { listOf(null) }).forEach { name ->
+                        runCatching { ClaudeAccountScope.within(name) { PlanUsageWatch.probe() } }.onFailure { println("사용량 확인 실패(${name ?: "기본"}): ${it.message}") }
+                    }
                 }
                 PlanUsageWatch.reportChanged { client.reportUsage(it.copy(runnerId = runnerId)) }
             } catch (e: Exception) {

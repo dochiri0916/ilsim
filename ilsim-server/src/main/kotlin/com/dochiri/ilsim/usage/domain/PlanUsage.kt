@@ -6,11 +6,12 @@ import java.time.Instant
 data class UsageWindow(val utilization: Double, val resetsAt: Instant?)
 
 /**
- * Runner 가 쓰는 Claude 구독 플랜의 사용량. Claude 가 실행마다 남기는 `rate_limit_event` 를 Runner 가 보고한다.
- * Runner(=PC의 Claude 계정)마다 하나이며, 일심 밖에서 쓴 양도 포함되므로 [observedAt] 시점의 값이다.
+ * Runner 가 쓰는 Claude 구독 플랜의 사용량. Claude 실행이 남긴 값을 Runner 가 보고한다.
+ * Runner(=PC)와 [provider](계정)마다 하나이며, 일심 밖에서 쓴 양도 포함되므로 [observedAt] 시점의 값이다.
  */
 data class PlanUsage(
     val runnerId: String,
+    val provider: String = CLAUDE,
     val status: String? = null,
     val fiveHour: UsageWindow? = null,
     val sevenDay: UsageWindow? = null,
@@ -24,4 +25,12 @@ data class PlanUsage(
     fun requestRefresh(now: Instant): PlanUsage = copy(refreshRequestedAt = refreshRequestedAt ?: now)
 
     fun claimRefresh(): PlanUsage = copy(refreshRequestedAt = null)
+
+    companion object {
+        const val CLAUDE = "claude"
+        private val PROVIDER = Regex("^claude(@[a-z0-9][a-z0-9-]{0,29})?$")
+
+        /** claude(기본 로그인) 또는 claude@<계정>(일심에 등록한 Claude 계정). */
+        fun validProvider(name: String): Boolean = PROVIDER.matches(name)
+    }
 }

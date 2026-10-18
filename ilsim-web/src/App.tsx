@@ -4,6 +4,7 @@ import { Dashboard } from './Dashboard'
 import { Knowledge } from './Knowledge'
 import { ProjectPicker, useSelectedProject } from './ProjectPicker'
 import { Settings } from './Settings'
+import { Routing } from './Routing'
 import { Stats } from './Stats'
 import { TaskDetail } from './TaskDetail'
 import { Usage } from './Usage'
@@ -93,6 +94,7 @@ const TABS = [
   { href: '#/knowledge', label: '규칙·메모리' },
   { href: '#/usage', label: '사용량' },
   { href: '#/stats', label: '통계' },
+  { href: '#/routing', label: '모델 선택' },
 ]
 
 /** 프로젝트를 먼저 고르고, 그 프로젝트 안에서 탭을 오간다. 설정만 프로젝트와 무관하다. */
@@ -137,6 +139,7 @@ function Shell({ hash, onLogout }: { hash: string; onLogout: () => void }) {
           : tab === '#/knowledge' ? <Knowledge projectId={projectId} />
           : tab === '#/usage' ? <Usage project={project} />
           : tab === '#/stats' ? <Stats projectId={projectId} />
+          : tab === '#/routing' ? <Routing projectId={projectId} />
           : <Dashboard project={project} />}
       </main>
     </div>

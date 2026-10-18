@@ -13,7 +13,15 @@ object Shell {
     const val RUNNER_ENV = "ILSIM_RUNNER"
 
     fun process(dir: Path, cmd: List<String>): ProcessBuilder =
-        ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true).also { it.environment()[RUNNER_ENV] = "1" }
+        ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true).also {
+            it.environment()[RUNNER_ENV] = "1"
+            // Claude 실행은 이 스레드가 고른 일심 계정의 설정 디렉터리로 한다.
+            if (cmd.firstOrNull() == "claude") {
+                // Fable 계열은 잠가 둔다. 서버가 보내거나 설정에 들어가도 실행하지 않는다.
+                cmd.zipWithNext().firstOrNull { (k, v) -> k == "--model" && ClaudeModels.isLocked(v) }?.let { error("잠긴 모델은 실행하지 않습니다: ${it.second}") }
+                ClaudeAccountScope.configure(it.environment())
+            }
+        }
 
     /** 프로세스를 띄우고 이 스레드의 [StopSignal] 에 등록해 중지 요청 때 함께 끝나게 한다. */
     fun start(builder: ProcessBuilder): Process = StopSignal.track(builder.start())

@@ -14,6 +14,9 @@ class ModelSelector(
 ) {
     private var history: List<ExecutionRecord> = emptyList()
 
+    /** 웹에서 바꾸는 모델·추론 강도 조정. 다음 선택부터 적용된다. */
+    @Volatile var adjustments: RoutingAdjustments = RoutingAdjustments()
+
     fun assessmentAvailable(): Boolean = assessor.isAvailable()
 
     fun learn(tasks: Collection<Task>) {
@@ -32,7 +35,7 @@ class ModelSelector(
             .map { "${it.model}/${it.effort}" }.toSet()
         val a = assessment ?: Assessment(2.0, 1.0)
         val workload = "${state.stage.name}:${a.complexity.toInt()}:${a.risk.toInt()}"
-        val selected = policy.choose(a, minimum, evidence.length, history, workload, failed)
+        val selected = policy.choose(a, minimum, evidence.length, history, workload, failed, adjustments)
         val route = if (assessment == null && fallbackEffort != null) {
             val option = selected.option.copy(effort = ReasoningEffort.parse(fallbackEffort))
             selected.copy(option = option, expectedCostUsd = CostRoutingPolicy.estimate(option, evidence.length) +

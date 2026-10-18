@@ -64,7 +64,7 @@ private const val USAGE = """사용법:
   실행
     ilsim-runner run                             서버에 연결해 작업 수행 (토큰: ILSIM_TOKEN 또는 서버가 만든 ~/.ilsim/token)"""
 
-private const val AI_MODEL = ClaudeModels.REVIEW
+private val AI_MODEL: String get() = ClaudeModels.REVIEW
 
 fun main(args: Array<String>) {
     val store = ConfigStore()
@@ -498,6 +498,7 @@ private fun run(store: ConfigStore) {
     val report = config.projects.map { (id, p) -> ProjectReport(id, p.name) }
     println("runner ${config.runnerId} -> ${config.serverUrl}, 프로젝트 ${report.map { it.id }}")
     PlanUsageReporter(client, config.runnerId).start()
+    ClaudeLoginWorker(client, config.runnerId).start()
     while (true) {
         try {
             durable.flushResults()
@@ -511,7 +512,7 @@ private fun run(store: ConfigStore) {
             client.claimAnalysis(AnalysisClaim(config.runnerId, report.map { it.id }))?.let { projectId ->
                 println("분석 수신: $projectId")
                 val policy = runCatching { client.reviewPolicy(projectId) }.getOrDefault(ReviewPolicySnapshot())
-                client.analysisResult(projectId, analyzeProject(store, projectId, policy))
+                client.analysisResult(projectId, ClaudeAccountScope.within(ClaudeAccounts.pick()) { analyzeProject(store, projectId, policy) })
                 println("분석 종료: $projectId")
                 continue
             }

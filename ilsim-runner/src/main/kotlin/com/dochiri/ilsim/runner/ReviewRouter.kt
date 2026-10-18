@@ -12,7 +12,7 @@ object ReviewRouter {
     data class Choice(val model: String, val effort: String) {
         val key get() = "$model/$effort/$POLICY"
     }
-    private val options = listOf(ClaudeModels.HAIKU, ClaudeModels.SONNET, ClaudeModels.OPUS).flatMap { m ->
+    private val options get() = listOf(ClaudeModels.HAIKU, ClaudeModels.SONNET, ClaudeModels.OPUS).flatMap { m ->
         listOf("low", "medium", "high", "xhigh", "max").map { Choice(m, it) }
     }
 

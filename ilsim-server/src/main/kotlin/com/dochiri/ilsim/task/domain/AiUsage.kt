@@ -55,4 +55,6 @@ data class ExecutionRecord(
     val validation: Map<String, String> = emptyMap(),
     val workload: String = "",
     val actualCostUsd: Double? = null,
+    /** 이 실행을 고를 때 적용한 사람의 조정 버전([RoutingAdjustments.version]). */
+    val adjustmentVersion: String? = null,
 )

@@ -86,7 +86,9 @@ class TaskExecutor(
             UsageScope.collect(runUsage, { journal.save(runUsage) }, task.executionId) {
                 val policy = task.reviewPolicy.copy(sample = task.reviewPolicy.sample?.takeIf { it.executionId == task.executionId })
                 ReviewContext.within(policy, task.stage, policy.sample?.let { grant -> runUsage.any { it.review?.sampleId == grant.id } } ?: false) {
-                    DecisionScope.collect(decisions) { StopSignal.within(signal) { execute(task) } }
+                    DecisionScope.collect(decisions) { StopSignal.within(signal) {
+                        ClaudeAccountScope.within(claudeAccount(task)) { execute(task) }
+                    } }
                 }
             }
         } catch (e: Exception) {
@@ -147,6 +149,19 @@ class TaskExecutor(
 
     private fun log(task: AssignedTask, msg: String) = client.event(task.taskId, task.stage, "log", msg)
 
+    /**
+     * 이번 실행에 쓸 Claude 계정. 이어 가는 세션이면 그 세션을 연 계정(로그인이 살아 있을 때)으로 가고,
+     * 새 세션이면 남은 사용량이 가장 여유 있는 계정을 고른다. 등록한 계정이 없으면 null(기본 로그인).
+     */
+    private fun claudeAccount(task: AssignedTask): String? {
+        val resume = task.resumeSessionId
+        if (resume != null) {
+            val owner = ClaudeAccountScope.accountOf(resume)
+            if (owner == null || owner in ClaudeAccounts.usable()) return owner
+        }
+        return ClaudeAccounts.pick()
+    }
+
     private fun execute(assigned: AssignedTask): StageResult {
         val project = config.projects[assigned.projectId]
             ?: return StageResult(false, error = "Runner에 등록되지 않은 프로젝트: ${assigned.projectId}")
@@ -203,6 +218,12 @@ class TaskExecutor(
         }
         val saved = previous?.takeIf { it.snapshot == ExecutionCheckpoint.snapshot(worktree) &&
             (it.reusable || it.executionId != null && it.executionId == task.executionId) }
+        // 다른 계정이 연 세션은 이어 갈 수 없다(그 계정 로그인이 끊긴 경우). 지시문이 문서·실패 사유·사용자 말을 모두 담으므로 새 세션에서 이어진다.
+        val own = task.resumeSessionId?.let {
+            if (ClaudeAccountScope.accountOf(it) == ClaudeAccountScope.account) task
+            else null.also { _ -> log(task, "다른 계정의 세션이라 새 세션으로 이어서 실행합니다") }
+        } ?: task.copy(resumeSessionId = null)
+        ClaudeAccountScope.account?.let { log(task, "Claude 계정: $it") }
         log(task, if (saved != null) "작성 완료 지점에서 검증 재개" else "claude 실행 (model=${task.model}, effort=${task.effort}, attempt=${task.attempt})")
         DecisionScope.record("WRITE", if (saved == null) "AGENT" else "CACHE", if (saved == null) "새 코드·문서 생성은 Agent가 담당" else "코드·규칙·명령·환경 유효성 확인 후 검증 재개", scope)
         var answered = false
@@ -214,11 +235,11 @@ class TaskExecutor(
             runSession = saved.sessionId
             runUsage.addAll(saved.usage)
             AgentRun(0)
-        } else agent.run(worktree, task, promptWithRules(task), onLine).also(::accumulate)
-        if (task.resumeSessionId != null && run.exit != 0 && run.failureKind == "SESSION_MISSING" && !run.timedOut && !StopSignal.isStopped()) {
+        } else agent.run(worktree, own, promptWithRules(own), onLine).also(::accumulate)
+        if (own.resumeSessionId != null && run.exit != 0 && run.failureKind == "SESSION_MISSING" && !run.timedOut && !StopSignal.isStopped()) {
             // 이어 갈 세션을 잃었으면(기록 삭제 등) 새 세션으로 다시 한다. 지시문이 문서 경로를 알려 주므로 파일에서 이어진다.
             log(task, "이전 세션을 이어 가지 못해 새 세션으로 다시 실행합니다")
-            val fresh = task.copy(resumeSessionId = null)
+            val fresh = own.copy(resumeSessionId = null)
             run = agent.run(worktree, fresh, promptWithRules(fresh), onLine)
             accumulate(run)
         }

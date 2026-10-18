@@ -23,6 +23,8 @@ class UsageController(private val usages: PlanUsageUseCase) {
 
     data class ReportRequest(
         val runnerId: String = "",
+        /** 예전 Runner 는 보내지 않으므로 claude 로 본다. */
+        val provider: String = PlanUsage.CLAUDE,
         val status: String? = null,
         val fiveHour: WindowRequest? = null,
         val sevenDay: WindowRequest? = null,
@@ -39,7 +41,7 @@ class UsageController(private val usages: PlanUsageUseCase) {
 
     @PostMapping("/runner/api/usage")
     fun report(@RequestBody request: ReportRequest): PlanUsage =
-        usages.report(request.runnerId, request.status, request.fiveHour?.toWindow(), request.sevenDay?.toWindow())
+        usages.report(request.runnerId, request.provider, request.status, request.fiveHour?.toWindow(), request.sevenDay?.toWindow())
 
     @PostMapping("/runner/api/usage/claim")
     fun claim(@RequestBody request: ClaimRequest): ResponseEntity<Void> =

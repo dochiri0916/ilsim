@@ -50,6 +50,12 @@ htpasswd -bnBC 10 "" '비밀번호' | tr -d ':\n'   # 해시 생성
 INSERT INTO accounts (version, username, password_hash, created_at) VALUES (0, '아이디', '<해시>', NOW(3));
 ```
 
+## Claude 계정과 공통 설정
+
+- 웹 설정 → "Claude 계정"에서 이름을 넣고 추가하면 Runner PC가 `claude auth login`을 띄운다. 화면의 링크로 claude.ai에 로그인(승인)하고 나온 인증 코드를 넣으면 등록된다. 계정마다 `~/.ilsim/claude-accounts/<이름>`을 `CLAUDE_CONFIG_DIR`로 써서 로그인·세션 기록·키체인 항목이 분리된다. 로그인 정보는 그 PC에만 있으므로 다른 PC Runner는 그 PC에서 따로 등록한다.
+- 새 세션을 열 때 남은 5시간·주간 사용량이 가장 여유 있는 계정으로 실행하고, 이어 가는 세션은 처음 계정으로 계속한다. 실행 중 한도에 걸리면 다른 계정으로 넘기지 않고 단계를 멈춘다. 구독이 없는 계정은 쓰지 않는다. 등록한 계정이 없으면 PC의 기본 로그인(`~/.claude`)을 쓴다.
+- 웹 설정 → "Claude 공통 설정"의 CLAUDE.md·settings.json을 등록한 모든 계정 디렉터리에 똑같이 쓴다. 계정 실행에서는 `ANTHROPIC_API_KEY`처럼 API 과금으로 새는 변수를 지운다.
+
 ## 접속과 토큰
 
 - Runner 토큰: 서버가 처음 뜰 때 `~/.ilsim/token`(소유자만 읽기)을 만들고, Runner가 같은 파일을 읽는다. 환경 변수 `ILSIM_TOKEN`을 주면 그 값이 우선한다.

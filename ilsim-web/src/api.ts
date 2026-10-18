@@ -68,8 +68,72 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (path: string, body?: unknown) =>
   call<void>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) })
 
+export interface RoutingAdjustment { model: string; effort: string; enabled: boolean; successOffset: number }
+
+export interface RoutingAdjustments { version: string; items: RoutingAdjustment[]; note: string | null; createdAt: string | null }
+
+export interface OptionReport {
+  model: string; effort: string; executions: number; passed: number; passRate: number | null
+  averagePredicted: number | null; calibrationGap: number | null; brier: number | null
+  averageActualCostUsd: number | null; averageExpectedCostUsd: number | null; over: number; under: number; recommendedOffset: number | null
+}
+
+export interface ExecutionReview {
+  taskId: string; stage: string; executionId: string; model: string; effort: string; workload: string
+  predictedSuccess: number | null; passed: boolean; failureKind: string | null; actualCostUsd: number | null; expectedCostUsd: number | null
+  verdict: 'FIT' | 'OVER' | 'UNDER' | 'UNKNOWN'; cheaperOption: string | null; adjustmentVersion: string | null
+}
+
+export interface RoutingOverview {
+  report: {
+    options: OptionReport[]
+    workloads: { workload: string; executions: number; mostUsed: string | null; cheapestQualified: string | null }[]
+    recent: ExecutionReview[]
+    verdicts: Partial<Record<ExecutionReview['verdict'], number>>
+    minimumSamples: number
+    qualityThreshold: number
+  }
+  current: RoutingAdjustments
+  history: RoutingAdjustments[]
+  /** 등급별 지금 쓰는 모델 ID(haiku·sonnet·opus). 같은 계열 새 버전이 나오면 자동으로 올라간다. */
+  models: Record<string, string>
+  upgrades: string[]
+  locked: string[]
+}
+
 export interface Settings {
   jev: { configured: boolean; last4: string | null; updatedAt: string | null }
+}
+
+/** 일심이 Claude 를 실행하는 모든 곳에 똑같이 까는 CLAUDE.md·settings.json. */
+export interface ClaudeEnvironment {
+  claudeMd: string
+  settingsJson: string
+  version: string
+  updatedAt: string | null
+}
+
+/** Runner(PC)에 로그인해 둔 Claude 계정. plan 이 없으면 구독이 없어 실행에 쓰지 않는다. */
+export interface ClaudeAccount {
+  runnerId: string
+  name: string
+  loggedIn: boolean
+  email: string | null
+  plan: string | null
+  usable: boolean
+  reportedAt: string | null
+}
+
+export interface ClaudeLogin {
+  id: string
+  runnerId: string
+  name: string
+  status: 'REQUESTED' | 'WAITING_CODE' | 'CODE_SUBMITTED' | 'DONE' | 'FAILED'
+  requestedAt: string
+  url: string | null
+  error: string | null
+  email: string | null
+  plan: string | null
 }
 
 export interface RuleView {
@@ -141,6 +205,8 @@ export interface UsageWindow {
 
 export interface PlanUsage {
   runnerId: string
+  /** 'claude'(기본 로그인) 또는 'claude@<계정>'. 같은 PC라도 계정마다 따로 보고된다. */
+  provider: string
   status: string | null
   fiveHour: UsageWindow | null
   sevenDay: UsageWindow | null
@@ -170,6 +236,11 @@ export const api = {
   sendMessage: (taskId: string, text: string) => post(`/api/tasks/${taskId}/messages`, { text }),
   changePassword: (currentPassword: string, newPassword: string) =>
     post('/api/auth/password', { currentPassword, newPassword }),
+  routing: (projectId?: string) => call<RoutingOverview>(`/api/routing${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
+  saveRouting: (items: RoutingAdjustment[], note: string) =>
+    call<RoutingAdjustments>('/api/routing/adjustments', { method: 'PUT', body: JSON.stringify({ items, note }) }),
+  applyRecommendedRouting: () => call<RoutingAdjustments>('/api/routing/adjustments/recommended', { method: 'POST' }),
+  restoreRouting: (version: string) => call<RoutingAdjustments>(`/api/routing/adjustments/${encodeURIComponent(version)}/restore`, { method: 'POST' }),
   stats: (projectId: string) => call<Stats>(`/api/stats?projectId=${encodeURIComponent(projectId)}`),
   usage: () => call<PlanUsage[]>('/api/usage'),
   refreshUsage: (runnerId: string) => call<PlanUsage>(`/api/usage/${encodeURIComponent(runnerId)}/refresh`, { method: 'POST' }),
@@ -183,6 +254,14 @@ export const api = {
   settings: () => call<Settings>('/api/settings'),
   saveJevKey: (key: string) => call<Settings>('/api/settings/jev-key', { method: 'PUT', body: JSON.stringify({ key }) }),
   deleteJevKey: () => call<Settings>('/api/settings/jev-key', { method: 'DELETE' }),
+  claudeEnvironment: () => call<ClaudeEnvironment>('/api/claude/environment'),
+  saveClaudeEnvironment: (claudeMd: string, settingsJson: string) =>
+    call<ClaudeEnvironment>('/api/claude/environment', { method: 'PUT', body: JSON.stringify({ claudeMd, settingsJson }) }),
+  claudeAccounts: () => call<{ accounts: ClaudeAccount[]; logins: ClaudeLogin[] }>('/api/claude/accounts'),
+  startClaudeLogin: (runnerId: string, name: string) => call<ClaudeLogin>('/api/claude/logins', { method: 'POST', body: JSON.stringify({ runnerId, name }) }),
+  submitClaudeCode: (id: string, code: string) => call<ClaudeLogin>(`/api/claude/logins/${id}/code`, { method: 'POST', body: JSON.stringify({ code }) }),
+  removeClaudeAccount: (runnerId: string, name: string) =>
+    call<void>(`/api/claude/accounts/${encodeURIComponent(runnerId)}/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   projects: () => call<Project[]>('/api/projects'),
   tasks: () => call<Task[]>('/api/tasks'),
   task: (id: string) => call<{ task: Task; events: TaskEvent[] }>(`/api/tasks/${id}`),

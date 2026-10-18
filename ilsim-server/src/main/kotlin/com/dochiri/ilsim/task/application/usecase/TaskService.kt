@@ -6,6 +6,15 @@ import com.dochiri.ilsim.task.application.port.`in`.QueryTaskUseCase
 import com.dochiri.ilsim.task.application.port.`in`.RunnerUseCase
 import com.dochiri.ilsim.task.application.port.out.StoredProject
 import com.dochiri.ilsim.task.application.port.out.TaskStore
+import com.dochiri.ilsim.task.application.port.out.RoutingAdjustmentStore
+import com.dochiri.ilsim.task.application.port.`in`.RoutingOverview
+import com.dochiri.ilsim.task.application.port.`in`.RoutingUseCase
+import com.dochiri.ilsim.task.domain.CostRoutingPolicy
+import com.dochiri.ilsim.task.domain.ModelCatalog
+import com.dochiri.ilsim.task.domain.ModelTier
+import com.dochiri.ilsim.task.domain.RoutingAdjustment
+import com.dochiri.ilsim.task.domain.RoutingAdjustments
+import com.dochiri.ilsim.task.domain.RoutingReport
 import com.dochiri.ilsim.task.application.result.Assignment
 import com.dochiri.ilsim.task.application.result.Cleanup
 import com.dochiri.ilsim.task.domain.Project
@@ -48,7 +57,11 @@ class TaskService(
     private val effort: String,
     private val costAlertUsd: Double = 0.0,
     private val reviewCostPolicy: ReviewCostPolicy = ReviewCostPolicy(),
-) : ManageTaskUseCase, QueryTaskUseCase, RunnerUseCase, ProjectUsageRecorder {
+    private val adjustmentStore: RoutingAdjustmentStore? = null,
+) : ManageTaskUseCase, QueryTaskUseCase, RunnerUseCase, ProjectUsageRecorder, RoutingUseCase {
+
+    /** 조정 이력(오래된 것부터). 마지막 것이 지금 적용 중인 조정이다. */
+    private val adjustmentHistory = Collections.synchronizedList(ArrayList<RoutingAdjustments>())
 
     private val tasks = ConcurrentHashMap<String, Task>()
     private val events = ConcurrentHashMap<String, MutableList<TaskEvent>>()
@@ -76,6 +89,10 @@ class TaskService(
                 tasks[recovered.id.value] = recovered
             }
             if (tasks.isNotEmpty()) log.info("저장된 작업 {}건을 되살렸습니다", tasks.size)
+            adjustmentStore?.loadAll()?.let { saved ->
+                adjustmentHistory.addAll(saved)
+                saved.lastOrNull()?.let { selector.adjustments = it }
+            }
         } catch (e: RuntimeException) {
             log.warn("저장된 작업을 읽지 못해 빈 상태로 시작합니다: {}", e.message)
         }
@@ -174,6 +191,7 @@ class TaskService(
             decision.state.routing["expectedCostUsd"]?.toDoubleOrNull(), decision.state.routing["predictedSuccess"]?.toDoubleOrNull(),
             decision.state.routing["contextHash"].orEmpty(),
             workload = "${stage.stage.name}:${decision.state.routing["complexity"]?.toDoubleOrNull()?.toInt() ?: 2}:${decision.state.routing["risk"]?.toDoubleOrNull()?.toInt() ?: 1}",
+            adjustmentVersion = selector.adjustments.version.takeIf { it != "none" },
         )
         val routed = assigned.updateCurrent(decision.state.finishPendingUsage(pendingAssessment).recordExecution(execution))
         val codeExecutions = tasks.values.filter { it.projectId == routed.projectId }.sumOf { task ->
@@ -346,6 +364,55 @@ class TaskService(
     }
 
     override fun projectReviews(projectId: String): List<AiUsage> = projectUsage[projectId].orEmpty().filter { it.review != null }
+
+    override fun routing(projectId: String?): RoutingOverview {
+        val selected = if (projectId == null) tasks.values else tasks.values.filter { it.projectId.value == projectId }
+        return RoutingOverview(RoutingReport.of(selected, selector.policy), selector.adjustments, adjustmentHistory.toList().reversed(), ModelCatalog.all(), modelUpgrades.toList().reversed())
+    }
+
+    /** 모델이 새 버전으로 올라간 기록(시각, 등급, 이전 → 새 ID). 서버를 다시 띄우면 Runner 가 다시 보고한다. */
+    private val modelUpgrades = Collections.synchronizedList(ArrayList<String>())
+
+    @Synchronized
+    override fun reportModels(models: Map<String, String>): Map<String, String> {
+        val upgraded = linkedMapOf<String, String>()
+        models.forEach { (label, id) ->
+            val tier = ModelTier.entries.firstOrNull { it.label == label } ?: return@forEach
+            ModelCatalog.upgrade(tier, id)?.let { previous ->
+                upgraded[label] = id
+                modelUpgrades += "${clock.instant()} ${tier.label}: $previous → $id"
+                log.info("모델 새 버전 도입: {} → {}", previous, id)
+            }
+        }
+        return upgraded
+    }
+
+    @Synchronized
+    override fun adjust(items: List<RoutingAdjustment>, note: String?): RoutingAdjustments {
+        items.firstOrNull { ModelTier.of(it.model) == null || it.effort !in CostRoutingPolicy.efforts }
+            ?.let { throw InvalidTaskRequestException("알 수 없거나 잠긴 모델·추론 강도: ${it.key}") }
+        val next = RoutingAdjustments.of(items, note, clock.instant())
+        adjustmentStore?.save(next)
+        adjustmentHistory += next
+        selector.adjustments = next
+        return next
+    }
+
+    override fun applyRecommended(projectId: String?): RoutingAdjustments {
+        val report = routing(projectId).report
+        val current = selector.adjustments.items.associateBy { it.key }.toMutableMap()
+        report.options.filter { it.recommendedOffset != null }.forEach { o ->
+            val key = "${o.model}/${o.effort}"
+            current[key] = (current[key] ?: RoutingAdjustment(o.model, o.effort)).copy(successOffset = o.recommendedOffset!!)
+        }
+        return adjust(current.values.toList(), "실행 이력 기반 권장 보정 적용")
+    }
+
+    override fun restore(version: String): RoutingAdjustments {
+        val target = if (version == "none") RoutingAdjustments() else adjustmentHistory.lastOrNull { it.version == version }
+            ?: throw InvalidTaskRequestException("조정 버전을 찾을 수 없습니다: $version")
+        return adjust(target.items, "버전 $version 으로 되돌림")
+    }
 
     override fun shouldStop(taskId: String, executionId: String?): Boolean = shouldStop(taskId) ||
         executionId != null && tasks[taskId]?.current()?.executionId != executionId

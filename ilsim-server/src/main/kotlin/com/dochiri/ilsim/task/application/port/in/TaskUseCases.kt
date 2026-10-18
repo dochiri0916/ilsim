@@ -73,4 +73,35 @@ interface RunnerUseCase {
     /** 실행 중인 단계를 그만둬야 하면 true(중지됐거나 더 이상 실행 중이 아님). */
     fun shouldStop(taskId: String): Boolean
     fun shouldStop(taskId: String, executionId: String?): Boolean = shouldStop(taskId)
+
+    /**
+     * Runner 가 Claude Code 별칭으로 확인한 등급별 최신 모델 ID(`haiku` → `claude-haiku-5-6`). 같은 계열의 더 높은 버전만 받아들이고
+     * 받아들인 것만 돌려준다. Fable 계열은 받지 않는다.
+     */
+    fun reportModels(models: Map<String, String>): Map<String, String> = emptyMap()
 }
+
+/** JEV 의 모델·추론 강도 선택이 맞았는지 실행 이력으로 보고, 사람이 조정한다. 조정은 다음 선택부터 적용된다. */
+interface RoutingUseCase {
+    /** [projectId]가 있으면 그 프로젝트 작업만 집계한다(조정은 전체 공통). */
+    fun routing(projectId: String? = null): RoutingOverview
+
+    fun adjust(items: List<com.dochiri.ilsim.task.domain.RoutingAdjustment>, note: String?): com.dochiri.ilsim.task.domain.RoutingAdjustments
+
+    /** 표본이 충분한 조합의 권장 보정값을 현재 조정에 덮어써 적용한다. */
+    fun applyRecommended(projectId: String? = null): com.dochiri.ilsim.task.domain.RoutingAdjustments
+
+    /** 이전 조정 버전을 다시 적용한다. "none" 은 조정 없음. */
+    fun restore(version: String): com.dochiri.ilsim.task.domain.RoutingAdjustments
+}
+
+data class RoutingOverview(
+    val report: com.dochiri.ilsim.task.domain.RoutingReport,
+    val current: com.dochiri.ilsim.task.domain.RoutingAdjustments,
+    /** 최근 것부터. */
+    val history: List<com.dochiri.ilsim.task.domain.RoutingAdjustments>,
+    /** 등급별 지금 쓰는 모델 ID. */
+    val models: Map<String, String> = emptyMap(),
+    /** 새 버전 도입 기록(최근 것부터). */
+    val upgrades: List<String> = emptyList(),
+)

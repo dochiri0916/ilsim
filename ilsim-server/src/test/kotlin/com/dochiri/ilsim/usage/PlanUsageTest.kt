@@ -64,4 +64,32 @@ class PlanUsageTest {
         mvc.perform(post("/runner/api/usage").contentType(MediaType.APPLICATION_JSON).content("""{"runnerId":" "}"""))
             .andExpect(status().isBadRequest)
     }
+
+    @Test
+    fun `같은 Runner 라도 Claude 계정마다 사용량을 따로 둔다`() {
+        mvc.perform(post("/runner/api/usage").contentType(MediaType.APPLICATION_JSON)
+            .content("""{"runnerId":"pc","provider":"claude@second","fiveHour":{"utilization":0.41}}""")).andExpect(status().isOk)
+        mvc.perform(post("/runner/api/usage").contentType(MediaType.APPLICATION_JSON)
+            .content("""{"runnerId":"pc","fiveHour":{"utilization":0.22}}""")).andExpect(status().isOk)
+
+        mvc.perform(get("/api/usage"))
+            .andExpect(jsonPath("$[0].provider").value("claude"))
+            .andExpect(jsonPath("$[0].fiveHour.utilization").value(0.22))
+            .andExpect(jsonPath("$[1].provider").value("claude@second"))
+            .andExpect(jsonPath("$[1].fiveHour.utilization").value(0.41))
+        mvc.perform(post("/runner/api/usage").contentType(MediaType.APPLICATION_JSON).content("""{"runnerId":"pc","provider":"other"}"""))
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `새로고침 요청은 Runner 의 모든 계정에 걸리고 한 번에 가져간다`() {
+        service.report("pc", "claude@second", null, null, null)
+
+        service.requestRefresh("pc")
+
+        assertThat(service.all().map { it.refreshRequestedAt }).containsOnly(now)
+        assertThat(service.claimRefresh("pc")).isTrue()
+        assertThat(service.all().map { it.refreshRequestedAt }).containsOnlyNulls()
+        assertThat(service.claimRefresh("pc")).isFalse()
+    }
 }

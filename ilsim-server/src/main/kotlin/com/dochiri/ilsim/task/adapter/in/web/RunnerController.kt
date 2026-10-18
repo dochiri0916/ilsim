@@ -53,6 +53,10 @@ class RunnerController(private val runner: RunnerUseCase) {
     @GetMapping("/tasks/{id}/stop")
     fun stop(@PathVariable id: String, @RequestParam(required = false) executionId: String? = null): Map<String, Boolean> = mapOf("stop" to runner.shouldStop(id, executionId))
 
+    /** Runner 가 토큰 없이 확인한 등급별 최신 모델 ID. 받아들인 새 버전만 돌려준다. */
+    @PostMapping("/models")
+    fun models(@RequestBody models: Map<String, String>): Map<String, String> = runner.reportModels(models)
+
     @PostMapping("/tasks/{id}/result")
     fun result(@PathVariable id: String, @RequestBody result: ReportStageCommand) = runner.report(id, result)
 }

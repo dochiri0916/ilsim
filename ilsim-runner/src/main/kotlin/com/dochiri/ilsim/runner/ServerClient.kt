@@ -74,6 +74,15 @@ data class Cleanup(val taskId: String, val projectId: String, val feature: Strin
 data class AnalysisClaim(val runnerId: String, val projects: List<String>)
 
 @Serializable
+data class ClaudeAccountsRequest(val runnerId: String, val accounts: List<ClaudeAccountReport>)
+
+@Serializable
+data class ClaudeLoginJob(val id: String, val name: String)
+
+@Serializable
+data class ClaudeLoginResult(val loggedIn: Boolean, val email: String? = null, val plan: String? = null, val error: String? = null)
+
+@Serializable
 data class AnalysisJob(val projectId: String)
 
 /** 웹에서 요청한 프로젝트 분석(아키텍처·컨벤션 규칙 추출)의 결과. [report] 는 CLI 와 같은 사람이 읽는 출력이다. */
@@ -155,6 +164,56 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
             204 -> false
             else -> error("사용량 요청 확인 실패: HTTP ${res.statusCode()}")
         }
+    }
+
+    /** 토큰 없이 확인한 등급별 최신 모델 ID 를 보고한다. 서버가 받아들인 새 버전만 돌아온다. */
+    fun reportModels(models: Map<String, String>): Map<String, String> {
+        val res = post("/runner/api/models", json.encodeToString(models))
+        check(res.statusCode() == 200) { "모델 버전 보고 실패: HTTP ${res.statusCode()}" }
+        return json.decodeFromString(res.body())
+    }
+
+    /** 일심 공통 Claude 설정(CLAUDE.md·settings.json). */
+    fun claudeEnvironment(): ClaudeEnvironmentReport {
+        val res = http.send(
+            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/claude/environment")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        check(res.statusCode() == 200) { "Claude 설정 조회 실패: HTTP ${res.statusCode()}" }
+        return json.decodeFromString(res.body())
+    }
+
+    /** 계정 상태를 보고하고, 웹에서 지운 계정 이름을 받는다. */
+    fun reportClaudeAccounts(runnerId: String, accounts: List<ClaudeAccountReport>): List<String> {
+        val res = post("/runner/api/claude/accounts", json.encodeToString(ClaudeAccountsRequest(runnerId, accounts)))
+        check(res.statusCode() == 200) { "Claude 계정 보고 실패: HTTP ${res.statusCode()}" }
+        return json.decodeFromString(res.body())
+    }
+
+    fun claimClaudeLogin(runnerId: String): ClaudeLoginJob? {
+        val res = post("/runner/api/claude/logins/claim", json.encodeToString(mapOf("runnerId" to runnerId)))
+        return when (res.statusCode()) {
+            200 -> json.decodeFromString<ClaudeLoginJob>(res.body())
+            204 -> null
+            else -> error("Claude 로그인 요청 확인 실패: HTTP ${res.statusCode()}")
+        }
+    }
+
+    fun claudeLoginUrl(id: String, url: String) {
+        val res = post("/runner/api/claude/logins/$id/url", json.encodeToString(mapOf("url" to url)))
+        check(res.statusCode() == 200) { "로그인 URL 전송 실패: HTTP ${res.statusCode()}" }
+    }
+
+    /** 사용자가 웹에 넣은 코드. 아직 없으면 null. 한 번 받으면 서버에서 지워진다. */
+    fun claudeLoginCode(id: String): String? {
+        val res = post("/runner/api/claude/logins/$id/code", "{}")
+        if (res.statusCode() != 200) return null
+        return json.parseToJsonElement(res.body()).jsonObject["code"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+    }
+
+    fun claudeLoginResult(id: String, loggedIn: Boolean, email: String?, plan: String?, error: String?) {
+        val res = post("/runner/api/claude/logins/$id/result", json.encodeToString(ClaudeLoginResult(loggedIn, email, plan, error)))
+        check(res.statusCode() == 200) { "로그인 결과 전송 실패: HTTP ${res.statusCode()}" }
     }
 
     /** 웹에서 등록한 JEV 키. 등록된 키가 없으면(204) null. 받은 키는 파일에 쓰지 않고 메모리에만 둔다. */
