@@ -71,7 +71,11 @@ final class TaskEventEntity private constructor(
     stage: String?,
     type: String?,
     data: String?,
+    eventId: String?,
 ) {
+    @field:Column(name = "event_id", length = 80)
+    final var eventId: String? = eventId
+        private set
 
     @field:Id
     @field:GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -99,8 +103,8 @@ final class TaskEventEntity private constructor(
         private set
 
     companion object {
-        fun of(taskId: String, at: Instant, stage: String?, type: String?, data: String?): TaskEventEntity =
-            TaskEventEntity(taskId, at, stage, type, data)
+        fun of(taskId: String, at: Instant, stage: String?, type: String?, data: String?, eventId: String? = null): TaskEventEntity =
+            TaskEventEntity(taskId, at, stage, type, data, eventId)
     }
 }
 
@@ -112,6 +116,11 @@ final class ProjectEntity private constructor(
     runnerId: String?,
     lastSeen: Instant,
 ) {
+    @field:Column(name = "usage_snapshot", columnDefinition = "LONGTEXT")
+    final var usageSnapshot: String? = null
+        private set
+
+    fun recordUsage(snapshot: String) { usageSnapshot = snapshot }
 
     @field:Id
     @field:Column(name = "id", nullable = false, length = 100)

@@ -19,7 +19,7 @@ object ChangeAudit {
     data class Finding(val type: String, val target: String = "", val reason: String = "")
 
     @Serializable
-    data class Result(val verdict: String = "PASS", val findings: List<Finding> = emptyList())
+    data class Result(val verdict: String, val findings: List<Finding>)
 
     private val types = setOf("OMISSION", "UNRELATED", "TEST_BYPASS", "RULE", "WEAK_TEST")
 
@@ -39,17 +39,15 @@ object ChangeAudit {
         if (survivors.isNotEmpty()) appendLine("- WEAK_TEST: 아래 '살아남은 변이' 중 요구사항상 중요한 동작인데 테스트가 검증하지 못하는 것 (등가 변이는 보고하지 마라)")
         appendLine("JSON 만 출력하라(설명·코드펜스 금지): {\"verdict\":\"PASS|CONCERN\",\"findings\":[{\"type\":\"OMISSION|UNRELATED|TEST_BYPASS|RULE|WEAK_TEST\",\"target\":\"REQ-1 또는 파일:줄\",\"reason\":\"한 문장\"}]}")
         appendLine("문제가 없으면 {\"verdict\":\"PASS\",\"findings\":[]} 로 답하라.")
-        requirements?.let { appendLine(); appendLine("## 요구사항"); appendLine(it.take(SPEC_LIMIT)) }
-        testSpec?.let { appendLine(); appendLine("## 테스트 케이스"); appendLine(it.take(SPEC_LIMIT)) }
+        requirements?.let { appendLine(); appendLine("## 요구사항"); appendLine(it) }
+        testSpec?.let { appendLine(); appendLine("## 테스트 케이스"); appendLine(it) }
         if (committedTests.isNotEmpty()) {
             appendLine(); appendLine("## 기존 테스트 (이전 단계에서 커밋됨, 이 변경에 포함되지 않음)")
-            var left = TESTS_LIMIT
             committedTests.forEach { (path, text) ->
-                if (left <= 0) return@forEach
-                appendLine("### $path"); appendLine(text.take(left)); left -= text.length
+                appendLine("### $path"); appendLine(text)
             }
         }
-        rulesBrief?.let { appendLine(); appendLine(it.take(BRIEF_LIMIT)) }
+        rulesBrief?.let { appendLine(); appendLine(it) }
         appendLine()
         appendLine("## 정적 검사 결과")
         validation.forEach { (k, v) -> appendLine("- $k: $v") }
@@ -59,8 +57,8 @@ object ChangeAudit {
             survivors.forEach { appendLine("- $it") }
         }
         appendLine()
-        appendLine("## 변경 diff" + if (diff.length > DIFF_LIMIT) " (앞 ${DIFF_LIMIT}자만 제공, 전체 ${diff.length}자)" else "")
-        appendLine(diff.take(DIFF_LIMIT))
+        appendLine("## 변경 diff (전체 ${diff.length}자)")
+        appendLine(diff)
     }
 
     fun parse(response: String): Result {
@@ -72,8 +70,10 @@ object ChangeAudit {
         } catch (e: Exception) {
             throw IllegalArgumentException("AI 응답을 해석하지 못했습니다: ${e.message}")
         }
-        val findings = raw.findings.filter { it.type in types && it.reason.isNotBlank() }
-        return Result(if (findings.isEmpty()) "PASS" else "CONCERN", findings)
+        require(raw.verdict in setOf("PASS", "CONCERN")) { "AI 검토 판정이 유효하지 않습니다" }
+        require(raw.findings.all { it.type in types && it.reason.isNotBlank() && it.target.isNotBlank() }) { "AI 검토 지적의 필수 필드가 누락되었습니다" }
+        require(raw.verdict != "CONCERN" || raw.findings.isNotEmpty()) { "CONCERN에는 근거가 필요합니다" }
+        return Result(if (raw.findings.isEmpty()) "PASS" else "CONCERN", raw.findings)
     }
 
     fun render(r: Result): String = buildString {

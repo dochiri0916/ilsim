@@ -3,6 +3,7 @@ package com.dochiri.ilsim.jev.adapter.out.typesafe
 import com.dochiri.ilsim.jev.api.JevAnswer
 import com.dochiri.ilsim.jev.api.JevGateway
 import com.dochiri.ilsim.jev.api.JevQuestion
+import com.dochiri.ilsim.jev.api.JevUsage
 import com.dochiri.ilsim.jev.application.port.out.ApiKeySource
 import io.github.gudcks0305.jev.ChoiceAnswer
 import io.github.gudcks0305.jev.ChoiceQuestion
@@ -29,6 +30,11 @@ class TypeSafeJevGateway private constructor(
 
     private var currentKey: String? = null
     private var current: LibClient? = null
+    private val usage = ThreadLocal.withInitial { mutableListOf<JevUsage>() }
+    private var failures = 0
+    private var blockedUntil = 0L
+
+    override fun drainUsage(): List<JevUsage> = usage.get().toList().also { usage.get().clear() }
 
     @Synchronized
     private fun lib(): LibClient? {
@@ -43,6 +49,8 @@ class TypeSafeJevGateway private constructor(
             current?.close()
             current = TypeSafeJevClient.builder().apiKey(key).timeout(Duration.ofSeconds(10)).maxRetries(1).build()
             currentKey = key
+            failures = 0
+            blockedUntil = 0
         }
         return current
     }
@@ -52,17 +60,31 @@ class TypeSafeJevGateway private constructor(
     override fun evaluate(state: Any, questions: Map<String, JevQuestion>): Map<String, JevAnswer>? {
         val client = lib() ?: return null
         if (questions.isEmpty()) return null
+        if (System.currentTimeMillis() < blockedUntil) return null
+        val callId = java.util.UUID.randomUUID().toString()
         return try {
             val asked = questions.mapValues { (id, q) -> toLib(id, q) }
             val evaluation = client.evaluate(state, *asked.values.toTypedArray())
+            val rawCost = evaluation.rawResponse().path("usage").path("cost_usd")
+            val cost = rawCost.takeIf { it.isNumber }?.asDouble()?.takeIf { it.isFinite() && it >= 0 }
+            usage.get().add(JevUsage(callId, evaluation.model(), evaluation.usage().inputTokens().orElse(0), evaluation.usage().outputTokens().orElse(0), questions.size, cost))
+            failures = 0
             asked.mapValues { (id, _) -> toAnswer(evaluation.answers()[id]) }
         } catch (e: JevException) {
+            failed(callId, questions.size)
             log.warn("JEV 호출 실패: {} (HTTP {})", e.kind(), e.statusCode())
             null
         } catch (e: RuntimeException) {
+            failed(callId, questions.size)
             log.warn("JEV 호출 실패: {}", e.javaClass.simpleName)
             null
         }
+    }
+
+    private fun failed(id: String, questions: Int) {
+        failures++
+        if (failures >= 2) blockedUntil = System.currentTimeMillis() + 60_000
+        usage.get().add(JevUsage(id, "jev", 0, 0, questions))
     }
 
     private fun toLib(id: String, q: JevQuestion): LibQuestion<*> = when (q.type) {

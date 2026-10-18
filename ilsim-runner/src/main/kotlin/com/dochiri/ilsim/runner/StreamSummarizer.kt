@@ -26,10 +26,13 @@ object StreamSummarizer {
         return content.mapNotNull { block ->
             val b = block.jsonObject
             when (b["type"]?.jsonPrimitive?.contentOrNull) {
-                "text" -> b["text"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let { "text" to it.take(2000) }
+                "text" -> b["text"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let { "text" to it.take(MAX_TEXT_CHARS) }
                 "tool_use" -> "tool" to "${b["name"]?.jsonPrimitive?.contentOrNull} ${(b["input"]?.toString() ?: "").take(200)}"
                 else -> null
             }
         }
     }
 }
+
+/** Claude 의 말은 사용자가 대화창에서 그대로 읽으므로(질문 답변 포함) 길게 둔다. 서버 이벤트 컬럼은 MEDIUMTEXT 다. */
+private const val MAX_TEXT_CHARS = 20_000

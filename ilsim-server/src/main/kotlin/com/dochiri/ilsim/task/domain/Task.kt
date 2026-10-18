@@ -30,6 +30,8 @@ class Task private constructor(
     /** 사람이 개입(거절·재시도)한 뒤로 Runner 에 배정된 횟수. 자동 재시도가 끝없이 이어지지 않게 하는 전체 상한에 쓴다. */
     val runs: RunCount,
     val stages: List<StageState>,
+    /** 이어서 지시한 작업이면 직전 작업의 브랜치. Runner 가 HEAD 대신 이 브랜치에서 worktree 를 만든다. */
+    val baseBranch: Branch? = null,
 ) {
     /** 아직 통과하지 못한 첫 단계. 모두 통과했으면 null. */
     fun current(): StageState? = stages.firstOrNull { it.status != StageStatus.PASSED }
@@ -67,19 +69,45 @@ class Task private constructor(
         return copy(stages = replaceStage(updated))
     }
 
+    fun qualityFeedback(executionId: String, passed: Boolean, reason: String): Task {
+        if (reason.isBlank()) throw InvalidTaskRequestException("품질 평가 근거가 필요합니다")
+        val stage = stages.firstOrNull { s -> s.executions.any { it.id == executionId && it.completed } }
+            ?: throw InvalidTaskRequestException("완료된 실행을 찾을 수 없습니다")
+        return copy(stages = replaceStage(stage.recordQualityFeedback(executionId, passed, reason.trim())))
+    }
+
+    fun reviewFeedback(usageId: String, quality: ReviewQuality): Task {
+        quality.validate()
+        val stage = stages.firstOrNull { s -> s.usage.any { it.id == usageId && it.review != null } }
+            ?: throw InvalidTaskRequestException("검토 호출을 찾을 수 없습니다")
+        val reviewId = stage.usage.first { it.id == usageId }.review!!.id
+        return copy(stages = replaceStage(stage.reviewFeedback(reviewId, quality)))
+    }
+
     fun report(outcome: StageOutcome): Task {
-        val stage = current()
-        if (stage == null || stage.status != StageStatus.RUNNING) throw InvalidTaskStateException("실행 중인 단계가 없습니다")
-        val withBranch = copy(branch = outcome.branch?.takeIf { it.isNotBlank() }?.let { Branch.of(it) } ?: branch)
-        val costed = listOf(
-            outcome.costUsd to (outcome.model ?: UNKNOWN_MODEL),
-            outcome.reviewCostUsd to (outcome.reviewModel ?: UNKNOWN_MODEL),
-        ).fold(stage) { state, (usd, model) ->
-            if (usd != null && usd.isFinite() && usd > 0) state.addCost(usd, model) else state
+        val stage = if (outcome.executionId != null) stages.firstOrNull { s -> s.executions.any { it.id == outcome.executionId } }
+            ?: throw InvalidTaskStateException("알 수 없는 실행 ID입니다") else current()
+        if (outcome.executionId != null && stage != null) {
+            if (outcome.stage != stage.stage.name) throw InvalidTaskStateException("실행 단계가 다릅니다")
+            if (stage.executions.any { it.id == outcome.executionId && it.completed }) return this
+            if (stage.executionId != outcome.executionId || stage.status !in setOf(StageStatus.RUNNING, StageStatus.PENDING)) {
+                val costed = withCost(stage, outcome).completeExecution(outcome)
+                return copy(stages = replaceStage(if (stage.executionId == outcome.executionId) costed.recordSession(outcome.sessionId) else costed))
+            }
         }
-        val withSession = if (stage.stage == Stage.REQUIREMENTS) costed.recordSession(outcome.sessionId) else costed
+        // 중지한 뒤 늦게 도착한 결과는 버리고 이미 쓴 비용만 남긴다.
+        if (stage != null && stage.status != StageStatus.RUNNING && stage.error == STOPPED_MESSAGE) {
+            return copy(stages = replaceStage(withCost(stage, outcome).recordSession(outcome.sessionId)))
+        }
+        if (stage == null || (stage.status != StageStatus.RUNNING && !(outcome.executionId != null && stage.status == StageStatus.PENDING))) throw InvalidTaskStateException("실행 중인 단계가 없습니다")
+        val withBranch = copy(branch = outcome.branch?.takeIf { it.isNotBlank() }?.let { Branch.of(it) } ?: branch)
+        val costed = withCost(stage, outcome).completeExecution(outcome)
+        val withSession = costed.recordSession(outcome.sessionId)
         val recorded = withSession.record(outcome.diff, outcome.error, outcome.validation)
         return when {
+            // 질문에 답만 했으면 문서·테스트·구현 단계 없이 끝낸다. 남은 단계는 실행하지 않은 채(PENDING) 둔다.
+            outcome.passed && outcome.answered && stage.stage == Stage.REQUIREMENTS -> withBranch
+                .copy(stages = withBranch.replaceStage(recorded.pass(emptyMap(), awaitApproval = false)), status = TaskStatus.COMPLETED)
             outcome.passed -> withBranch
                 .copy(stages = withBranch.replaceStage(recorded.pass(outcome.artifacts.orEmpty(), awaitApproval = stage.stage.approval)))
                 .completedIfDone()
@@ -109,15 +137,44 @@ class Task private constructor(
         return copy(stages = replaceStage(stage.restart(feedback)), runs = RunCount.ZERO)
     }
 
-    /** 차단된 작업의 실패 단계를 처음부터 다시 시도한다. */
-    fun retry(): Task {
+    /**
+     * 차단된 작업의 실패 단계를 다시 시도한다. 사용자가 [instruction]을 주면 직전 Claude 세션을 이어 그 말을 전하고(CLI 에서 답하듯),
+     * 없으면 마지막 실패 사유를 피드백으로 새로 시작한다. 사용자가 중지한 단계는 중지 문구 대신 그 전 시도의 피드백을 넘긴다.
+     */
+    fun retry(instruction: String? = null): Task {
         val stage = current()
         if (status != TaskStatus.BLOCKED || stage == null) throw InvalidTaskStateException("차단된 작업이 아닙니다")
-        return copy(stages = replaceStage(stage.restart(stage.feedback)), runs = RunCount.ZERO, status = TaskStatus.ACTIVE)
+        val reason = if (stage.error == STOPPED_MESSAGE) stage.feedback else stage.error ?: stage.feedback
+        val text = instruction?.trim()?.takeIf { it.isNotEmpty() }
+        val next = if (text == null) stage.restart(reason) else stage.continueWith(text, reason)
+        return copy(stages = replaceStage(next), runs = RunCount.ZERO, status = TaskStatus.ACTIVE)
     }
+
+    /** 실행 중이거나 대기 중인 단계를 멈추고 작업을 차단한다. 실행 중이던 Runner 는 이를 보고 프로세스를 끝낸다. */
+    fun stop(): Task {
+        val stage = current()
+        if (status != TaskStatus.ACTIVE || stage == null || stage.status !in STOPPABLE) {
+            throw InvalidTaskStateException("실행 중이거나 대기 중인 단계가 없습니다")
+        }
+        return copy(stages = replaceStage(stage.fail(STOPPED_MESSAGE)), status = TaskStatus.BLOCKED)
+    }
+
+    /** Runner 가 실행 중인 단계를 계속해야 하는지. 중지되거나 서버 재시작으로 실행 상태가 풀렸으면 false. */
+    fun isRunning(): Boolean = current()?.status == StageStatus.RUNNING
 
     /** 서버를 다시 띄우면 Runner 와의 연결이 끊겼으므로 실행 중이던 단계는 대기로 되돌린다. */
     fun recoverAfterRestart(): Task = copy(stages = stages.map { it.recoverInterrupted() })
+
+    private fun withCost(stage: StageState, outcome: StageOutcome): StageState {
+        val recorded = stage.recordDecisions(outcome.decisions)
+        if (outcome.usage.isNotEmpty()) return recorded.account(outcome.usage.map { it.copy(executionId = it.executionId ?: outcome.executionId) })
+        return listOf(
+        outcome.costUsd to (outcome.model ?: UNKNOWN_MODEL),
+        outcome.reviewCostUsd to (outcome.reviewModel ?: UNKNOWN_MODEL),
+    ).fold(recorded) { state, (usd, model) ->
+        if (usd != null && usd.isFinite() && usd > 0) state.addCost(usd, model) else state
+    }
+    }
 
     private fun waitingStage(): StageState {
         val stage = current()
@@ -136,7 +193,7 @@ class Task private constructor(
         branch: Branch? = this.branch,
         runs: RunCount = this.runs,
         stages: List<StageState> = this.stages,
-    ): Task = Task(id, createdAt, projectId, feature, requirement, status, runnerId, branch, runs, stages)
+    ): Task = Task(id, createdAt, projectId, feature, requirement, status, runnerId, branch, runs, stages, baseBranch)
 
     companion object {
         const val MAX_ATTEMPTS: Int = 3
@@ -146,10 +203,14 @@ class Task private constructor(
 
         const val UNKNOWN_MODEL: String = "unknown"
 
+        const val STOPPED_MESSAGE: String = "사용자가 중지했습니다"
+
+        private val STOPPABLE = setOf(StageStatus.PENDING, StageStatus.RUNNING)
+
         /** 사람이 개입하지 않은 채 한 작업에 배정할 수 있는 전체 횟수(단계 4개 × 시도 3회). */
         const val MAX_TASK_RUNS: Int = 12
 
-        fun create(id: TaskId, now: Instant, projectId: ProjectId, feature: String?, requirement: String?): Task =
+        fun create(id: TaskId, now: Instant, projectId: ProjectId, feature: String?, requirement: String?, baseBranch: Branch? = null): Task =
             Task(
                 id = id,
                 createdAt = now,
@@ -161,6 +222,7 @@ class Task private constructor(
                 branch = null,
                 runs = RunCount.ZERO,
                 stages = Stage.entries.map { StageState.initial(it) },
+                baseBranch = baseBranch,
             )
 
         /** 저장본에서 되살린다. 검증은 각 VO 가 맡는다. */
@@ -175,6 +237,7 @@ class Task private constructor(
             branch: Branch?,
             runs: RunCount,
             stages: List<StageState>,
-        ): Task = Task(id, createdAt, projectId, feature, requirement, status, runnerId, branch, runs, stages)
+            baseBranch: Branch? = null,
+        ): Task = Task(id, createdAt, projectId, feature, requirement, status, runnerId, branch, runs, stages, baseBranch)
     }
 }

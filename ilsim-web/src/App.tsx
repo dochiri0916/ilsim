@@ -109,7 +109,7 @@ function Shell({ hash, onLogout }: { hash: string; onLogout: () => void }) {
   }
 
   return (
-    <>
+    <div className={match ? 'app-fixed' : undefined}>
       <header className="topbar">
         <div className="topbar-in">
           <a href="#/" className="brand">ILSIM</a>
@@ -139,6 +139,6 @@ function Shell({ hash, onLogout }: { hash: string; onLogout: () => void }) {
           : tab === '#/stats' ? <Stats projectId={projectId} />
           : <Dashboard project={project} />}
       </main>
-    </>
+    </div>
   )
 }

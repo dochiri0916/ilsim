@@ -189,6 +189,39 @@ class TaskExecutorFailureTest {
     }
 
     @Test
+    fun `구현 단계의 테스트 실패는 JUnit 리포트에서 실패한 테스트와 이유를 뽑는다`() {
+        toImplementationBase()
+        testCommand = "mkdir -p build/test-results/test && printf '%s' '$junitFailure' > build/test-results/test/TEST-FooTest.xml && false"
+        val r = run("IMPLEMENTATION", agent = writes("src/Main.java" to "class Main {}"))
+        assertFalse(r.passed)
+        assertTrue(r.error!!.contains("FooTest.slugify"), r.error)
+        assertTrue(r.error!!.contains("expected: <a-b> but was: <a b>"), r.error)
+        assertTrue(r.error!!.contains("FooTest.java:12"), r.error)
+    }
+
+    @Test
+    fun `중지 요청을 받으면 실행 중인 프로세스를 끝내고 중지로 보고한다`() {
+        val stopping = object : TaskSink by sink {
+            override fun shouldStop(taskId: String) = true
+            override fun shouldStop(taskId: String, executionId: String?) = true
+        }
+        val store = ConfigStore(root.resolve("home/runner.json"))
+        val config = RunnerConfig(projects = mapOf("demo" to ProjectEntry(repo.toString(), "demo")))
+        val started = System.nanoTime()
+        TaskExecutor(config, stopping, root.resolve("worktrees"), store, { worktree, _, _, _ ->
+            val r = Shell.run(worktree, "sleep", "30")
+            AgentRun(r.exit)
+        }, { _, _ -> "" }).run(task("REQUIREMENTS"))
+        val r = assertNotNull(sink.result)
+        assertFalse(r.passed)
+        assertEquals("사용자가 중지했습니다", r.error)
+        assertTrue(System.nanoTime() - started < 20_000_000_000L)
+    }
+
+    private val junitFailure = """<testsuite name="FooTest"><testcase classname="com.demo.FooTest" name="slugify()"><failure message="expected: &lt;a-b&gt; but was: &lt;a b&gt;" type="AssertionFailedError">org.opentest4j.AssertionFailedError: expected
+	at com.demo.FooTest.slugify(FooTest.java:12)</failure></testcase></testsuite>"""
+
+    @Test
     fun `구현 단계가 테스트를 수정하면 되돌리고 실패한다`() {
         toImplementationBase()
         val r = run("IMPLEMENTATION", agent = writes(goodTest.first to "class FooTest {}"))
@@ -275,11 +308,11 @@ class TaskExecutorFailureTest {
     }
 
     @Test
-    fun `이어 가기가 실패하면 새 세션으로 다시 하고 두 실행의 비용을 합친다`() {
+    fun `세션이 없다는 실패만 새 세션으로 다시 하고 두 실행의 비용을 합친다`() {
         val seen = mutableListOf<String?>()
         executor { w, t, p, l ->
             seen += t.resumeSessionId
-            if (t.resumeSessionId != null) AgentRun(1, costUsd = 0.01)
+            if (t.resumeSessionId != null) AgentRun(1, costUsd = 0.01, failureKind = "SESSION_MISSING")
             else writes(requirements).run(w, t, p, l).copy(sessionId = "new-sess", costUsd = 0.1)
         }.run(resumeTask())
         val r = assertNotNull(sink.result)
@@ -299,9 +332,91 @@ class TaskExecutorFailureTest {
     }
 
     @Test
+    fun `일반적인 세션 재개 오류는 새 세션을 기동하지 않는다`() {
+        var calls = 0
+        executor { _, _, _, _ -> calls++; AgentRun(1, costUsd = 0.03, failureKind = "NETWORK") }.run(resumeTask())
+        assertEquals(1, calls)
+        assertFalse(assertNotNull(sink.result).passed)
+        assertEquals(0.03, sink.result!!.costUsd)
+    }
+
+    @Test
+    fun `검증 환경만 복구되면 코드를 다시 작성하지 않고 테스트부터 재개한다`() {
+        val marker = root.resolve("ready")
+        testCommand = "test -f '$marker' || exit 127"
+        var calls = 0
+        val agent = ClaudeAgent { w, t, p, l -> calls++; writes("src/Main.java" to "class Main {}").run(w, t, p, l) }
+        val first = run("IMPLEMENTATION", agent = agent)
+        assertFalse(first.passed)
+        assertEquals("ENVIRONMENT", first.failureKind)
+        marker.writeText("ready")
+        val next = run("IMPLEMENTATION", attempt = 2, agent = agent)
+        assertTrue(next.passed)
+        assertEquals(1, calls)
+        assertEquals(1, asked.size)
+    }
+
+    @Test
+    fun `검증 재개 전에 코드가 바뀌면 작성 결과를 재사용하지 않는다`() {
+        val marker = root.resolve("ready")
+        testCommand = "test -f '$marker' || exit 127"
+        var calls = 0
+        val agent = ClaudeAgent { w, t, p, l -> calls++; writes("src/Main.java" to "class Main {}").run(w, t, p, l) }
+        assertFalse(run("IMPLEMENTATION", agent = agent).passed)
+        worktree.resolve("src/Main.java").writeText("class Main { int changed; }")
+        marker.writeText("ready")
+        assertTrue(run("IMPLEMENTATION", attempt = 2, agent = agent).passed)
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `커밋 후 보고가 실패해도 검증한 결과와 비용을 복구해 Agent 실행을 반복하지 않는다`() {
+        var reject = true; var calls = 0
+        val failing = object : TaskSink by sink {
+            override fun result(taskId: String, result: StageResult) {
+                if (reject) error("서버 응답 유실")
+                sink.result(taskId, result)
+            }
+        }
+        val store = ConfigStore(root.resolve("home/runner.json"))
+        val config = RunnerConfig(projects = mapOf("demo" to ProjectEntry(repo.toString(), "demo")))
+        val agent = ClaudeAgent { w, t, p, l -> calls++; writes(requirements).run(w, t, p, l).copy(costUsd = 0.05) }
+        kotlin.test.assertFailsWith<IllegalStateException> { TaskExecutor(config, failing, root.resolve("worktrees"), store, agent).run(task("REQUIREMENTS")) }
+        reject = false
+        TaskExecutor(config, failing, root.resolve("worktrees"), store, agent).run(task("REQUIREMENTS", 2))
+        assertTrue(assertNotNull(sink.result).passed)
+        assertEquals(1, calls)
+        assertEquals(1, git(worktree, "log", "--oneline").lines().count { "ilsim(requirements)" in it })
+        assertEquals(0.05, sink.result!!.usage.single().costUsd)
+    }
+
+    @Test
+    fun `실행 파일 설정 오류는 Agent를 기동하기 전에 검출한다`() {
+        testCommand = "ilsim_missing_test_executable_123 --test"
+        var calls = 0
+        val r = run("IMPLEMENTATION") { _, _, _, _ -> calls++; AgentRun(0) }
+        assertFalse(r.passed)
+        assertEquals("ENVIRONMENT", r.failureKind)
+        assertEquals(0, calls)
+    }
+
+    @Test
     fun `세션이 없는 일반 실행은 실패해도 다시 하지 않는다`() {
         var calls = 0
         executor { _, _, _, _ -> calls++; AgentRun(2) }.run(task("REQUIREMENTS"))
         assertEquals(1, calls)
+    }
+
+    @Test
+    fun `검토 보정 정책을 바꾸면 이전 완료 지점으로 검증을 생략하지 않는다`() {
+        val marker = root.resolve("ready")
+        testCommand = "test -f '$marker' || exit 127"
+        var calls = 0
+        val agent = ClaudeAgent { w, t, p, l -> calls++; writes("src/Main.java" to "class Main {}").run(w, t, p, l) }
+        assertFalse(run("IMPLEMENTATION", agent = agent).passed)
+        marker.writeText("ready")
+        executor(agent).run(task("IMPLEMENTATION", 2).copy(reviewPolicy = ReviewPolicySnapshot(version = "rollback-policy")))
+        assertTrue(assertNotNull(sink.result).passed)
+        assertEquals(2, calls)
     }
 }

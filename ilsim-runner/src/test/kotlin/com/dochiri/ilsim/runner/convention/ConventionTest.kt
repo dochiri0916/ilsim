@@ -109,9 +109,9 @@ class ConventionTest {
 
     @Test
     fun `AI 의견은 주석으로만 붙고 같은 요약은 다시 검토하지 않는다`() {
-        val m = mine(base())
+        val m = mine(base()).let { it.copy(rules = it.rules.filter { r -> r.id == "indent-style" }) }
         var calls = 0
-        val ask = { _: String -> calls++; """{"rules":[{"id":"indent-style","verdict":"KEEP","reason":"일관"},{"id":"zzz","verdict":"KEEP"}],"missing":["m"],"applicability":"ok"}""" }
+        val ask = { _: String -> calls++; """{"rules":[{"id":"indent-style","verdict":"KEEP","reason":"일관"}],"missing":["m"],"applicability":"ok"}""" }
         val r = ConventionReviewer.review(m, "sonnet", ask = ask)
         ConventionReviewer.review(r, "sonnet", ask = ask)
         assertEquals(1, calls)

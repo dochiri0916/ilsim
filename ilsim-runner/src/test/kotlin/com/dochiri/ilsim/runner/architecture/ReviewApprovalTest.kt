@@ -32,12 +32,19 @@ class ReviewApprovalTest {
     @Test
     fun `같은 구조는 다시 검토하지 않고 구조가 바뀌면 다시 검토한다`() {
         var calls = 0
-        val ask = { _: String -> calls++; response }
+        val complete = """{"rules":[{"id":"a","verdict":"KEEP","reason":"충분"},{"id":"b","verdict":"SUSPECT","reason":"부족"},{"id":"c","verdict":"SUSPECT","reason":"부족"}],"missing":[],"applicability":"ok"}"""
+        val ask = { _: String -> calls++; complete }
         val once = ArchitectureReviewer.review(model, "sonnet", ask = ask)
         ArchitectureReviewer.review(once, "sonnet", ask = ask)
         assertEquals(1, calls)
         ArchitectureReviewer.review(once, "sonnet", force = true, ask = ask)
         assertEquals(2, calls)
+        ArchitectureReviewer.review(once, "haiku", ask = ask)
+        assertEquals(3, calls)
+        val incomplete = ArchitectureReviewer.review(model, "sonnet") { "{}" }
+        assertEquals("", incomplete.review!!.modelHash)
+        ArchitectureReviewer.review(incomplete, "sonnet", ask = ask)
+        assertEquals(4, calls)
         // 승인 상태가 바뀌어도 요약 해시는 같다
         assertEquals(ArchitectureReviewer.hash(model), ArchitectureReviewer.hash(RuleApproval.approve(model, listOf("a"))))
         assertNotEquals(ArchitectureReviewer.hash(model), ArchitectureReviewer.hash(model.copy(rules = model.rules.drop(1))))

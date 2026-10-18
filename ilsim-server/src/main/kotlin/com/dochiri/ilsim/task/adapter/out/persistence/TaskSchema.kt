@@ -7,7 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 class TaskSchema(private val jdbc: JdbcTemplate) {
     private val ready = AtomicBoolean(false)
 
-    fun ensure() {
+    @Synchronized fun ensure() {
         if (ready.get()) return
         jdbc.execute(
             """
@@ -43,6 +43,9 @@ class TaskSchema(private val jdbc: JdbcTemplate) {
               last_seen TIMESTAMP(3) NOT NULL
             ) CHARACTER SET utf8mb4""",
         )
+        val columns = jdbc.queryForList("SHOW COLUMNS FROM task_events LIKE 'event_id'")
+        if (columns.isEmpty()) jdbc.execute("ALTER TABLE task_events ADD COLUMN event_id VARCHAR(80), ADD UNIQUE KEY uq_event_id (task_id, event_id)")
+        if (jdbc.queryForList("SHOW COLUMNS FROM projects LIKE 'usage_snapshot'").isEmpty()) jdbc.execute("ALTER TABLE projects ADD COLUMN usage_snapshot LONGTEXT")
         ready.set(true)
     }
 }

@@ -1,30 +1,44 @@
 package com.dochiri.ilsim.task.application.usecase
 
 import com.dochiri.ilsim.task.application.port.out.ComplexityAssessor
-import com.dochiri.ilsim.task.domain.ModelTier
-import com.dochiri.ilsim.task.domain.RoutingPolicy
-import com.dochiri.ilsim.task.domain.StageState
-import com.dochiri.ilsim.task.domain.Task
+import com.dochiri.ilsim.task.domain.*
+import com.dochiri.ilsim.task.domain.vo.StageStatus
+import java.security.MessageDigest
 
-/** 고른 모델 등급과, 선택 이력을 반영한 새 단계 상태. */
-data class RouteDecision(val tier: ModelTier, val state: StageState)
+data class RouteDecision(val tier: ModelTier, val state: StageState, val effort: String = "medium")
 
-/**
- * 단계 실행에 쓸 모델 등급을 고른다. 같은 단계의 평가는 한 번만 하고 재시도에서는 저장된 값을 쓴다.
- * 평가를 쓸 수 없으면 규칙으로 되돌아간다. 단계 상태는 바꾸지 않고 새 상태를 돌려준다.
- */
 class ModelSelector(
     private val assessor: ComplexityAssessor,
     private val minimum: ModelTier,
+    val policy: CostRoutingPolicy = CostRoutingPolicy(),
 ) {
-    fun select(task: Task, state: StageState, attempt: Int): RouteDecision {
-        val assessment = state.cachedAssessment() ?: assessor.assess(task, state, attempt)
-        if (assessment == null) {
-            val tier = RoutingPolicy.fallback(attempt)
-            val reason = if (assessor.isAvailable()) "JEV 평가 실패" else "JEV 키 없음"
-            return RouteDecision(tier, state.recordFallbackRoute(tier, attempt, reason))
-        }
-        val tier = RoutingPolicy.choose(assessment, attempt, minimum)
-        return RouteDecision(tier, state.recordAssessedRoute(assessment, tier, attempt))
+    private var history: List<ExecutionRecord> = emptyList()
+
+    fun assessmentAvailable(): Boolean = assessor.isAvailable()
+
+    fun learn(tasks: Collection<Task>) {
+        history = tasks.sortedBy { it.createdAt }.flatMap { task -> task.stages.flatMap { stage ->
+            stage.executions.filter { execution -> execution.completed && (!execution.passed || stage.status == StageStatus.PASSED &&
+                (stage.stage.approval || execution.validation["tests"] in setOf("PASSED", "RED") && execution.validation["ai-audit"] == "PASSED")) }
+        } }
+    }
+
+    fun select(task: Task, state: StageState, attempt: Int, fallbackEffort: String? = null): RouteDecision {
+        val evidence = listOf(task.requirement.value, state.stage.name, state.messages.joinToString("\n"), state.feedback.orEmpty(), state.diff.orEmpty(),
+            task.stages.joinToString { it.artifactHash.orEmpty() }, policy.toString(), CostRoutingPolicy.SUPPORT_VERSION).joinToString("\u0000")
+        val hash = MessageDigest.getInstance("SHA-256").digest(evidence.toByteArray()).joinToString("") { "%02x".format(it) }
+        val assessment = state.cachedAssessment()?.takeIf { state.routing["contextHash"] == hash } ?: assessor.assess(task, state, attempt)
+        val failed = state.executions.filter { it.completed && !it.passed && it.failureKind !in CostRoutingPolicy.ENVIRONMENT_FAILURES }
+            .map { "${it.model}/${it.effort}" }.toSet()
+        val a = assessment ?: Assessment(2.0, 1.0)
+        val workload = "${state.stage.name}:${a.complexity.toInt()}:${a.risk.toInt()}"
+        val selected = policy.choose(a, minimum, evidence.length, history, workload, failed)
+        val route = if (assessment == null && fallbackEffort != null) {
+            val option = selected.option.copy(effort = ReasoningEffort.parse(fallbackEffort))
+            selected.copy(option = option, expectedCostUsd = CostRoutingPolicy.estimate(option, evidence.length) +
+                (1 - selected.success) * CostRoutingPolicy.estimate(ModelOption(ModelTier.OPUS, "high"), evidence.length))
+        } else selected
+        val reason = if (assessment == null) "${route.reason}, ${if (assessor.isAvailable()) "JEV 평가 실패" else "JEV 키 없음"}" else route.reason
+        return RouteDecision(route.option.tier, state.account(assessor.drainUsage()).recordCostRoute(assessment, route.copy(reason = reason), attempt, hash, policy.version), route.option.effort)
     }
 }

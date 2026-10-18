@@ -40,7 +40,7 @@ data class ArchRule(
 
 /** verdict: KEEP | SUSPECT | DROP */
 @Serializable
-data class RuleReview(val verdict: String, val reason: String)
+data class RuleReview(val verdict: String, val reason: String, val evidenceHash: String = "")
 
 /** AI 검토 결과 중 개별 규칙에 속하지 않는 부분. modelHash 는 검토한 요약의 해시로, 같으면 다시 검토하지 않는다. */
 @Serializable

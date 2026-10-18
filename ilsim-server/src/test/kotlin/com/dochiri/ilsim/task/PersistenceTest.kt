@@ -70,7 +70,7 @@ class PersistenceTest {
         assertThat(requirements.artifacts).containsEntry("specs/slug/requirements.md", "REQ-1")
         assertThat(requirements.validation).containsEntry("traceability", "PASSED")
         assertThat(restored.current()!!.stage).isEqualTo(Stage.TEST_CASES)
-        assertThat(second.events(task.id.value)).extracting<String?> { it.data }.containsExactly("시작")
+        assertThat(second.events(task.id.value)).extracting<String?> { it.data }.containsExactly("시작", "PASSED\ntraceability=PASSED")
         assertThat(second.projects()).extracting<String> { it.project.id }.containsExactly("demo")
     }
 
@@ -103,13 +103,14 @@ class PersistenceTest {
     }
 
     @Test
-    fun `저장소가 죽어도 메모리로 계속 동작하고 시작할 때 못 읽으면 빈 상태로 뜬다`() {
+    fun `저장소가 죽으면 새 실행 배정을 보류하고 진행 로그는 메모리에서 유지한다`() {
         val store = MemoryStore().also { it.down = true }
         val service = service(store)
         assertThat(service.list()).isEmpty()
         service.poll("r1", listOf(demo))
         val task = service.create("demo", "slug", "x")
-        assertThat(service.poll("r1", listOf(demo))).isNotNull()
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) { service.poll("r1", listOf(demo)) }
+        assertThat(service.find(task.id.value)!!.current()!!.status).isEqualTo(StageStatus.PENDING)
         service.addEvent(task.id.value, "REQUIREMENTS", "log", "계속")
         assertThat(service.events(task.id.value)).hasSize(1)
         assertThat(store.tasks).isEmpty()

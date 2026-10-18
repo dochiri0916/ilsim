@@ -15,18 +15,24 @@ object Shell {
     fun process(dir: Path, cmd: List<String>): ProcessBuilder =
         ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true).also { it.environment()[RUNNER_ENV] = "1" }
 
+    /** 프로세스를 띄우고 이 스레드의 [StopSignal] 에 등록해 중지 요청 때 함께 끝나게 한다. */
+    fun start(builder: ProcessBuilder): Process = StopSignal.track(builder.start())
+
     /** 명령을 실행하고 종료 코드와 출력(끝부분 최대 [maxChars]자)을 돌려준다. 시간 초과 시 exit=-1. */
-    fun run(dir: Path, vararg cmd: String, timeoutMinutes: Long = 10, maxChars: Int = 4000): ShellResult {
-        val p = process(dir, cmd.toList()).start()
-        p.outputStream.close()
+    fun run(dir: Path, vararg cmd: String, timeoutMinutes: Long = 10, maxChars: Int = 4000, stdin: String? = null): ShellResult {
+        val p = start(process(dir, cmd.toList()))
         val out = StringBuilder()
         val reader = Thread { p.inputStream.bufferedReader().forEachLine { out.appendLine(it) } }.apply { start() }
+        val writer = if (stdin == null) { p.outputStream.close(); null } else Thread {
+            runCatching { p.outputStream.bufferedWriter().use { it.write(stdin) } }
+        }.apply { isDaemon = true; start() }
         if (!p.waitFor(timeoutMinutes, TimeUnit.MINUTES)) {
             p.destroyForcibly()
             reader.join(2000)
             return ShellResult(-1, "시간 초과(${timeoutMinutes}분)\n" + out.toString().takeLast(maxChars))
         }
         reader.join()
+        writer?.join(2000)
         return ShellResult(p.exitValue(), out.toString().takeLast(maxChars))
     }
 

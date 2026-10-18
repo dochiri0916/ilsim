@@ -56,7 +56,7 @@ class DocumentsTest {
         assertTrue(!ArchitectureReviewer.prompt(model).contains("프로젝트 문서"))
 
         var calls = 0
-        val ask = { _: String -> calls++; """{"rules":[{"id":"a","verdict":"KEEP","reason":"문서와 일치"}]}""" }
+        val ask = { _: String -> calls++; """{"rules":[{"id":"a","verdict":"KEEP","reason":"문서와 일치"}],"missing":[],"applicability":"문서 확인"}""" }
         val first = ArchitectureReviewer.review(model, "sonnet", docs = docs, ask = ask)
         ArchitectureReviewer.review(first, "sonnet", docs = docs, ask = ask)
         assertEquals(1, calls)

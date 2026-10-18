@@ -47,8 +47,28 @@ object Gate {
         return out
     }
 
-    fun allowedTools(stage: String): String = when (stage) {
+    /** 요구사항 단계에서 Claude 가 질문에 답만 했다는 표시. 서버 PromptTemplates.ANSWERED_MARK 와 같아야 한다. */
+    const val ANSWERED_MARK = "[ILSIM:ANSWERED]"
+
+    /** 코드를 쓰는 단계는 프로젝트 테스트 명령도 허용한다. 도구 목록을 깨뜨릴 수 있는 문자(쉼표·괄호)가 있으면 넣지 않는다. */
+    fun allowedTools(stage: String, testCommand: String? = null): String = when (stage) {
         "REQUIREMENTS", "TEST_CASES" -> "Read,Glob,Grep,Write,Edit"
-        else -> "Read,Glob,Grep,Write,Edit,Bash(./gradlew:*),Bash(python3:*),Bash(git status:*),Bash(git diff:*)"
+        else -> "Read,Glob,Grep,Write,Edit,Bash(./gradlew:*),Bash(python3:*),Bash(git status:*),Bash(git diff:*)" +
+            (testCommand?.trim()?.takeIf { it.isNotEmpty() && it.none { c -> c in ",()" } }?.let { ",Bash($it:*)" } ?: "")
+    }
+
+    /** Claude 가 끝내기 전에 직접 테스트를 돌려 보고 결과를 설명하게 하는 지시. Runner 는 끝난 뒤 같은 명령으로 다시 검증한다. */
+    fun selfCheck(stage: String, testCommand: String): String? = when (stage) {
+        "TEST_CODE" -> """
+            ## 직접 확인
+            끝내기 전에 `$testCommand`를 실행하라. 새 테스트가 컴파일되고, 구현이 없어서 실패(red)해야 한다.
+            컴파일 오류나 테스트 자체의 실수는 고치고 다시 실행하라. 구현이 없는데 통과하는 테스트는 요구사항을 검증하도록 고쳐라.
+            """.trimIndent()
+        "IMPLEMENTATION" -> """
+            ## 직접 확인
+            끝내기 전에 `$testCommand`를 실행해 모든 테스트가 통과하는지 확인하라. 실패하면 원인을 파악해 고치고 다시 실행하라.
+            끝내 통과시키지 못하면 어떤 테스트가 왜 실패하는지, 사용자가 무엇을 정해야 하는지 설명하고 끝내라.
+            """.trimIndent()
+        else -> null
     }
 }

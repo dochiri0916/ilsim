@@ -17,4 +17,11 @@ data class StageOutcome(
     val reviewModel: String? = null,
     /** 요구사항 단계에서 Claude 가 연 세션. 대화를 이어 갈 때 쓴다. */
     val sessionId: String? = null,
+    val executionId: String? = null,
+    val stage: String? = null,
+    val usage: List<AiUsage> = emptyList(),
+    val failureKind: String? = null,
+    val decisions: List<ProcessingDecision> = emptyList(),
+    /** 요구사항 단계에서 요청이 코드 변경이 아닌 질문이라 Claude 가 답만 하고 끝냈으면 true. 작업을 바로 끝낸다. */
+    val answered: Boolean = false,
 )

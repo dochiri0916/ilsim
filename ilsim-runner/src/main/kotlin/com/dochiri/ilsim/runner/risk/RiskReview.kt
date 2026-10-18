@@ -1,6 +1,9 @@
 package com.dochiri.ilsim.runner.risk
 
 import com.dochiri.ilsim.runner.ConfigStore
+import com.dochiri.ilsim.runner.KnowledgeFiles
+import com.dochiri.ilsim.runner.ReviewRouter
+import com.dochiri.ilsim.runner.DecisionScope
 import com.dochiri.ilsim.runner.architecture.Violation
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -43,7 +46,7 @@ object RiskReviewer {
     }
 
     fun fingerprint(root: Path, v: Violation): String =
-        MessageDigest.getInstance("SHA-256").digest("${v.ruleId}|${v.file}|${excerpt(root, v).lines().joinToString("") { it.drop(5).trim() }}".toByteArray())
+        MessageDigest.getInstance("SHA-256").digest("risk-v2|${ReviewRouter.policyKey}|${v.ruleId}|${v.file}|${v.line}|${v.message}|${RiskRules.remedies[v.ruleId]}|${excerpt(root, v).lines().joinToString("") { it.drop(5).trim() }}".toByteArray())
             .joinToString("") { "%02x".format(it) }.take(16)
 
     internal fun prompt(root: Path, batch: List<Violation>): String = buildString {
@@ -55,8 +58,13 @@ object RiskReviewer {
             appendLine()
             appendLine("### id=$i ${v.ruleId} ${v.file}:${v.line}")
             appendLine("지적: ${v.message}")
-            appendLine("```")
-            appendLine(excerpt(root, v))
+        }
+        // 같은 파일의 겹치는 행은 한 번만 보낸다. 후보 ID는 위의 파일:행을 참조한다.
+        batch.groupBy { it.file }.forEach { (file, candidates) ->
+            val lines = root.resolve(file).takeIf { it.exists() }?.readLines().orEmpty()
+            val ranges = candidates.flatMap { v -> (maxOf(1, v.line - BEFORE)..minOf(lines.size, v.line + AFTER)).toList() }.toSortedSet()
+            appendLine("### 코드 $file\n```")
+            ranges.forEach { line -> appendLine("${line.toString().padStart(4)} ${lines[line - 1]}") }
             appendLine("```")
         }
     }
@@ -83,24 +91,29 @@ object RiskReviewer {
      */
     fun review(
         root: Path, findings: List<Violation>, known: Map<String, RiskOpinion>, reviewer: String, force: Boolean,
-        screen: (Violation) -> Double? = { null }, ask: (String) -> String,
+        screen: (Violation) -> Double? = { null }, checkpoint: (Map<String, RiskOpinion>) -> Unit = {}, ask: (String) -> String,
     ): Map<String, RiskOpinion> {
         val result = known.toMutableMap()
-        val pending = findings.filter { it.severity == "REVIEW" && (force || fingerprint(root, it) !in known) }
+        val fingerprints = findings.associateWith { fingerprint(root, it) }
+        val pending = findings.filter { it.severity == "REVIEW" && (force || known[fingerprints[it]]?.let { o -> o.reviewer != reviewer && o.reviewer != "jev" } != false) }
+        findings.filter { it.severity == "REVIEW" && it !in pending }.forEach { DecisionScope.record("RISK_CANDIDATE", "CACHE", "동일 지적·코드·정책의 유효한 의견", fingerprints.getValue(it)) }
         val todo = pending.filter { v ->
-            val p = screen(v) ?: return@filter true
+            val p = screen(v)?.takeIf { it.isFinite() && it in 0.0..1.0 } ?: return@filter true
             when {
-                p <= SCREEN_LOW -> { result[fingerprint(root, v)] = RiskOpinion("FALSE", "JEV 위험 확률 ${"%.2f".format(p)}: 보호 장치가 보이거나 위험이 확인되지 않음", reviewer = "jev"); false }
-                p >= SCREEN_HIGH -> { result[fingerprint(root, v)] = RiskOpinion("TRUE", "JEV 위험 확률 ${"%.2f".format(p)}: 보호 장치 없이 위험이 확인됨", RiskRules.remedies[v.ruleId].orEmpty(), reviewer = "jev"); false }
+                p <= SCREEN_LOW -> { result[fingerprint(root, v)] = RiskOpinion("FALSE", "JEV 위험 확률 ${"%.2f".format(p)}: 보호 장치가 보이거나 위험이 확인되지 않음", reviewer = "jev"); DecisionScope.record("RISK_CANDIDATE", "JEV", "충분한 근거와 낮은 위험 확률 $p", fingerprints.getValue(v)); false }
+                p >= SCREEN_HIGH -> { result[fingerprint(root, v)] = RiskOpinion("TRUE", "JEV 위험 확률 ${"%.2f".format(p)}: 보호 장치 없이 위험이 확인됨", RiskRules.remedies[v.ruleId].orEmpty(), reviewer = "jev"); DecisionScope.record("RISK_CANDIDATE", "JEV", "충분한 근거와 높은 위험 확률 $p", fingerprints.getValue(v)); false }
                 else -> true
             }
         }
+        if (result != known) checkpoint(result.toMap())
         for (batch in todo.chunked(BATCH)) {
+            batch.forEach { DecisionScope.record("RISK_CANDIDATE", "AGENT", "JEV 불확실·근거 부족·장애 또는 요청 범위 밖", fingerprints.getValue(it)) }
             val answers = parse(ask(prompt(root, batch))).findings.associateBy { it.id }
             batch.forEachIndexed { i, v ->
-                val a = answers[i]?.takeIf { it.verdict in setOf("TRUE", "FALSE", "UNSURE") } ?: return@forEachIndexed
-                result[fingerprint(root, v)] = RiskOpinion(a.verdict, a.reason, a.recommendation, reviewer)
+                val a = answers[i]?.takeIf { it.verdict in setOf("TRUE", "FALSE", "UNSURE") && it.reason.isNotBlank() } ?: return@forEachIndexed
+                result[fingerprints.getValue(v)] = RiskOpinion(a.verdict, a.reason, a.recommendation, reviewer)
             }
+            checkpoint(result.toMap())
         }
         return result
     }
@@ -119,7 +132,8 @@ object RiskReviewer {
             file(projectId).takeIf { it.exists() }?.let { jsonOut.decodeFromString<Map<String, RiskOpinion>>(it.readText()) } ?: emptyMap()
 
         fun save(projectId: String, opinions: Map<String, RiskOpinion>) {
-            file(projectId).also { it.parent.createDirectories() }.writeText(jsonOut.encodeToString(opinions))
+            val file = file(projectId)
+            KnowledgeFiles.locked(file.parent) { KnowledgeFiles.write(file, jsonOut.encodeToString(load(projectId) + opinions)) }
         }
     }
 }

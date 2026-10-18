@@ -49,6 +49,61 @@ class JevTest {
         assertEquals(0.7, jev(FakeTransport(mapper) { 0.7 }).probability("s", q))
     }
 
+    @Test
+    fun `동일 판단은 재사용하고 질문 정책 변경은 캐시를 무효화한다`() {
+        val dir = Files.createTempDirectory("ilsim-jev-cache")
+        try {
+            val transport = FakeTransport(mapper) { 0.99 }
+            val client = Jev(TypeSafeJevClient.builder().apiKey("k").transport(transport).build(), dir)
+            repeat(2) { assertEquals(0.99, client.probability(mapOf("code" to "a"), io.github.gudcks0305.jev.NoulQuestion.of("a", "original"))) }
+            assertEquals(1, transport.requests.size)
+            client.probability(mapOf("code" to "a"), io.github.gudcks0305.jev.NoulQuestion.of("a", "changed"))
+            assertEquals(2, transport.requests.size)
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun `연속 장애는 다음 후보 요청을 멈추고 위험 후보는 한 요청에서 개별 판단한다`() {
+        val failed = FakeTransport(mapper, fail = true) { 0.5 }
+        val client = Jev(TypeSafeJevClient.builder().apiKey("k").maxRetries(0).transport(failed).build())
+        repeat(5) { assertNull(client.probability("s", io.github.gudcks0305.jev.NoulQuestion.of("a", "?"))) }
+        assertEquals(2, failed.requests.size)
+        val root = project()
+        try {
+            val findings = RiskScanner.scan(root, StackDetector.detect(root))!!.sortedBy { it.file }
+            val transport = FakeTransport(mapper) { id -> if (id == "e1") 0.3 else 0.99 }
+            val screen = JevRiskScreen.batched(jev(transport), root, findings)
+            assertEquals(0.99, screen(findings[0]))
+            assertNull(screen(findings[1]), "판정 근거가 부족한 후보는 Agent fallback")
+            assertEquals(0.99, screen(findings[2]))
+            assertEquals(1, transport.requests.size)
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun `검증된 규칙 판단은 JEV로 완료하고 미해결 후보와 전역 검토만 이관한다`() {
+        var calls = 0
+        val rules = listOf("a" to "관측 10/10", "b" to "관측 10/10")
+        val complete = FakeTransport(mapper) { id -> if (id == "gap") 0.01 else 0.99 }
+        val result = JevRuleReview.review("전체 규칙 근거", rules, jev(complete), enabled = true) { calls++; "{}" }
+        assertEquals("jev", result.reviewer)
+        assertEquals(0, calls)
+        assertEquals(2, mapper.readTree(result.text).path("rules").size())
+        val partial = FakeTransport(mapper) { id -> when (id) { "gap" -> 0.4; "keep1" -> 0.5; else -> 0.99 } }
+        val mixed = JevRuleReview.review("전체 규칙 근거", rules, jev(partial), enabled = true) { prompt ->
+            calls++
+            assertTrue("미해결 후보 [b]" in prompt)
+            assertTrue("전체 규칙 근거" in prompt)
+            """{"rules":[{"id":"b","verdict":"SUSPECT","reason":"근거 부족"}],"missing":["문서에 있는 누락 규칙"],"applicability":"추가 검토 필요"}"""
+        }
+        assertEquals(1, calls)
+        assertEquals(2, mapper.readTree(mixed.text).path("rules").size())
+        assertEquals("문서에 있는 누락 규칙", mapper.readTree(mixed.text).path("missing").path(0).asText())
+        JevRuleReview.review("전체 규칙 근거", rules, jev(complete), enabled = false) { calls++; "{}" }
+        assertEquals(2, calls)
+        assertEquals(1, complete.requests.size)
+    }
+
     private val docs = listOf(
         DocumentFile("docs/ARCHITECTURE.md", "# 아키텍처\n계층 구조와 의존 방향\n"),
         DocumentFile("docs/design-notes.md", "# Design\n회의 메모\n"),

@@ -1,42 +1,57 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api, type StageState, type TaskEvent } from './api'
 import { usePoll } from './usePoll'
 import { Dialog } from './Dialog'
 import { StatusBadge } from './StatusBadge'
-import { modelLabel, usd } from './taskView'
+import { StageDots } from './StageDots'
+import { STAGE_LABEL, modelLabel, taskTitle, usd } from './taskView'
 
-const STAGE_LABEL: Record<string, string> = {
-  REQUIREMENTS: '요구사항 분석',
-  TEST_CASES: '테스트 케이스',
-  TEST_CODE: '테스트 코드',
-  IMPLEMENTATION: '프로덕트 코드',
-}
+const STOPPED = '사용자가 중지했습니다'
+/** 질문에 답만 하고 끝냈다는 Claude 의 표시(서버 PromptTemplates.ANSWERED_MARK). 화면에서는 지운다. */
+const ANSWERED_MARK = '[ILSIM:ANSWERED]'
 
-const DIFF = '\u0000diff'
-const ROUTING = '\u0000routing'
-const LOG = '\u0000log'
+/** 열어 볼 수 있는 자료: 단계 산출물, 변경 내용, 검증 결과, 모델 선택 이력. */
+type Viewing =
+  | { kind: 'artifact'; stage: string; path: string }
+  | { kind: 'diff'; stage: string }
+  | { kind: 'validation' }
+  | { kind: 'routing' }
 
 export function TaskDetail({ id }: { id: string }) {
   const { data, error, reload } = usePoll(() => api.task(id), 2000, [id])
-  const [picked, setPicked] = useState<string | null>(null)
-  const [feedback, setFeedback] = useState('')
   const [chat, setChat] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
-  const [viewing, setViewing] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<Viewing | null>(null)
+  const logRef = useRef<HTMLUListElement>(null)
+  /** 맨 아래를 보고 있는지. 처음 열면 맨 아래에서 시작하고, 사용자가 위로 올려 읽는 동안에는 따라 내리지 않는다. */
+  const stick = useRef(true)
+  const eventCount = data?.events.length ?? 0
+  const loaded = !!data
+
+  useEffect(() => { stick.current = true }, [id])
+
+  useEffect(() => {
+    const el = logRef.current
+    if (el && stick.current) el.scrollTop = el.scrollHeight
+  }, [eventCount, loaded, id])
 
   if (!data) return <p className="muted">{error ?? '불러오는 중…'}</p>
   const { task, events } = data
 
-  const current = task.stages.find((s) => s.status !== 'PASSED') ?? task.stages[task.stages.length - 1]
-  const shown: StageState = task.stages.find((s) => s.stage === picked) ?? current
+  const current: StageState | undefined = task.stages.find((s) => s.status !== 'PASSED')
+  const blocked = task.status === 'BLOCKED'
+  const waiting = current?.status === 'WAITING_APPROVAL'
+  const working = task.status === 'ACTIVE' && (current?.status === 'RUNNING' || current?.status === 'PENDING')
+  const done = task.status === 'COMPLETED'
+  const canReply = blocked || waiting || done
+  const answeredOnly = done && task.stages.some((s) => s.status !== 'PASSED')
 
   async function act(fn: () => Promise<void>) {
     setActionError(null)
     try {
       await fn()
-      setFeedback('')
       setChat('')
       reload()
     } catch (e) {
@@ -44,143 +59,144 @@ export function TaskDetail({ id }: { id: string }) {
     }
   }
 
-  const stageEvents = events.filter((e) => e.stage === shown.stage).slice(-150)
+  /** 지금 상태에 맞게 보낸다: 멈췄으면 같은 세션에서 이어 가기, 요구사항 승인 대기면 문서 수정 대화, 그 밖의 승인 대기면 수정 요청. */
+  function send() {
+    const text = chat.trim()
+    if (blocked) act(() => api.retry(id, text || undefined))
+    else if (done && text) act(async () => {
+      const next = await api.createTask(task.projectId, '', text, id)
+      location.hash = `#/tasks/${next.id}`
+    })
+    else if (waiting && text) act(() => current?.conversable ? api.sendMessage(id, text) : api.reject(id, text))
+  }
+
+  const placeholder = blocked ? 'Claude에게 답하기 (비우고 보내면 처음부터 다시 시도)'
+    : waiting ? (current?.conversable ? '요구사항에 대해 말하기 — 같은 세션에서 문서를 고칩니다' : '수정 요청 — 이 단계를 다시 작성합니다')
+    : done ? '이어서 지시하기 — 이 작업의 결과 위에서 새 작업을 시작합니다'
+    : 'Claude가 작업 중입니다'
 
   return (
-    <>
-      <p><a href="#/" className="back">← 목록</a></p>
-      <h1 className="page-title">{task.feature} <StatusBadge value={task.status} /></h1>
-      <p className="muted pre">{task.requirement}</p>
-      {task.branch && <p><small>브랜치: <code>{task.branch}</code></small></p>}
-      {!!task.costUsd && (
-        <p><small>
-          Claude 비용 {usd(task.costUsd)}
-          {Object.entries(task.costByModel ?? {}).map(([m, c]) => ` · ${modelLabel(m)} ${usd(c)}`)}
-        </small></p>
-      )}
-
-      <ol className="stepper">
-        {task.stages.map((s) => (
-          <li key={s.stage} className={s.stage === shown.stage ? 'active' : ''}>
-            <button className="link" onClick={() => setPicked(s.stage)}>
-              {STAGE_LABEL[s.stage]}
-              <StatusBadge value={s.status} />
-              {s.attempt > 1 && <small>시도 {s.attempt}</small>}
-              {!!s.costUsd && <small>{usd(s.costUsd)}</small>}
-            </button>
-          </li>
-        ))}
-      </ol>
-
-
-      {shown.stage === 'REQUIREMENTS' && (shown.messages.length > 0 || shown.conversable) && (
-        <section className="card chat">
-          <h2>요구사항 다듬기</h2>
-          <p className="muted small">승인하기 전에 말을 걸어 요구사항을 고칠 수 있습니다 (최대 10번)</p>
-          <ul className="plain bubbles">
-            {shown.messages.map((m, i) => <li key={i} className="bubble me pre">{m}</li>)}
-            {shown.status === 'RUNNING' && shown.messages.length > 0 && <li className="bubble ai typing">수정하는 중…</li>}
-          </ul>
-          {shown.conversable && (
-            <form className="chat-input" onSubmit={(e) => { e.preventDefault(); if (chat.trim()) act(() => api.sendMessage(id, chat.trim())) }}>
-              <textarea rows={2} placeholder={shown.messages.length >= 10 ? '대화 횟수를 모두 썼습니다' : '예: 로그인 실패 시 잠금 조건을 추가해 줘'}
-                value={chat} disabled={shown.messages.length >= 10} onChange={(e) => setChat(e.target.value)} />
-              <button disabled={!chat.trim() || shown.messages.length >= 10}>보내기</button>
-            </form>
-          )}
-        </section>
-      )}
-
-      {shown.status === 'WAITING_APPROVAL' && (
-        <section className="card block">
-          <strong>승인이 필요합니다</strong>
-          <small>해시 {shown.artifactHash?.slice(0, 12)}</small>
-          <textarea rows={3} placeholder="거절 시 수정 요청 사항" value={feedback} onChange={(e) => setFeedback(e.target.value)} />
-          <div className="row">
-            <button onClick={() => act(() => api.approve(id))}>승인</button>
-            <button className="secondary" disabled={!feedback.trim()} onClick={() => act(() => api.reject(id, feedback))}>거절 후 수정 요청</button>
-          </div>
-        </section>
-      )}
-
-      {task.status === 'BLOCKED' && (
-        <section className="card block">
-          <strong>작업이 차단되었습니다</strong>
-          <button onClick={() => act(() => api.retry(id))}>실패한 단계 다시 시도</button>
-        </section>
-      )}
-      {actionError && <p className="err">{actionError}</p>}
-
-      {shown.error && <pre className="err-box">{shown.error}</pre>}
-
-      {Object.keys(shown.validation).length > 0 && (
-        <p className="validation">
-          {Object.entries(shown.validation).map(([k, v]) => (
-            <span key={k}>{k} <StatusBadge value={v} /></span>
-          ))}
-        </p>
-      )}
-
-      <ul className="plain files">
-        {Object.keys(shown.artifacts).map((path) => (
-          <li key={path}><button className="link" onClick={() => setViewing(path)}>{path}</button></li>
-        ))}
-        {shown.diff && <li><button className="link" onClick={() => setViewing(DIFF)}>diff</button></li>}
-        {shown.routingLog && shown.routingLog.length > 0 && (
-          <li><button className="link" onClick={() => setViewing(ROUTING)}>모델 선택 이력</button></li>
+    <div className="task-chat">
+      <header className="chat-head">
+        <a href="#/" className="back">←</a>
+        <h1 className="page-title" title={task.feature}>{taskTitle(task)} <StatusBadge value={task.status} /></h1>
+        <StageDots task={task} />
+        {working && (
+          <button className="secondary stop" onClick={() => confirm('진행 중인 작업을 중지할까요?') && act(() => api.stop(id))}>중지</button>
         )}
-        <li><button className="link" onClick={() => setViewing(LOG)}>진행 로그 ({stageEvents.length})</button></li>
+        {!working && (
+          <button className="secondary stop danger" onClick={() => {
+            const msg = done
+              ? '작업과 대화 기록을 삭제할까요? 브랜치(작업 결과)는 남기고 worktree만 지웁니다.'
+              : '작업과 대화 기록을 삭제할까요? worktree와 브랜치도 지웁니다.'
+            if (confirm(msg)) act(async () => { await api.deleteTask(id); location.hash = '#/' })
+          }}>삭제</button>
+        )}
+      </header>
+
+      <nav className="refs">
+        {task.stages.flatMap((s) => Object.keys(s.artifacts).map((path) => (
+          <button key={s.stage + path} className="chip" onClick={() => setViewing({ kind: 'artifact', stage: s.stage, path })}>
+            {artifactLabel(path)}
+          </button>
+        )))}
+        {task.stages.filter((s) => s.diff).map((s) => (
+          <button key={'diff' + s.stage} className="chip" onClick={() => setViewing({ kind: 'diff', stage: s.stage })}>
+            변경 · {STAGE_LABEL[s.stage]}
+          </button>
+        ))}
+        {task.stages.some((s) => Object.keys(s.validation).length > 0) && (
+          <button className="chip" onClick={() => setViewing({ kind: 'validation' })}>검증 결과</button>
+        )}
+        {task.stages.some((s) => s.routingLog?.length) && (
+          <button className="chip" onClick={() => setViewing({ kind: 'routing' })}>모델 선택</button>
+        )}
+        {(!!task.costUsd || task.stages.some((s) => s.unknownCalls)) && (
+          <small className="muted cost">
+            {usd(task.costUsd) || '$0'}{task.costIsUnverified ? ' (집계 검증 필요)' : task.stages.some((s) => s.unknownCalls) ? ' 이상' : ''}{Object.entries(task.costByModel ?? {}).map(([m, c]) => ` · ${modelLabel(m)} ${usd(c)}`)}
+          </small>
+        )}
+      </nav>
+
+      <ul className="plain log transcript" ref={logRef}
+        onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40 }}>
+        <li className="message"><div className="mine pre">{task.requirement}</div></li>
+        {groupEvents(events).map((g, i) => <Entry key={i} item={g} />)}
+        {working && <li className="muted small typing">{current ? `${STAGE_LABEL[current.stage]} 작업 중…` : '작업 중…'}</li>}
+        {blocked && current?.error === STOPPED && <li className="muted small">중지했습니다. 아래에 답하면 이어 갑니다.</li>}
+        {done && (answeredOnly
+          ? <li className="muted small">질문에 답했습니다 · 코드는 바꾸지 않았습니다</li>
+          : <li className="muted small">모든 단계를 마쳤습니다{task.branch ? ` · 브랜치 ${task.branch}` : ''}</li>)}
       </ul>
 
-      {viewing === ROUTING && (
+      {waiting && current && (
+        <div className="approve-bar">
+          <span>{STAGE_LABEL[current.stage]} 승인 대기</span>
+          {Object.keys(current.artifacts).filter((p) => p.endsWith('.md')).slice(0, 1).map((path) => (
+            <button key={path} className="link" onClick={() => setViewing({ kind: 'artifact', stage: current.stage, path })}>문서 보기</button>
+          ))}
+          <button onClick={() => act(() => api.approve(id))}>승인</button>
+        </div>
+      )}
+      {actionError && <p className="err">{actionError}</p>}
+      <form className="chat-input" onSubmit={(e) => { e.preventDefault(); send() }}>
+        <textarea rows={2} value={chat} disabled={!canReply} placeholder={placeholder} onChange={(e) => setChat(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit() }
+          }} />
+        <button disabled={!canReply || (!blocked && !chat.trim())}>{blocked && !chat.trim() ? '다시 시도' : '보내기'}</button>
+      </form>
+
+      {viewing?.kind === 'artifact' && (
+        <Dialog title={viewing.path} onClose={() => setViewing(null)}>
+          {(() => {
+            const text = task.stages.find((s) => s.stage === viewing.stage)?.artifacts[viewing.path] ?? ''
+            return viewing.path.endsWith('.md')
+              ? <div className="markdown"><Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown></div>
+              : <pre>{text}</pre>
+          })()}
+        </Dialog>
+      )}
+      {viewing?.kind === 'diff' && (
+        <Dialog title={`변경 · ${STAGE_LABEL[viewing.stage]}`} onClose={() => setViewing(null)}>
+          <pre>{task.stages.find((s) => s.stage === viewing.stage)?.diff}</pre>
+        </Dialog>
+      )}
+      {viewing?.kind === 'validation' && (
+        <Dialog title="검증 결과" onClose={() => setViewing(null)}>
+          {task.stages.filter((s) => Object.keys(s.validation).length > 0).map((s) => (
+            <section key={s.stage}>
+              <h3>{STAGE_LABEL[s.stage]}</h3>
+              <Lights validation={s.validation} />
+            </section>
+          ))}
+        </Dialog>
+      )}
+      {viewing?.kind === 'routing' && (
         <Dialog title="모델 선택 이력" onClose={() => setViewing(null)}>
-          <ul className="plain">{(shown.routingLog ?? []).map((l, i) => <li key={i}><small>{l}</small></li>)}</ul>
+          {task.stages.filter((s) => s.routingLog?.length).map((s) => (
+            <section key={s.stage}>
+              <h3>{STAGE_LABEL[s.stage]}</h3>
+              <ul className="plain">{(s.routingLog ?? []).map((l, i) => <li key={i}><small>{l}</small></li>)}</ul>
+            </section>
+          ))}
         </Dialog>
       )}
-      {viewing === LOG && (
-        <Dialog title={`진행 로그 (${stageEvents.length})`} onClose={() => setViewing(null)}>
-          <ul className="plain log">
-            {groupTools(stageEvents).map((g, i) => Array.isArray(g) ? (
-              <li key={i} className="tools">
-                <details>
-                  <summary>
-                    <small className="time">{new Date(g[0].at).toLocaleTimeString()}</small>
-                    도구 호출 {g.length}건
-                  </summary>
-                  <ul className="plain">
-                    {g.map((e, j) => <li key={j}><span className="tool">{summarizeTool(e.data)}</span></li>)}
-                  </ul>
-                </details>
-              </li>
-            ) : (
-              <li key={i} className={g.type}>
-                <small className="time">{new Date(g.at).toLocaleTimeString()}</small>
-                {g.type === 'text' ? <div className="said pre">{g.data}</div>
-                  : g.type === 'message' ? <div className="mine pre">{g.data}</div>
-                  : <span className="pre">{g.type === 'result' ? summarizeResult(g.data) : g.data}</span>}
-              </li>
-            ))}
-          </ul>
-        </Dialog>
-      )}
-      {viewing === DIFF && (
-        <Dialog title="diff" onClose={() => setViewing(null)}><pre>{shown.diff}</pre></Dialog>
-      )}
-      {viewing && viewing in shown.artifacts && (
-        <Dialog title={viewing} onClose={() => setViewing(null)}>
-          {viewing.endsWith('.md')
-            ? <div className="markdown"><Markdown remarkPlugins={[remarkGfm]}>{shown.artifacts[viewing]}</Markdown></div>
-            : <pre>{shown.artifacts[viewing]}</pre>}
-        </Dialog>
-      )}
-    </>
+    </div>
   )
 }
 
-/** 연속된 도구 호출을 한 묶음(배열)으로 모아 기본으로 접어 보여 준다. */
-function groupTools(events: TaskEvent[]): (TaskEvent | TaskEvent[])[] {
-  const out: (TaskEvent | TaskEvent[])[] = []
-  for (const e of events) {
+type Item = TaskEvent | TaskEvent[] | { divider: string }
+
+/** 단계가 바뀌는 곳에 구분선을 넣고, 연속된 도구 호출은 한 묶음(배열)으로 접는다. */
+function groupEvents(events: TaskEvent[]): Item[] {
+  const out: Item[] = []
+  let stage: string | null = null
+  for (const e of events.slice(-600)) {
+    if (e.stage && e.stage !== stage) {
+      stage = e.stage
+      out.push({ divider: STAGE_LABEL[e.stage] ?? e.stage })
+    }
     const last = out[out.length - 1]
     if (e.type !== 'tool') out.push(e)
     else if (Array.isArray(last)) last.push(e)
@@ -189,15 +205,72 @@ function groupTools(events: TaskEvent[]): (TaskEvent | TaskEvent[])[] {
   return out
 }
 
-function summarizeResult(raw: string): string {
-  try {
-    const r = JSON.parse(raw)
-    const u = r.usage ?? {}
-    const tokens = (u.input_tokens ?? 0) + (u.output_tokens ?? 0)
-    return `완료 · 비용 $${(r.total_cost_usd ?? 0).toFixed(4)} · 턴 ${r.num_turns ?? '?'} · 토큰 ${tokens}`
-  } catch {
-    return raw.slice(0, 200)
+function Entry({ item }: { item: Item }) {
+  if ('divider' in item) return <li className="divider"><span>{item.divider}</span></li>
+  if (Array.isArray(item)) {
+    return (
+      <li className="tools">
+        <details>
+          <summary>도구 {item.length}건 · {summarizeTool(item[item.length - 1].data)}</summary>
+          <ul className="plain">{item.map((e, j) => <li key={j}><span className="tool">{summarizeTool(e.data)}</span></li>)}</ul>
+        </details>
+      </li>
+    )
   }
+  switch (item.type) {
+    case 'text': return <li className="text"><div className="said markdown"><Markdown remarkPlugins={[remarkGfm]}>{item.data.replace(ANSWERED_MARK, '').trimEnd()}</Markdown></div></li>
+    case 'message': return <li className="message"><div className="mine pre">{item.data}</div></li>
+    case 'verdict': return <li className="verdict"><Verdict raw={item.data} /></li>
+    case 'failure': return (
+      <li className="failure">
+        <details className="failed"><summary>실패 내용</summary><pre>{item.data}</pre></details>
+      </li>
+    )
+    case 'result': return null // 비용·토큰 요약은 상단 비용과 통계에서 본다
+    default: return <li className="log"><small className="muted pre">{item.data}</small></li>
+  }
+}
+
+/** 서버의 verdict 이벤트(첫 줄 PASSED|FAILED, 다음 줄부터 "항목=결과")를 신호등으로 보여 준다. */
+function Verdict({ raw }: { raw: string }) {
+  const [head, ...rest] = raw.split('\n')
+  const validation = Object.fromEntries(rest.map((l) => l.split('=')).filter((p) => p.length === 2)) as Record<string, string>
+  const passed = head === 'PASSED'
+  return (
+    <div className={`verdict-row ${passed ? 'ok' : 'bad'}`}>
+      <span className={`light ${passed ? 'green' : 'red'}`} />
+      <strong>{passed ? '검증 통과' : '검증 실패'}</strong>
+      <Lights validation={validation} />
+    </div>
+  )
+}
+
+const LIGHT: Record<string, string> = {
+  PASSED: 'green', RED: 'green', FAILED: 'red', CONCERN: 'amber', LOW: 'amber', UNKNOWN: 'gray', SKIPPED: 'gray',
+}
+
+const CHECK_LABEL: Record<string, string> = {
+  tests: '테스트', analysis: '정적 분석', architecture: '아키텍처', convention: '컨벤션', risk: '트랜잭션·동시성',
+  'test-integrity': '테스트 무결성', mutation: '변이 테스트', traceability: '추적성', 'ai-audit': 'AI 검토',
+}
+
+function Lights({ validation }: { validation: Record<string, string> }) {
+  return (
+    <span className="lights">
+      {Object.entries(validation).map(([k, v]) => (
+        <span key={k} className="check" title={`${k}: ${v}`}>
+          <span className={`light ${LIGHT[v] ?? 'gray'}`} />{CHECK_LABEL[k] ?? k}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+function artifactLabel(path: string): string {
+  if (path.endsWith('requirements.md')) return '요구사항 문서'
+  if (path.endsWith('test-spec.md')) return '테스트 케이스'
+  if (path === 'ai-audit.md') return 'AI 검토'
+  return path.split('/').pop() ?? path
 }
 
 const TOOL_LABEL: Record<string, string> = {

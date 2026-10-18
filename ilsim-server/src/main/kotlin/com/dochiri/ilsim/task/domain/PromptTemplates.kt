@@ -5,8 +5,22 @@ import com.dochiri.ilsim.task.domain.vo.Stage
 /** 단계별로 Agent 에 보내는 지시문. */
 object PromptTemplates {
 
-    /** 요구사항 대화의 이어 가기 지시문. 같은 세션이 아니어도(세션을 잃어도) 파일에서 이어 갈 수 있게 문서 경로를 알려 준다. */
-    fun followUp(task: Task, message: String, feedback: String?): String {
+    /** 요구사항 단계에서 Claude 가 질문에 답만 했다는 표시. Runner 가 이 표시를 보고 문서 없이 작업을 끝낸다. 값은 Runner 와 같아야 한다. */
+    const val ANSWERED_MARK = "[ILSIM:ANSWERED]"
+
+    /** 사용자는 Claude 의 마지막 말을 대화창에서 읽는다. CLI 를 쓸 때처럼 무엇을 했고 왜 그렇게 정했는지 남기게 한다. */
+    private val CLOSING = """
+        ## 마무리
+        끝내기 전에 사용자에게 한국어로 짧게 보고하라: 한 일, 검증 결과(실행했다면), 내린 결정과 그 이유, 사용자가 정해야 할 사항.
+        목표를 이루지 못했으면 무엇 때문인지와 다음에 무엇을 해야 하는지 말하라.
+        """.trimIndent() + "\n"
+
+    /**
+     * 사용자 말을 같은 세션에 이어 전하는 지시문. 요구사항은 문서 수정 지시, 다른 단계는 사용자 말 뒤에 단계 지시를 다시 붙인다.
+     * 세션을 잃어 새 세션으로 돌아도 이어 갈 수 있게 한다.
+     */
+    fun followUp(task: Task, stage: Stage, message: String, feedback: String?): String {
+        if (stage != Stage.REQUIREMENTS) return "## 사용자 메시지\n$message\n\n위 말을 우선 반영해 이어서 작업하라. 단계 지시는 아래와 같다.\n\n" + build(task, stage, feedback)
         val f = task.feature.value
         val retry = if (feedback.isNullOrBlank()) "" else "\n\n## 직전 시도의 문제\n$feedback\n"
         return """
@@ -32,7 +46,12 @@ object PromptTemplates {
                 ## 요구사항 원문
                 ${task.requirement.value}
 
+                ## 질문이면 답만 하기
+                요구사항 원문이 코드 변경 요청이 아니라 질문·설명·조사 요청이면 파일을 만들거나 고치지 말고, 코드를 읽어 답만 하라.
+                답의 마지막 줄에 `$ANSWERED_MARK` 를 그대로 적어라. 이 경우 아래 작성 규칙은 무시한다.
+
                 ## 작성 규칙
+                - 첫 줄은 `# ` 뒤에 이 작업을 요약한 한국어 제목(20자 안팎)으로 쓴다. 화면에서 작업 이름으로 쓰인다.
                 - 기존 코드와 문서를 읽어 영향 범위를 파악한 뒤 작성한다.
                 - 개별 요구사항에 REQ-1, REQ-2 ... 형식의 ID를 붙이고, 각각 검증 가능한 인수 조건을 적는다.
                 - 모호하거나 누락된 정보는 추측하지 말고 `## 미결정 사항` 섹션에 질문으로 적는다.
@@ -70,7 +89,8 @@ object PromptTemplates {
                 - 프로젝트의 기존 아키텍처와 코드 컨벤션을 따른다.
                 """.trimIndent() + "\n"
         }
-        if (feedback.isNullOrBlank()) return body
-        return body + "\n## 이전 시도 피드백\n$feedback\n\n위 내용을 반영해 수정하라.\n"
+        val withClosing = body + "\n" + CLOSING
+        if (feedback.isNullOrBlank()) return withClosing
+        return withClosing + "\n## 이전 시도 피드백\n$feedback\n\n위 내용을 반영해 수정하라.\n"
     }
 }

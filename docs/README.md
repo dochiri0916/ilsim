@@ -35,6 +35,7 @@ Build Convention의 모듈·플러그인 ID·검사·보고서 개요는 [프로
 | 주제 | 문서 |
 |---|---|
 | 빌드·검증, Git 이력·원본 저장소·보존 브랜치 | [저장소 개발과 이력](repository.md) |
+| AI 비용·JEV 우선 처리·모델/추론 강도 선택·지속 보정 요구사항 | [AI 비용 분석](ai-cost-analysis.md) |
 | 저장소 작업 지침 | [루트 AGENTS](../AGENTS.md) |
 | AI 세션 인수인계(진행 상태·로컬 실행 환경) | [세션 인수인계](handoff.md) |
 | 플러그인 개발 지침 | [Build Convention AGENTS](../build-convention/AGENTS.md) |

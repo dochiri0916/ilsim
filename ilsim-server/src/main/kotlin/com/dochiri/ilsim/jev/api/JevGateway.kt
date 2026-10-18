@@ -10,7 +10,10 @@ interface JevGateway {
 
     /** 질문 이름 → 답. 키가 없거나 호출·해석에 실패하면 null. */
     fun evaluate(state: Any, questions: Map<String, JevQuestion>): Map<String, JevAnswer>?
+    fun drainUsage(): List<JevUsage> = emptyList()
 }
+
+data class JevUsage(val id: String, val model: String, val inputTokens: Long, val outputTokens: Long, val questions: Int, val costUsd: Double? = null)
 
 class JevQuestion private constructor(val type: String, val instructions: String, val criteria: Any?) {
     companion object {

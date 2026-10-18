@@ -2,6 +2,9 @@ package com.dochiri.ilsim.task.adapter.out.persistence
 
 import com.dochiri.ilsim.task.domain.StageState
 import com.dochiri.ilsim.task.domain.Task
+import com.dochiri.ilsim.task.domain.AiUsage
+import com.dochiri.ilsim.task.domain.ExecutionRecord
+import com.dochiri.ilsim.task.domain.ProcessingDecision
 import com.dochiri.ilsim.task.domain.vo.Attempt
 import com.dochiri.ilsim.task.domain.vo.Branch
 import com.dochiri.ilsim.task.domain.vo.Feature
@@ -27,6 +30,7 @@ data class TaskRecord(
     val branch: String? = null,
     val runs: Int = 0,
     val stages: List<StageRecord> = emptyList(),
+    val baseBranch: String? = null,
 ) {
     data class StageRecord(
         val stage: String,
@@ -46,6 +50,10 @@ data class TaskRecord(
         val sessionId: String? = null,
         val messages: List<String>? = null,
         val pendingMessage: String? = null,
+        val executionId: String? = null,
+        val executions: List<ExecutionRecord> = emptyList(),
+        val usage: List<AiUsage> = emptyList(),
+        val decisions: List<ProcessingDecision> = emptyList(),
     )
 
     fun toTask(): Task {
@@ -69,6 +77,10 @@ data class TaskRecord(
                 sessionId = r.sessionId,
                 messages = r.messages.orEmpty(),
                 pendingMessage = r.pendingMessage,
+                executionId = r.executionId,
+                executions = r.executions,
+                usage = r.usage,
+                decisions = r.decisions,
             )
         }.associateBy { it.stage }
         // 저장본에 없는 단계는 새로 만든다(단계가 추가돼도 읽을 수 있게).
@@ -85,6 +97,7 @@ data class TaskRecord(
             branch = branch?.takeIf { it.isNotBlank() }?.let { Branch.of(it) },
             runs = RunCount.of(runs),
             stages = all,
+            baseBranch = baseBranch?.takeIf { it.isNotBlank() }?.let { Branch.of(it) },
         )
     }
 
@@ -96,9 +109,10 @@ data class TaskRecord(
                 StageRecord(
                     s.stage.name, s.status.name, s.attempt.value, s.feedback, s.lastErrorKey, s.error, s.diff, s.artifactHash,
                     LinkedHashMap(s.artifacts), LinkedHashMap(s.validation), LinkedHashMap(s.routing), ArrayList(s.routingLog), s.costUsd, LinkedHashMap(s.costByModel),
-                    s.sessionId, ArrayList(s.messages), s.pendingMessage,
+                    s.sessionId, ArrayList(s.messages), s.pendingMessage, s.executionId, s.executions.toList(), s.usage.toList(), s.decisions.toList(),
                 )
             },
+            t.baseBranch?.value,
         )
     }
 }

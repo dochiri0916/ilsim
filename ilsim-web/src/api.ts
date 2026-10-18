@@ -14,6 +14,7 @@ export interface StageState {
   routingLog?: string[]
   costUsd?: number
   costByModel?: Record<string, number>
+  unknownCalls?: number
   /** 요구사항 단계에서 사용자가 보낸 대화 메시지와, 지금 말을 걸 수 있는지 */
   messages: string[]
   conversable: boolean
@@ -30,6 +31,7 @@ export interface Task {
   stages: StageState[]
   costUsd?: number
   costByModel?: Record<string, number>
+  costIsUnverified?: boolean
 }
 
 export interface TaskEvent {
@@ -103,10 +105,23 @@ export interface Knowledge {
 
 export interface Stats {
   tasks: number
+  completedTasks: number
   costUsd: number
   byModel: Record<string, { stages: number; costUsd: number }>
   byStage: { stage: string; stages: number; averageAttempts: number; costUsd: number }[]
   escalatedStages: number
+  unknownCalls: number
+  costIsLowerBound: boolean
+  analysisCostUsd: number
+  decisionsByHandler: Record<string, number>
+  runningExecutions: number
+  legacyCostUsd: number
+  costIsUnverified: boolean
+  byPurpose: Record<string, { calls: number; costUsd: number; unknownCalls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; toolCalls: number; questions: number }>
+  byCombination: { model: string; effort: string; stage: string; executions: number; successRate: number | null; costUsd: number; unknownCalls: number }[]
+  reviewProfiles: { purpose: string; workload: string; model: string; effort: string; samples: number; passed: number; missed: number; falsePositives: number; meanCostUsd: number | null; eligible: boolean }[]
+  reviewSamplesReserved: number
+  reviewSampleBudgetReservedUsd: number
 }
 
 export interface Analysis {
@@ -171,9 +186,11 @@ export const api = {
   projects: () => call<Project[]>('/api/projects'),
   tasks: () => call<Task[]>('/api/tasks'),
   task: (id: string) => call<{ task: Task; events: TaskEvent[] }>(`/api/tasks/${id}`),
-  createTask: (projectId: string, feature: string, requirement: string) =>
-    call<Task>('/api/tasks', { method: 'POST', body: JSON.stringify({ projectId, feature, requirement }) }),
+  createTask: (projectId: string, feature: string, requirement: string, continueFrom?: string) =>
+    call<Task>('/api/tasks', { method: 'POST', body: JSON.stringify({ projectId, feature, requirement, continueFrom }) }),
   approve: (id: string) => post(`/api/tasks/${id}/approve`),
   reject: (id: string, feedback: string) => post(`/api/tasks/${id}/reject`, { feedback }),
-  retry: (id: string) => post(`/api/tasks/${id}/retry`),
+  retry: (id: string, instruction?: string) => post(`/api/tasks/${id}/retry`, { instruction }),
+  stop: (id: string) => post(`/api/tasks/${id}/stop`),
+  deleteTask: (id: string) => call<void>(`/api/tasks/${id}`, { method: 'DELETE' }),
 }

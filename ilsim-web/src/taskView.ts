@@ -53,3 +53,16 @@ export function ago(iso: string | null | undefined): string {
   if (sec < 86400) return `${Math.floor(sec / 3600)}시간 전`
   return `${Math.floor(sec / 86400)}일 전`
 }
+
+/**
+ * 화면에 보일 작업 이름. 요구사항 문서 첫 줄의 `# 제목`(Claude 가 쓴 요약)을 쓰고,
+ * 아직 없으면 지시문 첫 줄을 줄여 쓴다. feature 는 브랜치·경로용 식별자라 이름으로 쓰지 않는다.
+ */
+export function taskTitle(t: Task): string {
+  const doc = Object.entries(t.stages.find((s) => s.stage === 'REQUIREMENTS')?.artifacts ?? {})
+    .find(([path]) => path.endsWith('requirements.md'))?.[1]
+  const heading = doc?.match(/^#\s+(.+)$/m)?.[1]?.trim()
+  if (heading && !/^요구사항(\s*(문서|명세|정의))?$/.test(heading)) return heading.slice(0, 60)
+  const line = t.requirement.split('\n').map((l) => l.trim()).find(Boolean) ?? t.feature
+  return line.length > 40 ? line.slice(0, 40) + '…' : line
+}

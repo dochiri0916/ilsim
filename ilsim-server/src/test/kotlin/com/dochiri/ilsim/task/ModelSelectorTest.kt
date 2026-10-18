@@ -2,6 +2,8 @@ package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.domain.Assessment
+import com.dochiri.ilsim.task.domain.CandidateAssessment
+import com.dochiri.ilsim.task.domain.CostRoutingPolicy
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.RoutingPolicy
 import com.dochiri.ilsim.task.domain.vo.ProjectId
@@ -16,21 +18,21 @@ class ModelSelectorTest {
     private fun newTask(requirement: String) = Task.create(TaskId.of("id-1234567890"), MutableClock().now, ProjectId.of("demo"), "slug", requirement)
 
     @Test
-    fun `정책은 평가 최소 모델 재시도로 등급을 정한다`() {
+    fun `정책은 평가 최소 모델로 등급을 정하고 횟수만으로 승격하지 않는다`() {
         fun choose(c: Double, r: Double, attempt: Int, min: ModelTier) = RoutingPolicy.choose(Assessment(c, r), attempt, min)
         assertThat(choose(0.5, 0.2, 1, ModelTier.HAIKU)).isEqualTo(ModelTier.HAIKU)
         assertThat(choose(0.5, 0.2, 1, ModelTier.SONNET)).isEqualTo(ModelTier.SONNET)
         assertThat(choose(1.8, 0.2, 1, ModelTier.HAIKU)).isEqualTo(ModelTier.SONNET)
         assertThat(choose(0.5, 1.7, 1, ModelTier.HAIKU)).isEqualTo(ModelTier.OPUS)
-        assertThat(choose(0.5, 0.2, 2, ModelTier.HAIKU)).isEqualTo(ModelTier.SONNET)
-        assertThat(choose(0.5, 0.2, 3, ModelTier.HAIKU)).isEqualTo(ModelTier.OPUS)
-        assertThat(choose(0.5, 0.2, 2, ModelTier.SONNET)).isEqualTo(ModelTier.OPUS)
+        assertThat(choose(0.5, 0.2, 2, ModelTier.HAIKU)).isEqualTo(ModelTier.HAIKU)
+        assertThat(choose(0.5, 0.2, 3, ModelTier.HAIKU)).isEqualTo(ModelTier.HAIKU)
+        assertThat(choose(0.5, 0.2, 2, ModelTier.SONNET)).isEqualTo(ModelTier.SONNET)
     }
 
     @Test
     fun `쉬운 작업은 최소 모델로 위험한 작업은 상위 모델로 보내고 이력을 남긴다`() {
         val easy = newTask("쉬운 작업")
-        assertThat(ModelSelector(FakeAssessor(Assessment(0.4, 0.1)), ModelTier.HAIKU).select(easy, easy.stage(Stage.IMPLEMENTATION), 1).tier)
+        assertThat(ModelSelector(FakeAssessor(Assessment(0.4, 0.1, listOf(CandidateAssessment(ModelTier.HAIKU.modelId, "low", 0.99)))), ModelTier.HAIKU, CostRoutingPolicy(allowUnverified = true)).select(easy, easy.stage(Stage.IMPLEMENTATION), 1).tier)
             .isEqualTo(ModelTier.HAIKU)
 
         val risky = newTask("결제 취소")
@@ -42,16 +44,16 @@ class ModelSelectorTest {
 
     @Test
     fun `같은 단계의 재시도는 평가를 다시 하지 않는다`() {
-        val assessor = FakeAssessor(Assessment(0.4, 0.1))
-        val selector = ModelSelector(assessor, ModelTier.HAIKU)
+        val assessor = FakeAssessor(Assessment(0.4, 0.1, listOf(CandidateAssessment(ModelTier.HAIKU.modelId, "low", 0.99))))
+        val selector = ModelSelector(assessor, ModelTier.HAIKU, CostRoutingPolicy(allowUnverified = true))
         val task = newTask("요구사항")
         val state = task.stage(Stage.IMPLEMENTATION)
         val first = selector.select(task, state, 1)
         val second = selector.select(task, first.state, 2)
         val third = selector.select(task, second.state, 3)
         assertThat(first.tier).isEqualTo(ModelTier.HAIKU)
-        assertThat(second.tier).isEqualTo(ModelTier.SONNET)
-        assertThat(third.tier).isEqualTo(ModelTier.OPUS)
+        assertThat(second.tier).isEqualTo(ModelTier.HAIKU)
+        assertThat(third.tier).isEqualTo(ModelTier.HAIKU)
         assertThat(assessor.calls).isEqualTo(1)
     }
 
@@ -63,7 +65,7 @@ class ModelSelectorTest {
         val first = selector.select(task, state, 1)
         val third = selector.select(task, first.state, 3)
         assertThat(first.tier).isEqualTo(ModelTier.SONNET)
-        assertThat(third.tier).isEqualTo(ModelTier.OPUS)
+        assertThat(third.tier).isEqualTo(ModelTier.SONNET)
         assertThat(third.state.routingLog.first()).contains("규칙 기반", "키 없음")
     }
 }

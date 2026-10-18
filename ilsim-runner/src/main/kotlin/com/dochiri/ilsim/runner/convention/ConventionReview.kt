@@ -4,7 +4,10 @@ import com.dochiri.ilsim.runner.architecture.ArchitectureReviewer
 import com.dochiri.ilsim.runner.architecture.ModelReview
 import com.dochiri.ilsim.runner.architecture.RuleReview
 import com.dochiri.ilsim.runner.document.DocumentContext
-import java.security.MessageDigest
+import com.dochiri.ilsim.runner.ReviewCache
+import com.dochiri.ilsim.runner.ReviewRouter
+import com.dochiri.ilsim.runner.RuleReviewReuse
+import com.dochiri.ilsim.runner.architecture.Evidence
 
 /** 채굴한 컨벤션 요약을 AI가 한 번 검토한다. 아키텍처 검토와 같은 원칙: 소스는 보내지 않고, 의견만 붙이며, 승인·위반 판정은 하지 않는다. */
 object ConventionReviewer {
@@ -16,8 +19,8 @@ object ConventionReviewer {
         if (m.notes.isNotEmpty()) appendLine("notes=${m.notes}")
     }
 
-    fun hash(m: ConventionModel, docs: DocumentContext? = null): String =
-        MessageDigest.getInstance("SHA-256").digest((summary(m) + (docs?.hash.orEmpty())).toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
+    fun hash(m: ConventionModel, docs: DocumentContext? = null, reviewer: String = com.dochiri.ilsim.runner.ClaudeModels.REVIEW): String =
+        com.dochiri.ilsim.runner.ReviewCache.digest("convention-review-v2|$reviewer|${com.dochiri.ilsim.runner.ClaudeModels.EFFORT}|${com.dochiri.ilsim.runner.ReviewRouter.policyKey}|" + prompt(m, docs))
 
     fun prompt(m: ConventionModel, docs: DocumentContext? = null): String = """
         아래는 소스를 정적 분석해 얻은 한 프로젝트의 코드 컨벤션 규칙 후보다. 소스는 보지 않았다.
@@ -30,22 +33,33 @@ object ConventionReviewer {
         기준: 관측이 일관되어 이 팀이 의도적으로 따르는 규칙이면 KEEP, 관측이 적거나 다른 규칙의 부수 효과처럼 보이면 SUSPECT.
         모든 규칙 id 에 대해 답하라. 없는 id 를 만들지 마라.
 
-        ${summary(m)}
         ${ArchitectureReviewer.docSection(docs)}
+        ${summary(m)}
     """.trimIndent()
 
     fun review(m: ConventionModel, reviewer: String, force: Boolean = false, docs: DocumentContext? = null, ask: (String) -> String): ConventionModel {
-        val h = hash(m, docs)
+        val h = hash(m, docs, reviewer)
         if (!force && m.review?.modelHash == h) return m
-        return apply(m, ask(prompt(m, docs)), h, reviewer)
+        val hashes = ruleHashes(m, docs, reviewer)
+        val reused = if (force) emptyMap() else m.rules.mapNotNull { rule ->
+            rule.review?.takeIf { it.evidenceHash == hashes[rule.id] && it.verdict in ArchitectureReviewer.verdicts && it.reason.isNotBlank() }?.let { rule.id to it }
+        }.toMap()
+        val reviewed = apply(m, RuleReviewReuse.response(prompt(m, docs), m.rules.map { it.id }, reused, ask), h, reviewer)
+        return if (reviewed.review?.modelHash != h) reviewed else reviewed.copy(rules = reviewed.rules.map { it.copy(review = it.review?.copy(evidenceHash = hashes.getValue(it.id))) })
+    }
+
+    private fun ruleHashes(m: ConventionModel, docs: DocumentContext?, reviewer: String): Map<String, String> {
+        val definitions = m.rules.map { it.copy(evidence = Evidence(0, 0), approved = false, rejected = false, decidedBy = null, review = null) }
+        val common = "$reviewer/${com.dochiri.ilsim.runner.ClaudeModels.EFFORT}/${ReviewRouter.policyKey}/${ArchitectureReviewer.docSection(docs)}/${m.projectName}/${m.source}/${m.languages.keys}/${m.notes}/$definitions"
+        return m.rules.associate { it.id to ReviewCache.digest("convention-rule-v1/$common/${it.copy(approved = false, rejected = false, decidedBy = null, review = null)}") }
     }
 
     internal fun apply(m: ConventionModel, response: String, hash: String, reviewer: String): ConventionModel {
         val opinion = ArchitectureReviewer.parseOpinion(response)
-        val byId = opinion.rules.filter { it.verdict in ArchitectureReviewer.verdicts }.associateBy { it.id }
+        val byId = opinion.rules.filter { it.verdict in ArchitectureReviewer.verdicts && it.reason.isNotBlank() }.associateBy { it.id }
         return m.copy(
             rules = m.rules.map { r -> byId[r.id]?.let { r.copy(review = RuleReview(it.verdict, it.reason)) } ?: r },
-            review = ModelReview(hash, reviewer, opinion.missing, opinion.applicability),
+            review = ModelReview(if (ArchitectureReviewer.complete(opinion, m.rules.map { it.id })) hash else "", reviewer, opinion.missing, opinion.applicability),
         )
     }
 }

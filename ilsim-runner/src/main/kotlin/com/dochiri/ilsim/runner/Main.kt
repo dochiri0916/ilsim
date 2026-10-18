@@ -135,11 +135,16 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
     out.append(ArchitectureReport.summary(model, self))
     if (registered != null && model.rules.isNotEmpty()) {
         // 정적으로 만든 규칙을 AI가 한 번 검토하고, 확실한 것만 승인한다. 애매한 것은 사용자에게 넘긴다.
-        val cost = CostTally()
+        val cost = CostTally("ARCHITECTURE_REVIEW")
         try {
             val docs = DocumentContext.build(path, DocPurpose.ARCHITECTURE)
             if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
-            model = ArchitectureReviewer.review(model, AI_MODEL, docs = docs) { cost.ask(it, AI_MODEL) }
+            model = ArchitectureReviewer.review(model, AI_MODEL, docs = docs) { prompt ->
+                val answer = com.dochiri.ilsim.runner.jev.JevRuleReview.review(prompt, model.rules.map { it.id to "${it.description} (관측 ${it.evidence.compliant}/${it.evidence.total})" }) { cost.ask(it, AI_MODEL) }
+                if (answer.reviewer == "jev") cost.lastReviewer = "jev"
+                answer.text
+            }
+            model = model.copy(review = model.review?.copy(reviewer = cost.lastReviewer ?: model.review!!.reviewer))
             model = RuleApproval.autoApprove(model)
             val reviewed = model
             archStore.update(id) { saved -> RuleApproval.keepUserDecisions(saved, reviewed).also { model = it } }
@@ -273,10 +278,11 @@ private fun reviewRisk(store: ConfigStore, args: Array<String>) {
         exitProcess(0)
     }
     val targets = findings.filter { it.ruleId in config.aiReview }
-    val cost = CostTally()
+    val cost = CostTally("RISK_REVIEW")
     try {
         val known = opinionStore.load(args[1])
-        val updated = RiskReviewer.review(path, targets, known, AI_MODEL, false, JevRiskScreen.of(Jev.fromEnvironment(), path)) { cost.ask(it, AI_MODEL) }
+        val updated = RiskReviewer.review(path, targets, known, "$AI_MODEL/${ClaudeModels.EFFORT}/${ReviewRouter.policyKey}", false,
+            JevRiskScreen.batched(Jev.fromEnvironment(), path, targets), checkpoint = { opinionStore.save(args[1], it) }) { cost.ask(it, AI_MODEL) }
         opinionStore.save(args[1], updated)
         val reviewed = targets.filter { it.severity == "REVIEW" }.mapNotNull { updated[RiskReviewer.fingerprint(path, it)] }
         println("검토: 승인한 규칙(${config.aiReview.sorted().joinToString()})의 후보 ${targets.count { it.severity == "REVIEW" }}건 중 ${reviewed.size}건에 의견 (실제 위험 ${reviewed.count { it.verdict == "TRUE" }}, 오탐 ${reviewed.count { it.verdict == "FALSE" }}, 불확실 ${reviewed.count { it.verdict == "UNSURE" }})")
@@ -383,11 +389,16 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
     out.append(ConventionReport.summary(model, self))
     if (registered != null && model.rules.isNotEmpty()) {
-        val cost = CostTally()
+        val cost = CostTally("CONVENTION_REVIEW")
         try {
             val docs = DocumentContext.build(path, DocPurpose.CONVENTION)
             if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
-            model = ConventionReviewer.review(model, AI_MODEL, docs = docs) { cost.ask(it, AI_MODEL) }
+            model = ConventionReviewer.review(model, AI_MODEL, docs = docs) { prompt ->
+                val answer = com.dochiri.ilsim.runner.jev.JevRuleReview.review(prompt, model.rules.map { it.id to "${it.description} (관측 ${it.evidence.compliant}/${it.evidence.total})" }) { cost.ask(it, AI_MODEL) }
+                if (answer.reviewer == "jev") cost.lastReviewer = "jev"
+                answer.text
+            }
+            model = model.copy(review = model.review?.copy(reviewer = cost.lastReviewer ?: model.review!!.reviewer))
             model = ConventionApproval.autoApprove(model)
             val reviewed = model
             ConventionStore(store).update(id) { saved -> ConventionApproval.keepUserDecisions(saved, reviewed).also { model = it } }
@@ -450,7 +461,14 @@ private fun set(store: ConfigStore, args: Array<String>) {
 }
 
 /** 웹의 분석 버튼: 아키텍처와 컨벤션 규칙을 차례로 다시 뽑는다. 앞이 실패해도 뒤는 돌린다. */
-private fun analyzeProject(store: ConfigStore, projectId: String): AnalysisResult {
+private fun analyzeProject(store: ConfigStore, projectId: String, policy: ReviewPolicySnapshot = ReviewPolicySnapshot()): AnalysisResult {
+    val usage = mutableListOf<AiUsage>()
+    return UsageScope.collect(usage, executionId = "analysis:${java.util.UUID.randomUUID()}") {
+        ReviewContext.within(policy, "ANALYSIS") { analyzeProjectWithUsage(store, projectId, usage) }
+    }
+}
+
+private fun analyzeProjectWithUsage(store: ConfigStore, projectId: String, usage: List<AiUsage>): AnalysisResult {
     val out = StringBuilder()
     val errors = mutableListOf<String>()
     for ((label, analyze) in listOf<Pair<String, (ConfigStore, String, Appendable) -> Unit>>(
@@ -466,7 +484,7 @@ private fun analyzeProject(store: ConfigStore, projectId: String): AnalysisResul
         }
         out.appendLine()
     }
-    return AnalysisResult(errors.isEmpty(), out.toString().trimEnd(), errors.joinToString("\n").ifEmpty { null })
+    return AnalysisResult(errors.isEmpty(), out.toString().trimEnd(), errors.joinToString("\n").ifEmpty { null }, usage.toList())
 }
 
 private fun run(store: ConfigStore) {
@@ -475,22 +493,32 @@ private fun run(store: ConfigStore) {
         ?: run { println("토큰이 없습니다. 서버를 먼저 실행해 ${tokenFile} 을 만들거나 ILSIM_TOKEN 환경변수를 설정하세요"); exitProcess(1) }
     val config = store.load()
     val client = ServerClient(config.serverUrl, token)
-    val executor = TaskExecutor(config, client)
+    val durable = DurableTaskSink(client, store.location.parent.resolve("outbox"), client::sendEvents)
+    val executor = TaskExecutor(config, durable, configStore = store)
     val report = config.projects.map { (id, p) -> ProjectReport(id, p.name) }
     println("runner ${config.runnerId} -> ${config.serverUrl}, 프로젝트 ${report.map { it.id }}")
     PlanUsageReporter(client, config.runnerId).start()
     while (true) {
         try {
+            durable.flushResults()
+            // 키 부재(204)는 해제하고, 조회 장애는 기존 키를 유지한다.
+            runCatching { client.jevKey() }.onSuccess { JevKey.fromServer = it }
+                .onFailure { System.err.println("JEV 키 갱신 실패, 기존 판단 경로 유지: ${it.message}") }
+            runCatching { client.claimCleanups(report.map { it.id }) }.getOrDefault(emptyList()).forEach {
+                println("작업 정리: ${it.taskId}")
+                executor.cleanup(it)
+            }
             client.claimAnalysis(AnalysisClaim(config.runnerId, report.map { it.id }))?.let { projectId ->
                 println("분석 수신: $projectId")
-                client.analysisResult(projectId, analyzeProject(store, projectId))
+                val policy = runCatching { client.reviewPolicy(projectId) }.getOrDefault(ReviewPolicySnapshot())
+                client.analysisResult(projectId, analyzeProject(store, projectId, policy))
                 println("분석 종료: $projectId")
                 continue
             }
             val task = client.poll(PollRequest(config.runnerId, report))
             if (task != null) {
                 println("작업 수신: ${task.taskId} (${task.projectId})")
-                JevKey.fromServer = runCatching { client.jevKey() }.getOrNull()
+                check(task.executionId != null) { "서버가 실행 ID를 지원하지 않습니다. 서버와 Runner를 함께 업데이트하세요" }
                 executor.run(task)
                 println("작업 종료: ${task.taskId}")
             } else Thread.sleep(2000)

@@ -172,10 +172,10 @@ class TaskServiceTest {
     }
 
     @Test
-    fun `시도가 늘면 상위 모델로 올린다`() {
+    fun `JEV 장애는 시도 횟수만으로 모델을 승격하지 않는다`() {
         val selector = ModelSelector(NoAssessor, ModelTier.SONNET)
         val state = service.latest(task).stage(Stage.IMPLEMENTATION)
         assertThat(selector.select(task, state, 1).tier).isEqualTo(ModelTier.SONNET)
-        assertThat(selector.select(task, state, 3).tier).isEqualTo(ModelTier.OPUS)
+        assertThat(selector.select(task, state, 3).tier).isEqualTo(ModelTier.SONNET)
     }
 }

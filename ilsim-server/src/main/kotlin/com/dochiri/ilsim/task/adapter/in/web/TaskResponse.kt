@@ -27,12 +27,18 @@ data class StageResponse(
     val messages: List<String>,
     /** 대화를 이어 갈 수 있는지(요구사항 단계가 승인을 기다리는 중이고 횟수가 남았을 때). */
     val conversable: Boolean,
+    val unknownCalls: Int = 0,
+    val usage: List<com.dochiri.ilsim.task.domain.AiUsage> = emptyList(),
+    val executions: List<com.dochiri.ilsim.task.domain.ExecutionRecord> = emptyList(),
+    val decisions: List<com.dochiri.ilsim.task.domain.ProcessingDecision> = emptyList(),
+    val costIsUnverified: Boolean = false,
 ) {
     companion object {
         fun from(s: StageState): StageResponse = StageResponse(
             s.stage.name, s.status.name, s.attempt.value, s.feedback, s.lastErrorKey, s.routing, s.routingLog.toList(),
             s.error, s.diff, s.artifactHash, s.artifacts, s.validation, s.costUsd, s.costByModel,
             s.messages, s.stage == Stage.REQUIREMENTS && s.status == StageStatus.WAITING_APPROVAL && s.messages.size < Task.MAX_MESSAGES,
+            s.usage.count { it.chargedUsd == null }, s.usage, s.executions, s.decisions, s.costUsd - s.usage.sumOf { it.chargedUsd ?: 0.0 } > 1e-9,
         )
     }
 }
@@ -50,12 +56,13 @@ data class TaskResponse(
     val stages: List<StageResponse>,
     val costUsd: Double,
     val costByModel: Map<String, Double>,
+    val costIsUnverified: Boolean = false,
 ) {
     companion object {
         fun from(t: Task): TaskResponse = TaskResponse(
             t.id.value, t.projectId.value, t.feature.value, t.requirement.value, t.createdAt, t.status.name,
             t.runnerId?.value, t.branch?.value, t.runs.value,
-            t.stages.map(StageResponse::from), t.costUsd(), t.costByModel(),
+            t.stages.map(StageResponse::from), t.costUsd(), t.costByModel(), t.stages.any { s -> s.costUsd - s.usage.sumOf { it.chargedUsd ?: 0.0 } > 1e-9 },
         )
     }
 }
