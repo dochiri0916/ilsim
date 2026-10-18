@@ -1,15 +1,14 @@
 package com.dochiri.ilsim.runner.memory
 
 import com.dochiri.ilsim.runner.ConfigStore
+import com.dochiri.ilsim.runner.KnowledgeFiles
 import com.dochiri.ilsim.runner.architecture.Violation
 import com.dochiri.ilsim.runner.risk.RiskOpinion
 import com.dochiri.ilsim.runner.risk.RiskReviewer
 import java.nio.file.Path
 import java.time.Instant
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -50,8 +49,11 @@ class ProjectMemory(config: ConfigStore) {
         file(projectId).takeIf { it.exists() }?.let { json.decodeFromString<List<MemoryEntry>>(it.readText()) } ?: emptyList()
 
     fun save(projectId: String, entries: List<MemoryEntry>) {
-        file(projectId).also { it.parent.createDirectories() }.writeText(json.encodeToString(entries))
+        KnowledgeFiles.write(file(projectId), json.encodeToString(entries))
     }
+
+    /** 읽고-고치고-쓰는 동안 서버(웹 승인)와 겹치지 않게 프로젝트 디렉터리를 잠근다. */
+    private fun <T> locked(projectId: String, action: () -> T): T = KnowledgeFiles.locked(file(projectId).parent, action)
 
     /** 승인된(ACTIVE) 오탐 학습의 지문. 이 지문의 위험 후보는 숨겨도 된다. */
     fun suppressed(projectId: String): Set<String> =
@@ -61,7 +63,7 @@ class ProjectMemory(config: ConfigStore) {
      * AI 검토 의견 중 TRUE/FALSE 로 판정한 것을 CANDIDATE 로 등록한다. UNSURE 는 등록하지 않는다(검증되지 않은 추측은 저장하지 않는다).
      * 같은 지문이 이미 활성이거나 후보면 건너뛴다. 등록된 새 항목 수를 돌려준다.
      */
-    fun collect(projectId: String, root: Path, findings: List<Violation>, opinions: Map<String, RiskOpinion>, commit: String?): Int {
+    fun collect(projectId: String, root: Path, findings: List<Violation>, opinions: Map<String, RiskOpinion>, commit: String?): Int = locked(projectId) {
         val entries = load(projectId).toMutableList()
         val known = entries.filter { it.status != "SUPERSEDED" }.map { it.kind + it.fingerprint }.toSet()
         var added = 0
@@ -78,14 +80,14 @@ class ProjectMemory(config: ConfigStore) {
             added++
         }
         save(projectId, entries)
-        return added
+        added
     }
 
     /**
      * 사용자가 위험 후보를 직접 오탐으로 제외한다. 사용자의 결정이라 바로 ACTIVE 로 등록한다.
      * [matches] 로 제외할 후보를 고르고, 새로 등록된 수를 돌려준다.
      */
-    fun dismiss(projectId: String, root: Path, findings: List<Violation>, commit: String?, matches: (Violation) -> Boolean): Int {
+    fun dismiss(projectId: String, root: Path, findings: List<Violation>, commit: String?, matches: (Violation) -> Boolean): Int = locked(projectId) {
         val entries = load(projectId).toMutableList()
         val active = entries.filter { it.status == "ACTIVE" && it.kind == "FALSE_POSITIVE" }.map { it.fingerprint }.toSet()
         var added = 0
@@ -102,7 +104,7 @@ class ProjectMemory(config: ConfigStore) {
             added++
         }
         save(projectId, entries)
-        return added
+        added
     }
 
     fun approve(projectId: String, ids: Collection<String>): List<MemoryEntry> = decide(projectId, ids) {
@@ -115,17 +117,17 @@ class ProjectMemory(config: ConfigStore) {
 
     fun pendingIds(projectId: String): List<String> = load(projectId).filter { it.status == "CANDIDATE" }.map { it.id }
 
-    private fun decide(projectId: String, ids: Collection<String>, change: (MemoryEntry) -> MemoryEntry): List<MemoryEntry> {
+    private fun decide(projectId: String, ids: Collection<String>, change: (MemoryEntry) -> MemoryEntry): List<MemoryEntry> = locked(projectId) {
         val entries = load(projectId)
         val unknown = ids.filterNot { id -> entries.any { it.id == id } }
         require(unknown.isEmpty()) { "알 수 없는 메모리 id: ${unknown.joinToString()}" }
         val updated = entries.map { if (it.id in ids && it.status != "SUPERSEDED") change(it) else it }
         save(projectId, updated)
-        return updated
+        updated
     }
 
     /** 현재 위험 후보의 지문과 대조해 근거가 사라진 항목을 SUPERSEDED 로 돌린다. 되돌린 항목 수를 돌려준다. */
-    fun verify(projectId: String, root: Path, findings: List<Violation>): Int {
+    fun verify(projectId: String, root: Path, findings: List<Violation>): Int = locked(projectId) {
         val current = findings.map { RiskReviewer.fingerprint(root, it) }.toSet()
         var changed = 0
         val updated = load(projectId).map {
@@ -135,7 +137,7 @@ class ProjectMemory(config: ConfigStore) {
             } else it
         }
         save(projectId, updated)
-        return changed
+        changed
     }
 
     fun report(entries: List<MemoryEntry>): String = buildString {

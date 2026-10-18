@@ -94,6 +94,8 @@ class TaskCostTest {
         assertThat(stats.byModel.getValue("claude-sonnet-5-5").costUsd).isCloseTo(0.17, org.assertj.core.data.Offset.offset(1e-9))
         assertThat(stats.byModel.getValue("claude-opus-5-5").stages).isEqualTo(1)
         assertThat(stats.escalatedStages).isEqualTo(1)
+        assertThat(service.stats(task.projectId.value).tasks).isEqualTo(1)
+        assertThat(service.stats("other").tasks).isEqualTo(0)
         assertThat(stats.byStage.map { it.stage }).containsExactly(Stage.REQUIREMENTS, Stage.TEST_CASES)
         assertThat(stats.byStage.first().averageAttempts).isEqualTo(2.0)
     }

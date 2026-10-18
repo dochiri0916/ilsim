@@ -119,21 +119,45 @@ export interface Analysis {
   error: string | null
 }
 
+export interface UsageWindow {
+  utilization: number
+  resetsAt: string | null
+}
+
+export interface PlanUsage {
+  runnerId: string
+  status: string | null
+  fiveHour: UsageWindow | null
+  sevenDay: UsageWindow | null
+  observedAt: string | null
+  refreshRequestedAt: string | null
+}
+
 export type RuleSet = 'architecture' | 'convention'
 
 export interface AuthState {
   user?: string
+  /** 비밀번호는 맞았고 Google Authenticator 코드를 기다린다 */
+  otpRequired?: boolean
+  /** 로그인한 계정의 2단계 인증 사용 여부(확인 못 하면 null) */
+  twoFactor?: boolean | null
 }
 
 export const api = {
   me: () => call<AuthState>('/api/auth/me'),
-  login: (username: string, password: string) =>
-    call<AuthState>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  login: (username: string, password: string, remember: boolean) =>
+    call<AuthState>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password, remember }) }),
+  otp: (code: string) => call<AuthState>('/api/auth/otp', { method: 'POST', body: JSON.stringify({ code }) }),
+  totpSetup: () => call<{ secret: string; uri: string }>('/api/auth/totp/setup', { method: 'POST' }),
+  totpEnable: (code: string) => post('/api/auth/totp/enable', { code }),
+  totpDisable: (code: string) => post('/api/auth/totp/disable', { code }),
   logout: () => post('/api/auth/logout'),
   sendMessage: (taskId: string, text: string) => post(`/api/tasks/${taskId}/messages`, { text }),
   changePassword: (currentPassword: string, newPassword: string) =>
     post('/api/auth/password', { currentPassword, newPassword }),
-  stats: () => call<Stats>('/api/stats'),
+  stats: (projectId: string) => call<Stats>(`/api/stats?projectId=${encodeURIComponent(projectId)}`),
+  usage: () => call<PlanUsage[]>('/api/usage'),
+  refreshUsage: (runnerId: string) => call<PlanUsage>(`/api/usage/${encodeURIComponent(runnerId)}/refresh`, { method: 'POST' }),
   knowledge: (projectId: string) => call<Knowledge>(`/api/projects/${projectId}/knowledge`),
   decideRules: (projectId: string, set: RuleSet, ids: string[], decision: 'approve' | 'reject') =>
     post(`/api/projects/${projectId}/knowledge/rules/${set}/${decision}`, { ids }),

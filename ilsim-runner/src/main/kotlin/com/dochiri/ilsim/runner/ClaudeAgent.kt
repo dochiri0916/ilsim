@@ -48,7 +48,8 @@ fun interface ClaudeAgent {
 
 object ProcessClaudeAgent : ClaudeAgent {
     override fun run(worktree: Path, task: AssignedTask, prompt: String, onLine: (String) -> Unit): AgentRun {
-        val claude = ProcessBuilder(
+        val claude = Shell.process(
+            worktree,
             listOf("claude", "-p", prompt) + (task.resumeSessionId?.let { listOf("--resume", it) } ?: emptyList()) + listOf(
             "--model", task.model,
             "--effort", task.effort,
@@ -56,7 +57,7 @@ object ProcessClaudeAgent : ClaudeAgent {
             "--permission-mode", "acceptEdits",
             "--allowedTools", Gate.allowedTools(task.stage),
             ),
-        ).directory(worktree.toFile()).redirectErrorStream(true).start()
+        ).start()
         claude.outputStream.close()
         // 멈추거나 끝없이 도는 실행이 작업 전체를 붙잡지 않도록 시간 상한을 둔다.
         val timedOut = AtomicBoolean(false)
@@ -71,6 +72,7 @@ object ProcessClaudeAgent : ClaudeAgent {
         claude.inputStream.bufferedReader().forEachLine { line ->
             ClaudeCost.parse(line)?.let { cost = it }
             ClaudeSession.parse(line)?.let { session = it }
+            ClaudePlanUsage.parse(line)?.let(PlanUsageWatch::observe)
             onLine(line)
         }
         val exit = claude.waitFor()

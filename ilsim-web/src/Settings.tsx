@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import QRCode from 'qrcode'
+import { useEffect, useState } from 'react'
 import { api } from './api'
 import { usePoll } from './usePoll'
 
@@ -46,6 +47,77 @@ function Account() {
       {mismatch && <p className="err">새 비밀번호가 서로 다릅니다</p>}
       {error && <p className="err">{error}</p>}
       {done && <p className="sub">변경했습니다</p>}
+    </section>
+  )
+}
+
+/** Google Authenticator 2단계 인증. 켜면 비밀번호로 새로 로그인할 때 코드를 묻고, 자동 로그인된 기기는 묻지 않는다. */
+function TwoFactor() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null)
+  const [qr, setQr] = useState<string | null>(null)
+  const [disabling, setDisabling] = useState(false)
+  const [code, setCode] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => { api.me().then((a) => setEnabled(a.twoFactor ?? null)).catch(() => setEnabled(null)) }, [])
+  useEffect(() => {
+    if (setup) QRCode.toDataURL(setup.uri, { margin: 1, width: 200 }).then(setQr).catch(() => setQr(null))
+  }, [setup])
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const codeInput = (
+    <input className="otp" inputMode="numeric" autoComplete="one-time-code" placeholder="6자리 코드" maxLength={6}
+      value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+  )
+  const reset = () => { setSetup(null); setQr(null); setDisabling(false); setCode('') }
+
+  return (
+    <section>
+      <h2>2단계 인증</h2>
+      <p className="sub">켜 두면 비밀번호로 새로 로그인할 때 Google Authenticator 코드를 한 번 더 묻습니다. 자동 로그인된 기기는 묻지 않습니다.</p>
+      <p>상태: {enabled === null ? <span>확인할 수 없음</span> : enabled ? <strong>사용 중</strong> : <span>사용 안 함</span>}</p>
+
+      {enabled === false && !setup && (
+        <button disabled={busy} onClick={() => run(async () => setSetup(await api.totpSetup()))}>등록하기</button>
+      )}
+      {setup && (
+        <form className="col totp-setup" onSubmit={(e) => {
+          e.preventDefault()
+          run(async () => { await api.totpEnable(code); reset(); setEnabled(true) })
+        }}>
+          <p className="small">1. Google Authenticator에서 QR 코드를 스캔하세요</p>
+          {qr && <img src={qr} alt="2단계 인증 QR 코드" width={200} height={200} />}
+          <small className="muted">스캔이 안 되면 키 직접 입력: <code>{setup.secret}</code></small>
+          <p className="small">2. 앱에 표시된 코드를 입력하세요</p>
+          <div className="row">{codeInput}<button disabled={busy || code.length !== 6}>확인</button>
+            <button type="button" className="secondary" onClick={reset}>취소</button></div>
+        </form>
+      )}
+
+      {enabled && !disabling && <button className="secondary" onClick={() => setDisabling(true)}>끄기</button>}
+      {enabled && disabling && (
+        <form className="row" onSubmit={(e) => {
+          e.preventDefault()
+          run(async () => { await api.totpDisable(code); reset(); setEnabled(false) })
+        }}>
+          {codeInput}<button disabled={busy || code.length !== 6}>끄기</button>
+          <button type="button" className="secondary" onClick={reset}>취소</button>
+        </form>
+      )}
+      {error && <p className="err">{error}</p>}
     </section>
   )
 }
@@ -111,6 +183,7 @@ export function Settings() {
       {error && <p className="err">{error}</p>}
     </section>
     <Account />
+    <TwoFactor />
     </>
   )
 }

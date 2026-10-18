@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[인수인계] 아래는 이전 세션이 남긴 docs/handoff.md 입니다. 이어서 작업하고, 작업이 끝나면 이 파일을 갱신하세요.'; cat \"$CLAUDE_PROJECT_DIR\"/docs/handoff.md 2>/dev/null || true"
+            "command": "[ -n \"$ILSIM_RUNNER\" ] && exit 0; echo '[인수인계] 아래는 이전 세션이 남긴 docs/handoff.md 입니다. 이어서 작업하고, 작업이 끝나면 이 파일을 갱신하세요.'; cat \"$CLAUDE_PROJECT_DIR\"/docs/handoff.md 2>/dev/null || true"
           }
         ]
       }

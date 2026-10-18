@@ -6,9 +6,18 @@ import java.util.concurrent.TimeUnit
 data class ShellResult(val exit: Int, val output: String)
 
 object Shell {
+    /**
+     * Runner 가 띄운 프로세스라는 표시. 일심 저장소 자체를 작업할 때 저장소의 Claude Code 훅(인수인계)이
+     * 단계 작업에 끼어들지 않도록 훅이 이 값을 보고 건너뛴다.
+     */
+    const val RUNNER_ENV = "ILSIM_RUNNER"
+
+    fun process(dir: Path, cmd: List<String>): ProcessBuilder =
+        ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true).also { it.environment()[RUNNER_ENV] = "1" }
+
     /** 명령을 실행하고 종료 코드와 출력(끝부분 최대 [maxChars]자)을 돌려준다. 시간 초과 시 exit=-1. */
     fun run(dir: Path, vararg cmd: String, timeoutMinutes: Long = 10, maxChars: Int = 4000): ShellResult {
-        val p = ProcessBuilder(*cmd).directory(dir.toFile()).redirectErrorStream(true).start()
+        val p = process(dir, cmd.toList()).start()
         p.outputStream.close()
         val out = StringBuilder()
         val reader = Thread { p.inputStream.bufferedReader().forEachLine { out.appendLine(it) } }.apply { start() }

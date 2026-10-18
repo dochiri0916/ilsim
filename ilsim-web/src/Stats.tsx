@@ -16,8 +16,8 @@ function Bars({ rows }: { rows: { label: string; value: number; note: string }[]
   )
 }
 
-export function Stats() {
-  const { data, error } = usePoll(api.stats, 10000)
+export function Stats({ projectId }: { projectId: string }) {
+  const { data, error } = usePoll(() => api.stats(projectId), 10000, [projectId])
   if (!data) return <p className="muted">{error ?? '불러오는 중…'}</p>
   const models = Object.entries(data.byModel).sort((a, b) => b[1].costUsd - a[1].costUsd)
 

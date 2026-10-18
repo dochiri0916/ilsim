@@ -107,6 +107,21 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
         check(res.statusCode() in 200..299) { "분석 결과 전송 실패: HTTP ${res.statusCode()} ${res.body()}" }
     }
 
+    fun reportUsage(usage: PlanUsageReport) {
+        val res = post("/runner/api/usage", json.encodeToString(usage))
+        check(res.statusCode() in 200..299) { "사용량 전송 실패: HTTP ${res.statusCode()}" }
+    }
+
+    /** 웹에서 사용량을 새로 재 달라고 했으면 true. */
+    fun claimUsageRefresh(runnerId: String): Boolean {
+        val res = post("/runner/api/usage/claim", json.encodeToString(mapOf("runnerId" to runnerId)))
+        return when (res.statusCode()) {
+            200 -> true
+            204 -> false
+            else -> error("사용량 요청 확인 실패: HTTP ${res.statusCode()}")
+        }
+    }
+
     /** 웹에서 등록한 JEV 키. 등록된 키가 없으면(204) null. 받은 키는 파일에 쓰지 않고 메모리에만 둔다. */
     fun jevKey(): String? {
         val res = http.send(

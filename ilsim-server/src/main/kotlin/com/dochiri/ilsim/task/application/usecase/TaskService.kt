@@ -72,7 +72,8 @@ class TaskService(
 
     override fun find(taskId: String): Task? = tasks[taskId]
 
-    override fun stats(): Stats = Stats.of(tasks.values)
+    override fun stats(projectId: String?): Stats =
+        Stats.of(if (projectId == null) tasks.values else tasks.values.filter { it.projectId.value == projectId })
 
     override fun list(): List<Task> = tasks.values.sortedByDescending { it.createdAt }
 
@@ -167,7 +168,9 @@ class TaskService(
 
     @Synchronized
     override fun message(taskId: String, text: String?) {
-        update(taskId) { it.message(text) }
+        val next = update(taskId) { it.message(text) }
+        val stage = checkNotNull(next.current())
+        addEvent(taskId, stage.stage.name, "message", stage.messages.last())
     }
 
     @Synchronized

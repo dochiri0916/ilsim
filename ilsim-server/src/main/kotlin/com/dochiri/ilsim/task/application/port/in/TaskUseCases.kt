@@ -31,8 +31,8 @@ interface QueryTaskUseCase {
 
     fun projects(): List<ProjectStatus>
 
-    /** 모델별·단계별 사용 집계. */
-    fun stats(): Stats
+    /** 모델별·단계별 사용 집계. [projectId]가 있으면 그 프로젝트만. */
+    fun stats(projectId: String? = null): Stats
 }
 
 /** Runner 가 일감을 받아 가고 진행과 결과를 보고한다. */

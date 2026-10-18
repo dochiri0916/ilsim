@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Stop 훅: 작업 트리에서 docs/handoff.md 보다 나중에 바뀐 파일이 있으면 종료를 막고 갱신을 요청한다.
 # 이미 한 번 막았으면(stop_hook_active) 다시 막지 않는다.
+# 일심 Runner 가 이 저장소를 작업할 때(ILSIM_RUNNER)는 단계 범위 밖 파일을 고치게 만들지 않도록 건너뛴다.
+[ -n "$ILSIM_RUNNER" ] && exit 0
 input=$(cat)
 case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) exit 0 ;; esac
 

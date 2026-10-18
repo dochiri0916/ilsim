@@ -60,6 +60,14 @@ object ConventionApproval {
         if (it.review?.verdict == "KEEP" && it.severity != "BLOCK" && !it.approved && !it.rejected) it.copy(approved = true, decidedBy = "ai-review") else it
     })
 
+    /** AI 검토가 도는 동안 사용자가 웹에서 내린 결정([saved] 의 decidedBy=user)을 [m] 에 덮어 잃지 않게 한다. */
+    fun keepUserDecisions(saved: ConventionModel?, m: ConventionModel): ConventionModel {
+        val user = saved?.rules?.filter { it.decidedBy == "user" }?.associateBy { it.id }.orEmpty()
+        return m.copy(rules = m.rules.map { r ->
+            user[r.id]?.let { r.copy(approved = it.approved, rejected = it.rejected, decidedBy = it.decidedBy) } ?: r
+        })
+    }
+
     fun carryOver(previous: ConventionModel?, mined: ConventionModel): ConventionModel {
         if (previous == null) return mined
         return mined.copy(

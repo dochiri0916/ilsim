@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from './api'
-import type { Task } from './api'
+import type { Project, Task } from './api'
 import { StageDots } from './StageDots'
 import { StatusBadge } from './StatusBadge'
 import { STAGE_LABEL, ago, attentionText, currentStage, groupOf, usd } from './taskView'
@@ -13,7 +13,7 @@ function TaskRow({ task, note }: { task: Task; note?: string }) {
       <a href={`#/tasks/${task.id}`} className="task-row">
         <div className="task-head">
           <strong>{task.feature}</strong>
-          <small>{task.projectId} · {ago(task.createdAt)}{task.costUsd ? ` · ${usd(task.costUsd)}` : ''}</small>
+          <small>{ago(task.createdAt)}{task.costUsd ? ` · ${usd(task.costUsd)}` : ''}</small>
         </div>
         <StageDots task={task} />
         <div className="task-note">
@@ -34,31 +34,31 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: 'wa
   )
 }
 
-export function Dashboard() {
-  const projects = usePoll(api.projects, 5000)
+/** 선택한 프로젝트의 작업만 보여 주고, 새 요구사항도 그 프로젝트에 만든다. */
+export function Dashboard({ project }: { project: Project }) {
   const tasks = usePoll(api.tasks, 3000)
   const settings = usePoll(api.settings, 30000)
-  const [projectId, setProjectId] = useState('')
-  const [feature, setFeature] = useState('')
   const [requirement, setRequirement] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const selected = projectId || projects.data?.find((p) => p.online)?.id || projects.data?.[0]?.id || ''
-  const all = tasks.data ?? []
+  const all = (tasks.data ?? []).filter((t) => t.projectId === project.id)
   const attention = all.filter((t) => groupOf(t) === 'attention')
   const running = all.filter((t) => groupOf(t) === 'running')
   const done = all.filter((t) => groupOf(t) === 'done')
   const waiting = attention.filter((t) => t.status !== 'BLOCKED').length
   const blocked = attention.length - waiting
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
+  async function submit(e?: React.FormEvent) {
+    e?.preventDefault()
+    if (busy || !requirement.trim()) return
     setBusy(true)
     setError(null)
     try {
-      const t = await api.createTask(selected, feature.trim(), requirement.trim())
-      location.hash = `#/tasks/${t.id}`
+      // 입력할 때마다 새 작업(새 Claude 세션)을 만들고, 바로 다음 요청을 입력할 수 있게 화면에 남는다.
+      await api.createTask(project.id, '', requirement.trim())
+      setRequirement('')
+      tasks.reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -76,22 +76,16 @@ export function Dashboard() {
         </p>
       )}
 
-      <section className="card">
-        <h2>새 요구사항</h2>
-        <form className="col" onSubmit={submit}>
-          <div className="row">
-            <select value={selected} onChange={(e) => setProjectId(e.target.value)} aria-label="프로젝트">
-              {projects.data?.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}{p.online ? '' : ' (Runner 오프라인)'}</option>
-              ))}
-            </select>
-            <input placeholder="기능 이름 (비우면 자동)" value={feature} onChange={(e) => setFeature(e.target.value)} />
-          </div>
-          <textarea rows={4} placeholder="요구사항을 자유롭게 적으세요" value={requirement} onChange={(e) => setRequirement(e.target.value)} />
-          {error && <p className="err">{error}</p>}
-          <button disabled={busy || !selected || !requirement.trim()}>분석 시작</button>
-        </form>
-      </section>
+      <form className="card command" onSubmit={submit}>
+        <textarea rows={3} placeholder="무엇을 할까요? (Enter로 새 작업, Shift+Enter로 줄바꿈)" value={requirement} aria-label="명령"
+          onChange={(e) => setRequirement(e.target.value)}
+          onKeyDown={(e) => {
+            // 한글 조합 중의 Enter 는 글자 확정이라 보내지 않는다.
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit() }
+          }} />
+        {error && <p className="err">{error}</p>}
+        <button disabled={busy || !requirement.trim()}>확인</button>
+      </form>
 
       <section className="stats">
         <Stat label="승인 대기" value={waiting} tone="warn" />
@@ -125,32 +119,6 @@ export function Dashboard() {
         </section>
       )}
 
-      <section>
-        <h2>프로젝트</h2>
-        {projects.data?.length ? (
-          <ul className="plain projects">
-            {projects.data.map((p) => {
-              const active = all.filter((t) => t.projectId === p.id && t.status === 'ACTIVE').length
-              return (
-                <li key={p.id} className="project">
-                  <span className={`presence ${p.online ? 'on' : 'off'}`} aria-hidden />
-                  <div>
-                    <strong>{p.name}</strong>
-                    <small>
-                      {p.online ? 'Runner 연결됨' : `Runner 오프라인 · 마지막 ${ago(p.lastSeen)}`}
-                      {active > 0 && ` · 진행 ${active}건`}
-                    </small>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p className="muted">
-            Runner가 연결되면 프로젝트가 표시됩니다. <code>ilsim-runner add &lt;id&gt; &lt;path&gt;</code> 후 <code>ilsim-runner run</code>
-          </p>
-        )}
-      </section>
     </>
   )
 }

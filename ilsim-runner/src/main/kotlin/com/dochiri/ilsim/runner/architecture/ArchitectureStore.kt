@@ -1,11 +1,10 @@
 package com.dochiri.ilsim.runner.architecture
 
 import com.dochiri.ilsim.runner.ConfigStore
+import com.dochiri.ilsim.runner.KnowledgeFiles
 import java.nio.file.Path
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -19,13 +18,18 @@ class ArchitectureStore(config: ConfigStore) {
         return base.resolve(projectId).resolve("architecture.json")
     }
 
-    fun save(projectId: String, model: ArchitectureModel): Path {
+    fun save(projectId: String, model: ArchitectureModel): Path = update(projectId) { model }
+
+    /** 잠금을 잡은 채 지금 저장된 모델을 [change] 에 넘기고 그 결과를 저장한다. */
+    fun update(projectId: String, change: (ArchitectureModel?) -> ArchitectureModel): Path {
         val f = file(projectId)
-        f.parent.createDirectories()
-        f.writeText(json.encodeToString(model))
-        return f
+        return KnowledgeFiles.locked(f.parent) {
+            KnowledgeFiles.write(f, json.encodeToString(change(read(f))))
+            f
+        }
     }
 
-    fun load(projectId: String): ArchitectureModel? =
-        file(projectId).takeIf { it.exists() }?.let { json.decodeFromString<ArchitectureModel>(it.readText()) }
+    fun load(projectId: String): ArchitectureModel? = read(file(projectId))
+
+    private fun read(f: Path): ArchitectureModel? = f.takeIf { it.exists() }?.let { json.decodeFromString<ArchitectureModel>(it.readText()) }
 }

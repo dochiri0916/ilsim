@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { api, type StageState } from './api'
+import { api, type StageState, type TaskEvent } from './api'
 import { usePoll } from './usePoll'
 import { Dialog } from './Dialog'
 import { StatusBadge } from './StatusBadge'
@@ -140,12 +140,24 @@ export function TaskDetail({ id }: { id: string }) {
       {viewing === LOG && (
         <Dialog title={`진행 로그 (${stageEvents.length})`} onClose={() => setViewing(null)}>
           <ul className="plain log">
-            {stageEvents.map((e, i) => (
-              <li key={i} className={e.type}>
-                <small className="time">{new Date(e.at).toLocaleTimeString()}</small>
-                {e.type === 'tool' ? <span className="tool">{summarizeTool(e.data)}</span>
-                  : e.type === 'text' ? <div className="said pre">{e.data}</div>
-                  : <span className="pre">{e.type === 'result' ? summarizeResult(e.data) : e.data}</span>}
+            {groupTools(stageEvents).map((g, i) => Array.isArray(g) ? (
+              <li key={i} className="tools">
+                <details>
+                  <summary>
+                    <small className="time">{new Date(g[0].at).toLocaleTimeString()}</small>
+                    도구 호출 {g.length}건
+                  </summary>
+                  <ul className="plain">
+                    {g.map((e, j) => <li key={j}><span className="tool">{summarizeTool(e.data)}</span></li>)}
+                  </ul>
+                </details>
+              </li>
+            ) : (
+              <li key={i} className={g.type}>
+                <small className="time">{new Date(g.at).toLocaleTimeString()}</small>
+                {g.type === 'text' ? <div className="said pre">{g.data}</div>
+                  : g.type === 'message' ? <div className="mine pre">{g.data}</div>
+                  : <span className="pre">{g.type === 'result' ? summarizeResult(g.data) : g.data}</span>}
               </li>
             ))}
           </ul>
@@ -163,6 +175,18 @@ export function TaskDetail({ id }: { id: string }) {
       )}
     </>
   )
+}
+
+/** 연속된 도구 호출을 한 묶음(배열)으로 모아 기본으로 접어 보여 준다. */
+function groupTools(events: TaskEvent[]): (TaskEvent | TaskEvent[])[] {
+  const out: (TaskEvent | TaskEvent[])[] = []
+  for (const e of events) {
+    const last = out[out.length - 1]
+    if (e.type !== 'tool') out.push(e)
+    else if (Array.isArray(last)) last.push(e)
+    else out.push([e])
+  }
+  return out
 }
 
 function summarizeResult(raw: string): string {

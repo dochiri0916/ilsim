@@ -3,6 +3,7 @@ import { api, type Analysis, type MemoryView, type RuleSet, type RuleView } from
 import { Dialog } from './Dialog'
 import { StatusBadge } from './StatusBadge'
 import { usePoll } from './usePoll'
+import { memoryTradeoff, ruleTradeoff, type Tradeoff } from './ruleTradeoffs'
 
 type Tab = 'architecture' | 'convention' | 'memory'
 const TAB_LABEL: Record<Tab, string> = { architecture: '아키텍처 규칙', convention: '컨벤션', memory: '학습 메모리' }
@@ -12,15 +13,40 @@ function ruleState(r: RuleView): 'approved' | 'rejected' | 'pending' {
 }
 
 const STATE_LABEL = { approved: '승인됨', rejected: '거절됨', pending: '승인 대기' }
+const STATE_ORDER = { pending: 0, approved: 1, rejected: 2 }
 
-function Item({ title, meta, body, state, onApprove, onReject, busy }: {
+/** 승인 대기를 맨 위로 올린다. 같은 상태 안에서는 원래 순서를 지킨다. */
+function byState<T>(items: T[], state: (t: T) => keyof typeof STATE_ORDER): T[] {
+  return [...items].sort((a, b) => STATE_ORDER[state(a)] - STATE_ORDER[state(b)])
+}
+
+function memoryState(m: MemoryView): 'approved' | 'rejected' | 'pending' {
+  return m.status === 'ACTIVE' ? 'approved' : m.status === 'CANDIDATE' ? 'pending' : 'rejected'
+}
+
+/** 마우스를 올리거나(데스크톱) 눌러 포커스하면(모바일) 적용 시 장단점을 보여 준다. */
+function TradeoffTip({ t }: { t: Tradeoff & { note?: string } }) {
+  return (
+    <span className="tip" tabIndex={0} aria-label="적용 시 장단점">
+      장단점
+      <span className="tip-body" role="tooltip">
+        <span><b>장점</b> {t.pro}</span>
+        <span><b>단점</b> {t.con}</span>
+        {t.note && <span className="muted">{t.note}</span>}
+      </span>
+    </span>
+  )
+}
+
+function Item({ title, meta, body, state, tradeoff, onApprove, onReject, busy }: {
   title: string; meta: string; body: React.ReactNode; state: 'approved' | 'rejected' | 'pending'
-  onApprove: () => void; onReject: () => void; busy: boolean
+  tradeoff?: Tradeoff & { note?: string }; onApprove: () => void; onReject: () => void; busy: boolean
 }) {
   return (
     <li className={`item ${state}`}>
       <div className="item-head">
         <strong>{title}</strong>
+        {tradeoff && <TradeoffTip t={tradeoff} />}
         <span className={`tag ${state}`}>{STATE_LABEL[state]}</span>
       </div>
       <small className="muted">{meta}</small>
@@ -38,14 +64,11 @@ const ANALYSIS_LABEL: Record<Analysis['status'], string> = {
 }
 
 /** 프로젝트의 규칙과 검증된 학습을 보고 승인·거절한다. 거절한 규칙은 어떤 검사에서도 쓰이지 않는다. */
-export function Knowledge() {
-  const projects = usePoll(api.projects, 15000)
-  const [picked, setPicked] = useState('')
+export function Knowledge({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState<Tab>('architecture')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const projectId = picked || projects.data?.[0]?.id || ''
   const knowledge = usePoll(() => (projectId ? api.knowledge(projectId) : Promise.resolve(null)), 8000, [projectId])
   const k = knowledge.data
   const analysis = usePoll(() => (projectId ? api.analysis(projectId) : Promise.resolve(undefined)), 3000, [projectId])
@@ -81,9 +104,6 @@ export function Knowledge() {
     <>
       <h1 className="page-title">규칙·메모리</h1>
       <div className="row">
-        <select value={projectId} onChange={(e) => setPicked(e.target.value)} aria-label="프로젝트">
-          {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
         {projectId && (
           <button disabled={busy || analyzing} onClick={() => run(async () => { await api.analyze(projectId); analysis.reload() })}>
             {analyzing ? '분석 중…' : '프로젝트 분석'}
@@ -126,8 +146,8 @@ export function Knowledge() {
       {k && tab !== 'memory' && (
         k[tab].length ? (
           <ul className="plain items">
-            {k[tab].map((r) => (
-              <Item key={r.id} title={r.description} state={ruleState(r)} busy={busy}
+            {byState(k[tab], ruleState).map((r) => (
+              <Item key={r.id} title={r.description} state={ruleState(r)} busy={busy} tradeoff={ruleTradeoff(r.kind, r.severity)}
                 meta={`${r.kind}${r.severity ? ` · ${r.severity}` : ''}${r.decidedBy ? ` · ${r.decidedBy}` : ''}`}
                 body={r.reviewVerdict && <p className="review"><StatusBadge value={r.reviewVerdict} /> {r.reviewReason}</p>}
                 onApprove={() => run(() => api.decideRules(projectId, tab, [r.id], 'approve'))}
@@ -140,9 +160,8 @@ export function Knowledge() {
       {k && tab === 'memory' && (
         k.memory.length ? (
           <ul className="plain items">
-            {k.memory.map((m: MemoryView) => (
-              <Item key={m.id} title={m.summary} busy={busy}
-                state={m.status === 'ACTIVE' ? 'approved' : m.status === 'CANDIDATE' ? 'pending' : 'rejected'}
+            {byState(k.memory, memoryState).map((m: MemoryView) => (
+              <Item key={m.id} title={m.summary} busy={busy} state={memoryState(m)} tradeoff={memoryTradeoff(m.kind)}
                 meta={`${m.kind} · ${m.file}${m.supersededReason ? ` · ${m.supersededReason}` : ''}`}
                 body={<p className="review">{m.recommendation}</p>}
                 onApprove={() => run(() => api.decideMemory(projectId, [m.id], 'approve'))}

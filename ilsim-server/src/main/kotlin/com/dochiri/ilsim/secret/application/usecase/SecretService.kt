@@ -1,6 +1,7 @@
 package com.dochiri.ilsim.secret.application.usecase
 
 import com.dochiri.ilsim.secret.api.SecretReader
+import com.dochiri.ilsim.secret.api.SecretWriter
 import com.dochiri.ilsim.secret.application.port.`in`.ManageSecretUseCase
 import com.dochiri.ilsim.secret.application.port.out.SecretEncryptor
 import com.dochiri.ilsim.secret.application.port.out.SecretRepository
@@ -17,7 +18,7 @@ class SecretService(
     private val repository: SecretRepository,
     private val encryptor: SecretEncryptor,
     private val clock: Clock,
-) : ManageSecretUseCase, SecretReader {
+) : ManageSecretUseCase, SecretReader, SecretWriter {
 
     class Unavailable(message: String, cause: Throwable) : RuntimeException(message, cause)
 

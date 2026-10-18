@@ -59,6 +59,9 @@ class RequirementsConversationTest {
         service.message(task.id.value, "  미결정 1번은 A 로 해줘  ")
         assertThat(requirements().status).isEqualTo(StageStatus.PENDING)
         assertThat(requirements().messages).containsExactly("미결정 1번은 A 로 해줘")
+        assertThat(service.events(task.id.value).last())
+            .extracting({ it.stage }, { it.type }, { it.data })
+            .containsExactly("REQUIREMENTS", "message", "미결정 1번은 A 로 해줘")
 
         val a = poll()!!
         assertThat(a.stage).isEqualTo("REQUIREMENTS")

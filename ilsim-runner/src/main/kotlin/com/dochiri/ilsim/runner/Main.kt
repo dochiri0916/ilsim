@@ -141,7 +141,8 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
             if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
             model = ArchitectureReviewer.review(model, AI_MODEL, docs = docs) { cost.ask(it, AI_MODEL) }
             model = RuleApproval.autoApprove(model)
-            archStore.save(id, model)
+            val reviewed = model
+            archStore.update(id) { saved -> RuleApproval.keepUserDecisions(saved, reviewed).also { model = it } }
             out.appendLine()
             out.append(ArchitectureReport.triage(model, id))
         } catch (e: Exception) {
@@ -388,7 +389,8 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
             if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
             model = ConventionReviewer.review(model, AI_MODEL, docs = docs) { cost.ask(it, AI_MODEL) }
             model = ConventionApproval.autoApprove(model)
-            ConventionStore(store).save(id, model)
+            val reviewed = model
+            ConventionStore(store).update(id) { saved -> ConventionApproval.keepUserDecisions(saved, reviewed).also { model = it } }
             out.appendLine()
             out.append(ConventionReport.triage(model, id))
         } catch (e: Exception) {
@@ -476,6 +478,7 @@ private fun run(store: ConfigStore) {
     val executor = TaskExecutor(config, client)
     val report = config.projects.map { (id, p) -> ProjectReport(id, p.name) }
     println("runner ${config.runnerId} -> ${config.serverUrl}, 프로젝트 ${report.map { it.id }}")
+    PlanUsageReporter(client, config.runnerId).start()
     while (true) {
         try {
             client.claimAnalysis(AnalysisClaim(config.runnerId, report.map { it.id }))?.let { projectId ->

@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -27,7 +28,7 @@ class TaskController(
     fun projects(): List<ProjectResponse> = query.projects().map(ProjectResponse::from)
 
     @GetMapping("/stats")
-    fun stats(): Stats = query.stats()
+    fun stats(@RequestParam(required = false) projectId: String?): Stats = query.stats(projectId?.takeIf { it.isNotBlank() })
 
     @PostMapping("/tasks")
     fun create(@RequestBody request: CreateTaskRequest): TaskResponse =

@@ -19,6 +19,14 @@ object RuleApproval {
         if (it.review?.verdict == "KEEP" && it.proposedSeverity != "BLOCK" && !it.approved && !it.rejected) it.copy(approved = true, decidedBy = "ai-review") else it
     })
 
+    /** AI 검토가 도는 동안 사용자가 웹에서 내린 결정([saved] 의 decidedBy=user)을 [model] 에 덮어 잃지 않게 한다. */
+    fun keepUserDecisions(saved: ArchitectureModel?, model: ArchitectureModel): ArchitectureModel {
+        val user = saved?.rules?.filter { it.decidedBy == "user" }?.associateBy { it.id }.orEmpty()
+        return model.copy(rules = model.rules.map { r ->
+            user[r.id]?.let { r.copy(approved = it.approved, rejected = it.rejected, decidedBy = it.decidedBy) } ?: r
+        })
+    }
+
     /** 다시 분석한 [mined] 에 이전 모델의 결정·AI 의견을 같은 규칙(id·종류·인자가 같은 것)에 옮긴다. */
     fun carryOver(previous: ArchitectureModel?, mined: ArchitectureModel): ArchitectureModel {
         if (previous == null) return mined

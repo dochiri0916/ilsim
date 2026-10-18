@@ -1,11 +1,10 @@
 package com.dochiri.ilsim.runner.convention
 
 import com.dochiri.ilsim.runner.ConfigStore
+import com.dochiri.ilsim.runner.KnowledgeFiles
 import java.nio.file.Path
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -19,13 +18,18 @@ class ConventionStore(config: ConfigStore) {
         return base.resolve(projectId).resolve("convention.json")
     }
 
-    fun save(projectId: String, model: ConventionModel): Path {
+    fun save(projectId: String, model: ConventionModel): Path = update(projectId) { model }
+
+    /** 잠금을 잡은 채 지금 저장된 모델을 [change] 에 넘기고 그 결과를 저장한다. */
+    fun update(projectId: String, change: (ConventionModel?) -> ConventionModel): Path {
         val f = file(projectId)
-        f.parent.createDirectories()
-        f.writeText(json.encodeToString(model))
-        return f
+        return KnowledgeFiles.locked(f.parent) {
+            KnowledgeFiles.write(f, json.encodeToString(change(read(f))))
+            f
+        }
     }
 
-    fun load(projectId: String): ConventionModel? =
-        file(projectId).takeIf { it.exists() }?.let { json.decodeFromString<ConventionModel>(it.readText()) }
+    fun load(projectId: String): ConventionModel? = read(file(projectId))
+
+    private fun read(f: Path): ConventionModel? = f.takeIf { it.exists() }?.let { json.decodeFromString<ConventionModel>(it.readText()) }
 }
