@@ -120,4 +120,101 @@ class ConventionTest {
         assertTrue(r.rules.none { it.approved })
         assertTrue(!ConventionReviewer.summary(m).contains(".kt"))
     }
+
+    @Test
+    fun `작은 프로젝트에서도 계층 배치와 접미사와 함께 쓰는 어노테이션을 규칙으로 만든다`() {
+        val entity = { n: String, extra: String -> "src/main/java/com/x/domain/$n.java" to """
+            package com.x.domain;
+
+            @Entity
+            $extra
+            public class $n {
+            }
+        """.trimIndent() + "\n" }
+        val files = mapOf(
+            entity("Order", "@Getter"), entity("Item", "@Getter"),
+            "src/main/java/com/x/service/OrderService.java" to "package com.x.service;\n\n@Service\npublic class OrderService {\n}\n",
+        )
+        val m = mine(files)
+        val byId = m.rules.associateBy { it.id }
+        assertEquals(listOf("service"), byId.getValue("stereotype-package:Service").params["segment"])
+        assertEquals(listOf("Service"), byId.getValue("package-suffix:service").params["suffix"])
+        assertEquals(listOf("domain"), byId.getValue("stereotype-package:Entity").params["segment"])
+        assertEquals(listOf("Getter"), byId.getValue("annotation-companion:Entity+Getter").params["companion"])
+        assertTrue(byId.values.none { it.severity == "BLOCK" && it.evidence.total < ConventionMiner.MIN_BLOCK_SAMPLES })
+        val broken = files + ("src/main/java/com/x/web/OrderService.java" to "package com.x.web;\n\n@Service\npublic class OrderService {\n}\n")
+        val root = project(broken)
+        val facts = FactScanner.scan(root, StackDetector.detect(root).modules)
+        val bad = Probes.StereotypePackage.samples(facts, byId.getValue("stereotype-package:Service").params).filter { !it.ok }
+        assertEquals(1, bad.size)
+    }
+
+    @Test
+    fun `패키지 접미사는 CamelCase 마지막 단어가 아니라 공통 접미사로 뽑는다`() {
+        assertEquals("UseCase", Probes.commonSuffix(listOf("RegisterMemberUseCase", "LoginUseCase", "CancelOrderUseCase"))?.first)
+        assertEquals("Exception", Probes.commonSuffix(listOf("InvalidIdException", "NotFoundException", "DuplicateNameException"))?.first)
+        assertNull(Probes.commonSuffix(listOf("OrderRepository", "CartService", "ItemMapper")))
+    }
+
+    @Test
+    fun `역할 어노테이션이 아닌 어노테이션의 이름 접미사 규칙은 어노테이션 이름과 무관하면 만들지 않는다`() {
+        val entity = { n: String -> "src/main/java/com/x/persistence/${n}Entity.java" to
+            "package com.x.persistence;\n\n@Getter\npublic class ${n}Entity {\n}\n" }
+        val advice = { n: String -> "src/main/java/com/x/web/${n}Handler.java" to
+            "package com.x.web;\n\n@Order(1)\n@RestControllerAdvice\npublic class ${n}Handler {\n}\n" }
+        val ids = mine(mapOf(entity("A"), entity("B"), entity("C"), advice("A"), advice("B"), advice("C"))).rules.map { it.id }
+        assertTrue("annotation-suffix:Getter" !in ids)
+        assertTrue("annotation-suffix:Order" !in ids)
+        assertTrue("annotation-suffix:RestControllerAdvice" in ids)
+    }
+
+    @Test
+    fun `클래스 형태 관행을 읽는다 final 클래스와 파라미터와 값 객체 생성자와 도메인 필드`() {
+        val vo = { n: String -> "src/main/java/com/x/domain/vo/$n.java" to """
+            package com.x.domain.vo;
+
+            public final class $n {
+
+                private final String value;
+
+                private $n(final String value) {
+                    this.value = value;
+                }
+
+                public static $n of(final String value) {
+                    return new $n(value);
+                }
+            }
+        """.trimIndent() + "\n" }
+        val m = mine((1..6).associate { vo("V$it") })
+        val byId = m.rules.associateBy { it.id }
+        assertTrue("class-final" in byId)
+        assertTrue("parameter-final" in byId)
+        assertTrue("vo-private-constructor" in byId)
+        assertTrue("domain-final-fields" in byId)
+        val loose = vo("V9").let { (p, t) -> p to t.replace("final String value;", "String value;") }
+        val root = project((1..6).associate { vo("V$it") } + loose)
+        val facts = FactScanner.scan(root, StackDetector.detect(root).modules)
+        assertEquals(1, DomainFinalFields.samples(facts, emptyMap()).count { !it.ok })
+    }
+
+    @Test
+    fun `들여쓰기 단위는 블록 안쪽 들여쓰기로만 정하고 record 인자 줄은 세지 않는다`() {
+        val record = listOf("package x;", "", "public record A(", "        String a, int b) {}")
+        assertNull(Probes.IndentStyle.styleOf(record))
+        val block = listOf("class B {", "    void f() {", "        int a;", "    }", "}")
+        assertEquals("spaces:4", Probes.IndentStyle.styleOf(block))
+    }
+
+    @Test
+    fun `어노테이션 한정은 계층 이하 패키지로 일반화해 다른 슬라이스의 같은 계층도 허용한다`() {
+        val web = { slice: String, n: String -> "src/main/java/com/x/$slice/adapter/in/web/$n.java" to
+            "package com.x.$slice.adapter.in.web;\n\n@RestController\npublic class $n {\n    @RequestParam String q;\n}\n" }
+        val files = mapOf(web("catalog", "AController"), web("catalog", "BController"), web("catalog", "CController"))
+        val rule = mine(files).rules.first { it.id == "annotation-confinement:RequestParam" }
+        assertEquals(listOf("adapter.in.web"), rule.params["packages"])
+        val root = project(files + web("order", "DController"))
+        val facts = FactScanner.scan(root, StackDetector.detect(root).modules)
+        assertTrue(Probes.AnnotationConfinement.samples(facts, rule.params).all { it.ok })
+    }
 }

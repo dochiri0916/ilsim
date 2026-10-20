@@ -15,6 +15,7 @@ object ConventionReviewer {
         appendLine("project=${m.projectName} main=${m.sourceFiles} test=${m.testFiles} languages=${m.languages}")
         appendLine("rules:")
         m.rules.forEach { appendLine("  ${it.id} [${it.kind}/${it.severity}] ${it.description} evidence=${it.evidence.compliant}/${it.evidence.total}") }
+        if (m.inventory.isNotEmpty()) { appendLine("packages:"); m.inventory.forEach { appendLine("  $it") } }
         if (m.notes.isNotEmpty()) appendLine("notes=${m.notes}")
     }
 
@@ -26,10 +27,10 @@ object ConventionReviewer {
         관행이 좋은지 나쁜지는 판단하지 마라. 이 프로젝트가 실제로 지키고 있는 기존 규칙인지만 가려라. JSON 만 출력하라(설명·코드펜스 금지).
 
         {"rules":[{"id":"<규칙 id>","verdict":"KEEP|SUSPECT","reason":"한 문장"}],
-         "missing":["문서에 명시되어 있지만 후보에 없는 규칙 한 문장 (문서가 없으면 빈 배열)"],
+         "missing":["문서 또는 packages 목록에서 보이지만 후보에 없는 관행 한 문장 (없으면 빈 배열)"],
          "applicability":"관측 근거가 규칙을 만들기에 충분한지 한 문장"}
 
-        기준: 관측이 일관되어 이 팀이 의도적으로 따르는 규칙이면 KEEP, 관측이 적거나 다른 규칙의 부수 효과처럼 보이면 SUSPECT.
+        기준: 관측에 예외가 없고 널리 쓰이는 관행(계층별 패키지·접미사 명명, 생성자 주입, 포맷)이면 관측 수가 적어도 KEEP 한다. 다른 규칙의 부수 효과이거나 서로 중복되거나 관행으로서 의미가 없으면 SUSPECT.
         모든 규칙 id 에 대해 답하라. 없는 id 를 만들지 마라.
 
         ${ArchitectureReviewer.docSection(docs)}
@@ -83,7 +84,7 @@ object ConventionApproval {
         return mined.copy(
             rules = mined.rules.map { r ->
                 previous.rules.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }
-                    ?.let { o -> r.copy(approved = o.approved, rejected = o.rejected, decidedBy = o.decidedBy, review = o.review) } ?: r
+                    ?.let { o -> if (o.decidedBy == "auto" || (r.decidedBy == "auto" && o.decidedBy != "user")) r.copy(review = o.review) else r.copy(approved = o.approved, rejected = o.rejected, decidedBy = o.decidedBy, review = o.review) } ?: r
             },
             review = previous.review,
         )

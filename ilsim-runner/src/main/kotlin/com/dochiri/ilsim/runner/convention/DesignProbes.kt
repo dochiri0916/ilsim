@@ -99,3 +99,65 @@ internal object MaxFileLines : Probe("max-file-lines") {
         }
     }
 }
+
+internal object FirstClassCollection : Probe("first-class-collection") {
+    private val collection = Regex("""^(?:Mutable|Immutable)?(?:List|Set|Map|Collection|Iterable|Queue|Deque|ArrayList|LinkedList|HashSet|LinkedHashSet|TreeSet|HashMap|LinkedHashMap|TreeMap|EnumMap|EnumSet|Array)\b|\[\]$|^(?:mutable|linked|hash|sorted)?(?:List|Set|Map)Of\b""")
+    private val annotationPrefix = Regex("""^(?:@\w+(?:\([^)]*\))?\s*)+""")
+    private val modifiers = setOf("private", "protected", "public", "final", "transient", "volatile", "static")
+    private val ktField = Regex("""\b(?:val|var)\s+(\w+)\s*(?::\s*([^=,)]+?))?\s*(?:=\s*([^,)]*))?(?=[,)=]|$)""")
+
+    override fun candidates(f: Facts): List<Candidate> = emptyList()
+
+    override fun samples(f: Facts, params: Map<String, List<String>>): List<Sample> =
+        f.main.filter { it.isDomain() && it.types.isNotEmpty() }.map { c ->
+            val fields = if (c.lang == "kotlin") kotlinFields(c) else javaFields(c)
+            val bad = fields.firstOrNull { (_, type, _) -> isCollection(type) }
+            if (bad == null || fields.size == 1) Sample(c.path, 1, true, "")
+            else Sample(c.path, bad.third + 1, false, "컬렉션 필드 `${bad.first}` 가 있는 클래스는 다른 필드를 두지 않습니다. 일급 컬렉션으로 감쌉니다")
+        }
+
+    private fun isCollection(type: String) = collection.containsMatchIn(type.trim())
+
+    private fun javaFields(c: ConvFile): List<Triple<String, String, Int>> {
+        var depth = 0
+        val out = mutableListOf<Triple<String, String, Int>>()
+        for ((i, raw) in c.view.code.withIndex()) {
+            if (depth == 1) parseJava(raw)?.let { (name, type) -> out += Triple(name, type, i) }
+            depth += raw.count { it == '{' } - raw.count { it == '}' }
+        }
+        return out
+    }
+
+    private fun parseJava(raw: String): Pair<String, String>? {
+        val line = raw.trim().replace(annotationPrefix, "")
+        if (!line.endsWith(";") || line.startsWith("return ") || line.startsWith("import ") || line.startsWith("package ")) return null
+        val head = line.removeSuffix(";").substringBefore("=").trim()
+        if ('(' in head) return null
+        val words = head.split(Regex("""\s+(?![^<]*>)""")).filter { it.isNotEmpty() }
+        if (words.any { it == "static" }) return null
+        val rest = words.filter { it !in modifiers }
+        if (rest.size < 2) return null
+        return rest.last() to rest.dropLast(1).joinToString(" ")
+    }
+
+    private fun kotlinFields(c: ConvFile): List<Triple<String, String, Int>> {
+        var depth = 0
+        var skipTo = -1
+        val out = mutableListOf<Triple<String, String, Int>>()
+        for ((i, line) in c.view.code.withIndex()) {
+            val before = depth
+            depth += line.count { it == '{' } - line.count { it == '}' }
+            if (skipTo >= 0) { if (depth <= skipTo) skipTo = -1; continue }
+            if (Regex("""\bfun\s""").containsMatchIn(line)) {
+                if (depth > before) skipTo = before
+                continue
+            }
+            if (before > 1) continue
+            ktField.findAll(line).forEach { m ->
+                val type = m.groupValues[2].ifBlank { m.groupValues[3] }
+                out += Triple(m.groupValues[1], type, i)
+            }
+        }
+        return out
+    }
+}

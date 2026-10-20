@@ -31,4 +31,5 @@ data class ConventionModel(
     val notes: List<String> = emptyList(),
     val source: String = "MINED",
     val review: ModelReview? = null,
+    val inventory: List<String> = emptyList(),
 )

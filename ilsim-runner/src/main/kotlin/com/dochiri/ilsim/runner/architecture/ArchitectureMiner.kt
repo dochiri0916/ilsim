@@ -39,7 +39,7 @@ object ArchitectureMiner {
         val levels = Graphs.levels(layers.map { it.name }, unitPairs.filter { it.first in unitFiles && it.second in unitFiles })
         if (levels == null) notes += "단위 간 순환 의존이 있어 의존 수준을 정할 수 없습니다"
         val outgoing = (unitEdgeDeps + crossDeps).map { it.from.unit }.toSet()
-        val leafUnits = unitFiles.filter { (u, fs) -> fs.size >= 3 && u !in outgoing }.keys
+        val leafUnits = unitFiles.filter { (u, fs) -> fs.isNotEmpty() && u !in outgoing }.keys
 
         val rules = mutableListOf<ArchRule>()
         rules += cycleRules(unitPairs, sliceEdges, layout, notes)
@@ -91,7 +91,7 @@ object ArchitectureMiner {
 
     private fun absentRules(unitFiles: Map<String, List<SourceFile>>, pairs: Set<Pair<String, String>>, leaves: Set<String>, notes: MutableList<String>): List<ArchRule> {
         val used = pairs.map { it.second }.toSet()
-        val rules = unitFiles.filter { it.value.size >= 3 && it.key !in leaves }.keys.sorted().flatMap { a ->
+        val rules = unitFiles.filter { it.key !in leaves }.keys.sorted().flatMap { a ->
             unitFiles.keys.sorted().filter { b -> b != a && b in used && (a to b) !in pairs && (b to a) !in pairs }.map { b ->
                 ArchRule("absent-edge:$a>$b", "absent-edge",
                     "`$a` → `$b` 의존은 현재 없음 (양방향 0건). 의도된 분리인지 검토",
@@ -118,7 +118,7 @@ object ArchitectureMiner {
         }
 
     private fun externalRules(unitFiles: Map<String, List<SourceFile>>, externalsByUnit: Map<String, List<String>>, deps: List<Dep>): List<ArchRule> =
-        unitFiles.filter { it.value.size >= 3 }.toSortedMap().mapNotNull { (unit, files) ->
+        unitFiles.toSortedMap().mapNotNull { (unit, files) ->
             val externals = externalsByUnit[unit].orEmpty()
             when {
                 externals.isEmpty() -> ArchRule("pure-layer:$unit", "pure-layer",

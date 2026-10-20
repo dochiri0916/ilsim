@@ -99,7 +99,9 @@ object ArchitectureRecommender {
         val ok = scope.count { it.path !in bad }
         val severity = if (bad.isEmpty()) "BLOCK" else "REVIEW"
         return rule.copy(
-            description = "${rule.description} (현재 준수: $ok/$total 파일)",
+            description = "${rule.description} (현재 준수: $ok/$total 파일)" + if (bad.isEmpty()) "" else " · 이 프로젝트는 이미 따르지 않아 자동으로 꺼 둠(승인하면 켠다)",
+            rejected = bad.isNotEmpty(),
+            decidedBy = if (bad.isEmpty()) null else "auto",
             proposedSeverity = severity,
             evidence = Evidence(ok, total, violating.take(3).map { "${it.first}:${it.second}" }),
         )
@@ -129,6 +131,8 @@ object ConventionRecommender {
             Recommendation("클린 코드", "주석은 코드와 쉽게 어긋난다. 이름·작은 함수·타입으로 의도를 드러낸다")),
         Spec("domain-encapsulation", "도메인 객체는 공개 var·setter 로 상태를 바꾸지 않는다",
             Recommendation("객체지향·DDD·생활 체조 9", "묻지 말고 시켜라: 상태 변경은 규칙을 지키는 도메인 메서드로만 한다. 불변식이 한곳에서 지켜진다")),
+        Spec("first-class-collection", "컬렉션을 가진 도메인 클래스는 다른 필드를 두지 않는다(일급 컬렉션)",
+            Recommendation("생활 체조 4·DDD", "컬렉션을 일급 객체로 감싸면 검증·조회·변경 규칙이 한곳에 모이고 컬렉션을 밖에서 마음대로 바꿀 수 없다")),
         Spec("identifier-value-object", "도메인 식별자는 원시 타입 대신 값 객체로 감싼다",
             Recommendation("DDD·생활 체조 3(원시값 포장)", "OrderId·UserId 처럼 타입으로 구분하면 식별자를 바꿔 넣는 실수를 컴파일러가 막는다")),
         Spec("max-function-lines", "함수는 30줄을 넘지 않는다",
@@ -158,10 +162,13 @@ object ConventionRecommender {
             val samples = probe.samples(facts, spec.params)
             if (samples.isEmpty()) return@mapNotNull null
             val ok = samples.count { it.ok }
+            val off = ok < samples.size
             ConventionRule(
                 id = Recommendations.PREFIX + spec.kind,
                 kind = spec.kind,
-                description = "${spec.description} (현재 준수: $ok/${samples.size})",
+                description = "${spec.description} (현재 준수: $ok/${samples.size})" + if (off) " · 이 프로젝트는 이미 따르지 않아 자동으로 꺼 둠(승인하면 켠다)" else "",
+                rejected = off,
+                decidedBy = if (off) "auto" else null,
                 params = spec.params,
                 severity = if (ok == samples.size) "BLOCK" else "REVIEW",
                 evidence = Evidence(ok, samples.size, samples.filter { !it.ok }.take(3).map { "${it.file}:${it.line}" }),

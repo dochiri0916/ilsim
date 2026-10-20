@@ -25,7 +25,7 @@ object RuleApproval {
         return mined.copy(
             rules = mined.rules.map { r ->
                 previous.rules.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }
-                    ?.let { o -> r.copy(approved = o.approved, rejected = o.rejected, decidedBy = o.decidedBy, review = o.review) } ?: r
+                    ?.let { o -> if (o.decidedBy == "auto" || (r.decidedBy == "auto" && o.decidedBy != "user")) r.copy(review = o.review) else r.copy(approved = o.approved, rejected = o.rejected, decidedBy = o.decidedBy, review = o.review) } ?: r
             },
             review = previous.review,
         )

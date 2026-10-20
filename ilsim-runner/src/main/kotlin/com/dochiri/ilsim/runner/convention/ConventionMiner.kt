@@ -7,6 +7,7 @@ import java.nio.file.Path
 object ConventionMiner {
     const val MIN_RATIO = 0.9
     const val BLOCK_RATIO = 0.98
+    const val MIN_BLOCK_SAMPLES = 5
 
     fun mine(root: Path, profile: ProjectProfile): ConventionModel = mine(FactScanner.scan(root, profile.modules), profile.name)
 
@@ -24,7 +25,7 @@ object ConventionMiner {
                     notes += "일관된 관행이 없어 규칙으로 만들지 않았습니다: ${c.description} (${pct(ratio)}, $ok/${samples.size})"
                     continue
                 }
-                val severity = if (ratio >= BLOCK_RATIO && c.maxSeverity == "BLOCK") "BLOCK" else "REVIEW"
+                val severity = if (ratio >= BLOCK_RATIO && c.maxSeverity == "BLOCK" && samples.size >= MIN_BLOCK_SAMPLES) "BLOCK" else "REVIEW"
                 val id = if (c.key == "main" || c.key == "test") probe.kind else "${probe.kind}:${c.key}"
                 signatures[id] = probe.kind + samples.joinToString(",") { "${it.file}:${it.line}:${it.ok}" }
                 rules += ConventionRule(
@@ -39,13 +40,22 @@ object ConventionMiner {
         }
         if (facts.main.isEmpty()) notes += "분석할 main 소스가 없습니다"
         val langs = facts.files.groupingBy { it.lang }.eachCount().toSortedMap()
-        return ConventionModel(name, facts.main.size, facts.tests.size, langs, merge(rules.sortedBy { it.id }, signatures), notes)
+        return ConventionModel(name, facts.main.size, facts.tests.size, langs, merge(rules.sortedBy { it.id }, signatures), notes, inventory = inventory(facts))
     }
+
+    private fun inventory(facts: Facts): List<String> =
+        facts.main.groupBy { it.pkg }.toSortedMap().map { (pkg, files) ->
+            val names = files.flatMap { f -> f.types.filter { it.topLevel }.map { it.name } }.sorted()
+            val anns = files.flatMap { f -> f.annotated.flatMap { it.annotations } }.groupingBy { it }.eachCount().entries
+                .sortedByDescending { it.value }.take(8).joinToString(",") { "@${it.key}×${it.value}" }
+            "$pkg: ${names.size}개 [${names.take(8).joinToString(",")}] $anns"
+        }
 
     private fun merge(rules: List<ConventionRule>, signatures: Map<String, String>): List<ConventionRule> =
         rules.groupBy { signatures.getValue(it.id) }.values.map { group ->
-            val head = group.first()
-            val same = group.drop(1).mapNotNull { it.params["annotation"]?.firstOrNull() }
+            val ordered = group.sortedBy { if (it.params["annotation"]?.firstOrNull() in Probes.roleAnnotations) 0 else 1 }
+            val head = ordered.first()
+            val same = ordered.drop(1).mapNotNull { it.params["annotation"]?.firstOrNull() }
             if (same.isEmpty()) head
             else head.copy(
                 description = head.description + " · 같은 대상의 어노테이션: ${same.joinToString { "@$it" }}",

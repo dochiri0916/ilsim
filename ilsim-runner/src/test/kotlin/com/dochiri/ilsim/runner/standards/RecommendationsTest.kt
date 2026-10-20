@@ -61,6 +61,9 @@ class RecommendationsTest {
         assertTrue(edge.evidence.examples.single().contains("Order.kt"))
         assertEquals("클린 아키텍처·헥사고날", edge.recommendation?.principle)
         assertFalse(edge.approved)
+        assertTrue(edge.rejected)
+        assertEquals("auto", edge.decidedBy)
+        assertTrue(rules.values.all { it.rejected == (it.evidence.total != it.evidence.compliant) })
     }
 
     @Test
@@ -149,5 +152,54 @@ class RecommendationsTest {
         val view = CodeText.scrub(listOf("val a = \"http://x\" // 끝", "/* 시작", "끝 */ val b = '{'", "val c = \"\"\"", "// raw", "\"\"\""))
         assertEquals(listOf(0, 1, 2), view.commentLines)
         assertFalse(view.code[2].contains("{"))
+    }
+
+    @Test
+    fun `도메인에서 setter 를 하나라도 쓰면 도메인 캡슐화 추천을 자동으로 끄고 쓰지 않으면 켜 둔다`() {
+        fun domain(setter: Boolean) = Files.createTempDirectory("ilsim-setter").also { root ->
+            (1..3).forEach { n ->
+                val f = root.resolve("src/main/java/com/x/domain/D$n.java")
+                f.parent.createDirectories()
+                f.writeText("package com.x.domain;\n\npublic class D$n {\n" + (if (setter && n == 1) "    public void setName(String n) {}\n" else "") + "}\n")
+            }
+        }
+        fun recommended(root: Path): com.dochiri.ilsim.runner.convention.ConventionRule {
+            val profile = StackDetector.detect(root)
+            val mined = ConventionMiner.mine(root, profile)
+            return ConventionRecommender.recommend(root, profile, mined).first { it.id == "recommend:domain-encapsulation" }
+        }
+        val used = recommended(domain(true))
+        assertTrue(used.rejected)
+        assertEquals("auto", used.decidedBy)
+        val clean = recommended(domain(false))
+        assertFalse(clean.rejected)
+        assertEquals(null, clean.decidedBy)
+    }
+
+    @Test
+    fun `일급 컬렉션은 컬렉션과 다른 필드를 함께 둔 도메인 클래스만 위반으로 잡는다`() {
+        fun probe(files: Map<String, String>): List<com.dochiri.ilsim.runner.convention.Sample> {
+            val root = Files.createTempDirectory("ilsim-fcc")
+            files.forEach { (n, body) ->
+                val ext = n.substringAfterLast('.')
+                val f = root.resolve("src/main/${if (ext == "kt") "kotlin" else "java"}/com/x/domain/$n")
+                f.parent.createDirectories()
+                f.writeText(body)
+            }
+            val facts = FactScanner.scan(root, StackDetector.detect(root).modules)
+            return com.dochiri.ilsim.runner.convention.Probes.byKind("first-class-collection")!!.samples(facts, emptyMap())
+        }
+        val java = probe(mapOf(
+            "Lines.java" to "package com.x.domain;\n\npublic class Lines {\n    private final List<String> items = new ArrayList<>();\n    public int size() { return items.size(); }\n}\n",
+            "Order.java" to "package com.x.domain;\n\npublic class Order {\n    @Id\n    private Long id;\n    private List<String> lines;\n    private static final List<String> NAMES = List.of();\n}\n",
+            "Plain.java" to "package com.x.domain;\n\npublic class Plain {\n    private String name;\n}\n",
+        ))
+        assertEquals(1, java.count { !it.ok })
+        assertTrue(java.single { !it.ok }.file.endsWith("Order.java"))
+        val kotlin = probe(mapOf(
+            "Items.kt" to "package com.x.domain\n\nclass Items(private val values: List<String>) {\n    fun first(): String {\n        val local: List<String> = values\n        return local.first()\n    }\n}\n",
+            "Cart.kt" to "package com.x.domain\n\nclass Cart(val owner: String, val items: MutableList<String>)\n",
+        ))
+        assertEquals(listOf("Cart.kt"), kotlin.filter { !it.ok }.map { it.file.substringAfterLast('/') })
     }
 }

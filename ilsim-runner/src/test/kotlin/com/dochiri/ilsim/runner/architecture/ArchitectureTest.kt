@@ -66,6 +66,24 @@ class ArchitectureTest {
     )
 
     @Test
+    fun `한 단계 더 중첩된 슬라이스와 레이어가 없는 모듈을 구분한다`() {
+        val layers = { bc: String -> arrayOf(
+            kt("com.acme.$bc.domain", "D1"), kt("com.acme.$bc.application", "A1", "com.acme.$bc.domain.D1"),
+        ) }
+        val root = project(
+            *layers("order"), *layers("shop.cart"), *layers("shop.item"),
+            kt("com.acme.config", "Settings"), kt("com.acme.config.props", "Props"),
+        )
+        val m = mine(root)
+        assertEquals(listOf("order", "shop.cart", "shop.item"), m.layout.slices)
+        assertEquals(listOf("application", "domain"), m.layout.layerNames)
+        val locator = Locator(m.layout)
+        assertEquals("shop.cart", locator.locate("com.acme.shop.cart.domain").slice)
+        assertEquals("domain", locator.locate("com.acme.shop.cart.domain").unit)
+        assertEquals(null, locator.locate("com.acme.config").slice)
+    }
+
+    @Test
     fun `반복 구조를 이름 템플릿 없이 슬라이스와 레이어로 추론한다`() {
         val m = mine(project(*slicedFiles()))
         assertEquals("SLICED", m.layout.mode)

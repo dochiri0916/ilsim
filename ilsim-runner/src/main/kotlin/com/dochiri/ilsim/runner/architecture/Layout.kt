@@ -12,10 +12,16 @@ internal class Locator(val layout: Layout) {
         if (rel.isEmpty()) return Loc(null, "(root)", "")
         val c = rel[0]
         if (layout.mode == "SLICED") {
-            if (c in layout.slices) {
-                val layer = rel.getOrNull(1)
-                return if (layer != null && layer in layout.layerNames) Loc(c, layer, rel.drop(1).joinToString("."))
-                else Loc(c, "(slice-root)", rel.drop(1).joinToString("."))
+            val slice = when {
+                c in layout.slices -> c
+                rel.size > 1 && "$c.${rel[1]}" in layout.slices -> "$c.${rel[1]}"
+                else -> null
+            }
+            if (slice != null) {
+                val depth = slice.count { it == '.' } + 1
+                val layer = rel.getOrNull(depth)
+                return if (layer != null && layer in layout.layerNames) Loc(slice, layer, rel.drop(depth).joinToString("."))
+                else Loc(slice, "(slice-root)", rel.drop(depth).joinToString("."))
             }
             return Loc(null, "shared:$c", rel.joinToString("."))
         }
@@ -38,6 +44,9 @@ internal object LayoutInference {
             rel.getOrNull(1)?.let(set::add)
         }
 
+        strict(all.map { it.drop(lcp.size) }.filter { it.isNotEmpty() }, grandChildren)?.let { (slices, layers) ->
+            return Layout(root, "SLICED", slices.sorted(), layers.sorted())
+        }
         val counts = grandChildren.values.flatten().groupingBy { it }.eachCount()
         val layerNames = counts.filterValues { it >= 2 }.keys
         val slices = grandChildren.filter { (_, names) -> names.any { it in layerNames } }.keys
@@ -46,6 +55,25 @@ internal object LayoutInference {
         } else {
             Layout(root, if (grandChildren.isEmpty()) "UNKNOWN" else "FLAT")
         }
+    }
+
+    private fun repeated(parents: Map<String, Set<String>>): Set<String> =
+        parents.values.flatten().groupingBy { it }.eachCount().filterValues { it >= 2 }.keys
+
+    private fun strict(rels: List<List<String>>, children: Map<String, Set<String>>): Pair<List<String>, Set<String>>? {
+        val grand = linkedMapOf<String, MutableSet<String>>()
+        rels.filter { it.size >= 3 }.forEach { grand.getOrPut("${it[0]}.${it[1]}") { linkedSetOf() } += it[2] }
+        val candidates = repeated(children + grand)
+        fun qualified(sets: Map<String, Set<String>>, names: Set<String>) = sets.filterValues { it.count { n -> n in names } >= 2 }
+
+        val firstTop = qualified(children, candidates)
+        val firstNested = qualified(grand.filterKeys { it.substringBefore('.') !in firstTop }, candidates)
+        val layers = repeated(firstTop + firstNested)
+        if (layers.isEmpty()) return null
+        val top = qualified(children, layers).keys
+        val nested = qualified(grand.filterKeys { it.substringBefore('.') !in top }, layers).keys
+        val slices = top + nested
+        return if (slices.size >= 2) slices.toList() to layers else null
     }
 }
 
