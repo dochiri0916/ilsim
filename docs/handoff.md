@@ -3,7 +3,7 @@
 AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일을 먼저 읽고, 작업을 마치면 갱신한다. `.claude/settings.json`의 훅이 시작할 때 이 파일을 보여 주고, 작업 트리에 이 파일보다 나중에 바뀐 파일이 있으면 종료를 막는다.
 여러 세션이 동시에 쓰므로 바꿀 부분만 Edit로 고치고 파일 전체를 다시 쓰지 않는다. 다른 세션이 쓴 항목은 건드리지 않는다([AGENTS.md](../AGENTS.md)).
 
-마지막 갱신: 2026-10-20 (주석 제거·추천·스킬 기능별 커밋·푸시)
+마지막 갱신: 2026-10-20 (웹 다크 모드, osiv E2E와 규칙 생성기 보강, 추천 규칙 자동 OFF)
 
 ## 작업 규칙 (사용자 지시)
 
@@ -123,6 +123,16 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
 - 스킬은 일심(DB)에만 저장하고 기본 `~/.claude`에는 설치하지 않는다(사용자 결정).
 - 공통 CLAUDE.md에 "주석은 요청 시에만" 추가는 사용자 결정(A)이나 미적용: `claude` 테스트 계정 로그인이 401(비밀번호 불일치)이라 API로 넣지 못했다.
 - 검증: 주석 제거 후 루트 `./gradlew check`·`build-convention` 자체 `./gradlew check`·웹 빌드 통과. 기능 추가 후 루트 `./gradlew check`(새 테스트 `RecommendationsTest` 5, `ClaudeSkillsTest` 3, `ClaudeSkillTest` 2 포함)·웹 빌드 통과. 서버·Runner 재시작과 브라우저·실제 E2E는 안 했다.
+
+## 2026-10-20 웹 다크 모드·osiv E2E·규칙 생성기 보강·추천 자동 OFF (모두 커밋 안 함)
+
+- 사용자 지시: 일심 화면을 클로드 코드 앱과 비슷하게, 다크 모드 기준. `ilsim-web/src/styles.css`만 수정: 색 토큰을 다크(배경 `#262624`, 강조 테라코타 `#d97757`)로 바꾸고 `--ok-bg`·`--bad-bg`·`--warn-bg`·`--bad-line`·`--warn-line` 토큰을 추가해 하드코딩된 라이트 색을 치환. 작업 대화는 AI 응답을 말풍선 없이, 내 메시지를 테두리 카드로 표시.
+- osiv E2E(2026-10-20, 사용자 지시): osiv 등록·규칙 파일·복제본(`../ilsim-osiv`)을 지우고 원본에서 새로 복제해 처음부터 등록했다. 작은 프로젝트(파일 1개 단위)에서 규칙이 모자라 생성기를 보강했다(커밋 안 함). 아키텍처: leaf-unit·absent-edge·pure/layer-externals의 단위 최소 파일 수 3→1. 컨벤션: 새 Probe `stereotype-package`(@Service 등은 같은 패키지에), `package-suffix`(패키지별 타입 접미사), `annotation-companion`(@Entity+@Getter처럼 함께 쓰는 어노테이션), `annotation-suffix` 2, `no-field-injection` 3, `no-wildcard-import` 5로 하향, `annotation-confinement`에서 @Entity 제외, 표본 5 미만이면 BLOCK 대신 REVIEW, `ConventionModel.inventory`(패키지별 타입·어노테이션 목록)를 AI 검토 입력에 추가해 누락 관행 제안을 받는다. AI 검토 기준은 "예외 없고 계층상 자연스러우면 표본이 적어도 KEEP". osiv: 아키텍처 24·컨벤션 27 규칙, 위반 주입(도메인→서비스 순환, 와일드카드, System.out, controller→repository, @Getter 누락) 모두 검출. `./gradlew :ilsim-runner:check` 통과. Runner는 재시작해 둔 상태.
+- 자동 끄기 확대와 일급 컬렉션(사용자 지시): 컨벤션 추천 규칙 전부(`Spec.offOnViolation` 제거, 위반 1건이라도 있으면 자동 OFF)에 적용. 새 추천 `first-class-collection`(`FirstClassCollection` Probe, 도메인 클래스에서 컬렉션 필드가 다른 필드와 함께 있으면 위반, Java·Kotlin). 사용자 결정(`decidedBy="user"`)이 없으면 재분석 때 auto 결정을 새로 계산. 아키텍처 추천(`ArchitectureRecommender.evaluate`, `RuleApproval.carryOver`)에도 같은 자동 OFF를 적용(사용자 지시: 의존 방향 등 모든 기본 규칙을 정의해 두고 위반이 있으면 자동 OFF). 웹 규칙 화면: `decidedBy==='auto'`이고 거절 상태면 "자동 꺼짐" 표시와 "켜기" 버튼(승인)만 보인다(`Knowledge.tsx`, 서버 변경 없음, 웹 빌드 통과, 브라우저 확인 안 함). osiv: 일급 컬렉션 3/4·식별자 값 객체 0/5로 자동 OFF, 나머지 5개는 제안. `:ilsim-runner:check` 통과(커밋 안 함).
+- setter 자동 끄기(사용자 지시): 추천 규칙 `recommend:domain-encapsulation`은 기본 켜 두되 도메인에서 setter·공개 var가 하나라도 있으면 분석 때 자동으로 거절(`decidedBy="auto"`, 설명에 "자동으로 꺼 둠")한다. 승인하면 켜지고(user 결정 유지), auto 결정은 재분석 때 다시 계산해 setter를 없애면 다시 제안으로 돌아온다. `ConventionRecommender.Spec.offOnViolation`, `ConventionApproval.carryOver`. 테스트 추가, `:ilsim-runner:test` 통과, osiv로 확인(커밋 안 함).
+- 다크 고정(라이트/다크 전환 없음). 전환 여부는 사용자 결정 대기. 검증: 웹 빌드 통과, 브라우저 확인 안 함.
+- 채굴기 영점 조준 시작(2026-10-20, 사용자 지시, 커밋 안 함): 일심의 목적은 프로젝트의 좋고 나쁨 판단이 아니라 이미 적용된 아키텍처·컨벤션을 파악해 따르게 하는 것이다. 그래서 `recommend`(외부 기준) 위반이 아니라 **채굴 규칙**을 AI 없이(경로로 실행하면 AI·저장 없음) 시험용 프로젝트에 돌려, reference의 `docs/`를 정답으로 대조한다. 시험용 프로젝트: `~/programming`의 java·kotlin-conventions-reference, haru-simgi, multi-module, ilsim-osiv, kafka-traffic-lab. java-ref 대조 결과: 이름·위치·의존·금지 패턴은 잡고 클래스 형태(`final`, VO 비공개 생성자·팩터리, `@FunctionalInterface`, `toCommand()`/`from()`, `@Valid`, `readOnly`, `*Id`·`*Port`·`*Command`·`*Result` 접미사)는 못 잡는다. 수정함: `IndentStyle`은 블록 안쪽 들여쓰기 차이로 단위를 정해 record 인자 줄을 세지 않는다(java-ref 476/487→473/473), `AnnotationConfinement`는 `adapter|application|domain` 이하 패키지로 일반화해 다른 슬라이스의 같은 계층을 허용한다(`ConventionTest` 2개 추가, `:ilsim-runner:test` 통과). 남은 문제(우선순위 순): 중첩 BC(`catalog/category`, `catalog/product`)를 슬라이스가 아닌 `shared:catalog`로, `global`을 슬라이스로 잘못 분류(아키텍처 의존 수준 왜곡, haru-simgi·multi-module은 NOT_APPLICABLE), `usecase` 패키지 접미사가 `UseCase`가 아닌 `Case`로 추출됨, 우연의 일치 규칙(`@Getter`→`Entity`, `@Order`→`Handler`), 새 Probe 후보 위 목록. kotlin-conventions-reference 대조는 아직 안 했다.
+  - 같은 날 이어서(커밋 안 함): 아키텍처 `LayoutInference.strict`로 중첩 BC(`catalog.category`·`catalog.product`)를 슬라이스로, 레이어가 없는 모듈(kafka·redis·configserver 등)과 `autoconfigure` 같은 우연한 레이어 이름을 제외, `Locator`는 `A.B` 슬라이스 지원(java·kotlin-ref는 `shared:catalog` 없이 adapter→application→domain, haru-simgi는 NOT_APPLICABLE→PARTIAL, multi-module은 `security`만 레이어 구조라 여전히 NOT_APPLICABLE). 컨벤션: `package-suffix`는 CamelCase 공통 접미사(`UseCase`, 단일 표본은 마지막 단어), `annotation-suffix`는 역할 어노테이션(`Probes.roleAnnotations`)이거나 이름과 단어가 겹칠 때만, 같은 대상 묶음의 대표는 역할 어노테이션 우선(`@Getter`→`Entity`, `@Order`→`Handler` 제거). 새 채굴 Probe(`FormProbes.kt`): `class-final`, `parameter-final`(Java), `functional-interface`, `no-value-annotation`, `vo-private-constructor`, `domain-final-fields`. java-ref에서 `final` 197/197·파라미터 668/671·VO 36/36·도메인 필드 54/54로 문서와 일치, haru·multi-module은 0~69%라 규칙을 만들지 않는다. `@FunctionalInterface`는 java-ref 33/37(89%)로 임계 0.9 미달(`MessageBroker`·`MessageConsumer`·`OutboxRelay`·`OutboxWaker`가 문서와 어긋남). 테스트 추가, `:ilsim-runner:check` 통과. 남은 것: `toCommand()`/`from()`, `@Valid`, `readOnly`, `*Id`·`*ReferenceId` Probe, kotlin-ref 문서 대조, `global` 공유 커널 인식(지금은 슬라이스).
 
 ## 사용자 확인 대기
 
