@@ -199,6 +199,18 @@ class ConventionTest {
     }
 
     @Test
+    fun `패키지의 공통 메서드와 조회 서비스의 읽기 전용 트랜잭션을 관행으로 읽고 private 헬퍼는 제외한다`() {
+        val req = { n: String -> "src/main/java/com/x/request/$n.java" to
+            "package com.x.request;\n\npublic record $n(String a) {\n    public Object toCommand() {\n        return a;\n    }\n}\n" }
+        val svc = { n: String -> "src/main/java/com/x/service/${n}Service.java" to
+            "package com.x.service;\n\n@Service\npublic class ${n}Service {\n\n    @Transactional(readOnly = true)\n    public Object get$n() {\n        return find$n();\n    }\n\n    private Object find$n() {\n        return null;\n    }\n}\n" }
+        val files = (1..6).associate { req("R$it") } + (1..6).associate { svc("S$it") }
+        val ids = mine(files).rules.map { it.id }
+        assertTrue("package-method:request.toCommand" in ids)
+        assertTrue("readonly-transactions" in ids)
+    }
+
+    @Test
     fun `들여쓰기 단위는 블록 안쪽 들여쓰기로만 정하고 record 인자 줄은 세지 않는다`() {
         val record = listOf("package x;", "", "public record A(", "        String a, int b) {}")
         assertNull(Probes.IndentStyle.styleOf(record))

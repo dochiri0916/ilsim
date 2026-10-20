@@ -156,3 +156,55 @@ internal object DomainFinalFields : Probe("domain-final-fields") {
             Sample(c.path, bad?.first ?: top.line, bad == null, "도메인 객체 `${top.name}` 의 필드는 final 로 선언해야 합니다")
         }
 }
+
+internal object PackageMethod : Probe("package-method", minSamples = 5) {
+    private val skipPrefix = Regex("""^(get|set|is|has|with|equals|hashCode|toString|main|copy|component\d*|values|valueOf)""")
+
+    private fun byPackage(f: Facts) = f.main.filter { it.types.isNotEmpty() }.groupBy { it.pkg.substringAfterLast('.') }
+
+    private fun names(c: ConvFile): Set<String> {
+        val types = c.types.map { it.name }.toSet()
+        return CodeText.functions(c).map { it.name }.filter { it !in types && !skipPrefix.containsMatchIn(it) }.toSet()
+    }
+
+    override fun candidates(f: Facts): List<Candidate> =
+        byPackage(f).toSortedMap().flatMap { (seg, files) ->
+            if (files.size < minSamples) return@flatMap emptyList()
+            val counts = files.flatMap { names(it) }.groupingBy { it }.eachCount()
+            counts.filterValues { it.toDouble() / files.size >= ConventionMiner.MIN_RATIO }.keys.sorted().map { m ->
+                Candidate("$seg.$m", mapOf("segment" to listOf(seg), "method" to listOf(m)), "`$seg` 패키지의 타입은 `$m` 메서드를 가진다")
+            }
+        }
+
+    override fun samples(f: Facts, params: Map<String, List<String>>): List<Sample> {
+        val seg = one(params, "segment"); val method = one(params, "method")
+        return byPackage(f)[seg].orEmpty().map { c ->
+            Sample(c.path, 1, method in names(c), "`$seg` 패키지의 `${c.types.first().name}` 에는 `$method` 메서드가 필요합니다")
+        }
+    }
+}
+
+internal object ReadOnlyTransactions : Probe("readonly-transactions", minSamples = 5) {
+    private val query = Regex("""^(get|find|search|list|query|read|count|exists|load|fetch)(?:[A-Z_]|$)""")
+    private val readOnly = Regex("""readOnly\s*=\s*true""")
+    private fun isPrivate(line: String) = Regex("""\bprivate\b""").containsMatchIn(line)
+
+    override fun candidates(f: Facts) = listOf(Candidate("main", emptyMap(), "조회 메서드는 @Transactional(readOnly = true) 로 선언한다"))
+
+    override fun samples(f: Facts, params: Map<String, List<String>>): List<Sample> =
+        f.main.filter { c -> c.types.any { t -> t.topLevel && "Service" in t.annotations } }.flatMap { c ->
+            val code = c.view.code
+            val firstType = c.types.first { it.topLevel }.line - 1
+            val classLevel = (maxOf(0, firstType - 3)..firstType).any { readOnly.containsMatchIn(code[it]) }
+            CodeText.functions(c).filter { query.containsMatchIn(it.name) && it.start > firstType && !isPrivate(code[it.start]) }.map { fn ->
+                val ok = classLevel || (maxOf(0, fn.start - 4) until fn.start).any { readOnly.containsMatchIn(code[it]) }
+                Sample(c.path, fn.start + 1, ok, "조회 메서드 `${fn.name}` 은 @Transactional(readOnly = true) 여야 합니다")
+            }
+        }
+}
+
+internal object IdentifierTyped : Probe("domain-identifier-type", minSamples = 5) {
+    override fun candidates(f: Facts) = listOf(Candidate("main", emptyMap(), "도메인 식별자 필드는 원시 타입이 아닌 값 객체 타입으로 선언한다"))
+
+    override fun samples(f: Facts, params: Map<String, List<String>>): List<Sample> = IdentifierValueObject.samples(f, params)
+}

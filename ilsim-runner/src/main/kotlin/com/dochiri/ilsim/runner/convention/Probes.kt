@@ -25,6 +25,7 @@ internal object Probes {
         NoDebugOutput, NoForceUnwrap, IndentStyle, MaxLineLength, FileMatchesType, AnnotationConfinement,
         StereotypePackage, PackageSuffix, AnnotationCompanion, NoComments, DomainEncapsulation, FirstClassCollection, IdentifierValueObject, MaxFunctionLines, MaxNesting, MaxFileLines,
         ClassFinal, ParameterFinal, FunctionalInterfaceDeclared, NoValueAnnotation, ValueObjectConstructor, DomainFinalFields,
+        PackageMethod, ReadOnlyTransactions, IdentifierTyped,
     )
 
     fun byKind(kind: String): Probe? = all.firstOrNull { it.kind == kind }
