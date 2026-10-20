@@ -23,7 +23,11 @@ import com.dochiri.ilsim.runner.memory.ProjectMemory
 import com.dochiri.ilsim.runner.risk.RiskReviewer
 import com.dochiri.ilsim.runner.risk.RiskScanner
 import com.dochiri.ilsim.runner.profile.Report
+import com.dochiri.ilsim.runner.standards.ArchitectureRecommender
+import com.dochiri.ilsim.runner.standards.ConventionRecommender
 import com.dochiri.ilsim.runner.standards.ProjectStandards
+import com.dochiri.ilsim.runner.standards.RecommendationReport
+import com.dochiri.ilsim.runner.standards.Recommendations
 import com.dochiri.ilsim.runner.standards.StandardsApplier
 import com.dochiri.ilsim.runner.standards.StandardsCatalog
 import com.dochiri.ilsim.runner.profile.StackDetector
@@ -58,6 +62,7 @@ private const val USAGE = """사용법:
     ilsim-runner memory <id> collect|list|verify|approve|reject   검증된 학습 관리
   신규 프로젝트
     ilsim-runner standards                       기본 아키텍처·컨벤션 목록
+    ilsim-runner recommend <id|경로>             헥사고날·DDD·클린 아키텍처·객체지향·생활 체조 기준 추천 규칙(정적, AI 없음)
     ilsim-runner apply-standards <id> [--architecture <표준> --root <패키지>] [--convention <표준>]
   JEV
     ilsim-runner jev                             JEV 연결 확인 (환경 변수 TYPESAFE_API_KEY 필요)
@@ -89,6 +94,7 @@ fun main(args: Array<String>) {
         "risk-set" -> riskSet(store, args)
         "memory" -> memory(store, args)
         "standards" -> standards()
+        "recommend" -> recommend(store, args)
         "apply-standards" -> applyStandards(store, args)
         "jev" -> jevCheck()
         "run" -> run(store)
@@ -125,24 +131,28 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
     val path = Path.of(registered?.path ?: id).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
     val archStore = ArchitectureStore(store)
-    var model = RuleApproval.carryOver(registered?.let { archStore.load(id) }, ArchitectureMiner.mine(path, profile))
-    val self = if (model.rules.isEmpty()) null else ArchitectureChecker.check(path, profile, model)
+    val mined = ArchitectureMiner.mine(path, profile)
+    val recommended = ArchitectureRecommender.recommend(path, profile, mined)
+    var model = RuleApproval.carryOver(registered?.let { archStore.load(id) }, mined.copy(rules = mined.rules + recommended))
+    val self = if (mined.rules.isEmpty()) null else ArchitectureChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
     if (registered != null) {
         out.appendLine("저장: ${archStore.save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
-    out.append(ArchitectureReport.summary(model, self))
-    if (registered != null && model.rules.isNotEmpty()) {
+    out.append(ArchitectureReport.summary(model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }), self))
+    out.append(RecommendationReport.architecture(model.rules))
+    if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("ARCHITECTURE_REVIEW")
         try {
             val docs = DocumentContext.build(path, DocPurpose.ARCHITECTURE)
             if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
-            model = ArchitectureReviewer.review(model, AI_MODEL, docs = docs) { prompt ->
-                val answer = com.dochiri.ilsim.runner.jev.JevRuleReview.review(prompt, model.rules.map { it.id to "${it.description} (관측 ${it.evidence.compliant}/${it.evidence.total})" }) { cost.ask(it, AI_MODEL) }
+            val (proposed, reviewable) = model.rules.partition { Recommendations.isRecommended(it.id) }
+            model = ArchitectureReviewer.review(model.copy(rules = reviewable), AI_MODEL, docs = docs) { prompt ->
+                val answer = com.dochiri.ilsim.runner.jev.JevRuleReview.review(prompt, reviewable.map { it.id to "${it.description} (관측 ${it.evidence.compliant}/${it.evidence.total})" }) { cost.ask(it, AI_MODEL) }
                 if (answer.reviewer == "jev") cost.lastReviewer = "jev"
                 answer.text
             }
             model = model.copy(review = model.review?.copy(reviewer = cost.lastReviewer ?: model.review!!.reviewer))
-            model = RuleApproval.autoApprove(model)
+            model = RuleApproval.autoApprove(model).let { it.copy(rules = it.rules + proposed) }
             val reviewed = model
             archStore.update(id) { saved -> RuleApproval.keepUserDecisions(saved, reviewed).also { model = it } }
             out.appendLine()
@@ -376,24 +386,27 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
     val profile = StackDetector.detect(path)
     val previous = registered?.let { ConventionStore(store).load(id) }
     val mined = ConventionMiner.mine(path, profile)
-    var model = ConventionApproval.carryOver(previous, mined)
-    val self = if (model.rules.isEmpty()) null else ConventionChecker.check(path, profile, model)
+    val recommended = ConventionRecommender.recommend(path, profile, mined)
+    var model = ConventionApproval.carryOver(previous, mined.copy(rules = mined.rules + recommended))
+    val self = if (mined.rules.isEmpty()) null else ConventionChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
     if (registered != null) {
         out.appendLine("저장: ${ConventionStore(store).save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
-    out.append(ConventionReport.summary(model, self))
-    if (registered != null && model.rules.isNotEmpty()) {
+    out.append(ConventionReport.summary(model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }), self))
+    out.append(RecommendationReport.convention(model.rules))
+    if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("CONVENTION_REVIEW")
         try {
             val docs = DocumentContext.build(path, DocPurpose.CONVENTION)
             if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
-            model = ConventionReviewer.review(model, AI_MODEL, docs = docs) { prompt ->
-                val answer = com.dochiri.ilsim.runner.jev.JevRuleReview.review(prompt, model.rules.map { it.id to "${it.description} (관측 ${it.evidence.compliant}/${it.evidence.total})" }) { cost.ask(it, AI_MODEL) }
+            val (proposed, reviewable) = model.rules.partition { Recommendations.isRecommended(it.id) }
+            model = ConventionReviewer.review(model.copy(rules = reviewable), AI_MODEL, docs = docs) { prompt ->
+                val answer = com.dochiri.ilsim.runner.jev.JevRuleReview.review(prompt, reviewable.map { it.id to "${it.description} (관측 ${it.evidence.compliant}/${it.evidence.total})" }) { cost.ask(it, AI_MODEL) }
                 if (answer.reviewer == "jev") cost.lastReviewer = "jev"
                 answer.text
             }
             model = model.copy(review = model.review?.copy(reviewer = cost.lastReviewer ?: model.review!!.reviewer))
-            model = ConventionApproval.autoApprove(model)
+            model = ConventionApproval.autoApprove(model).let { it.copy(rules = it.rules + proposed) }
             val reviewed = model
             ConventionStore(store).update(id) { saved -> ConventionApproval.keepUserDecisions(saved, reviewed).also { model = it } }
             out.appendLine()
@@ -414,6 +427,16 @@ private fun jevCheck() {
     val p = jev.probability(mapOf("text" to "The build passed with exit code 0."), io.github.gudcks0305.jev.NoulQuestion.of("passed", "Did the build succeed?"))
     if (p == null) { println("JEV 호출에 실패했습니다. 키와 네트워크를 확인하세요"); exitProcess(1) }
     println("JEV 연결 확인: 응답 확률 ${"%.2f".format(p)} (1에 가까울수록 정상)")
+}
+
+private fun recommend(store: ConfigStore, args: Array<String>) {
+    require(args.size >= 2) { "사용법: ilsim-runner recommend <id|경로>" }
+    val path = Path.of(store.load().projects[args[1]]?.path ?: args[1]).toAbsolutePath().normalize()
+    val profile = StackDetector.detect(path)
+    val architecture = ArchitectureMiner.mine(path, profile)
+    val convention = ConventionMiner.mine(path, profile)
+    print(RecommendationReport.architecture(ArchitectureRecommender.recommend(path, profile, architecture)))
+    print(RecommendationReport.convention(ConventionRecommender.recommend(path, profile, convention)))
 }
 
 private fun standards() {

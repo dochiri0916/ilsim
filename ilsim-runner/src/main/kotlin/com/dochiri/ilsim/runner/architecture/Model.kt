@@ -31,7 +31,11 @@ data class ArchRule(
     val rejected: Boolean = false,
     val decidedBy: String? = null,
     val review: RuleReview? = null,
+    val recommendation: Recommendation? = null,
 )
+
+@Serializable
+data class Recommendation(val principle: String, val rationale: String)
 
 @Serializable
 data class RuleReview(val verdict: String, val reason: String, val evidenceHash: String = "")

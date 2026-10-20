@@ -2,6 +2,7 @@ package com.dochiri.ilsim.runner.convention
 
 import com.dochiri.ilsim.runner.architecture.Evidence
 import com.dochiri.ilsim.runner.architecture.ModelReview
+import com.dochiri.ilsim.runner.architecture.Recommendation
 import com.dochiri.ilsim.runner.architecture.RuleReview
 import kotlinx.serialization.Serializable
 
@@ -17,6 +18,7 @@ data class ConventionRule(
     val rejected: Boolean = false,
     val decidedBy: String? = null,
     val review: RuleReview? = null,
+    val recommendation: Recommendation? = null,
 )
 
 @Serializable

@@ -23,7 +23,14 @@ data class RuleView(
     val decidedBy: String?,
     val reviewVerdict: String?,
     val reviewReason: String?,
-)
+    val principle: String? = null,
+    val rationale: String? = null,
+    val compliant: Int = 0,
+    val total: Int = 0,
+    val examples: List<String> = emptyList(),
+) {
+    val recommended: Boolean get() = principle != null
+}
 
 data class MemoryView(
     val id: String,

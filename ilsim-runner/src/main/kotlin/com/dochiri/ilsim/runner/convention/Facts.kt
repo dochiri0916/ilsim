@@ -19,6 +19,8 @@ internal class ConvFile(
     val annotated: List<Decl>,
 ) {
     var module: String = ""
+
+    val view: CodeView by lazy { CodeText.scrub(lines) }
 }
 
 internal class Facts(val files: List<ConvFile>, val dependencies: Map<String, List<String>> = emptyMap()) {

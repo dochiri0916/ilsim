@@ -142,6 +142,12 @@ export interface RuleView {
   decidedBy: string | null
   reviewVerdict: string | null
   reviewReason: string | null
+  principle: string | null
+  rationale: string | null
+  compliant: number
+  total: number
+  examples: string[]
+  recommended: boolean
 }
 
 export interface MemoryView {

@@ -23,6 +23,12 @@ const RULES: Record<string, Tradeoff> = {
   'no-debug-output': { pro: 'println 같은 디버그 출력이 운영 코드에 남지 않습니다', con: '간단한 출력이 필요한 CLI·스크립트도 로거를 써야 합니다' },
   'no-field-injection': { pro: '생성자 주입으로 의존이 드러나고 테스트에서 바꿔 끼우기 쉽습니다', con: '필드 주입을 쓰던 클래스는 생성자를 고쳐야 합니다' },
   'no-force-unwrap': { pro: '강제 언래핑(!!)으로 인한 NPE 를 막습니다', con: 'null 이 될 수 없음을 아는 곳에서도 처리 코드를 써야 합니다' },
+  'no-comments': { pro: '코드와 어긋나는 낡은 주석이 남지 않고 이름·구조로 의도를 드러내게 됩니다', con: '왜 그렇게 했는지 같은 맥락은 커밋 메시지·문서로 옮겨야 합니다' },
+  'domain-encapsulation': { pro: '도메인 상태는 도메인 메서드로만 바뀌어 불변식이 한곳에서 지켜집니다', con: 'setter 로 바로 바꾸던 코드는 의도를 드러내는 메서드를 새로 만들어야 합니다' },
+  'identifier-value-object': { pro: '식별자를 타입으로 구분해 다른 ID 를 바꿔 넣는 실수를 컴파일러가 막습니다', con: '값 객체와 매핑·직렬화 코드가 늘어납니다' },
+  'max-function-lines': { pro: '함수가 한 가지 일만 해 읽고 테스트하기 쉽습니다', con: '흐름이 여러 작은 함수로 흩어져 따라가야 할 곳이 늘어납니다' },
+  'max-nesting': { pro: '조기 반환·작은 함수로 흐름이 평평해져 분기를 놓치지 않습니다', con: '복잡한 분기를 나누느라 보조 함수가 늘어납니다' },
+  'max-file-lines': { pro: '큰 클래스를 책임별로 나누게 해 변경 영향이 좁아집니다', con: '파일 수가 늘고 나누는 기준을 정해야 합니다' },
 }
 
 const MEMORY: Record<string, Tradeoff> = {

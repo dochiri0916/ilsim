@@ -36,6 +36,11 @@ class FileKnowledgeStore(home: Path) : KnowledgeStore {
                 decidedBy = text(r, "decidedBy"),
                 reviewVerdict = text(r.path("review"), "verdict"),
                 reviewReason = text(r.path("review"), "reason"),
+                principle = text(r.path("recommendation"), "principle"),
+                rationale = text(r.path("recommendation"), "rationale"),
+                compliant = r.path("evidence").path("compliant").asInt(0),
+                total = r.path("evidence").path("total").asInt(0),
+                examples = (r.path("evidence").path("examples") as? Iterable<JsonNode>)?.mapNotNull { it.takeIf { e -> e.isString }?.asString() }.orEmpty(),
             )
         }
     }

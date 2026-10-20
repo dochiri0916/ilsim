@@ -57,6 +57,31 @@ function Item({ title, meta, body, state, tradeoff, onApprove, onReject, busy }:
   )
 }
 
+function upgradeRequest(set: RuleSet, r: RuleView): string {
+  return [
+    `[추천 규칙 업그레이드] ${r.principle}`,
+    `규칙: ${r.description}`,
+    `이유: ${r.rationale}`,
+    r.examples.length ? `위반 예: ${r.examples.join(', ')}` : '',
+    `${set === 'architecture' ? '아키텍처' : '컨벤션'} 규칙 \`${r.id}\`을 지키도록 기존 코드를 리팩터링한다. 동작은 바꾸지 않고 기존 테스트는 모두 통과해야 한다. 위반이 많으면 영향이 큰 곳부터 고친다.`,
+  ].filter(Boolean).join('\n')
+}
+
+function RuleBody({ r, onUpgrade, busy }: { r: RuleView; onUpgrade: () => void; busy: boolean }) {
+  return (
+    <>
+      {r.recommended && (
+        <div className="recommend">
+          <p className="review"><b>{r.principle}</b> {r.rationale}</p>
+          <p className="muted small">현재 준수 {r.compliant}/{r.total}{r.examples.length > 0 && ` · 예: ${r.examples.join(', ')}`}</p>
+          {r.compliant < r.total && <button className="secondary" disabled={busy} onClick={onUpgrade}>업그레이드 작업 만들기</button>}
+        </div>
+      )}
+      {r.reviewVerdict && <p className="review"><StatusBadge value={r.reviewVerdict} /> {r.reviewReason}</p>}
+    </>
+  )
+}
+
 const ANALYSIS_LABEL: Record<Analysis['status'], string> = {
   REQUESTED: 'Runner 대기 중…', RUNNING: '분석 중…', DONE: '분석 완료', FAILED: '분석 실패',
 }
@@ -113,7 +138,7 @@ export function Knowledge({ projectId }: { projectId: string }) {
           </small>
         )}
       </div>
-      <p className="muted small">코드에서 아키텍처(레이어·의존 방향)와 코드 컨벤션 규칙을 추출합니다. AI가 확실한 규칙만 자동 승인하고, 나머지는 아래에서 승인·거절합니다.</p>
+      <p className="muted small">코드에서 아키텍처(레이어·의존 방향)와 코드 컨벤션 규칙을 추출합니다. AI가 확실한 규칙만 자동 승인하고, 나머지는 아래에서 승인·거절합니다. 헥사고날·DDD·클린 아키텍처·객체지향·생활 체조 기준으로 더 나은 방향은 "추천"으로 제안하며, 승인하면 적용되고 위반은 업그레이드 작업으로 고칩니다.</p>
       {a?.error && <p className="err">{a.error}</p>}
       {showReport && a?.report && (
         <Dialog title="분석 보고서" onClose={() => setShowReport(false)}><pre>{a.report}</pre></Dialog>
@@ -144,8 +169,11 @@ export function Knowledge({ projectId }: { projectId: string }) {
           <ul className="plain items">
             {byState(k[tab], ruleState).map((r) => (
               <Item key={r.id} title={r.description} state={ruleState(r)} busy={busy} tradeoff={ruleTradeoff(r.kind, r.severity)}
-                meta={`${r.kind}${r.severity ? ` · ${r.severity}` : ''}${r.decidedBy ? ` · ${r.decidedBy}` : ''}`}
-                body={r.reviewVerdict && <p className="review"><StatusBadge value={r.reviewVerdict} /> {r.reviewReason}</p>}
+                meta={`${r.recommended ? '추천 · ' : ''}${r.kind}${r.severity ? ` · ${r.severity}` : ''}${r.decidedBy ? ` · ${r.decidedBy}` : ''}`}
+                body={<RuleBody r={r} busy={busy} onUpgrade={() => run(async () => {
+                  const task = await api.createTask(projectId, '', upgradeRequest(tab, r))
+                  location.hash = `#/tasks/${task.id}`
+                })} />}
                 onApprove={() => run(() => api.decideRules(projectId, tab, [r.id], 'approve'))}
                 onReject={() => run(() => api.decideRules(projectId, tab, [r.id], 'reject'))} />
             ))}

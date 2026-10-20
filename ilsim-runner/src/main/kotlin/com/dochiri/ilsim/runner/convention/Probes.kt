@@ -20,6 +20,7 @@ internal object Probes {
     val all: List<Probe> = listOf(
         AnnotationSuffix, TestClassSuffix, TestMethodStyle, NoFieldInjection, NoWildcardImport,
         NoDebugOutput, NoForceUnwrap, IndentStyle, MaxLineLength, FileMatchesType, AnnotationConfinement,
+        NoComments, DomainEncapsulation, IdentifierValueObject, MaxFunctionLines, MaxNesting, MaxFileLines,
     )
 
     fun byKind(kind: String): Probe? = all.firstOrNull { it.kind == kind }
