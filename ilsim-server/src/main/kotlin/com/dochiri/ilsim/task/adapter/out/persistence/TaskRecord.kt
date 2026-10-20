@@ -18,7 +18,6 @@ import com.dochiri.ilsim.task.domain.vo.TaskId
 import com.dochiri.ilsim.task.domain.vo.TaskStatus
 import java.time.Instant
 
-/** 작업 한 건의 저장용 사본(JSON). 저장소는 이 사본만 알고 도메인 객체는 모른다. */
 data class TaskRecord(
     val id: String,
     val projectId: String,
@@ -83,7 +82,6 @@ data class TaskRecord(
                 decisions = r.decisions,
             )
         }.associateBy { it.stage }
-        // 저장본에 없는 단계는 새로 만든다(단계가 추가돼도 읽을 수 있게).
         val all = Stage.entries.map { restored[it] ?: StageState.initial(it) }
         return Task.restore(
             id = TaskId.of(id),
@@ -93,7 +91,6 @@ data class TaskRecord(
             requirement = Requirement.of(requirement),
             status = TaskStatus.valueOf(status),
             runnerId = runnerId?.let { RunnerId.of(it) },
-            // 빈 브랜치는 예전 저장본에서 생길 수 있으므로 없는 값으로 읽는다.
             branch = branch?.takeIf { it.isNotBlank() }?.let { Branch.of(it) },
             runs = RunCount.of(runs),
             stages = all,

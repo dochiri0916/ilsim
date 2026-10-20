@@ -29,12 +29,10 @@ class BookPersistenceAdapterConflictTest {
     @ValueSource(strings = {"uk_books_isbn", "books.uk_books_isbn"})
     @DisplayName("제약 이름과 MySQL의 테이블 한정 이름을 정확히 비교하고 원인을 보존한다")
     void translatesExactIsbnConstraint(final String name) {
-        // given
         final Book book = Book.create(Isbn.of("9788966260959"), BookTitle.of("클린 코드"));
         final DataIntegrityViolationException failure = failure(name);
         when(jpaRepository.saveAndFlush(any(BookEntity.class))).thenThrow(failure);
 
-        // when & then
         assertThatThrownBy(() -> adapter.create(book))
                 .isInstanceOf(DuplicateIsbnException.class)
                 .hasCause(failure);
@@ -45,12 +43,10 @@ class BookPersistenceAdapterConflictTest {
     @ValueSource(strings = {"other_table.uk_books_isbn", "books.uk_books_isbn_suffix", "books.uk_books_public_id"})
     @DisplayName("다른 테이블·다른 제약·이름 일부만 일치하는 실패를 ISBN 중복으로 바꾸지 않는다")
     void rejectsOtherConstraints(final String name) {
-        // given
         final Book book = Book.create(Isbn.of("9788966260959"), BookTitle.of("클린 코드"));
         final DataIntegrityViolationException failure = failure(name);
         when(jpaRepository.saveAndFlush(any(BookEntity.class))).thenThrow(failure);
 
-        // when & then
         assertThatThrownBy(() -> adapter.create(book))
                 .isInstanceOf(RepositoryOperationException.class)
                 .hasCause(failure);

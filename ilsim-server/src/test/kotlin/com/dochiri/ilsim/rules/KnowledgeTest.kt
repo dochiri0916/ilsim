@@ -21,7 +21,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
-/** Runner 가 쓴 형식의 파일을 서버가 읽고, 승인 상태만 바꾸는지 본다. */
 class KnowledgeTest {
 
     @TempDir

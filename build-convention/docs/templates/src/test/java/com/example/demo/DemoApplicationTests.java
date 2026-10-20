@@ -17,13 +17,10 @@ class DemoApplicationTests {
     @Test
     @DisplayName("애플리케이션 컨텍스트가 뜬다")
     void contextLoads() {
-        // given
         final Class<DemoApplication> applicationType = DemoApplication.class;
 
-        // when
         final DemoApplication application = applicationContext.getBean(applicationType);
 
-        // then
         assertThat(application).isNotNull();
     }
 

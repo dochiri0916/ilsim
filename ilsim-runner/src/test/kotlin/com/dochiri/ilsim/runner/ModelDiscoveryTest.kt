@@ -9,7 +9,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** 같은 계열의 새 버전은 바로 쓰고, 낮은 버전·다른 계열·Fable 은 받지 않는다. */
 class ModelDiscoveryTest {
 
     @AfterTest

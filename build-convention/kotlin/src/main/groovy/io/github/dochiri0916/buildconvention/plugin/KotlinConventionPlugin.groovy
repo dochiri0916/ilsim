@@ -11,7 +11,6 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.tasks.SourceSetContainer
 
-/** Kotlin domain source checks remain separate from the Java source rules and quality tools. */
 class KotlinConventionPlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {

@@ -30,14 +30,11 @@ class LintConventionPluginTest {
     @Test
     @DisplayName('아키텍처 검증 태스크와 이전 이름 호환 태스크를 등록한다')
     void 'plugin registers architecture convention task and legacy alias'() {
-        // given
         Project project = sampleProject()
 
-        // when
         def architectureTask = project.tasks.findByName('validateArchitectureConventions')
         def legacyTask = project.tasks.findByName('validateClaudeConventions')
 
-        // then
         assert architectureTask != null
         assert legacyTask != null
     }
@@ -547,16 +544,13 @@ class LintConventionPluginTest {
     @Test
     @DisplayName('Inbound Adapter 커버리지 기준 완화를 거부한다')
     void 'check fails when inbound adapter coverage minimum is relaxed'() {
-        // given
         Project project = sampleProject()
         project.extensions.getByType(HexagonalConventionExtension).inboundAdapterLineCoverageMinimum = 0.10
 
-        // when
         GradleException exception = assertThrows(GradleException) {
             executeCheckActions(project)
         }
 
-        // then
         assert exception.message.contains('inboundAdapterLineCoverageMinimum=0.10 < 0.80')
     }
 
@@ -657,13 +651,10 @@ class LintConventionPluginTest {
     @Test
     @DisplayName('Java 버전을 정하지 않은 프로젝트는 Java 21로 컴파일한다')
     void 'project without java version defaults to java 21'() {
-        // given
         Project project = sampleProject()
 
-        // when
         Integer release = project.tasks.named('compileJava', JavaCompile).get().options.release.get()
 
-        // then
         assert project.extensions.getByType(JavaPluginExtension).toolchain.languageVersion.get() == JavaLanguageVersion.of(21)
         assert release == 21
         executeTaskActions(project, 'validateJavaVersionConvention')
@@ -672,13 +663,10 @@ class LintConventionPluginTest {
     @Test
     @DisplayName('Java 21 이상으로 정한 프로젝트는 그 버전을 그대로 쓴다')
     void 'project java version of 21 or newer is kept'() {
-        // given
         Project project = sampleProject()
 
-        // when
         project.extensions.getByType(JavaPluginExtension).toolchain.languageVersion.set(JavaLanguageVersion.of(25))
 
-        // then
         assert project.tasks.named('compileJava', JavaCompile).get().options.release.get() == 25
         assert project.tasks.named('compileTestJava', JavaCompile).get().options.release.get() == 25
         executeTaskActions(project, 'validateJavaVersionConvention')
@@ -687,16 +675,13 @@ class LintConventionPluginTest {
     @Test
     @DisplayName('Java 21 미만으로 정한 프로젝트는 검증에 실패한다')
     void 'project java version below 21 fails validation'() {
-        // given
         Project project = sampleProject()
         project.extensions.getByType(JavaPluginExtension).toolchain.languageVersion.set(JavaLanguageVersion.of(17))
 
-        // when
         GradleException exception = assertThrows(GradleException) {
             executeTaskActions(project, 'validateJavaVersionConvention')
         }
 
-        // then
         assert exception.message.contains('java.toolchain.languageVersion must be Java 21 or higher')
         assert exception.message.contains('options.release must be 21 or higher')
     }
@@ -704,16 +689,13 @@ class LintConventionPluginTest {
     @Test
     @DisplayName('컴파일 release를 21 미만으로 낮추면 검증에 실패한다')
     void 'compiler release below 21 fails validation'() {
-        // given
         Project project = sampleProject()
         project.tasks.named('compileJava', JavaCompile).get().options.release.set(17)
 
-        // when
         GradleException exception = assertThrows(GradleException) {
             executeTaskActions(project, 'validateJavaVersionConvention')
         }
 
-        // then
         assert exception.message.contains(':compileJava options.release must be 21 or higher')
     }
 

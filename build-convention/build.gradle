@@ -102,7 +102,6 @@ allprojects {
 }
 
 subprojects {
-    // Artifacts keep the build-convention name: a bare `java` or `core` would collide in a shared Maven repository.
     String artifactName = "build-convention-${project.name}"
     base {
         archivesName = artifactName

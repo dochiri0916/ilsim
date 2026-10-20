@@ -59,7 +59,6 @@ object ArchitectureReport {
         }
     }
 
-    /** AI 검토 후 사용자가 정해야 할 규칙만 모아 보여 준다. */
     fun triage(m: ArchitectureModel, projectId: String): String = buildString {
         val auto = m.rules.count { it.approved && it.decidedBy == "ai-review" }
         val user = m.rules.count { it.decidedBy == "user" }

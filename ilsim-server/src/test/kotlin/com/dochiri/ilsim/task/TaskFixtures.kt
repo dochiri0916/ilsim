@@ -18,7 +18,6 @@ class MutableClock(var now: Instant = Instant.parse("2026-01-01T00:00:00Z")) : C
     override fun instant(): Instant = now
 }
 
-/** JEV 없이 규칙 기반으로만 동작하게 하는 평가기. */
 object NoAssessor : ComplexityAssessor {
     override fun isAvailable(): Boolean = false
     override fun assess(task: Task, state: StageState, attempt: Int): Assessment? = null
@@ -42,5 +41,4 @@ object NoStore : TaskStore {
     override fun saveProject(id: String, project: StoredProject) {}
 }
 
-/** 작업은 불변이라 상태를 바꾼 뒤에는 서비스에서 다시 읽어야 최신 상태가 된다. */
 fun TaskService.latest(task: Task): Task = checkNotNull(find(task.id.value))

@@ -67,7 +67,6 @@ class TransactionBoundaryConventionValidator {
         boolean applicationService = SourceInspector.isInLayer(packageName, convention.applicationPackageSegment)
                 && packageName.contains('.service')
 
-        // outbox-inbox-conventions: publication, inbox and cleanup transactions are owned by global messaging infrastructure.
         boolean messagingInfrastructure = packageName.contains('.global.messaging')
         if (hasTransactionalAnnotation(type) && !applicationService && !messagingInfrastructure) {
             violations.add("${path} @Transactional is only allowed on concrete application services")
@@ -257,7 +256,6 @@ class TransactionBoundaryConventionValidator {
     }
 
     private static boolean isQueryName(String name) {
-        // Authentication only reads the member and checks the password.
         return name ==~ /^(?:get|list|find|search|count|exists|load|read|login|authenticate).*/
     }
 

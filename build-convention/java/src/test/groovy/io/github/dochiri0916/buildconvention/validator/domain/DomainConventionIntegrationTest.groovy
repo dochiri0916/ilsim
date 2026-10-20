@@ -15,7 +15,6 @@ class DomainConventionIntegrationTest {
     @Test
     @DisplayName('문서 템플릿의 도메인과 호출자는 새 규칙을 함께 통과한다')
     void validatesTemplates() {
-        // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File sourceRoot = new File('../docs/templates/src/main/java')
         sourceRoot.eachFileRecurse { File file ->
@@ -28,18 +27,15 @@ class DomainConventionIntegrationTest {
         def convention = new HexagonalConventionExtension()
         convention.basePackage = 'com.example.demo'
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
         violations.addAll(DomainStaticFactoryValidator.validate(project, convention))
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('Outbox record와 이벤트의 도메인 객체 및 메타데이터를 허용한다')
     void acceptsOutboxAndEvents() {
-        // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         write('global/domain/outbox/Delivery.java', '''
             package com.example.global.domain.outbox;
@@ -69,17 +65,14 @@ class DomainConventionIntegrationTest {
         def convention = new HexagonalConventionExtension()
         convention.basePackage = 'com.example'
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('원시 컬렉션과 ID 위치 및 이벤트 상태 보관은 안정적인 rule ID로 거부한다')
     void rejectsBypassesWithRuleIds() {
-        // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         write('order/domain/model/Order.java', '''
             package com.example.order.domain.model;
@@ -98,10 +91,8 @@ class DomainConventionIntegrationTest {
         def convention = new HexagonalConventionExtension()
         convention.basePackage = 'com.example'
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
 
-        // then
         assert violations.any { it.contains('must not retain domain events') && it.startsWith('[ARCH-DOMAIN-AGGREGATE]') }
         assert violations.any { it.contains('must live in domain.vo package') && it.startsWith('[ARCH-PACKAGE-TOPOLOGY]') }
         assert violations.any { it.contains("domain field 'lines' must use a first-class collection") }
@@ -110,7 +101,6 @@ class DomainConventionIntegrationTest {
     @Test
     @DisplayName('애그리거트 팩터리와 식별자 유지 및 메타데이터 예외를 검증한다')
     void validatesAggregateLifecycle() {
-        // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         String source = """
             package com.example.order.domain.model;
@@ -134,10 +124,8 @@ class DomainConventionIntegrationTest {
         def convention = new HexagonalConventionExtension()
         convention.basePackage = 'com.example'
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
 
-        // then
         assert violations.isEmpty()
         write('order/domain/model/Order.java', source.replace('new Order(id, revision + 1)', 'new Order(OrderId.generate(), revision + 1)'))
         assert JavaSourceArchitectureValidator.validate(project, convention)
@@ -150,7 +138,6 @@ class DomainConventionIntegrationTest {
     @Test
     @DisplayName('명시적 생성자 주입도 Lombok 생성자와 같은 계약으로 허용한다')
     void accepts_explicit_constructor_injection() {
-        // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         write('order/application/port/in/usecase/PlaceOrderUseCase.java', """
             package com.example.order.application.port.in.usecase;
@@ -177,17 +164,14 @@ class DomainConventionIntegrationTest {
         def convention = new HexagonalConventionExtension()
         convention.basePackage = 'com.example'
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('sealed 예외 기반 생성자는 모든 오버로드에서 protected여야 한다')
     void requires_protected_exception_base_constructors() {
-        // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         def convention = new HexagonalConventionExtension()
         convention.basePackage = 'com.example'
@@ -205,9 +189,7 @@ class DomainConventionIntegrationTest {
             }
         ''')
         write('order/domain/exception/OrderDomainException.java', source)
-        // when
         def valid = JavaSourceArchitectureValidator.validate(project, convention)
-        // then
         assert valid.empty
         ['public', 'private', ''].each { visibility ->
             write('order/domain/exception/OrderDomainException.java', source.replace(
@@ -227,7 +209,6 @@ class DomainConventionIntegrationTest {
     @Test
     @DisplayName('permits의 누락·가짜 자식·다른 Context 부모와 중첩 예외 우회를 거부한다')
     void rejects_incomplete_or_foreign_exception_hierarchies() {
-        // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         def convention = new HexagonalConventionExtension(basePackage: 'com.example')
         String base = '''
@@ -243,8 +224,6 @@ class DomainConventionIntegrationTest {
                 public MissingOrderException() { super("주문이 필요합니다"); }
             }
         ''')
-        // when
-        // then
         assert JavaSourceArchitectureValidator.validate(project, convention).empty
         write('order/domain/exception/OrderDomainException.java', base.replace('permits MissingOrderException', 'permits UnknownOrderException'))
         def incomplete = JavaSourceArchitectureValidator.validate(project, convention)
@@ -285,7 +264,6 @@ class DomainConventionIntegrationTest {
     @Test
     @DisplayName('공통 VO 예외의 기반은 GlobalDomainException으로 고정한다')
     void requires_global_domain_exception_base() {
-        // given
         def project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         def convention = new HexagonalConventionExtension(basePackage: 'com.example')
         String base = '''
@@ -302,8 +280,6 @@ class DomainConventionIntegrationTest {
         '''
         write('global/domain/exception/GlobalDomainException.java', base)
         write('global/domain/exception/InvalidMoneyException.java', child)
-        // when
-        // then
         assert JavaSourceArchitectureValidator.validate(project, convention).empty
         new File(tempDir, 'src/main/java/com/example/global/domain/exception/GlobalDomainException.java').delete()
         write('global/domain/exception/SharedDomainException.java', base.replace('GlobalDomainException', 'SharedDomainException'))

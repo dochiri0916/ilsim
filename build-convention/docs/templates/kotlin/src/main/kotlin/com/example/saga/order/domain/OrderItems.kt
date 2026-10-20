@@ -36,7 +36,6 @@ class OrderItems private constructor(
     override fun toString(): String = "OrderItems($values)"
 
     companion object {
-        /** List.copyOf는 변경 불가능한 복사본을 만들므로 asList()로 노출해도 캐스팅해서 바꿀 수 없다. */
         fun of(values: List<OrderItem>): OrderItems = OrderItems(java.util.List.copyOf(values))
     }
 }

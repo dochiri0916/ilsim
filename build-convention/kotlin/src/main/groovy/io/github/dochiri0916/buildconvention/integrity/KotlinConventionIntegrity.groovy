@@ -5,7 +5,6 @@ import io.github.dochiri0916.buildconvention.report.KotlinBuildConventionReport
 import org.gradle.api.GradleException
 import org.gradle.api.Project
 
-/** These checks run before the task graph, so -x and disabled task actions cannot silently pass check. */
 final class KotlinConventionIntegrity {
     static final List<String> REQUIRED = ['validateKotlinDomainConventions', 'validateKotlinArchUnitArchitecture',
                                           'generateKotlinBuildConventionReport'].asImmutable()

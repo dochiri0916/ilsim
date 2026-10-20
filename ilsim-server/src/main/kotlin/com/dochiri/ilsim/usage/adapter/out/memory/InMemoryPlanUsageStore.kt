@@ -4,7 +4,6 @@ import com.dochiri.ilsim.usage.application.port.out.PlanUsageStore
 import com.dochiri.ilsim.usage.domain.PlanUsage
 import java.util.concurrent.ConcurrentHashMap
 
-/** 사용량은 Claude 실행마다 다시 보고되므로 서버를 다시 띄우면 사라져도 된다. */
 class InMemoryPlanUsageStore : PlanUsageStore {
     private val usages = ConcurrentHashMap<Pair<String, String>, PlanUsage>()
 

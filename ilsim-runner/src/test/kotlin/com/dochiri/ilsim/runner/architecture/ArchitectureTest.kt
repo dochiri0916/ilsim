@@ -35,7 +35,6 @@ class ArchitectureTest {
     private fun mine(root: Path) = ArchitectureMiner.mine(root, StackDetector.detect(root))
     private fun check(root: Path, model: ArchitectureModel) = ArchitectureChecker.check(root, StackDetector.detect(root), model)
 
-    /** saga 와 다른 이름·구조: 슬라이스 2개(billing, catalog) × 레이어 3개(domain, service, web). */
     private fun slicedFiles() = arrayOf(
         kt("com.acme.billing.domain", "Invoice"), kt("com.acme.billing.domain", "Receipt"), kt("com.acme.billing.domain", "Line"),
         kt("com.acme.catalog.domain", "Item"), kt("com.acme.catalog.domain", "Price"), kt("com.acme.catalog.domain", "Sku"),
@@ -53,7 +52,6 @@ class ArchitectureTest {
         kt("com.acme.catalog.web", "SkuController", "com.acme.catalog.service.SkuService", "org.springframework.web.bind"),
     )
 
-    /** 반복되는 하위 구조가 없는 평평한 MVC. */
     private fun flatFiles() = arrayOf(
         kt("com.shop.model", "Order"), kt("com.shop.model", "Customer"), kt("com.shop.model", "Product"),
         kt("com.shop.repository", "OrderRepo", "com.shop.model.Order"),
@@ -101,7 +99,7 @@ class ArchitectureTest {
         assertTrue("forbid-edge:service>controller" in ids)
         assertTrue("forbid-edge:repository>service" in ids)
         assertTrue("leaf-unit:model" in ids)
-        assertTrue("absent-edge:controller>repository" in ids) // 한 번도 연결되지 않은 쌍은 REVIEW 후보
+        assertTrue("absent-edge:controller>repository" in ids)
         assertEquals("REVIEW", m.rules.first { it.id == "absent-edge:controller>repository" }.proposedSeverity)
         assertFalse(ids.any { it.contains("billing") || it.contains("domain") })
     }

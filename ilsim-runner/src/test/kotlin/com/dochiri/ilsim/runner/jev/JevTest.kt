@@ -25,7 +25,6 @@ import kotlin.test.assertTrue
 class JevTest {
     private val mapper = ObjectMapper()
 
-    /** 요청한 질문 id 마다 [probability] 로 정한 확률을 TypeSafe 응답 형식으로 돌려주는 가짜 전송. */
     private class FakeTransport(val mapper: ObjectMapper, val fail: Boolean = false, val probability: (String) -> Double) : JevTransport {
         val requests = mutableListOf<JsonNode>()
         override fun post(uri: URI, headers: Map<String, String>, body: JsonNode): CompletableFuture<JsonNode> {

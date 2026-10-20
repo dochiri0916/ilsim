@@ -9,10 +9,6 @@ import com.example.coderiskanalyzer.production.judge.TestAdequacyReview;
 import io.github.gudcks0305.jev.NoulQuestion;
 import io.github.gudcks0305.jev.typesafe.TypeSafeJevClient;
 
-/**
- * JEV receives the candidate summary, structured evidence and, when available, the enclosing method's source
- * ({@code evidence.source}). Files with a hardcoded-secret finding are never sent. The answer stays advisory.
- */
 public class JevSemanticJudge implements SemanticJudge, AutoCloseable {
 
     private static final NoulQuestion DUPLICATE_SIDE_EFFECT = NoulQuestion.of(
@@ -27,7 +23,6 @@ public class JevSemanticJudge implements SemanticJudge, AutoCloseable {
             .withCriteria("Yes, the evidence shows the tests assert the required outcome for every case.",
                     "No, the evidence shows missing, partial or unverifiable assertions.");
 
-    /** Each question asks whether the evidence shows the risk, never assumes protection that is not in the evidence. */
     private static NoulQuestion riskQuestion(String id, String question, String yes) {
         return NoulQuestion.of(id, question).withCriteria(yes,
                 "No, the evidence shows an effective protection, or does not show the risk.");

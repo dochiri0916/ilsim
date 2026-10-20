@@ -1,6 +1,5 @@
 package io.github.dochiri0916.buildconvention.source.java
 
-/** Follows local helper calls without letting recursion hide inspected operations. */
 final class JavaMethodGraph {
     private JavaMethodGraph() {}
 

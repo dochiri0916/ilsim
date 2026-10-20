@@ -1,6 +1,5 @@
 package io.github.dochiri0916.buildconvention.catalog
 
-/** Single source of truth for technical dependencies that inner layers must not use. */
 final class TechnicalDependencyCatalog {
     static final Set<String> ALLOWED_APPLICATION_SPRING_TYPES = [
             'org.springframework.stereotype.Service',
@@ -56,7 +55,6 @@ final class TechnicalDependencyCatalog {
             'org.springframework..',
             'tools.jackson..'
     ].asImmutable()
-    /** External packages a domain may use. Everything else outside the project is rejected by default. */
     static final List<String> DOMAIN_ALLOWED_EXTERNAL_PACKAGE_PREFIXES = [
             'com.github.f4b6a3.',
             'java.',

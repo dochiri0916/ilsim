@@ -19,13 +19,11 @@ import io.github.gudcks0305.jev.Answer as LibAnswer
 import io.github.gudcks0305.jev.JevClient as LibClient
 import io.github.gudcks0305.jev.Question as LibQuestion
 
-/** TypeSafe JEV(jev-typesafe 라이브러리, code-risk-analyzer 와 같은 것) 어댑터. */
 class TypeSafeJevGateway private constructor(
     private val fixed: LibClient?,
     private val keys: ApiKeySource?,
 ) : JevGateway, AutoCloseable {
 
-    /** 저장소/환경에서 키를 읽는다. 키가 바뀌면 클라이언트를 다시 만든다. */
     constructor(keys: ApiKeySource) : this(null, keys)
 
     private var currentKey: String? = null
@@ -109,7 +107,6 @@ class TypeSafeJevGateway private constructor(
     companion object {
         private val log = LoggerFactory.getLogger(TypeSafeJevGateway::class.java)
 
-        /** 이미 만든 라이브러리 클라이언트(또는 null=비활성)를 그대로 쓴다. 테스트용. */
         fun withClient(client: LibClient?): TypeSafeJevGateway = TypeSafeJevGateway(client, null)
     }
 }

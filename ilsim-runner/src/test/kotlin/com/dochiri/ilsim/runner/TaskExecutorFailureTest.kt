@@ -14,7 +14,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** 실제 git 저장소와 워크트리를 쓰되 Claude 와 AI 호출만 가짜로 바꿔 실패 경로를 확인한다. */
 class TaskExecutorFailureTest {
 
     private class Sink : TaskSink {

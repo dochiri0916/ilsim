@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# 서버(8080) + 웹(5173) 실행. --tunnel 을 주면 Cloudflare Quick Tunnel로 웹을 외부 공개한다.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="${TMPDIR:-/tmp}/ilsim-dev"

@@ -13,7 +13,6 @@ import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
-/** 비밀 값 등록·조회. 저장은 암호화해서 하고, 조회는 짧게 메모리에 캐시해 DB 를 매번 읽지 않는다. */
 class SecretService(
     private val repository: SecretRepository,
     private val encryptor: SecretEncryptor,
@@ -48,7 +47,6 @@ class SecretService(
         val now = clock.instant()
         cache[name]?.let { if (Duration.between(it.loadedAt, now) < CACHE_TTL) return it }
         val stored: StoredSecret? = guarded { repository.find(name) }
-        // 복호화 실패는 DB 문제가 아니라 마스터 키 문제라 그대로 올린다.
         val fresh = Cached(stored?.let { encryptor.decrypt(name, it.cipherText) }, stored?.updatedAt, now)
         cache[name] = fresh
         return fresh

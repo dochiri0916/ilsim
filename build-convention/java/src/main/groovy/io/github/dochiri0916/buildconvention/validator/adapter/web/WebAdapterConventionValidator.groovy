@@ -3,7 +3,6 @@ package io.github.dochiri0916.buildconvention.validator.adapter.web
 import io.github.dochiri0916.buildconvention.source.java.JavaSourceAstInspector
 import io.github.dochiri0916.buildconvention.validator.domain.collection.ImmutableCollectionConventionValidator
 
-/** Web contracts are inspected as declarations, never annotation-looking comments. */
 final class WebAdapterConventionValidator {
     static List<String> validate(String path, String packageName,
                                  JavaSourceAstInspector.TypeModel type, Set<String> imports) {
@@ -59,7 +58,6 @@ final class WebAdapterConventionValidator {
         return violations
     }
 
-    /** package-structure: 조회 결과 DTO(`CategorySummary` 등)도 `port.in.result`에 두므로 접미사 대신 패키지로 Result 계약을 판단한다. */
     private static boolean isResultContract(String parameterType, Set<String> imports) {
         if (parameterType.endsWith('Result')) return true
         String outer = parameterType.tokenize('.').find { it ==~ /[A-Z].*/ }

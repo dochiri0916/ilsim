@@ -1,6 +1,5 @@
 package com.dochiri.ilsim.task.domain.vo
 
-/** Runner 에 배정된 횟수. 사람이 개입하면 0으로 돌아간다. */
 @JvmInline
 value class RunCount private constructor(val value: Int) {
     init {

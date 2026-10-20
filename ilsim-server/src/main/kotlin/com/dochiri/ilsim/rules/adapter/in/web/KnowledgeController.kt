@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
-/** 프로젝트의 규칙(아키텍처·컨벤션)과 검증된 학습을 보고 승인·거절한다. */
 @RestController
 class KnowledgeController(private val knowledge: KnowledgeUseCase) {
 

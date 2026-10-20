@@ -4,7 +4,6 @@ import io.github.dochiri0916.buildconvention.context.BoundedContexts
 import io.github.dochiri0916.buildconvention.source.java.SourceTypeIndex
 import org.gradle.api.Project
 
-/** Static messaging contracts; delivery guarantees are separately reported as runtime review obligations. */
 final class MessagingConventionValidator {
     private static final Map<String, String> ENVELOPE = [eventId: 'String', source: 'String', eventType: 'String',
             aggregateId: 'String', sequence: 'long', occurredAt: 'Instant', payload: 'String']

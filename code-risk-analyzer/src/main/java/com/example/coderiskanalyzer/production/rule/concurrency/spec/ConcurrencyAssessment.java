@@ -6,7 +6,6 @@ import java.util.Objects;
 import com.example.coderiskanalyzer.production.finding.Evidence;
 import com.example.coderiskanalyzer.production.model.SourceLocation;
 
-/** A rule-scoped assessment, including proofs that must not become warning findings. */
 public record ConcurrencyAssessment(String ruleId, String specificationRuleId, String declaration,
                                     String subject, List<String> evidencePath, ConcurrencyOutcome outcome,
                                     SourceLocation location, List<Evidence> evidence, List<String> assumptions,

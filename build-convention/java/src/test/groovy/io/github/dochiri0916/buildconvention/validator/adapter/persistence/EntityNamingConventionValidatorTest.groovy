@@ -15,7 +15,6 @@ class EntityNamingConventionValidatorTest {
     @Test
     @DisplayName('JPA Entity 타입은 Entity 접미사를 사용한다')
     void rejectsJpaEntityWithoutEntitySuffix() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderRecord.java', '''
                 package com.example.order.adapter.out.persistence;
@@ -29,20 +28,17 @@ class EntityNamingConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = EntityNamingConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains("JPA entity 'OrderRecord' must end with Entity") }
     }
 
     @Test
     @DisplayName('같은 파일의 보조 top-level Entity 타입도 이름 규칙으로 검증한다')
     void validatesSecondaryTopLevelEntityInSameFile() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
                 package com.example.order.adapter.out.persistence;
@@ -61,20 +57,17 @@ class EntityNamingConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = EntityNamingConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains("JPA entity 'HiddenRecord' must end with Entity") }
     }
 
     @Test
     @DisplayName('Domain Entity와 Table annotation 누락을 함께 거부한다')
     void rejectsDomainEntityWithoutTableAnnotation() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/domain/model/OrderEntity.java', '''
                 package com.example.order.domain.model;
@@ -86,13 +79,11 @@ class EntityNamingConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = EntityNamingConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains('uses @Entity in domain package') }
         assert violations.any { it.contains("entity 'OrderEntity' must declare @Table") }
     }
@@ -100,7 +91,6 @@ class EntityNamingConventionValidatorTest {
     @Test
     @DisplayName('Entity record도 AST에서 타입 이름과 Table annotation을 인식한다')
     void acceptsEntityRecordParsedByAst() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
                 package com.example.order.adapter.out.persistence;
@@ -114,20 +104,17 @@ class EntityNamingConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = EntityNamingConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('Table annotation을 선택 사항으로 설정하면 올바른 Entity를 허용한다')
     void acceptsEntityWithoutTableWhenTableAnnotationIsOptional() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
                 package com.example.order.adapter.out.persistence;
@@ -141,17 +128,14 @@ class EntityNamingConventionValidatorTest {
         HexagonalConventionExtension convention = new HexagonalConventionExtension()
         convention.requireTableAnnotation = false
 
-        // when
         List<String> violations = EntityNamingConventionValidator.validate(project, convention)
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('줄바꿈된 fully-qualified Entity annotation도 Domain 배치 위반으로 거부한다')
     void rejectsMultilineQualifiedEntityAnnotationInDomain() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/domain/model/OrderEntity.java', '''
                 package com.example.order.domain.model;
@@ -165,13 +149,11 @@ class EntityNamingConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = EntityNamingConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains('uses @Entity in domain package') }
         assert !violations.any { it.contains('must declare @Table') }
     }
@@ -179,7 +161,6 @@ class EntityNamingConventionValidatorTest {
     @Test
     @DisplayName('outbox inbox 패키지의 Entry Entity는 Entry 접미사를 허용하고 그 밖에서는 거부한다')
     void allowsEntrySuffixOnlyInOutboxAndInboxPackages() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         writeJava(project, 'com/example/order/adapter/out/persistence/outbox/OrderOutboxEntry.java', '''
                 package com.example.order.adapter.out.persistence.outbox;
@@ -204,10 +185,8 @@ class EntityNamingConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = EntityNamingConventionValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("'OrderOutboxEntry'") }
         assert violations.any { it.contains("JPA entity 'OrderEntry' must end with Entity") }
     }

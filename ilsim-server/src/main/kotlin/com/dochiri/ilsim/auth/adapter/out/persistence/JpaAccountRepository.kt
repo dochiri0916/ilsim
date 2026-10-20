@@ -5,7 +5,6 @@ import com.dochiri.ilsim.auth.domain.Account
 import java.util.concurrent.atomic.AtomicBoolean
 import org.springframework.jdbc.core.JdbcTemplate
 
-/** MySQL `accounts` 테이블. 테이블은 처음 쓸 때 만든다. */
 class JpaAccountRepository(
     private val jdbc: JdbcTemplate,
     private val accounts: AccountJpaRepository,

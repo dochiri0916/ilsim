@@ -7,7 +7,6 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** A deterministic, bounded project call graph; unresolved library calls are represented as external nodes. */
 public record CallGraph(Map<String, Set<String>> outgoing, Map<String, Set<String>> incoming) {
 
     public CallGraph {

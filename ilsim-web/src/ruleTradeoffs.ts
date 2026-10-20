@@ -1,4 +1,3 @@
-/** 규칙을 승인(적용)했을 때의 장단점. 규칙 종류(kind)별 고정 설명이다. */
 export interface Tradeoff { pro: string; con: string }
 
 const RULES: Record<string, Tradeoff> = {

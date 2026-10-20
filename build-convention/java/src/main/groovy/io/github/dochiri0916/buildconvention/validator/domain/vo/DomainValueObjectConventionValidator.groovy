@@ -5,7 +5,6 @@ import io.github.dochiri0916.buildconvention.source.java.SourceInspector
 import java.util.regex.Pattern
 import org.gradle.api.Project
 
-/** Structural domain rules; business meaning and invariant completeness still require review. */
 final class DomainValueObjectConventionValidator {
     private DomainValueObjectConventionValidator() {
     }
@@ -151,7 +150,6 @@ final class DomainValueObjectConventionValidator {
     }
 
     private static String code(String body) {
-        // Match strings before comments so comment markers inside literals cannot hide code.
         (body ?: '').replaceAll(/(?s)""".*?"""|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\*.*?\*\/|\/\/[^\r\n]*/, ' ')
     }
 }

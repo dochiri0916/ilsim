@@ -11,7 +11,6 @@ class JavaSourceAstInspectorTest {
     @Test
     @DisplayName('주석으로 우회할 수 없는 final 파라미터와 분기 깊이를 AST에서 읽는다')
     void reads_parameter_modifiers_and_control_flow() {
-        // given
         File file = new File(tempDir, 'Example.java')
         file.text = '''
             public final class Example {
@@ -24,12 +23,10 @@ class JavaSourceAstInspectorTest {
             }
         '''
 
-        // when
         def inspection = JavaSourceAstInspector.inspect(file)
         def method = inspection.primaryType().methods.find { it.name == 'execute' }
         def plain = inspection.primaryType().methods.find { it.name == 'plain' }
 
-        // then
         assert inspection.valid
         assert method.parameterNames == ['input', 'page']
         assert method.finalParameters == [true, false]
@@ -42,7 +39,6 @@ class JavaSourceAstInspectorTest {
     @Test
     @DisplayName('sealed permits와 요청 파라미터 어노테이션을 실제 선언에서 읽는다')
     void reads_permits_and_parameter_annotations() {
-        // given
         File file = new File(tempDir, 'Example.java')
         file.text = '''
             public abstract sealed class Example permits FirstFailure, example.SecondFailure {
@@ -52,11 +48,9 @@ class JavaSourceAstInspectorTest {
                     /* @jakarta.validation.Valid */ final String hint) {}
             }
         '''
-        // when
         def inspection = JavaSourceAstInspector.inspect(file)
         def type = inspection.primaryType()
         def method = type.methods.find { it.name == 'execute' }
-        // then
         assert inspection.valid
         assert type.permittedTypes == ['FirstFailure', 'example.SecondFailure']
         assert method.parameterAnnotations.first()*.qualifiedName == [
@@ -67,7 +61,6 @@ class JavaSourceAstInspectorTest {
     @Test
     @DisplayName('모든 제어 구조를 읽고 본문 없는 인터페이스도 허용한다')
     void reads_loops_switch_try_and_bodyless_methods() {
-        // given
         File file = new File(tempDir, 'Example.java')
         file.text = '''
             public interface Example {
@@ -83,10 +76,8 @@ class JavaSourceAstInspectorTest {
             }
         '''
 
-        // when
         def inspection = JavaSourceAstInspector.inspect(file)
 
-        // then
         assert inspection.valid
         assert inspection.primaryType().methods.find { it.name == 'execute' }.controlDepth == 0
         assert inspection.primaryType().methods.find { it.name == 'loops' }.controlDepth == 1
@@ -94,13 +85,10 @@ class JavaSourceAstInspectorTest {
     @Test
     @DisplayName('실제 파일 없이 전달된 스냅샷을 파싱하고 Unicode와 구문 오류도 판정한다')
     void parsesImmutableSourceSnapshots() {
-        // given
         String source = 'package sample; public class Snapshot { private final String value = "한글"; }'
 
-        // when
         def inspected = JavaSourceAstInspector.inspectSource('folder with spaces/Snapshot.java', source)
 
-        // then
         assert inspected.valid
         assert inspected.primaryType().qualifiedName == 'sample.Snapshot'
         assert inspected.primaryType().fields.first().literalInitializer == '한글'

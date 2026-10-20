@@ -1,6 +1,5 @@
 package com.dochiri.ilsim.runner
 
-/** 단계별 변경 허용 범위와 산출물 검사. Claude의 판단이 아니라 Runner가 diff로 직접 강제한다. */
 object Gate {
 
     private val testPathPatterns = listOf(
@@ -20,7 +19,6 @@ object Gate {
 
     fun testSpecPath(feature: String) = "specs/$feature/test-spec.md"
 
-    /** 변경된 파일이 단계의 허용 범위를 벗어나면 위반 사유 목록을 돌려준다. 비어 있으면 통과. */
     fun pathViolations(stage: String, feature: String, changed: List<String>): List<String> {
         if (changed.isEmpty()) return listOf("변경된 파일이 없습니다")
         return when (stage) {
@@ -36,7 +34,6 @@ object Gate {
         }
     }
 
-    /** 요구사항의 모든 REQ-n 이 테스트 케이스 문서에 연결되어 있는지 확인한다. */
     fun traceabilityViolations(requirements: String, testSpec: String): List<String> {
         val reqs = Regex("""REQ-\d+""").findAll(requirements).map { it.value }.toSortedSet()
         if (reqs.isEmpty()) return listOf("요구사항 문서에 REQ-n 항목이 없습니다")
@@ -47,17 +44,14 @@ object Gate {
         return out
     }
 
-    /** 요구사항 단계에서 Claude 가 질문에 답만 했다는 표시. 서버 PromptTemplates.ANSWERED_MARK 와 같아야 한다. */
     const val ANSWERED_MARK = "[ILSIM:ANSWERED]"
 
-    /** 코드를 쓰는 단계는 프로젝트 테스트 명령도 허용한다. 도구 목록을 깨뜨릴 수 있는 문자(쉼표·괄호)가 있으면 넣지 않는다. */
     fun allowedTools(stage: String, testCommand: String? = null): String = when (stage) {
         "REQUIREMENTS", "TEST_CASES" -> "Read,Glob,Grep,Write,Edit"
         else -> "Read,Glob,Grep,Write,Edit,Bash(./gradlew:*),Bash(python3:*),Bash(git status:*),Bash(git diff:*)" +
             (testCommand?.trim()?.takeIf { it.isNotEmpty() && it.none { c -> c in ",()" } }?.let { ",Bash($it:*)" } ?: "")
     }
 
-    /** Claude 가 끝내기 전에 직접 테스트를 돌려 보고 결과를 설명하게 하는 지시. Runner 는 끝난 뒤 같은 명령으로 다시 검증한다. */
     fun selfCheck(stage: String, testCommand: String): String? = when (stage) {
         "TEST_CODE" -> """
             ## 직접 확인

@@ -2,7 +2,6 @@ package com.dochiri.ilsim.runner.risk
 
 import com.dochiri.ilsim.runner.convention.ConvFile
 
-/** 외부 시스템 장애가 번지지 않도록 하는 장치(서킷브레이커, 타임아웃, 백오프, DLQ)가 있는지 본다. */
 internal object ResilienceDetectors {
     private val httpClientType = Regex("""(RestTemplate|RestClient|WebClient|HttpClient|OkHttpClient|Feign\w*|\w+Client)\b""")
     private val messagingType = Regex("""Kafka|Rabbit|Jms|Redis|Mongo|Elasticsearch|S3|Dynamo|Sqs|Sns""", RegexOption.IGNORE_CASE)
@@ -43,7 +42,6 @@ internal object ResilienceDetectors {
         }
     }
 
-    /** 파일 안에서 HTTP 클라이언트를 만드는데 타임아웃 설정이 한 번도 없으면 알린다. */
     fun file(f: ConvFile, out: MutableList<Hit>) {
         val text = stripLiterals(f.lines.joinToString("\n"))
         val creation = clientCreation.find(text) ?: return

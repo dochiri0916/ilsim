@@ -7,10 +7,6 @@ import java.time.Instant
 
 enum class AnalysisStatus { REQUESTED, RUNNING, DONE, FAILED }
 
-/**
- * 웹에서 요청한 프로젝트 분석(아키텍처·컨벤션 규칙 추출). REQUESTED → RUNNING(Runner 가 가져감) → DONE / FAILED.
- * 규칙 자체는 Runner 가 `~/.ilsim/projects/<id>` 에 쓰고, 여기에는 진행 상태와 사람이 읽는 보고서만 둔다.
- */
 data class Analysis(
     val projectId: String,
     val status: AnalysisStatus,
@@ -30,7 +26,6 @@ data class Analysis(
         return copy(status = if (passed) AnalysisStatus.DONE else AnalysisStatus.FAILED, finishedAt = now, report = report, error = error)
     }
 
-    /** Runner 가 죽어 결과를 못 보낸 분석은 [STALE] 이 지나면 다시 요청할 수 있다. */
     fun inProgress(now: Instant): Boolean = when (status) {
         AnalysisStatus.REQUESTED -> true
         AnalysisStatus.RUNNING -> startedAt == null || Duration.between(startedAt, now) < STALE
@@ -40,7 +35,6 @@ data class Analysis(
     companion object {
         val STALE: Duration = Duration.ofMinutes(30)
 
-        /** 이미 진행 중이면 거절한다. 끝난 분석은 새 요청으로 덮어쓴다. */
         fun request(projectId: String, previous: Analysis?, now: Instant): Analysis {
             if (projectId.isBlank()) throw InvalidRuleRequestException("프로젝트 id 가 비어 있습니다")
             if (previous != null && previous.inProgress(now)) throw AnalysisInProgressException(projectId)

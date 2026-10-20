@@ -63,7 +63,6 @@ public class BaselineService {
         Path root = projectRoot.toAbsolutePath().normalize();
         return findings.stream().filter(finding -> {
             String fingerprint = FindingFingerprint.stableOf(root, finding);
-            // New entries use semantic identity exclusively; old v1 entries still match their legacy identity.
             boolean legacyMatch = legacy.contains(FindingFingerprint.of(root, finding));
             return fingerprint == null ? !existing.contains(FindingFingerprint.of(root, finding))
                     : !stable.contains(fingerprint) && !legacyMatch;

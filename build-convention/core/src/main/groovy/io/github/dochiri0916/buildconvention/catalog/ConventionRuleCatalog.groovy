@@ -1,6 +1,5 @@
 package io.github.dochiri0916.buildconvention.catalog
 
-/** Stable identifiers for convention violations. Message wording may evolve without changing rule identity. */
 final class ConventionRuleCatalog {
     private ConventionRuleCatalog() {
     }
@@ -41,7 +40,6 @@ final class ConventionRuleCatalog {
         return matched?.id ?: 'ARCH-GENERAL'
     }
 
-    /** Violation messages start with a source path; its directory and file names must not drive classification. */
     private static String withoutLeadingPath(String violation) {
         violation.replaceFirst(/^\S*\.(?:java|groovy|kt|sql|xml|gradle)\b\S*\s*/, '')
     }

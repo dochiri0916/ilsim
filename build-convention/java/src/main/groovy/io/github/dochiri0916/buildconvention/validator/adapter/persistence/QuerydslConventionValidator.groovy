@@ -8,9 +8,7 @@ import java.beans.Introspector
 import java.util.regex.Pattern
 import org.gradle.api.Project
 
-/** Querydsl stays behind storage adapters; inspect calls rather than source-looking strings. */
 final class QuerydslConventionValidator {
-    /** Git is inspected read-only; source archives without a working tree have no index to audit. */
     static List<String> validateTrackedSources(Project project) {
         File ancestor = project.projectDir.canonicalFile
         while (ancestor != null && !new File(ancestor, '.git').exists()) ancestor = ancestor.parentFile
@@ -25,7 +23,6 @@ final class QuerydslConventionValidator {
         if (tracked.exitValue != 0) return ["Querydsl tracked Q source audit could not inspect Git index"]
         List<String> violations = []
         tracked.stdout.split('\u0000').findAll { !it.empty }.each { relative ->
-            // Git paths from a subproject are relative to that directory; :./ anchors the index lookup.
             def blob = ChangedCodeCoverageValidator.runProcess(
                     ['git', '-C', project.projectDir.absolutePath, 'show', ':./' + relative], project.projectDir)
             if (blob.exitValue != 0) {
@@ -215,7 +212,6 @@ final class QuerydslConventionValidator {
             def target = type.methods.find { it.name == helper.group(1) && it.parameterTypes.empty }
             if (target != null) {
                 def returned = JavaLexicalScanner.codeOnly(target.codeBody) =~ /\breturn\s+([^;]+);/
-                // All return paths must identify a unique key, not just one branch.
                 boolean found = false
                 while (returned.find()) {
                     found = true
@@ -288,7 +284,6 @@ final class QuerydslConventionValidator {
     private static boolean unsafeOffsetProduct(String expression, JavaSourceAstInspector.MethodModel method) {
         String code = JavaLexicalScanner.codeOnly(expression)
         if (!code.contains('*')) return false
-        // A cast of the completed product is too late: int arithmetic has already overflowed.
         String withoutLateCast = code.replaceFirst(/^\s*\(long\)\s*\((.*\*.*)\)\s*$/, '$1')
         String firstProduct = withoutLateCast.split('\\*', 3).take(2).join('*')
         if ((firstProduct =~ /\(long\)\s*\w+/).find()

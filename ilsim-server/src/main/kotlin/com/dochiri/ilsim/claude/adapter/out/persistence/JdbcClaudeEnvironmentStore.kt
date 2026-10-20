@@ -6,7 +6,6 @@ import java.sql.Timestamp
 import java.util.concurrent.atomic.AtomicBoolean
 import org.springframework.jdbc.core.JdbcTemplate
 
-/** MySQL `claude_environment` 테이블(한 행). 테이블은 처음 쓸 때 만든다. */
 class JdbcClaudeEnvironmentStore(private val jdbc: JdbcTemplate) : ClaudeEnvironmentStore {
     private val ready = AtomicBoolean(false)
 

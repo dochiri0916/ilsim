@@ -25,8 +25,6 @@ public class SymbolSolverFactory {
             try {
                 solver.add(new JavaParserTypeSolver(root));
             } catch (java.io.UncheckedIOException unreadable) {
-                // An unreadable directory under this root must not abort the scan; calls into it stay unresolved
-                // and are handled conservatively. Source discovery reports the unreadable path as SOURCE-002.
             }
         }
         for (Path entry : classpath.stream().distinct().toList()) {
@@ -40,10 +38,6 @@ public class SymbolSolverFactory {
         return solver;
     }
 
-    /**
-     * Copies a class directory's .class files into a temporary JAR so the same bytecode reader resolves them; the
-     * classes are read, never loaded or run.
-     */
     private Path packClasses(Path directory) throws IOException {
         Path jar = Files.createTempFile("code-risk-classes-", ".jar");
         jar.toFile().deleteOnExit();

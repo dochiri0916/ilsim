@@ -4,7 +4,6 @@ import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
-/** `gradle/libs.versions.toml` 의 최소 해석. 별칭은 `-`, `_` 를 `.` 으로 정규화해 `libs.a.b` 참조와 맞춘다. */
 internal class Catalog(
     val libraries: Map<String, Pair<String, String?>>,
     val plugins: Map<String, Pair<String, String?>>,
@@ -61,7 +60,6 @@ internal class Catalog(
         }
     }
 
-    /** `libs.foo.bar.get()` 같은 참조에서 별칭과 일치하는 가장 긴 접두사를 찾는다. */
     fun <T> resolve(table: Map<String, T>, reference: String): T? {
         val parts = reference.split('.')
         for (n in parts.size downTo 1) table[parts.take(n).joinToString(".")]?.let { return it }

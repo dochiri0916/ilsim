@@ -4,7 +4,6 @@ import com.dochiri.ilsim.runner.convention.ConvFile
 import com.dochiri.ilsim.runner.risk.Detectors.braceBlock
 import com.dochiri.ilsim.runner.risk.Detectors.remoteType
 
-/** 싱글톤·static·공유 객체에서 생기는 JVM 수준 동시성 문제를 본다. */
 internal object ConcurrencyDetectors {
     private val safeShared = Regex("""\b(Atomic\w+|Concurrent\w+|ThreadLocal|CopyOnWrite\w+|\w*Lock|Semaphore|LongAdder|Mutex|Collections\.synchronized\w+|synchronized\w+)\b""")
     private val injected = setOf("Autowired", "Value", "Inject", "Resource", "PersistenceContext", "MockBean", "Mock")
@@ -25,7 +24,6 @@ internal object ConcurrencyDetectors {
         val remoteFields = allFields.filter { remoteType.containsMatchIn(it.type) }
         val pairs = mutableListOf<Triple<Pair<String, String>, Member, Int>>()
 
-        // 공유 필드 선언
         for (fld in ownFields + c.ctorFields) {
             if (fld.annotations.any { it in injected } || safeShared.containsMatchIn(fld.type)) continue
             val isStatic = "static" in fld.modifiers && "final" !in fld.modifiers
@@ -90,7 +88,6 @@ internal object ConcurrencyDetectors {
                 }
             }
 
-            // 락 순서와 동기화 대상
             for (outer in syncBlock.findAll(m.body)) {
                 val outerArg = outer.groupValues[1].trim()
                 val block = braceBlock(m.body, outer.range.last)
@@ -147,7 +144,6 @@ internal object ConcurrencyDetectors {
         return if (finallies.any { Regex("""\bunlock\s*\(""").containsMatchIn(it) }) null else lock.range.first
     }
 
-    /** Kotlin `companion object` 안의 변경 가능한 상태(= Java static). */
     fun companions(f: ConvFile, out: MutableList<Hit>) {
         if (f.lang != "kotlin") return
         val text = stripLiterals(f.lines.joinToString("\n"))

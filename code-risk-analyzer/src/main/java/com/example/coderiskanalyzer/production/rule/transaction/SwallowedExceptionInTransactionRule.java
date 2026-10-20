@@ -78,7 +78,6 @@ public class SwallowedExceptionInTransactionRule implements RiskRule {
         return !unsafeReturn[0] && remaining.stream().allMatch(Boolean::booleanValue);
     }
 
-    /** Each normal exit must mark rollback; throws only protect the paths that actually execute them. */
     private List<Boolean> catchPaths(com.github.javaparser.ast.stmt.Statement statement,
                                       List<Boolean> states, boolean[] unsafeReturn) {
         if (states.isEmpty()) return states;
@@ -107,7 +106,6 @@ public class SwallowedExceptionInTransactionRule implements RiskRule {
             var call = statement.asExpressionStmt().getExpression().asMethodCallExpr();
             if (call.getNameAsString().equals("setRollbackOnly") && call.getArguments().isEmpty()) return List.of(true);
         }
-        // Loops, nested try/catch and deferred lambdas do not prove an escaping throw or rollback.
         return states;
     }
 }

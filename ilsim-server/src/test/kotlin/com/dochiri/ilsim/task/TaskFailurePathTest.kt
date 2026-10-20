@@ -18,7 +18,6 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
-/** 정상 흐름이 아닌 요청(잘못된 순서, 없는 작업, 중복 보고, 다른 Runner)이 상태를 망가뜨리지 않는지 본다. */
 class TaskFailurePathTest {
 
     private val demo = Project("demo", "demo", null)

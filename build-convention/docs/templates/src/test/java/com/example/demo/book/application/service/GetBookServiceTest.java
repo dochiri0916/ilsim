@@ -21,13 +21,10 @@ class GetBookServiceTest {
     @Test
     @DisplayName("저장된 도서를 ID로 조회한다")
     void findsBook() {
-        // given
         final Book book = repository.create(Book.create(Isbn.of("9788966260959"), BookTitle.of("클린 코드")));
 
-        // when
         final GetBookResult result = service.getBook(new GetBookQuery(book.id().value()));
 
-        // then
         assertThat(result.bookId()).isEqualTo(book.id().value());
         assertThat(result.isbn()).isEqualTo("9788966260959");
         assertThat(result.title()).isEqualTo("클린 코드");
@@ -36,10 +33,8 @@ class GetBookServiceTest {
     @Test
     @DisplayName("없는 도서를 조회하면 예외가 발생한다")
     void notFound() {
-        // given
         final String bookId = "01900000-0000-7000-8000-000000000099";
 
-        // when & then
         assertThatThrownBy(() -> service.getBook(new GetBookQuery(bookId)))
                 .isInstanceOf(BookNotFoundException.class)
                 .hasMessage("도서를 찾을 수 없습니다.");

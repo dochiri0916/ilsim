@@ -45,7 +45,7 @@ class KnowledgeFilesTest {
             listOf(rule("a"), rule("b")), emptyList(),
         )
         val reviewed = model.copy(rules = model.rules.map { it.copy(approved = true, decidedBy = "ai-review") })
-        val saved = RuleApproval.reject(model, listOf("a")) // 검토 중 웹에서 거절
+        val saved = RuleApproval.reject(model, listOf("a"))
 
         val merged = RuleApproval.keepUserDecisions(saved, reviewed)
         assertEquals(listOf(false to true, true to false), merged.rules.map { it.approved to it.rejected })

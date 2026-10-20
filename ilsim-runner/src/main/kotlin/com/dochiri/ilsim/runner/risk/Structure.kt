@@ -3,7 +3,6 @@ package com.dochiri.ilsim.runner.risk
 import com.dochiri.ilsim.runner.convention.ConvFile
 import com.dochiri.ilsim.runner.convention.Decl
 
-/** 클래스 멤버 하나. kind: func | field. body 는 주석·문자열을 지운 본문이며 위치 계산용 [bodyLine] 은 본문 첫 줄 번호다. */
 internal class Member(
     val kind: String,
     val name: String,
@@ -28,13 +27,11 @@ internal class Cls(
     val kind: String = "class",
     val modifiers: Set<String> = emptySet(),
 ) {
-    /** 클래스 전체를 대신하는 검색용 텍스트: 이름·타입·본문. */
     val text: String get() = (ctorFields + members).joinToString("\n") { "${it.name} ${it.type} ${it.body}" }
     val funcs get() = members.filter { it.kind == "func" }
     val fields get() = ctorFields + members.filter { it.kind == "field" }
 }
 
-/** 주석과 문자열·문자 리터럴을 공백으로 바꾼다(줄바꿈과 길이는 유지). 중괄호 짝 맞추기와 패턴 검색을 안전하게 하기 위함이다. */
 internal fun stripLiterals(text: String): String {
     val out = StringBuilder(text.length)
     var i = 0
@@ -158,7 +155,6 @@ internal object StructureParser {
         return Cls(t.name, t.line, t.annotations, members, ctor, kind, mods)
     }
 
-    /** 줄바꿈 뒤에도 클래스 선언이 이어지는지: 본문 `{`, 상속·구현, Kotlin 상위 타입(`:`)이면 이어진다. */
     private fun continuesHeader(text: String, from: Int): Boolean {
         var i = from
         while (i < text.length && text[i].isWhitespace()) i++
@@ -166,7 +162,6 @@ internal object StructureParser {
         return text[i] == '{' || text[i] == ':' || text.startsWith("extends", i) || text.startsWith("implements", i) || text.startsWith("where", i) || text.startsWith("permits", i)
     }
 
-    /** 함수 본문(중괄호 또는 `=` 식)을 돌려준다. 두 번째 값은 본문이 끝나는 줄 인덱스. */
     private fun bodyOf(text: String, lines: List<String>, starts: IntArray, depth: IntArray, li: Int, memberDepth: Int): Pair<String, Int> {
         var parens = 0
         var pos = starts[li]

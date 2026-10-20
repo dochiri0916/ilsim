@@ -29,11 +29,9 @@ import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.ThrowStmt;
 
-/** Conservative, intraprocedural path analysis for a specific security sink. */
 public final class SecurityProtectionDetector {
     private SecurityProtectionDetector() {}
 
-    // Without a sink, execution order cannot be established. Retained for API compatibility.
     public static boolean hasPathContainmentGuard(MethodDeclaration method, String sourceVariable) {
         return false;
     }
@@ -88,7 +86,6 @@ public final class SecurityProtectionDetector {
 
         Expression value(Expression expression) {
             Expression result = expression.clone();
-            // Distinct helper evaluations are not aliases, even when their text is identical.
             for (MethodCallExpr call : result.findAll(MethodCallExpr.class)) {
                 if (!Set.of("of", "create", "resolve", "normalize", "toRealPath", "getHost",
                         "toString", "toASCIIString", "toURL").contains(call.getNameAsString())
@@ -97,7 +94,6 @@ public final class SecurityProtectionDetector {
                             + "__evaluation_" + range.begin.line + "_" + range.begin.column));
                 }
             }
-            // Values stored in the environment are snapshots, so substitution is one pass.
             if (result instanceof NameExpr name) return values.getOrDefault(name.getNameAsString(), result).clone();
             for (NameExpr name : new ArrayList<>(result.findAll(NameExpr.class))) {
                 Expression replacement = values.get(name.getNameAsString());
@@ -163,7 +159,6 @@ public final class SecurityProtectionDetector {
             }
             if (statement instanceof ExpressionStmt expressionStmt) {
                 if (contains(statement, sink)) {
-                    // An assignment or another call in the same expression has unspecified effects.
                     if (!statement.findAll(AssignExpr.class).isEmpty()) protectedOnEveryPath = false;
                     visitSink(states);
                     return List.of();
@@ -176,8 +171,6 @@ public final class SecurityProtectionDetector {
                 return List.of();
             }
             if (statement instanceof EmptyStmt) return states;
-            // Loops, try/catch/finally, switch, synchronized and nested executable scopes
-            // require additional control-flow semantics; never use them as proof of protection.
             if (contains(statement, sink)) {
                 reached = true;
                 protectedOnEveryPath = false;
@@ -208,7 +201,6 @@ public final class SecurityProtectionDetector {
                 state.guards.clear();
                 state.values.put(name.getNameAsString(), value);
             } else {
-                // Unknown mutations and helper calls cannot preserve a proof of validation.
                 state.guards.clear();
                 boolean knownSink = expression instanceof MethodCallExpr call
                         && (call.getNameAsString().startsWith("read") || call.getNameAsString().startsWith("write")
@@ -245,7 +237,6 @@ public final class SecurityProtectionDetector {
                     && call.getArguments().size() == 1) {
                 Expression scope = state.value(call.getScope().get());
                 Expression argument = state.value(call.getArgument(0));
-                // Without normalize()/toRealPath(), "../" segments pass startsWith() containment checks.
                 if (!host && call.getNameAsString().equals("startsWith") && referencesSource(scope)
                         && normalizesResult(scope)
                         && !referencesSource(argument) && isPath(call.getScope().get()) && isPath(call.getArgument(0))) {
@@ -262,7 +253,6 @@ public final class SecurityProtectionDetector {
             }
         }
 
-        /** True when the value's own call chain (not an input it was built from) ends in normalize()/toRealPath(). */
         boolean normalizesResult(Expression expression) {
             for (Expression current = unwrap(expression); current instanceof MethodCallExpr call;
                  current = call.getScope().map(SecurityProtectionDetector::unwrap).orElse(null)) {
@@ -315,7 +305,6 @@ public final class SecurityProtectionDetector {
             } else arguments = ((ObjectCreationExpr) sink).getArguments().stream().limit(1).toList();
             for (State state : states) {
                 boolean checked = false;
-                // Every source-dependent argument must refer to a validated value (copy/move included).
                 for (Expression argument : arguments) {
                     Expression value = state.value(argument);
                     if (value.findAll(NameExpr.class).stream().noneMatch(name -> inputs.contains(name.getNameAsString()))) continue;

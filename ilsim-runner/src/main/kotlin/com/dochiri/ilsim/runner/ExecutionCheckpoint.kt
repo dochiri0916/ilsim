@@ -38,7 +38,6 @@ class ExecutionCheckpoint(private val file: Path) {
     }
 }
 
-/** 호환용 실행별 비용도 세션 누적값의 차액으로 만든다. 서버는 원본 사용량으로 다시 검증한다. */
 class SessionCostLedger(private val directory: Path) {
     fun delta(call: AiUsage): Double? {
         val cost = call.costUsd?.takeIf { it.isFinite() && it >= 0 } ?: return null

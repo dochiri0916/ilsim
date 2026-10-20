@@ -7,7 +7,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/** claude stream-json 한 줄을 사람이 읽을 이벤트로 줄인다. (type, data)가 null이면 전송하지 않는다. */
 object StreamSummarizer {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -34,5 +33,4 @@ object StreamSummarizer {
     }
 }
 
-/** Claude 의 말은 사용자가 대화창에서 그대로 읽으므로(질문 답변 포함) 길게 둔다. 서버 이벤트 컬럼은 MEDIUMTEXT 다. */
 private const val MAX_TEXT_CHARS = 20_000

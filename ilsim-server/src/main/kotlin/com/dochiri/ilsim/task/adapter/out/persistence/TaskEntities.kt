@@ -9,7 +9,6 @@ import jakarta.persistence.Table
 import jakarta.persistence.Version
 import java.time.Instant
 
-/** 작업은 상태·시각만 컬럼으로 두고 본문은 JSON 사본 한 칼럼에 넣는다(단계 구조가 바뀌어도 마이그레이션이 필요 없다). */
 @Entity
 @Table(name = "tasks")
 final class TaskEntity private constructor(

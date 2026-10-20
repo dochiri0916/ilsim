@@ -14,7 +14,6 @@ class ModelSelector(
 ) {
     private var history: List<ExecutionRecord> = emptyList()
 
-    /** 웹에서 바꾸는 모델·추론 강도 조정. 다음 선택부터 적용된다. */
     @Volatile var adjustments: RoutingAdjustments = RoutingAdjustments()
 
     fun assessmentAvailable(): Boolean = assessor.isAvailable()

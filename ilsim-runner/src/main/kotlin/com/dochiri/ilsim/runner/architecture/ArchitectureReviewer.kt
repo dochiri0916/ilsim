@@ -10,10 +10,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 
-/**
- * 정적으로 채굴한 결과를 AI가 한 번 검토한다. 입력은 소스가 아니라 채굴 요약뿐이며,
- * 결과는 규칙 후보에 붙는 의견이다. 승인·거절과 위반 판정은 하지 않는다.
- */
 object ArchitectureReviewer {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -28,7 +24,6 @@ object ArchitectureReviewer {
         @kotlinx.serialization.Transient val completeFields: Boolean = false,
     )
 
-    /** 모델에서 AI에 보낼 요약을 결정론적으로 만든다. 승인 상태와 이전 의견은 넣지 않아 같은 구조면 해시가 같다. */
     fun summary(m: ArchitectureModel): String = buildString {
         appendLine("project=${m.projectName} files=${m.sourceFiles} layout=${m.layout.mode} root=${m.layout.rootPrefix}")
         if (m.layout.slices.isNotEmpty()) appendLine("slices=${m.layout.slices} layers=${m.layout.layerNames}")
@@ -64,14 +59,12 @@ object ArchitectureReviewer {
         ${summary(m)}
     """.trimIndent()
 
-    /** 프로젝트 문서가 있으면 목적별 기준과 발췌를 프롬프트에 넣는다. */
     internal fun docSection(docs: DocumentContext?): String =
         if (docs == null || docs.isEmpty) "" else
             "\n프로젝트 문서(${docs.purpose.label}) 검토 기준: ${docs.purpose.criteria}\n" +
                 "문서와 충돌하는 규칙은 verdict 를 SUSPECT 로 하고 reason 에 문서의 어떤 내용과 충돌하는지 쓰라. 문서에만 있고 규칙에 없는 항목은 missing 에 쓰라.\n\n${docs.text}"
 
 
-    /** 이미 같은 요약을 검토했으면 [ask]를 부르지 않고 그대로 돌려준다. */
     fun review(m: ArchitectureModel, reviewer: String, force: Boolean = false, docs: DocumentContext? = null, ask: (String) -> String): ArchitectureModel {
         val h = hash(m, docs, reviewer)
         if (!force && m.review?.modelHash == h) return m
@@ -84,7 +77,6 @@ object ArchitectureReviewer {
     }
 
     private fun ruleHashes(m: ArchitectureModel, docs: DocumentContext?, reviewer: String): Map<String, String> {
-        // 레이아웃·그래프와 모든 규칙의 정의는 공유 의존 근거다. 개별 관측만 바뀐 경우에만 범위를 좁힌다.
         val definitions = m.rules.map { it.copy(evidence = Evidence(0, 0), approved = false, rejected = false, decidedBy = null, review = null) }
         val common = "$reviewer/${ClaudeModels.EFFORT}/${com.dochiri.ilsim.runner.ReviewRouter.policyKey}/${docSection(docs)}/${summary(m.copy(rules = emptyList()))}/$definitions"
         return m.rules.associate { it.id to ReviewCache.digest("arch-rule-v1/$common/${it.copy(approved = false, rejected = false, decidedBy = null, review = null)}") }
@@ -107,7 +99,6 @@ object ArchitectureReviewer {
             opinion.rules.map { it.id }.toSet() == expected.toSet() &&
             opinion.rules.all { it.verdict in verdicts && it.reason.isNotBlank() }
 
-    /** AI 응답에서 첫 `{` 부터 마지막 `}` 까지를 JSON 으로 읽는다. */
     internal fun parseOpinion(response: String): Opinion {
         val start = response.indexOf('{')
         val end = response.lastIndexOf('}')

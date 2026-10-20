@@ -4,7 +4,6 @@ import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
-/** 같은 접속처에서 로그인에 연달아 실패하면 잠시 막는다. */
 class LoginThrottle(
     private val maxFailures: Int = MAX_FAILURES,
     private val lockFor: Duration = LOCK,
@@ -20,7 +19,6 @@ class LoginThrottle(
 
     fun recordFailure(key: String, now: Instant) {
         failures.merge(key, Failures(1, null)) { old, _ ->
-            // 잠금이 끝난 뒤의 실패는 처음부터 다시 센다.
             val expired = old.lockedUntil != null && !now.isBefore(old.lockedUntil)
             val count = if (expired) 1 else old.count + 1
             Failures(count, if (count >= maxFailures) now.plus(lockFor) else null)

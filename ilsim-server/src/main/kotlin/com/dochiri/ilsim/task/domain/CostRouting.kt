@@ -8,7 +8,6 @@ data class ModelOption(val tier: ModelTier, val effort: String) {
 
 data class CostRoute(val option: ModelOption, val expectedCostUsd: Double, val success: Double, val reason: String)
 
-/** 비용·품질 정책 버전은 실행 이력에 남는다. 이전 버전 선택으로 보정 적용을 되돌릴 수 있다. */
 data class CostRoutingPolicy(
     val version: String = "cost-v1",
     val minimumSamples: Int = 5,
@@ -21,7 +20,6 @@ data class CostRoutingPolicy(
 ) {
     fun choose(assessment: Assessment, minimum: ModelTier, chars: Int, history: List<ExecutionRecord>, workload: String, failed: Set<String> = emptySet(),
         adjustments: RoutingAdjustments = RoutingAdjustments()): CostRoute {
-        // 저장된 실행 이력을 주기적으로 비교한다. 비교 자체에는 추가 모델 호출이 없다.
         val cutoff = history.size / comparisonEvery.coerceAtLeast(1) * comparisonEvery.coerceAtLeast(1)
         val recent = history.take(cutoff).filter { it.workload == workload && it.completed && it.failureKind !in ENVIRONMENT_FAILURES }.takeLast(historyLimit)
         val control = recent.filter { sample -> options.firstOrNull { it.tier == ModelTier.of(sample.model) && it.effort == sample.effort }?.let { conservative(assessment, it) } == true }
@@ -31,9 +29,7 @@ data class CostRoutingPolicy(
             val evaluation = assessment.candidates.firstOrNull { ModelTier.of(it.model) == option.tier && it.effort == option.effort }
             if (evaluation != null && (!evaluation.success.isFinite() || evaluation.success !in 0.0..1.0 || !evaluation.uncertainty.isFinite() || evaluation.uncertainty !in 0.0..1.0)) return@mapNotNull null
             val conservative = conservative(assessment, option)
-            // 근거가 없는 조합은 검증된 보수적 범위만 허용한다.
             var success = evaluation?.let { (it.success - it.uncertainty).coerceIn(0.0, 1.0) } ?: if (conservative) 0.95 else 0.0
-            // 같은 계열의 이전 버전 이력도 이어받는다(새 버전을 바로 쓰기 위해).
             val samples = recent.filter { ModelTier.of(it.model) == option.tier && it.effort == option.effort && it.policyVersion == version }
             if (!allowUnverified && !conservative && samples.count { it.passed } < minimumSamples) return@mapNotNull null
             if (!allowUnverified && !conservative && (control.size < minimumSamples ||
@@ -42,7 +38,6 @@ data class CostRoutingPolicy(
                 val observed = (samples.count { it.passed } + success * 10) / (samples.size + 10.0)
                 success = observed
             }
-            // 사람이 정한 보정(예측이 실제보다 낙관적·비관적이던 만큼)을 마지막에 더한다.
             success = adjustments.adjust(option, success)
             if (success < qualityThreshold) return@mapNotNull null
             val measured = samples.mapNotNull { it.actualCostUsd }.takeIf { it.size >= minimumSamples }?.average()
@@ -64,7 +59,6 @@ data class CostRoutingPolicy(
     companion object {
         val ENVIRONMENT_FAILURES = setOf("ENVIRONMENT", "NETWORK", "AUTH", "STOPPED", "SESSION_MISSING")
         val efforts = listOf("low", "medium", "high", "xhigh", "max")
-        // Claude Code 2.1.302 / 5.5 세대 지원 정보. 지원 정보 변경 시 캐시와 정책 버전도 바꾼다.
         val options = ModelTier.entries.flatMap { tier -> efforts.map { ModelOption(tier, it) } }
         const val SUPPORT_VERSION = "claude-5.5-cli-2.1.302-v1"
 

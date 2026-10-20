@@ -35,7 +35,6 @@ public class SourceRootDetector {
 
                         @Override
                         public java.nio.file.FileVisitResult visitFileFailed(Path path, java.io.IOException failure) {
-                            // Unreadable entries are reported by SourceDiscoveryService when it walks the source roots.
                             return java.nio.file.FileVisitResult.CONTINUE;
                         }
                     });

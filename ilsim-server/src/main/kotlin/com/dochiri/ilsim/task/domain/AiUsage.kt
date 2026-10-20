@@ -1,6 +1,5 @@
 package com.dochiri.ilsim.task.domain
 
-/** 호출 원본과 집계 차액을 함께 보존한다. 비용 미확인은 0원이 아니다. */
 data class AiUsage(
     val id: String,
     val purpose: String,
@@ -35,12 +34,10 @@ data class AiUsage(
         if (!cumulative || sessionId == null) return counted.copy(chargedUsd = cost)
         val before = previous.filter { it.cumulative && it.sessionId == sessionId && it.model == model && it.status in setOf("CONFIRMED", "BASELINE") }
             .mapNotNull { it.costUsd }.maxOrNull() ?: 0.0
-        // 감소한 누적값은 오래된 결과 또는 세션 reset이다. 추가 과금으로 단정하지 않는다.
         return if (cost < before) counted.copy(chargedUsd = null, status = "UNKNOWN") else counted.copy(chargedUsd = cost - before)
     }
 }
 
-/** 서버 발급 실행 ID로 늦은 결과·재전송과 실제 작성 이력을 구분한다. */
 data class ExecutionRecord(
     val id: String,
     val model: String,
@@ -55,6 +52,5 @@ data class ExecutionRecord(
     val validation: Map<String, String> = emptyMap(),
     val workload: String = "",
     val actualCostUsd: Double? = null,
-    /** 이 실행을 고를 때 적용한 사람의 조정 버전([RoutingAdjustments.version]). */
     val adjustmentVersion: String? = null,
 )

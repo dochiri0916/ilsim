@@ -7,7 +7,6 @@ import com.tngtech.archunit.lang.ArchRule
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices
 
-/** 헥사고날 규칙: Adapter → Application → Domain. 다른 모듈은 공개 `api` 로만 쓴다. */
 @AnalyzeClasses(packages = ["com.dochiri.ilsim"], importOptions = [ImportOption.DoNotIncludeTests::class])
 class ArchitectureTest {
 

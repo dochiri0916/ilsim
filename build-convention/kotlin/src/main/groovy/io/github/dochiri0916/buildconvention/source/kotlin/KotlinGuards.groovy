@@ -17,7 +17,6 @@ import org.jetbrains.kotlin.psi.KtUnaryExpression
 import org.jetbrains.kotlin.psi.KtWhenConditionWithExpression
 import org.jetbrains.kotlin.psi.KtWhenExpression
 
-/** A deliberately bounded evaluator: unknown conditions cannot certify an invariant. */
 final class KotlinGuards {
     private KotlinGuards() {
     }
@@ -117,7 +116,6 @@ final class KotlinGuards {
         return null
     }
 
-    /** Branches are tried in order; an unknown subject, condition or branch result makes the whole when unknown. */
     private static Object evaluateWhen(KtWhenExpression expression, Map<String, Object> bindings) {
         boolean hasSubject = expression.subjectExpression != null
         Object subject = hasSubject ? evaluate(expression.subjectExpression, bindings) : null

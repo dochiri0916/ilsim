@@ -135,10 +135,6 @@ public class AnalyzerConfigLoader {
                 failSeverity, failConfidence, policy);
     }
 
-    /**
-     * JAR files, class directories and JAR glob patterns (e.g. {@code libs/*.jar}), expanded in a stable order to the
-     * entries that exist. Nothing is followed through symbolic links and nothing outside the project root is read.
-     */
     private List<String> expandClasspath(List<String> entries, Path projectRoot) {
         var expanded = new java.util.LinkedHashSet<String>();
         for (String entry : entries) {
@@ -198,7 +194,6 @@ public class AnalyzerConfigLoader {
 
     private void validateJar(Path jar) {
         try (var ignored = new java.util.jar.JarFile(jar.toFile())) {
-            // Validate before analysis or baseline output starts.
         } catch (java.io.IOException exception) {
             throw invalid("analysis.classpath contains an unreadable or invalid JAR");
         }

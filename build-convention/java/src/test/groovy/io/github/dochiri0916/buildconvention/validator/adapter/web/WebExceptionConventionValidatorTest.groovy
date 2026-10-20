@@ -34,22 +34,16 @@ class WebExceptionConventionValidatorTest {
     @Test
     @DisplayName('전역 처리기는 500 공통 메시지와 URI·메서드·원인 예외를 기록한다')
     void accepts_safe_fallback() {
-        // given
-        // when
         def violations = validate(FALLBACK)
-        // then
         assert violations.empty
     }
 
     @Test
     @DisplayName('잘못된 우선순위와 가짜 Ordered 상수 및 스택 없는 로그를 거부한다')
     void rejects_precedence_and_stack_bypasses() {
-        // given
-        // when
         def precedence = validate(FALLBACK.replace('LOWEST_PRECEDENCE', 'HIGHEST_PRECEDENCE'))
         def fake = validate(FALLBACK, IMPORTS.replace('org.springframework.core.Ordered', 'fake.Ordered'))
         def stack = validate(FALLBACK.replace('request.getMethod(), exception', 'request.getMethod(), request'))
-        // then
         assert precedence.any { it.contains('LOWEST_PRECEDENCE') }
         assert fake.any { it.contains('must declare @Order') }
         assert stack.any { it.contains('original exception') }
@@ -58,9 +52,6 @@ class WebExceptionConventionValidatorTest {
     @Test
     @DisplayName('저장소·미처리 예외는 내부 메시지와 다른 상태·오류 코드를 노출하지 않는다')
     void rejects_technical_detail_leaks() {
-        // given
-        // when
-        // then
         [['HttpStatus.INTERNAL_SERVER_ERROR', 'HttpStatus.BAD_REQUEST'],
          ['CODE, DETAIL', '"SECRET", DETAIL'],
          ['CODE, DETAIL', 'CODE, exception.getMessage()']].each { replacement ->
@@ -72,7 +63,6 @@ class WebExceptionConventionValidatorTest {
     @Test
     @DisplayName('업무 처리기는 높은 우선순위와 공통 응답 팩터리·info 또는 warn 로그를 쓴다')
     void accepts_business_helper_and_rejects_direct_problem_detail() {
-        // given
         String source = '''
             @RestControllerAdvice @Order(Ordered.HIGHEST_PRECEDENCE)
             public final class BookAdvice {
@@ -85,11 +75,9 @@ class WebExceptionConventionValidatorTest {
                 }
             }
         '''
-        // when
         def valid = validate(source)
         def invalid = validate(source.replace('problems.create(HttpStatus.BAD_REQUEST, "INVALID_INPUT", exception.getMessage())',
                 'ProblemDetail.forStatusAndDetail(400, exception.getMessage())').replace('log.info', 'log.error'))
-        // then
         assert valid.empty
         assert invalid.any { it.contains('created by ProblemDetails.create') }
         assert invalid.any { it.contains('must not construct ProblemDetail directly') }
@@ -99,7 +87,6 @@ class WebExceptionConventionValidatorTest {
     @Test
     @DisplayName('공통 오류 팩터리는 문자열 속 가짜 호출로 code·timestamp를 대체할 수 없다')
     void requires_actual_problem_properties() {
-        // given
         String source = '''
             public final class ProblemDetails {
                 public ProblemDetail create() {
@@ -110,11 +97,9 @@ class WebExceptionConventionValidatorTest {
                 }
             }
         '''
-        // when
         def valid = validate(source, '', 'com.example.global.exception')
         def invalid = validate(source.replace('detail.setProperty("timestamp", Instant.now(clock));',
                 'String hint = "setProperty timestamp";'), '', 'com.example.global.exception')
-        // then
         assert valid.empty
         assert invalid.any { it.contains('code and timestamp') }
     }

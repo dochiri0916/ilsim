@@ -22,7 +22,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
-/** Imports execution artifacts; DB use and assertion sufficiency remain explicit reviewer attestations. */
 public class ExecutionEvidenceLinker {
     public List<TestAdequacyResult> link(Path root, String manifestPath, List<TestAdequacyResult> results,
                                          List<ParsedSource> sources) throws IOException {
@@ -146,7 +145,6 @@ public class ExecutionEvidenceLinker {
                     || element.getElementsByTagName("error").getLength() > 0
                     || element.getElementsByTagName("skipped").getLength() > 0) return false;
         }
-        // A single ordinary JUnit invocation is supported; duplicates require separate review.
         return matches == 1;
     }
 

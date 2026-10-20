@@ -14,7 +14,6 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
-/** 사용자가 실행 중인 단계를 중지하고, 실패 사유에 지시를 더해 다시 시도하는 흐름. */
 class TaskStopRetryTest {
 
     private val demo = Project("demo", "demo", null)

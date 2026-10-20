@@ -16,7 +16,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
-/** 잘못된 요청이 서버 오류(500)가 아니라 400·404 로 응답되는지 본다. */
 class TaskHttpFailureTest {
 
     private lateinit var mvc: MockMvc

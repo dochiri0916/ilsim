@@ -38,7 +38,6 @@ import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import com.github.javaparser.printer.configuration.PrettyPrinterConfiguration;
 import org.springframework.stereotype.Component;
 
-/** Java source DCL. Unresolved declarations and indirect initialization remain UNKNOWN. */
 @Component
 public class DoubleCheckedLockingRule implements ConcurrencyRiskRule {
     private static final PrettyPrinterConfiguration PRINT = new PrettyPrinterConfiguration().setPrintComments(false);
@@ -195,7 +194,6 @@ public class DoubleCheckedLockingRule implements ConcurrencyRiskRule {
         }
     }
 
-    /** Only inspect trivial constructor initialization; calls, nested allocations and escaping this stay UNKNOWN. */
     private boolean simpleInitialization(Node node) {
         if (!node.findAll(MethodCallExpr.class).isEmpty() || !node.findAll(ObjectCreationExpr.class).isEmpty()
                 || !node.findAll(LambdaExpr.class).isEmpty()
@@ -227,7 +225,6 @@ public class DoubleCheckedLockingRule implements ConcurrencyRiskRule {
 
     private Node lateWrite(IfStmt inner, AssignExpr publication, FieldReference field,
                            MethodDeclaration method, TypeDeclaration<?> owner) {
-        // Only sequential statements in this branch establish publication before a content write.
         if (!inner.getThenStmt().isBlockStmt()) return null;
         var statements = inner.getThenStmt().asBlockStmt().getStatements();
         int publicationIndex = -1;
@@ -263,7 +260,6 @@ public class DoubleCheckedLockingRule implements ConcurrencyRiskRule {
             try {
                 if (!bare.resolve().isField()) return null;
             } catch (RuntimeException ignored) {
-                // Fall back only to declarations in this type; inherited or missing fields remain UNKNOWN.
                 if (method.getParameters().stream().anyMatch(parameter -> parameter.getNameAsString().equals(name))
                         || method.findAll(VariableDeclarator.class).stream()
                                 .anyMatch(variable -> variable.getNameAsString().equals(name))) return null;
@@ -276,7 +272,7 @@ public class DoubleCheckedLockingRule implements ConcurrencyRiskRule {
                     || scope instanceof NameExpr type && type.getNameAsString().equals(owner.getNameAsString());
             if (own && scope instanceof NameExpr type) {
                 try { type.resolve(); own = false; }
-                catch (RuntimeException ignored) { /* Class-name qualification is checked against static fields below. */ }
+                catch (RuntimeException ignored) { }
             }
         } else return null;
         if (!own) return new FieldReference(text(expression), null);

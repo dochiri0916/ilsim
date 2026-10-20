@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
-/** 웹: JEV 모델 선택 평가(실행 이력)와 사람의 조정. */
 @RestController
 @RequestMapping("/api/routing")
 class RoutingController(private val routing: RoutingUseCase) {

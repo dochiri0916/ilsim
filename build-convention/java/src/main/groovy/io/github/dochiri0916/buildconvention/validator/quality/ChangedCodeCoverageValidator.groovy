@@ -84,8 +84,6 @@ class ChangedCodeCoverageValidator {
     }
 
     private static DiffResult collectChangedLines(Project project, String baseRef) {
-        // One diff against the merge base keeps every line number in working-tree coordinates,
-        // which is what the JaCoCo report was generated from.
         String mergeBase = resolveMergeBase(project, baseRef)
         if (mergeBase == null) {
             return new DiffResult([:], "Cannot calculate changed code coverage from '${baseRef}...HEAD': no merge base found")
@@ -116,7 +114,6 @@ class ChangedCodeCoverageValidator {
         return result.exitValue == 0 && !stdout.isEmpty() ? stdout : null
     }
 
-    /** Drains stdout and stderr concurrently so a full stderr pipe cannot block the child process. */
     static ProcessResult runProcess(List<String> command, File workingDir) {
         Process process = new ProcessBuilder(command)
                 .directory(workingDir)
@@ -149,7 +146,6 @@ class ChangedCodeCoverageValidator {
                 '-C',
                 project.projectDir.absolutePath,
                 'diff',
-                // Subproject paths must match the project-relative source roots, not the repository root.
                 '--relative',
                 '--unified=0',
                 '--no-ext-diff',

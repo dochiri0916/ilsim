@@ -24,7 +24,6 @@ function Meter({ label, w }: { label: string; w: UsageWindow | null }) {
   )
 }
 
-/** 등록한 Claude 계정(claude@이름)이 있으면 계정별로, 없으면 기본 로그인 하나. */
 function providers(ids: string[]) {
   const accounts = ids.filter((id) => id.startsWith('claude@')).sort()
   return [
@@ -34,7 +33,6 @@ function providers(ids: string[]) {
   ]
 }
 
-/** 선택한 프로젝트를 돌리는 Runner(PC)의 Claude 구독 플랜 5시간·주간 사용량. 등록한 계정마다 따로 보여 준다. */
 export function Usage({ project }: { project: Project }) {
   const usage = usePoll(api.usage, 5000)
   const [busy, setBusy] = useState(false)

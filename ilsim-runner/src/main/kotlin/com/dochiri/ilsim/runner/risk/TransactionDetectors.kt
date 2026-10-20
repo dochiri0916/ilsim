@@ -6,7 +6,6 @@ import com.dochiri.ilsim.runner.risk.Detectors.remoteType
 import com.dochiri.ilsim.runner.risk.Detectors.repoType
 import com.dochiri.ilsim.runner.risk.Detectors.writeCall
 
-/** 스프링 프록시 기반 어노테이션(트랜잭션 등)이 실제로 적용되는지, 트랜잭션 경계가 맞는지 본다. */
 internal object TransactionDetectors {
     private val proxied = listOf("Transactional", "Async", "Cacheable", "CacheEvict", "CachePut", "Retryable", "CircuitBreaker", "Retry", "PreAuthorize", "Validated")
     private val swallowedTypes = Regex("""\b(Exception|Throwable|RuntimeException|DataAccessException|PersistenceException|\w+ViolationException)\b""")
@@ -78,7 +77,6 @@ internal object TransactionDetectors {
         }
     }
 
-    /** `catch` 블록에 throw 가 없는 위치(본문 기준 오프셋). */
     private fun swallowed(body: String): List<Int> = Regex("""\bcatch\s*\(([^)]*)\)\s*\{""").findAll(body).mapNotNull { m ->
         if (!swallowedTypes.containsMatchIn(m.groupValues[1])) return@mapNotNull null
         val block = braceBlock(body, m.range.last)

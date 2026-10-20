@@ -11,7 +11,6 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.name
 import kotlin.io.path.readText
 
-/** 등록된 프로젝트의 기술 스택을 빌드 파일과 소스 구조에서 결정적으로 감지한다. AI와 빌드 실행을 쓰지 않는다. */
 object StackDetector {
 
     private val ignoredDirs =
@@ -68,7 +67,6 @@ object StackDetector {
             warnings += "루트 subprojects 블록에 해석하지 못한 조건문이 있어 공통 의존성이 일부 모듈에는 적용되지 않을 수 있습니다"
         }
 
-        // 모듈 목록: include 된 모듈, 없으면 루트 하나.
         val moduleDirs = if (included.isEmpty()) listOf("." to root) else included.map { it to root.resolve(it) }
         val facts = mutableListOf<Fact>()
         val modules = mutableListOf<ModuleInfo>()

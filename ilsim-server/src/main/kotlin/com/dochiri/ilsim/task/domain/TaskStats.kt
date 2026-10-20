@@ -4,10 +4,6 @@ import com.dochiri.ilsim.task.domain.vo.Stage
 import com.dochiri.ilsim.task.domain.vo.StageStatus
 import com.dochiri.ilsim.task.domain.vo.TaskStatus
 
-/**
- * 모든 작업을 가로지르는 모델 사용 집계. 단계마다 쓴 모델별 비용이 이미 있으므로 새로 저장하지 않고 계산한다.
- * [ModelUsage.stages] 는 그 모델이 한 번이라도 일한 단계 수, [Stats.escalatedStages] 는 둘 이상의 모델이 거쳐 간 단계 수(모델 승격이 있었던 단계)다.
- */
 data class ModelUsage(val stages: Int, val costUsd: Double)
 
 data class StageUsage(val stage: Stage, val stages: Int, val averageAttempts: Double, val costUsd: Double)

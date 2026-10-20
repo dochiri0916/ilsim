@@ -14,16 +14,13 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
-/** Claude 플랜 사용량. Runner 가 보고하고, 웹은 보거나 새로 재 달라고 요청한다. */
 @RestController
 class UsageController(private val usages: PlanUsageUseCase) {
 
-    /** [resetsAt]은 Claude 가 주는 그대로 epoch 초. */
     data class WindowRequest(val utilization: Double = 0.0, val resetsAt: Long? = null)
 
     data class ReportRequest(
         val runnerId: String = "",
-        /** 예전 Runner 는 보내지 않으므로 claude 로 본다. */
         val provider: String = PlanUsage.CLAUDE,
         val status: String? = null,
         val fiveHour: WindowRequest? = null,

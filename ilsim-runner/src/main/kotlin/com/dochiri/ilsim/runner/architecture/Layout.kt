@@ -1,6 +1,5 @@
 package com.dochiri.ilsim.runner.architecture
 
-/** 패키지의 위치. slice 가 null 이면 공유 단위이거나 FLAT 모드다. unit 은 그래프의 노드 이름이다. */
 internal data class Loc(val slice: String?, val unit: String, val rolePath: String)
 
 internal class Locator(val layout: Layout) {
@@ -24,10 +23,6 @@ internal class Locator(val layout: Layout) {
     }
 }
 
-/**
- * 이름 템플릿 없이 패키지 트리의 반복 구조만으로 레이아웃을 추론한다.
- * 루트 바로 아래 형제들이 같은 이름의 하위 패키지를 2개 이상 공유하면 형제들은 슬라이스, 공유된 이름은 레이어다.
- */
 internal object LayoutInference {
 
     fun infer(packages: Collection<String>): Layout {
@@ -56,7 +51,6 @@ internal object LayoutInference {
 
 internal object Graphs {
 
-    /** 크기 2 이상인 강연결 요소(순환)를 돌려준다. */
     fun cycles(edges: Collection<Pair<String, String>>): List<Set<String>> {
         val adj = edges.groupBy({ it.first }, { it.second })
         val nodes = (edges.map { it.first } + edges.map { it.second }).toSet()
@@ -87,7 +81,6 @@ internal object Graphs {
         return result
     }
 
-    /** 의존하는 쪽이 앞에 오도록 정렬한다. 순환이 있으면 null. */
     fun order(nodes: Collection<String>, edges: Collection<Pair<String, String>>): List<String>? {
         val indeg = nodes.associateWith { 0 }.toMutableMap()
         edges.forEach { (_, to) -> indeg[to] = (indeg[to] ?: 0) + 1 }
@@ -107,7 +100,6 @@ internal object Graphs {
         return if (out.size == nodes.size) out else null
     }
 
-    /** 의존하는 쪽이 위(0)에 오도록 최장 경로 기준 수준을 나눈다. 순환이 있으면 null. */
     fun levels(nodes: Collection<String>, edges: Collection<Pair<String, String>>): List<List<String>>? {
         val order = order(nodes, edges) ?: return null
         val level = nodes.associateWith { 0 }.toMutableMap()

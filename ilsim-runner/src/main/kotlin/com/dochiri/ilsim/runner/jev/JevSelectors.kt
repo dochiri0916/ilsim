@@ -7,10 +7,6 @@ import com.dochiri.ilsim.runner.document.DocumentSelector
 import com.dochiri.ilsim.runner.document.HeuristicDocumentSelector
 import io.github.gudcks0305.jev.NoulQuestion
 
-/**
- * 프로젝트 문서 중 이 목적에 쓸 문서를 JEV 로 고른다. 이름·경로·제목 키워드로 후보를 먼저 줄이고(정적),
- * 후보별로 "이 문서가 목적의 규칙을 설명하는가"를 한 번의 요청으로 묻는다. JEV 를 쓸 수 없으면 정적 선택으로 되돌아간다.
- */
 class JevDocumentSelector(
     private val jev: Jev,
     private val fallback: DocumentSelector = HeuristicDocumentSelector(),

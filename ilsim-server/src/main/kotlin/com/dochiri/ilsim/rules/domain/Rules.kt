@@ -1,6 +1,5 @@
 package com.dochiri.ilsim.rules.domain
 
-/** 규칙 모델 종류. 프로젝트별로 `~/.ilsim/projects/<id>/<파일>` 에 저장된다. */
 enum class RuleSet(val fileName: String) {
     ARCHITECTURE("architecture.json"),
     CONVENTION("convention.json"),
@@ -14,7 +13,6 @@ enum class RuleSet(val fileName: String) {
 
 enum class Decision { APPROVE, REJECT }
 
-/** 사용자가 승인하기 전에는 후보다. 거절한 규칙은 어떤 검사에서도 쓰이지 않는다. */
 data class RuleView(
     val id: String,
     val kind: String,
@@ -27,7 +25,6 @@ data class RuleView(
     val reviewReason: String?,
 )
 
-/** 검증된 학습. CANDIDATE(승인 대기) → ACTIVE(승인) / SUPERSEDED(거절·근거 소멸). */
 data class MemoryView(
     val id: String,
     val kind: String,

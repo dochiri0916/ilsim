@@ -1,6 +1,5 @@
 package io.github.dochiri0916.buildconvention.source.java
 
-/** Resolves declarations, including nested types and inherited members, without loading application code. */
 final class SourceTypeIndex {
     final Map<String, Map> entries = [:]
 

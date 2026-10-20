@@ -1,14 +1,9 @@
 package com.dochiri.ilsim.runner.convention
 
-/** 관측 한 건. ok=false 면 그 규칙을 어긴 위치다. */
 internal class Sample(val file: String, val line: Int, val ok: Boolean, val message: String)
 
 internal class Candidate(val key: String, val params: Map<String, List<String>>, val description: String, val maxSeverity: String = "BLOCK")
 
-/**
- * 규칙 종류 하나. 채굴(candidates → samples 로 준수 비율 계산)과 검사(samples 중 위반만 보고)가 같은 [samples] 를 쓰므로
- * 규칙을 만들 때 잰 기준과 나중에 강제하는 기준이 어긋나지 않는다.
- */
 internal abstract class Probe(val kind: String, val minSamples: Int = 5) {
     abstract fun candidates(f: Facts): List<Candidate>
     abstract fun samples(f: Facts, params: Map<String, List<String>>): List<Sample>
@@ -29,7 +24,6 @@ internal object Probes {
 
     fun byKind(kind: String): Probe? = all.firstOrNull { it.kind == kind }
 
-    /** `OrderController` → `Controller`. 마지막 대문자 단어. */
     internal fun lastWord(name: String): String =
         Regex("""[A-Z][a-z0-9]*$""").find(name)?.value?.takeIf { it.length < name.length } ?: ""
 
@@ -139,7 +133,6 @@ internal object Probes {
     }
 
     object IndentStyle : Probe("indent-style") {
-        /** 파일의 들여쓰기: `tabs` 또는 `spaces:N`(주석 줄을 뺀 들여쓴 줄 중 가장 작은 공백 수). 들여쓴 줄이 없으면 null. */
         internal fun styleOf(lines: List<String>): String? {
             val code = lines.filter { it.isNotBlank() && !it.trimStart().startsWith("*") }
             if (code.any { it.startsWith("\t") }) return "tabs"

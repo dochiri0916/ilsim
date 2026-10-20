@@ -4,12 +4,7 @@ import com.dochiri.ilsim.runner.architecture.Evidence
 import com.dochiri.ilsim.runner.profile.ProjectProfile
 import java.nio.file.Path
 
-/**
- * 소스에서 코드 컨벤션을 추론한다. 정해진 컨벤션 목록이 아니라, 측정 가능한 항목(이름 접미사, 들여쓰기, 줄 길이 등)마다
- * 이 프로젝트에서 가장 많이 쓰인 방식을 찾고 준수 비율이 충분히 높을 때만 규칙 후보로 만든다.
- */
 object ConventionMiner {
-    /** 준수 비율이 이 이상이면 후보, [BLOCK_RATIO] 이상이면 BLOCK 후보. */
     const val MIN_RATIO = 0.9
     const val BLOCK_RATIO = 0.98
 
@@ -31,7 +26,6 @@ object ConventionMiner {
                 }
                 val severity = if (ratio >= BLOCK_RATIO && c.maxSeverity == "BLOCK") "BLOCK" else "REVIEW"
                 val id = if (c.key == "main" || c.key == "test") probe.kind else "${probe.kind}:${c.key}"
-                // 같은 클래스·선언에 여러 어노테이션이 붙어 관측 대상이 똑같은 규칙은 하나로 합친다.
                 signatures[id] = probe.kind + samples.joinToString(",") { "${it.file}:${it.line}:${it.ok}" }
                 rules += ConventionRule(
                     id = id,

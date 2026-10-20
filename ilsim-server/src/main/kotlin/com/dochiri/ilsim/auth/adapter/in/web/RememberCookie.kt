@@ -8,7 +8,6 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseCookie
 import org.springframework.stereotype.Component
 
-/** 자동 로그인 쿠키. 세션 쿠키와 같은 보안 속성(HttpOnly, SameSite=Lax, HTTPS 면 Secure)을 쓴다. */
 @Component
 class RememberCookie(@Value("\${server.servlet.session.cookie.secure:false}") private val secure: Boolean) {
 

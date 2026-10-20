@@ -12,7 +12,6 @@ import tools.jackson.databind.DeserializationFeature
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.KotlinModule
 
-/** [TaskStore] 의 JPA(MySQL) 구현. 도메인 객체는 [TaskRecord] JSON 으로 바꿔 저장한다. */
 open class JpaTaskStore(
     private val schema: TaskSchema,
     private val tasks: TaskJpaRepository,

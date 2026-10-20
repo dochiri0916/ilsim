@@ -26,7 +26,6 @@ data class AiUsage(
     val review: ReviewEvidence? = null,
 )
 
-/** 작업·분석과 그 안의 JEV/Claude 호출을 한 실행 기록에 모은다. */
 object UsageScope {
     private val current = ThreadLocal<MutableList<AiUsage>?>()
     private val changed = ThreadLocal<(() -> Unit)?>()
@@ -92,7 +91,6 @@ object ClaudeUsage {
             if (cost == null || crashed && cost == 0.0 || version == null && session != null) "UNKNOWN" else "CONFIRMED", toolCalls = tools))
     }
 
-    /** assistant의 출력 토큰은 placeholder라 복구치에 포함하지 않는다. message ID로 중복을 제거한다. */
     fun assistant(line: String): AiUsage? = runCatching {
         val obj = json.parseToJsonElement(line).jsonObject
         if (obj["type"]?.jsonPrimitive?.content != "assistant" || obj["parent_tool_use_id"]?.let { it !is JsonNull } == true) return null

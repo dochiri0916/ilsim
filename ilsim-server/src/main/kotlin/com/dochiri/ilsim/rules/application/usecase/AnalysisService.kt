@@ -7,7 +7,6 @@ import com.dochiri.ilsim.rules.domain.AnalysisStatus
 import com.dochiri.ilsim.rules.domain.exception.InvalidRuleRequestException
 import java.time.Clock
 
-/** 요청·가져가기·완료가 한 프로젝트에서 엇갈리지 않도록 한 번에 하나씩 처리한다. */
 class AnalysisService(private val store: AnalysisStore, private val clock: Clock = Clock.systemUTC()) : AnalysisUseCase {
 
     @Synchronized

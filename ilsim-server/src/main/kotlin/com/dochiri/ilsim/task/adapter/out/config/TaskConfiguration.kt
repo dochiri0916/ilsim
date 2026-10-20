@@ -38,7 +38,6 @@ class TaskConfiguration {
     @Bean
     fun complexityAssessor(jev: JevGateway): ComplexityAssessor = JevComplexityAssessor(jev)
 
-    /** 품질 조건을 충족한 Haiku도 실제 배정한다. */
     @Bean
     fun modelSelector(
         assessor: ComplexityAssessor,
@@ -53,7 +52,6 @@ class TaskConfiguration {
         @Value("\${ILSIM_ROUTING_COMPARE_CANDIDATES:15}") compareCandidates: Int,
     ): ModelSelector = ModelSelector(assessor, ModelTier.parse(minimum, ModelTier.HAIKU), CostRoutingPolicy(policyVersion, samples.coerceAtLeast(1), history.coerceAtLeast(1), quality.coerceIn(0.5, 1.0), calibrate, allowUnverified, compareEvery.coerceAtLeast(1), compareCandidates.coerceIn(1, 15)))
 
-    /** 추론 강도는 기본 medium. 환경 변수 ILSIM_EFFORT 로 바꿀 수 있다. */
     @Bean
     fun reviewCostPolicy(
         @Value("\${ILSIM_REVIEW_POLICY:review-cost-v2-support-5.5}") version: String,

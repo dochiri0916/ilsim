@@ -25,7 +25,6 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
-/** 서버의 단계별 최대 시도 횟수(TaskService.MAX_ATTEMPTS)와 같아야 한다. */
 private const val MAX_ATTEMPTS = 3
 
 private const val STOP_CHECK_MILLIS = 3000L
@@ -37,21 +36,16 @@ class TaskExecutor(
     private val workRoot: Path = Path.of(System.getProperty("user.home"), ".ilsim", "worktrees"),
     private val configStore: ConfigStore = ConfigStore(),
     private val agent: ClaudeAgent = ProcessClaudeAgent,
-    /** 도구 없이 한 번 묻는 AI 호출(변경 검토, 위험 검토). */
     ask: ((prompt: String, model: String) -> String)? = null,
     private val architectures: ArchitectureStore = ArchitectureStore(configStore),
     private val conventions: ConventionStore = ConventionStore(configStore),
 ) {
-    /** 변이 테스트에서 살아남은 변이를 작업별로 모아 AI 변경 검토에 넘긴다(상위 10건). */
     private val survivors = mutableMapOf<String, List<String>>()
 
-    /** 이번 실행에서 Claude 가 쓴 비용. 실패해도 이미 쓴 비용이므로 결과에 항상 싣는다. */
     private var runCost: Double? = null
 
-    /** 이번 실행에서 Claude 가 연 세션. 요구사항 대화를 이어 갈 때 서버가 쓴다. */
     private var runSession: String? = null
 
-    /** 이번 실행에서 AI 검토 호출에 쓴 비용. */
     private var reviewCost: Double? = null
     private val runUsage = mutableListOf<AiUsage>()
     private val decisions = mutableListOf<ProcessingDecision>()
@@ -105,7 +99,6 @@ class TaskExecutor(
         journal.clear()
     }
 
-    /** 삭제된 작업의 worktree 를 지운다. 끝나지 않은 작업이면 브랜치도 지운다. 실패해도 다음 일에 영향을 주지 않는다. */
     fun cleanup(job: Cleanup) {
         val repo = config.projects[job.projectId]?.path?.let { Path.of(it) } ?: return
         val worktree = workRoot.resolve("${job.projectId}-${job.taskId.take(8)}")
@@ -114,7 +107,6 @@ class TaskExecutor(
         if (!job.keepBranch) Shell.git(repo, "branch", "-D", job.branch ?: "ilsim/${job.feature}-${job.taskId.take(8)}")
     }
 
-    /** 서버에 중지 요청이 있는지 몇 초마다 묻는다. 묻지 못하면(네트워크 오류) 계속 실행한다. */
     private fun stopWatcher(task: AssignedTask, signal: StopSignal): Thread = Thread {
         try {
             while (!signal.stopped) {
@@ -129,7 +121,6 @@ class TaskExecutor(
         }
     }.apply { isDaemon = true; start() }
 
-    /** 코드를 쓰는 단계에는 승인된 기존 규칙과, CLI 를 쓸 때처럼 Claude 가 직접 돌려 볼 테스트 명령을 알려 준다. */
     private fun promptWithRules(task: AssignedTask): String {
         if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return task.prompt
         val brief = RulesBrief.build(
@@ -149,10 +140,6 @@ class TaskExecutor(
 
     private fun log(task: AssignedTask, msg: String) = client.event(task.taskId, task.stage, "log", msg)
 
-    /**
-     * 이번 실행에 쓸 Claude 계정. 이어 가는 세션이면 그 세션을 연 계정(로그인이 살아 있을 때)으로 가고,
-     * 새 세션이면 남은 사용량이 가장 여유 있는 계정을 고른다. 등록한 계정이 없으면 null(기본 로그인).
-     */
     private fun claudeAccount(task: AssignedTask): String? {
         val resume = task.resumeSessionId
         if (resume != null) {
@@ -218,7 +205,6 @@ class TaskExecutor(
         }
         val saved = previous?.takeIf { it.snapshot == ExecutionCheckpoint.snapshot(worktree) &&
             (it.reusable || it.executionId != null && it.executionId == task.executionId) }
-        // 다른 계정이 연 세션은 이어 갈 수 없다(그 계정 로그인이 끊긴 경우). 지시문이 문서·실패 사유·사용자 말을 모두 담으므로 새 세션에서 이어진다.
         val own = task.resumeSessionId?.let {
             if (ClaudeAccountScope.accountOf(it) == ClaudeAccountScope.account) task
             else null.also { _ -> log(task, "다른 계정의 세션이라 새 세션으로 이어서 실행합니다") }
@@ -237,7 +223,6 @@ class TaskExecutor(
             AgentRun(0)
         } else agent.run(worktree, own, promptWithRules(own), onLine).also(::accumulate)
         if (own.resumeSessionId != null && run.exit != 0 && run.failureKind == "SESSION_MISSING" && !run.timedOut && !StopSignal.isStopped()) {
-            // 이어 갈 세션을 잃었으면(기록 삭제 등) 새 세션으로 다시 한다. 지시문이 문서 경로를 알려 주므로 파일에서 이어진다.
             log(task, "이전 세션을 이어 가지 못해 새 세션으로 다시 실행합니다")
             val fresh = own.copy(resumeSessionId = null)
             run = agent.run(worktree, fresh, promptWithRules(fresh), onLine)
@@ -247,7 +232,6 @@ class TaskExecutor(
         if (run.timedOut) return StageResult(false, retryable = true, error = "claude 실행이 ${CLAUDE_TIMEOUT_MINUTES}분을 넘겨 중단했습니다. 범위를 줄여 다시 시도하세요", branch = branch)
         if (run.exit != 0) return StageResult(false, retryable = run.failureKind !in setOf("AUTH", "NETWORK", "ENVIRONMENT"), error = "claude 종료 코드 ${run.exit}" + (run.diagnostic?.let { "\n$it" } ?: ""), branch = branch)
         if (answered && task.stage == "REQUIREMENTS") {
-            // 질문에 답만 한 실행이다. 혹시 만든 파일은 버리고 검증 없이 끝낸다.
             Shell.git(worktree, "reset", "--hard", "HEAD")
             Shell.git(worktree, "clean", "-fd")
             log(task, "질문에 답했습니다. 문서·테스트·구현 단계 없이 끝냅니다")
@@ -259,7 +243,6 @@ class TaskExecutor(
         val violations = Gate.pathViolations(task.stage, task.feature, changed)
         if (violations.isNotEmpty()) {
             checkpoint.invalidate()
-            // 허용 범위를 벗어난 변경은 되돌린 뒤 재시도한다.
             Shell.git(worktree, "reset", "--hard", "HEAD")
             Shell.git(worktree, "clean", "-fd")
             return StageResult(false, retryable = true, error = violations.joinToString("\n"), branch = branch)
@@ -280,7 +263,6 @@ class TaskExecutor(
         Shell.gitOk(worktree, "add", "-A")
         val diff = Shell.gitOk(worktree, "diff", "--cached", "HEAD")
         val audit = aiAudit(task, project, worktree, diff, validation, scope)
-        // 서버의 재시도 상한과 같다: 마지막 시도에서는 AI 지적만으로 작업을 막지 않고 승인자에게 넘긴다.
         if (audit.fixable.isNotEmpty() && task.attempt < MAX_ATTEMPTS) {
             checkpoint.invalidate()
             return StageResult(
@@ -299,10 +281,6 @@ class TaskExecutor(
         Shell.gitOk(worktree, "-c", "user.name=ilsim", "-c", "user.email=ilsim@localhost", "commit", "-m", "ilsim(${task.stage.lowercase()}): ${task.feature}")
     }
 
-    /**
-     * 정적 검사를 모두 통과한 뒤 AI가 변경을 한 번 더 본다(누락, 무관한 변경, 테스트 우회). 코드를 쓰는 단계에서만, 통과한 시도마다 한 번 호출한다.
-     * 결과는 승인자가 볼 수 있게 산출물과 검증 상태로 남기며 통과 여부는 바꾸지 않는다. AI 호출이 실패해도 작업은 계속된다.
-     */
     private class AuditOutcome(val artifacts: Map<String, String>, val fixable: List<ChangeAudit.Finding>)
 
     private fun aiAudit(task: AssignedTask, project: ProjectEntry, worktree: Path, diff: String, validation: MutableMap<String, String>, contextHash: String): AuditOutcome {
@@ -328,7 +306,6 @@ class TaskExecutor(
         }
     }
 
-    /** 구현 단계의 검토가 이전 단계에서 커밋된 테스트를 볼 수 있게 한다. 이번 diff 에 이미 있는 파일은 제외한다. */
     private fun committedTests(task: AssignedTask, worktree: Path): Map<String, String> {
         if (task.stage != "IMPLEMENTATION") return emptyMap()
         val inDiff = changedFiles(worktree).toSet()
@@ -341,7 +318,6 @@ class TaskExecutor(
         return (related.ifEmpty { tests }).toSortedMap()
     }
 
-    /** 단계별 검증을 실행한다. 실패 사유를 돌려주고, 통과하면 null. 결과는 [validation]에 기록한다. */
     private fun failure(task: AssignedTask, project: ProjectEntry, worktree: Path, validation: MutableMap<String, String>): String? {
         if (task.stage == "TEST_CASES") {
             val v = Gate.traceabilityViolations(
@@ -382,7 +358,6 @@ class TaskExecutor(
             return "건너뛴 테스트가 있습니다. 테스트를 끄지 말고 통과시키세요:\n" + skipped.take(20).joinToString("\n")
         }
         if (task.stage == "TEST_CODE") {
-            // 구현 전에는 신규 테스트가 실패(red)해야 의미가 있다.
             if (r.exit == 0) {
                 validation["tests"] = "FAILED"
                 return "구현이 없는데 테스트가 모두 통과했습니다. 테스트가 요구사항을 검증하지 못하고 있습니다."
@@ -401,7 +376,6 @@ class TaskExecutor(
         return null
     }
 
-    /** 이번 작업에서 바뀐 테스트 파일이 테스트를 끄거나 단언을 비우지 않았는지 정적으로 본다. */
     private fun testIntegrity(task: AssignedTask, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>): String? {
         if (task.stage != "TEST_CODE") return null
         val violations = TestIntegrity.scan(worktree, StackDetector.detect(worktree), changed)
@@ -410,10 +384,6 @@ class TaskExecutor(
         return "테스트가 검증하지 못하는 변경 ${violations.size}건:\n" + violations.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
     }
 
-    /**
-     * 변이 테스트(PIT)로 바뀐 소스의 테스트 강도를 잰다. 구현 단계에서는 테스트를 고칠 수 없으므로 막지 않고 결과와 살아남은 변이를 알린다.
-     * 점수가 기준 미만이면 LOW 로 기록한다.
-     */
     private fun mutation(task: AssignedTask, project: ProjectEntry, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>) {
         val command = project.mutationCommand
         if (command == null) {
@@ -435,10 +405,6 @@ class TaskExecutor(
         result.survivors.take(10).forEach { log(task, "살아남은 변이: $it") }
     }
 
-    /**
-     * 승인된 아키텍처 규칙을 워크트리에 적용한다. 규칙이 없거나 승인된 것이 없으면 UNKNOWN,
-     * 검증 비적용 프로젝트면 SKIPPED 로 기록하고 막지 않는다. BLOCK 위반만 실패로 본다.
-     */
     private fun architecture(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {
         val model = architectures.load(task.projectId)
         if (model == null || model.rules.none { it.approved && !it.rejected }) {
@@ -463,7 +429,6 @@ class TaskExecutor(
         return "아키텍처 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
     }
 
-    /** 승인된 컨벤션 규칙을 이번 작업에서 바뀐 파일에만 적용한다. 기존 코드의 예외는 막지 않는다. */
     private fun convention(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {
         val model = conventions.load(task.projectId)
         if (model == null || model.rules.none { it.approved && !it.rejected }) {
@@ -478,7 +443,6 @@ class TaskExecutor(
         return "컨벤션 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
     }
 
-    /** 트랜잭션·동시성 위험을 이번 작업에서 바뀐 파일에만 적용한다. BLOCK 으로 지정된 규칙의 결과만 막는다. */
     private fun risk(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>, review: Boolean): String? {
         val config = RiskScanner.Store(configStore).load(task.projectId)
         val findings = RiskScanner.scan(worktree, StackDetector.detect(worktree), config, changedFiles(worktree).toSet())
@@ -500,7 +464,6 @@ class TaskExecutor(
             "\n권고:\n" + RiskScanner.remedies(blocking)
     }
 
-    /** 사용자가 AI 검토를 승인한 규칙의 새 REVIEW 후보만 AI에 묻는다. 실패해도 게이트는 계속 진행하고, BLOCK 판정은 AI가 바꾸지 않는다. */
     private fun aiReview(task: AssignedTask, worktree: Path, findings: List<Violation>, config: RiskConfig) {
         val targets = findings.filter { it.severity == "REVIEW" && it.ruleId in config.aiReview }
         if (targets.isEmpty()) return

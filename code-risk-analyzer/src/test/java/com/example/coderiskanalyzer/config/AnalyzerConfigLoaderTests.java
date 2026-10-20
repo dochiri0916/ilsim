@@ -128,7 +128,6 @@ class AnalyzerConfigLoaderTests {
         Path libs = Files.createDirectories(tempDir.resolve("libs/nested"));
         for (Path jar : java.util.List.of(tempDir.resolve("libs/b.jar"), tempDir.resolve("libs/a.jar"), libs.resolve("c.jar"))) {
             try (var ignored = new java.util.jar.JarOutputStream(Files.newOutputStream(jar))) {
-                // an empty, valid JAR
             }
         }
         Path classes = Files.createDirectories(tempDir.resolve("build/classes/java/main/com/acme"));

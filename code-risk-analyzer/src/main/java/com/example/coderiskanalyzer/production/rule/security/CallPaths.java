@@ -11,7 +11,6 @@ import com.example.coderiskanalyzer.production.analysis.callgraph.CallGraphBuild
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 
-/** Project methods reachable from a method through the bounded call graph, for checks done deeper in the call chain. */
 final class CallPaths {
 
     private final AnalysisContext context;
@@ -19,7 +18,6 @@ final class CallPaths {
 
     record Declared(TypeDeclaration<?> type, MethodDeclaration method) {}
 
-    /** Reachable project methods (the start included) and the number of unresolved calls that could hide a check. */
     record Reach(List<Declared> methods, int unresolvedCalls) {}
 
     CallPaths(AnalysisContext context) {

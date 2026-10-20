@@ -11,7 +11,6 @@ const LOGIN_TEXT: Record<ClaudeLogin['status'], string> = {
   FAILED: '로그인하지 못했습니다',
 }
 
-/** 진행 중인 로그인 하나. 링크로 claude.ai 에 로그인하고(휴대폰도 됨) 마지막 화면의 코드를 넣으면 Runner 가 CLI 에 전달한다. */
 function LoginCard({ login, onChange }: { login: ClaudeLogin; onChange: () => void }) {
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -47,10 +46,6 @@ function LoginCard({ login, onChange }: { login: ClaudeLogin; onChange: () => vo
   )
 }
 
-/**
- * 일심이 쓰는 Claude 계정. 계정마다 Runner PC 에 따로 로그인해 두고(로그인 정보는 그 PC 에만 있음),
- * 일심은 새 세션마다 남은 사용량이 가장 여유 있는 계정을 고른다. 실행 중 한도 초과가 나도 다른 계정으로 넘기지 않는다.
- */
 export function ClaudeAccounts() {
   const data = usePoll(api.claudeAccounts, 3000)
   const projects = usePoll(api.projects, 10000)
@@ -124,7 +119,6 @@ export function ClaudeAccounts() {
   )
 }
 
-/** 모든 PC·계정에 똑같이 까는 CLAUDE.md 와 settings.json. 저장하면 Runner 가 몇 분 안에 계정 디렉터리에 반영한다. */
 export function ClaudeEnvironmentEditor() {
   const [claudeMd, setClaudeMd] = useState('')
   const [settingsJson, setSettingsJson] = useState('{}')

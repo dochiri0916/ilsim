@@ -89,7 +89,7 @@ class ExecutionEvidenceLinkerTests {
                 .containsEntry("databaseVerifiedByAnalyzer", false).containsEntry("acceptedForObligation", true);
         assertThat(new TestAdequacyFindings().convert(List.of(result)).getFirst().evidence())
                 .extracting(e -> e.type()).containsExactly("TEST_OBLIGATION", "EXECUTION_TEST");
-        assertThat(link(rollback)).isEqualTo(result); // repeated import has no side effects
+        assertThat(link(rollback)).isEqualTo(result);
     }
 
     @Test

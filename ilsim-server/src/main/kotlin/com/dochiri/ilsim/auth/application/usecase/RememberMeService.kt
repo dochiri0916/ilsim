@@ -5,7 +5,6 @@ import com.dochiri.ilsim.auth.application.port.out.LoginTokenRepository
 import com.dochiri.ilsim.auth.domain.LoginToken
 import java.time.Clock
 
-/** 자동 로그인. 저장소를 쓸 수 없으면 자동 로그인만 안 되고 일반 로그인은 그대로 된다. */
 class RememberMeService(private val tokens: LoginTokenRepository, private val clock: Clock) : RememberMeUseCase {
 
     override fun issue(username: String): String {
@@ -18,7 +17,7 @@ class RememberMeService(private val tokens: LoginTokenRepository, private val cl
         val (series, secret) = LoginToken.parse(cookie) ?: return null
         val token = tokens.find(series) ?: return null
         if (token.matches(secret, clock.instant())) return token.username
-        tokens.delete(series) // 만료됐거나 위조된 토큰은 지운다
+        tokens.delete(series)
         return null
     }
 

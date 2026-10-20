@@ -9,7 +9,6 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.gradle.api.Project
 import org.gradle.api.tasks.testing.Test
 
-/** Links review scenarios to real JUnit results without claiming their assertions prove business semantics. */
 final class RuntimeConventionReview {
     static final Map<String, List<String>> SCENARIOS = [
             'QUERY-PAGINATION': ['invalid-page-and-size', 'large-offset', 'stable-order-with-ties'],
@@ -118,7 +117,6 @@ final class RuntimeConventionReview {
                         results[key] = [report: project.relativePath(file)]
                     }
                 } catch (Exception ignored) {
-                    // Unreadable evidence is never a successful execution.
                 }
             }
         }

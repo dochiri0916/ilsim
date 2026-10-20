@@ -9,7 +9,6 @@ import com.dochiri.ilsim.runner.ReviewRouter
 import com.dochiri.ilsim.runner.RuleReviewReuse
 import com.dochiri.ilsim.runner.architecture.Evidence
 
-/** 채굴한 컨벤션 요약을 AI가 한 번 검토한다. 아키텍처 검토와 같은 원칙: 소스는 보내지 않고, 의견만 붙이며, 승인·위반 판정은 하지 않는다. */
 object ConventionReviewer {
 
     fun summary(m: ConventionModel): String = buildString {
@@ -64,17 +63,14 @@ object ConventionReviewer {
     }
 }
 
-/** 컨벤션 규칙의 승인·거절. */
 object ConventionApproval {
     fun approve(m: ConventionModel, ids: Collection<String>) = update(m, ids) { it.copy(approved = true, rejected = false, decidedBy = "user") }
     fun reject(m: ConventionModel, ids: Collection<String>) = update(m, ids) { it.copy(approved = false, rejected = true, decidedBy = "user") }
     fun keepIds(m: ConventionModel) = m.rules.filter { it.review?.verdict == "KEEP" && !it.approved && !it.rejected }.map { it.id }
-    /** KEEP 이고 REVIEW 심각도인 미결정 규칙만 승인한다. 게이트를 막는 BLOCK 규칙은 사용자에게 넘긴다. */
     fun autoApprove(m: ConventionModel): ConventionModel = m.copy(rules = m.rules.map {
         if (it.review?.verdict == "KEEP" && it.severity != "BLOCK" && !it.approved && !it.rejected) it.copy(approved = true, decidedBy = "ai-review") else it
     })
 
-    /** AI 검토가 도는 동안 사용자가 웹에서 내린 결정([saved] 의 decidedBy=user)을 [m] 에 덮어 잃지 않게 한다. */
     fun keepUserDecisions(saved: ConventionModel?, m: ConventionModel): ConventionModel {
         val user = saved?.rules?.filter { it.decidedBy == "user" }?.associateBy { it.id }.orEmpty()
         return m.copy(rules = m.rules.map { r ->

@@ -5,7 +5,6 @@ import com.dochiri.ilsim.secret.api.SecretNames
 import com.dochiri.ilsim.secret.api.SecretReader
 import com.dochiri.ilsim.secret.api.SecretWriter
 
-/** TOTP 비밀은 JEV 키와 같은 암호화 저장소(`secrets` 테이블)에 둔다. */
 class SecretTotpStore(private val reader: SecretReader, private val writer: SecretWriter) : TotpSecretStore {
     override fun find(username: String): String? = reader.get(SecretNames.totp(username))
 

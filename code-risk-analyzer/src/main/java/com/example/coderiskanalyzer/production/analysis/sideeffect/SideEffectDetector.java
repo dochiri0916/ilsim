@@ -58,7 +58,6 @@ public class SideEffectDetector {
                 });
             }
         } catch (RuntimeException ignored) {
-            // The resolved declaring type remains usable even if some ancestry is missing.
         }
         String name = method.getName();
         SideEffectType type = null;
@@ -99,7 +98,6 @@ public class SideEffectDetector {
             if (feign && method.isAbstract() && !method.isStatic() && !types.contains("java.lang.Object"))
                 type = SideEffectType.EXTERNAL_HTTP_CALL;
         } catch (RuntimeException ignored) {
-            // Missing annotation dependencies do not justify a name-based classification of a resolved call.
         }
         SideEffectType classified = type;
         return Optional.ofNullable(classified).map(value -> new Classification(value, "RESOLVED_TYPE", method.getQualifiedSignature()));
@@ -120,7 +118,6 @@ public class SideEffectDetector {
                 || supported.stream().anyMatch(owner -> type.startsWith(owner + ".")));
     }
 
-    /** Attach the classification and its limits only for calls used by the finding. */
     public List<Evidence> withEvidence(
             ParsedSource source, List<MethodCallExpr> calls,
             List<Evidence> existing) {

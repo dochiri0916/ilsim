@@ -5,7 +5,6 @@ import com.dochiri.ilsim.runner.architecture.ModelReview
 import com.dochiri.ilsim.runner.architecture.RuleReview
 import kotlinx.serialization.Serializable
 
-/** 코드 컨벤션 규칙 한 건. 채굴한 규칙은 승인 전까지 후보이고, 기본 컨벤션의 규칙은 처음부터 승인된 상태로 만든다. */
 @Serializable
 data class ConventionRule(
     val id: String,
@@ -28,7 +27,6 @@ data class ConventionModel(
     val languages: Map<String, Int>,
     val rules: List<ConventionRule>,
     val notes: List<String> = emptyList(),
-    /** MINED(분석으로 추론) 또는 DEFAULT:<표준 id>(신규 프로젝트에 지정한 기본 컨벤션). */
     val source: String = "MINED",
     val review: ModelReview? = null,
 )

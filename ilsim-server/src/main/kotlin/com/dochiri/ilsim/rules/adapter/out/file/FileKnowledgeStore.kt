@@ -17,12 +17,6 @@ import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.node.ArrayNode
 import tools.jackson.databind.node.ObjectNode
 
-/**
- * `<home>/projects/<프로젝트 id>/{architecture,convention,memory}.json`.
- * 파일을 JSON 트리로 읽고 승인 관련 필드만 바꿔 다시 쓰므로, Runner 가 넣은 나머지 필드는 그대로 보존된다.
- * 쓸 때는 임시 파일에 쓴 뒤 옮겨서 Runner 가 반쯤 쓰인 파일을 읽지 않게 하고,
- * 읽고-고치고-쓰는 동안 프로젝트 디렉터리의 `.lock` 을 OS 파일 잠금으로 잡아 Runner 의 변경과 서로 덮어쓰지 않게 한다(Runner `KnowledgeFiles` 와 같은 규약).
- */
 class FileKnowledgeStore(home: Path) : KnowledgeStore {
 
     private val base: Path = home.resolve("projects")

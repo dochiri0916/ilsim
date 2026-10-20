@@ -3,10 +3,8 @@ package com.dochiri.ilsim.runner.architecture
 import com.dochiri.ilsim.runner.profile.ProjectProfile
 import java.nio.file.Path
 
-/** 추론된 모델의 규칙을 현재 소스에 적용한다. 규칙 모델은 만들어진 프로젝트에만 적용되며 다른 프로젝트에는 거부한다. */
 object ArchitectureChecker {
 
-    /** [approvedOnly] 가 true 면 사용자가 승인한 규칙만 적용한다 (게이트용). 거절한 규칙은 항상 제외한다. */
     fun check(root: Path, profile: ProjectProfile, model: ArchitectureModel, approvedOnly: Boolean = false): List<Violation> =
         check(SourceScanner.scan(root, profile.modules), model, approvedOnly)
 

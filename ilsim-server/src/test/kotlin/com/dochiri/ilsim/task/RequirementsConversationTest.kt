@@ -25,7 +25,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.KotlinModule
 
-/** 요구사항 단계의 대화: 같은 세션을 이어 문서를 고치고, 승인하면 세션을 닫는다. */
 class RequirementsConversationTest {
 
     private val demo = Project("demo", "demo", null)
@@ -83,7 +82,7 @@ class RequirementsConversationTest {
         service.approve(task.id.value)
         assertThat(requirements().sessionId).isNull()
         assertThat(requirements().messages).containsExactly("수정")
-        assertThat(poll()!!.resumeSessionId).isNull() // 다음 단계는 항상 새 세션
+        assertThat(poll()!!.resumeSessionId).isNull()
     }
 
     @Test
@@ -109,7 +108,7 @@ class RequirementsConversationTest {
         waiting()
         assertThatThrownBy { service.message(task.id.value, "  ") }.isInstanceOf(InvalidTaskRequestException::class.java)
         service.approve(task.id.value)
-        poll(); service.report(task.id.value, pass()) // TEST_CASES 가 승인 대기
+        poll(); service.report(task.id.value, pass())
         assertThatThrownBy { service.message(task.id.value, "테스트 케이스에 말 걸기") }
             .isInstanceOf(InvalidTaskStateException::class.java).hasMessageContaining("요구사항")
     }

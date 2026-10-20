@@ -23,9 +23,7 @@ data class StageResponse(
     val validation: Map<String, String>,
     val costUsd: Double,
     val costByModel: Map<String, Double>,
-    /** 요구사항 단계에서 사용자가 보낸 대화 메시지. */
     val messages: List<String>,
-    /** 대화를 이어 갈 수 있는지(요구사항 단계가 승인을 기다리는 중이고 횟수가 남았을 때). */
     val conversable: Boolean,
     val unknownCalls: Int = 0,
     val usage: List<com.dochiri.ilsim.task.domain.AiUsage> = emptyList(),

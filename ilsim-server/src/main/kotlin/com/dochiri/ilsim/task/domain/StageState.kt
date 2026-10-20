@@ -4,32 +4,23 @@ import com.dochiri.ilsim.task.domain.vo.Attempt
 import com.dochiri.ilsim.task.domain.vo.Stage
 import com.dochiri.ilsim.task.domain.vo.StageStatus
 
-/** 한 단계의 진행 상태. 불변 객체이며 상태 전이는 [Task] 를 통해서만 일어난다. 바꾸는 메서드는 새 인스턴스를 돌려준다. */
 class StageState private constructor(
     val stage: Stage,
     val status: StageStatus,
     val attempt: Attempt,
     val feedback: String?,
-    /** 직전 실패의 정규화한 사유. */
     val lastErrorKey: String?,
     val error: String?,
     val diff: String?,
     val artifactHash: String?,
     val artifacts: Map<String, String>,
-    /** tests/analysis 등 검증 항목별 결과. 실행하지 못한 항목은 UNKNOWN. */
     val validation: Map<String, String>,
-    /** JEV 평가 결과(complexity, risk)와 이번에 고른 모델. 같은 단계의 재시도에서는 평가를 다시 하지 않고 재사용한다. */
     val routing: Map<String, String>,
-    /** 모델 선택 이력: 시도마다 어떤 모델을 왜 골랐는지. */
     val routingLog: List<String>,
-    /** 이 단계에서 쓴 Claude 비용 합계(USD). 실패한 시도와 재시도 비용도 포함한다. */
     val costUsd: Double,
     val costByModel: Map<String, Double>,
-    /** 마지막 실행의 Claude 세션. 요구사항 대화나 멈춘 단계에 사용자가 답할 때 이어 간다. 승인하면 버린다. */
     val sessionId: String?,
-    /** 사용자가 보낸 대화 메시지(시간순). */
     val messages: List<String>,
-    /** 아직 반영하지 못한 마지막 메시지. 있으면 다음 실행은 새로 쓰지 않고 이 말을 반영해 기존 문서를 고친다. */
     val pendingMessage: String?,
     val executionId: String? = null,
     val executions: List<ExecutionRecord> = emptyList(),
@@ -108,7 +99,6 @@ class StageState private constructor(
         routingLog = routingLog + "시도 $attempt: ${route.option.tier.label}/${route.option.effort} (${if (assessment == null) "규칙 기반 fallback" else "JEV"}, ${route.reason}, 정책 $policy, 예상 $${route.expectedCostUsd})",
     )
 
-    /** 승인 대기 중인 단계에 사용자 메시지를 받아 다시 실행 대기로 돌린다. 세션과 이전 대화는 이어 간다. */
     internal fun converse(text: String): StageState = copy(
         messages = messages + text,
         pendingMessage = text,
@@ -119,7 +109,6 @@ class StageState private constructor(
         status = StageStatus.PENDING,
     )
 
-    /** 멈춘 단계에 사용자 말을 받아 같은 세션에서 이어 가게 한다. [problem]은 직전 실패 사유. */
     internal fun continueWith(text: String, problem: String?): StageState = converse(text).copy(feedback = problem)
 
     internal fun start(): StageState = copy(status = StageStatus.RUNNING)
@@ -136,7 +125,6 @@ class StageState private constructor(
         status = if (awaitApproval) StageStatus.WAITING_APPROVAL else StageStatus.PASSED,
     )
 
-    /** 같은 사유로 되풀이됐으면 남은 시도를 건너뛰고 마지막 시도로 올린다. */
     internal fun scheduleRetry(error: String?, maxAttempts: Int): StageState {
         val key = FailureSignature.of(error)
         val repeated = key != null && key == lastErrorKey
@@ -212,7 +200,6 @@ class StageState private constructor(
             emptyMap(), emptyMap(), emptyMap(), emptyList(), 0.0, emptyMap(), null, emptyList(), null,
         )
 
-        /** 저장본에서 되살린다. */
         fun restore(
             stage: Stage,
             status: StageStatus,

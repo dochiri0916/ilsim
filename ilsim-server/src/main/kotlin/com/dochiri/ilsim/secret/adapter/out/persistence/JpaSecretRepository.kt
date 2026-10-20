@@ -6,7 +6,6 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import org.springframework.jdbc.core.JdbcTemplate
 
-/** MySQL `secrets` 테이블. 테이블은 처음 쓸 때 만든다(DB 가 아직 없을 수 있어 기동 시점에는 건드리지 않는다). */
 class JpaSecretRepository(
     private val jdbc: JdbcTemplate,
     private val secrets: SecretJpaRepository,

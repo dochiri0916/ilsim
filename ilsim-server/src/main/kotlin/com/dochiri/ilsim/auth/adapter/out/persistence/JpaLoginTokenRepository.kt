@@ -6,7 +6,6 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import org.springframework.jdbc.core.JdbcTemplate
 
-/** MySQL `login_tokens` 테이블. 테이블은 처음 쓸 때 만들고, 새 토큰을 저장할 때 만료된 토큰을 치운다. */
 class JpaLoginTokenRepository(
     private val jdbc: JdbcTemplate,
     private val tokens: LoginTokenJpaRepository,

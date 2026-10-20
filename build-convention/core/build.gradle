@@ -9,7 +9,6 @@ dependencies {
 }
 
 test {
-    // ProjectBuilder defines classes in java.lang's loader; java-gradle-plugin adds this for the plugin modules.
     jvmArgs '--add-opens=java.base/java.lang=ALL-UNNAMED'
 }
 

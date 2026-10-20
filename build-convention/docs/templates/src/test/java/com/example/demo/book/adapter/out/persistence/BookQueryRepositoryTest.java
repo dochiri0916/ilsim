@@ -30,7 +30,6 @@ class BookQueryRepositoryTest {
     @Test
     @DisplayName("생성 시각이 같아도 ID 내림차순으로 페이지를 나누고 count는 전체 조건을 센다")
     void usesStablePagesAndSeparateCount() {
-        // given
         save("9788966260959", "첫 도서");
         save("9780000000000", "둘째 도서");
         save("9780000000001", "셋째 도서");
@@ -39,12 +38,10 @@ class BookQueryRepositoryTest {
         final BookSearchCondition secondPage = new BookSearchCondition(null, 1, 1);
         final BookSearchCondition thirdPage = new BookSearchCondition(null, 2, 1);
 
-        // when
         final List<BookSearchRow> first = queryRepository.search(firstPage);
         final List<BookSearchRow> second = queryRepository.search(secondPage);
         final List<BookSearchRow> third = queryRepository.search(thirdPage);
 
-        // then
         assertThat(first).extracting(BookSearchRow::title).containsExactly("셋째 도서");
         assertThat(second).extracting(BookSearchRow::title).containsExactly("둘째 도서");
         assertThat(third).extracting(BookSearchRow::title).containsExactly("첫 도서");
@@ -55,16 +52,13 @@ class BookQueryRepositoryTest {
     @Test
     @DisplayName("선택 ISBN 조건을 목록과 count에 동일하게 적용한다")
     void sharesOptionalFilterAcrossListAndCount() {
-        // given
         save("9788966260959", "클린 코드");
         save("9780000000000", "다른 도서");
         final BookSearchCondition match = new BookSearchCondition(Isbn.of("9788966260959"), 0, 100);
         final BookSearchCondition missing = new BookSearchCondition(Isbn.of("9780000000001"), 0, 100);
 
-        // when
         final List<BookSearchRow> rows = queryRepository.search(match);
 
-        // then
         assertThat(rows).extracting(BookSearchRow::isbn).containsExactly("9788966260959");
         assertThat(rows).extracting(BookSearchRow::title).containsExactly("클린 코드");
         assertThat(queryRepository.count(match)).isEqualTo(1);
@@ -75,14 +69,11 @@ class BookQueryRepositoryTest {
     @Test
     @DisplayName("큰 offset을 실제 DB에 전달해도 오버플로 없이 빈 페이지를 조회한다")
     void supportsLargeOffset() {
-        // given
         save("9788966260959", "클린 코드");
         final BookSearchCondition condition = new BookSearchCondition(null, Integer.MAX_VALUE, 100);
 
-        // when
         final List<BookSearchRow> rows = queryRepository.search(condition);
 
-        // then
         assertThat(rows).isEmpty();
         assertThat(queryRepository.count(condition)).isEqualTo(1);
     }

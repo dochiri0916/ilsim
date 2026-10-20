@@ -13,7 +13,6 @@ import kotlin.io.path.writeText
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** 프로젝트에 기본 표준을 적용해 `~/.ilsim/projects/<id>/` 에 저장한다: standards.json, architecture.json, convention.json */
 class StandardsApplier(config: ConfigStore, private val catalog: StandardsCatalog = StandardsCatalog()) {
     private val base: Path = config.location.parent.resolve("projects")
     private val architectures = ArchitectureStore(config)

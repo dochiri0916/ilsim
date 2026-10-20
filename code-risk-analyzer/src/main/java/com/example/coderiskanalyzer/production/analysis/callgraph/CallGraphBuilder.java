@@ -67,7 +67,6 @@ public class CallGraphBuilder {
                             sameType(candidate.method().getParameter(index).getTypeAsString(), parameters.get(index))))
                     .toList();
         } catch (RuntimeException ignored) {
-            // Fall back to an unambiguous local name/arity match when symbol resolution is unavailable.
         }
         String owner = localOwner(call, caller);
         if (owner == null) return List.of();
@@ -123,7 +122,6 @@ public class CallGraphBuilder {
             try {
                 receiverType = call.getScope().get().calculateResolvedType().describe();
             } catch (RuntimeException ignored) {
-                // Unresolved external symbols remain explicit unresolved graph nodes.
             }
         }
         return "external:" + receiverType + "#" + call.getNameAsString() + "/" + call.getArguments().size();

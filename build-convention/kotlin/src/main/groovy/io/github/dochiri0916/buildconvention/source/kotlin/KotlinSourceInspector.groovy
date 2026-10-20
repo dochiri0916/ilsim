@@ -3,7 +3,6 @@ package io.github.dochiri0916.buildconvention.source.kotlin
 import org.gradle.api.Project
 import org.gradle.api.tasks.SourceSetContainer
 
-/** Scan directory contents, rather than the compiler's filtered file tree, to prevent source exclusions. */
 final class KotlinSourceInspector {
     private KotlinSourceInspector() {
     }

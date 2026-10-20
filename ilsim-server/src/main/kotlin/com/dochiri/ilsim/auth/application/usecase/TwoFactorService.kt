@@ -8,7 +8,6 @@ import com.dochiri.ilsim.auth.domain.exception.LoginLockedException
 import java.time.Clock
 import java.util.concurrent.ConcurrentHashMap
 
-/** Google Authenticator 2단계 인증. 같은 코드는 한 번만 받는다. */
 class TwoFactorService(
     private val secrets: TotpSecretStore,
     private val clock: Clock,
@@ -43,7 +42,6 @@ class TwoFactorService(
         return check(clientKey, username, secret, code)
     }
 
-    // 6자리는 경우의 수가 작아 접속처와 계정 모두 실패 횟수로 막는다.
     private fun check(clientKey: String, username: String, secret: String, code: String?): Boolean {
         val now = clock.instant()
         if (throttle.isLocked(clientKey, now) || throttle.isLocked(ACCOUNT + username, now)) throw LoginLockedException()

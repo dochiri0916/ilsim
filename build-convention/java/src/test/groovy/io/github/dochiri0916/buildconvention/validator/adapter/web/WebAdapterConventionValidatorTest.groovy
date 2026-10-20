@@ -11,7 +11,6 @@ class WebAdapterConventionValidatorTest {
     @Test
     @DisplayName('한국어 Jakarta 필드 검증과 방어적 복사를 허용한다')
     void accepts_validated_immutable_request() {
-        // given
         String source = '''
             import jakarta.validation.constraints.NotBlank;
             import jakarta.validation.constraints.NotEmpty;
@@ -24,25 +23,20 @@ class WebAdapterConventionValidatorTest {
                 public CreateCommand toCommand() { return new CreateCommand(name, items, quantity); }
             }
         '''
-        // when
         def violations = validate(source)
-        // then
         assert violations.empty
     }
 
     @Test
     @DisplayName('가짜 어노테이션과 주석 및 영어 기본 메시지로는 검증을 우회하지 못한다')
     void rejects_constraint_bypasses() {
-        // given
         String source = '''
             import fake.NotBlank;
             import jakarta.validation.constraints.Min;
             public record CreateRequest(/* @NotBlank(message="필수") */ String name,
                 @NotBlank(message="필수") String alias, @Min(1) int quantity) {}
         '''
-        // when
         def violations = validate(source)
-        // then
         assert violations.count { it.contains('must declare Jakarta') } == 2
         assert violations.any { it.contains('explicitly explain') }
     }
@@ -50,7 +44,6 @@ class WebAdapterConventionValidatorTest {
     @Test
     @DisplayName('요청 본문마다 실제 Valid 어노테이션을 요구한다')
     void requires_valid_on_each_request_body() {
-        // given
         String source = '''
             import org.springframework.web.bind.annotation.*;
             import jakarta.validation.Valid;
@@ -59,9 +52,7 @@ class WebAdapterConventionValidatorTest {
                 public void invalid(/* @Valid */ @RequestBody final CreateRequest request) {}
             }
         '''
-        // when
         def violations = validate(source)
-        // then
         assert violations.size() == 1
         assert violations.first().contains('@Valid @RequestBody')
     }
@@ -69,8 +60,6 @@ class WebAdapterConventionValidatorTest {
     @Test
     @DisplayName('DTO 변환의 정적 방향과 복잡한 업무 분기를 거부한다')
     void rejects_conversion_direction_and_branches() {
-        // given
-        // when
         def request = validate('''
             public record CreateRequest() {
                 public static CreateCommand toCommand() {
@@ -82,7 +71,6 @@ class WebAdapterConventionValidatorTest {
         def response = validate('''
             public record CreateResponse() { public CreateResponse from(CreateResult result) { return this; } }
         ''')
-        // then
         assert request.any { it.contains('public instance') }
         assert request.any { it.contains('separate Mapper') }
         assert response.any { it.contains('public static from') }
@@ -91,7 +79,6 @@ class WebAdapterConventionValidatorTest {
     @Test
     @DisplayName('port.in.result 패키지의 조회 결과 DTO도 Response 변환 입력으로 인정한다')
     void accepts_result_package_dto_as_response_conversion_input() {
-        // given
         String source = '''
             import example.book.application.port.in.result.CategorySummary;
             public record CategoryListResponse(String publicId) {
@@ -99,17 +86,14 @@ class WebAdapterConventionValidatorTest {
             }
         '''
 
-        // when
         def violations = validate(source)
 
-        // then
         assert !violations.any { it.contains('Response conversion') }
     }
 
     @Test
     @DisplayName('port.in.result 안에 중첩된 결과 타입도 Response 변환 입력으로 인정한다')
     void accepts_nested_result_type_as_response_conversion_input() {
-        // given
         String source = '''
             import example.book.application.port.in.result.ListOrdersResult;
             public record OrderSummaryResponse(String publicId) {
@@ -117,10 +101,8 @@ class WebAdapterConventionValidatorTest {
             }
         '''
 
-        // when
         def violations = validate(source)
 
-        // then
         assert !violations.any { it.contains('Response conversion') }
     }
 

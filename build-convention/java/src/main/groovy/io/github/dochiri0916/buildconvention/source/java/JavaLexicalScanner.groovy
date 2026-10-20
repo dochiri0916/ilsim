@@ -80,7 +80,6 @@ class JavaLexicalScanner {
         return -1
     }
 
-    /** Preserve offsets and newlines while removing comments and every Java literal form. */
     static String codeOnly(String source) {
         if (source == null) {
             return ''

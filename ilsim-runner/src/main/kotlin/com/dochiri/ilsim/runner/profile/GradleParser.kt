@@ -1,6 +1,5 @@
 package com.dochiri.ilsim.runner.profile
 
-/** Gradle 빌드 파일을 실행하지 않고 텍스트로 해석한다. 조건부·동적 선언은 반영하지 못한다. */
 internal class ParsedBuild(
     val coords: List<Pair<String, String?>>,
     val plugins: Map<String, String?>,
@@ -70,7 +69,6 @@ internal object GradleParser {
         )
     }
 
-    /** settings.gradle(.kts)의 include 대상 모듈 경로. `:a:b` → `a/b`. */
     fun includes(settings: String): List<String> {
         val quoted = Regex("""["']([^"']+)["']""")
         val paren = Regex("""\binclude\s*\(([^)]*)\)""").findAll(settings).flatMap { quoted.findAll(it.groupValues[1]) }

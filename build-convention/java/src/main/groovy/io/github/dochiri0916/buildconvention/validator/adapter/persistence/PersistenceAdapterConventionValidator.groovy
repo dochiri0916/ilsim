@@ -5,7 +5,6 @@ import io.github.dochiri0916.buildconvention.source.java.JavaMethodGraph
 import io.github.dochiri0916.buildconvention.source.java.JavaSourceAstInspector
 import java.util.regex.Pattern
 
-/** Inspects storage operations and their local translation helpers as one adapter boundary. */
 final class PersistenceAdapterConventionValidator {
     static List<String> validate(String path, String packageName,
                                  JavaSourceAstInspector.TypeModel type, Set<String> imports) {

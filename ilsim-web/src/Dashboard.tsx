@@ -34,7 +34,6 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: 'wa
   )
 }
 
-/** 선택한 프로젝트의 작업만 보여 주고, 새 요구사항도 그 프로젝트에 만든다. */
 export function Dashboard({ project }: { project: Project }) {
   const tasks = usePoll(api.tasks, 3000)
   const settings = usePoll(api.settings, 30000)
@@ -55,7 +54,6 @@ export function Dashboard({ project }: { project: Project }) {
     setBusy(true)
     setError(null)
     try {
-      // 입력할 때마다 새 작업(새 Claude 세션)을 만들고, 바로 다음 요청을 입력할 수 있게 화면에 남는다.
       await api.createTask(project.id, '', requirement.trim())
       setRequirement('')
       tasks.reload()
@@ -80,7 +78,6 @@ export function Dashboard({ project }: { project: Project }) {
         <textarea rows={3} placeholder="무엇을 할까요? (Enter로 새 작업, Shift+Enter로 줄바꿈)" value={requirement} aria-label="명령"
           onChange={(e) => setRequirement(e.target.value)}
           onKeyDown={(e) => {
-            // 한글 조합 중의 Enter 는 글자 확정이라 보내지 않는다.
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit() }
           }} />
         {error && <p className="err">{error}</p>}

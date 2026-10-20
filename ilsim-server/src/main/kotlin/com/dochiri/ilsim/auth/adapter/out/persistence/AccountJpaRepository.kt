@@ -10,7 +10,6 @@ interface AccountJpaRepository : JpaRepository<AccountEntity, Long> {
 
     fun findByUsername(username: String): AccountEntity?
 
-    /** 비밀번호 해시만 바꾼다. 바뀐 행 수를 돌려준다. */
     @Transactional
     @Modifying
     @Query(

@@ -9,7 +9,6 @@ import com.example.coderiskanalyzer.production.model.SourceLocation;
 import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencyAssessment;
 import com.example.coderiskanalyzer.production.rule.concurrency.spec.ConcurrencyOutcome;
 
-/** Portable audit records, independent of suppression, baseline filtering and warning counts. */
 public record ConcurrencyAssessmentReport(String ruleId, String specificationRuleId, String fingerprint,
                                           String declaration, String subject, List<String> evidencePath,
                                           ConcurrencyOutcome outcome, Location location, List<ProofEvidence> evidence,

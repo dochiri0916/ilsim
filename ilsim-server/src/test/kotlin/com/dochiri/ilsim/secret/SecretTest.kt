@@ -48,7 +48,7 @@ class SecretTest {
 
         assertThat(stored).doesNotContain("tsk_live").doesNotContain("abcdef123456")
         assertThat(encryptor.decrypt("jev-api-key", stored)).isEqualTo("tsk_live_abcdef123456")
-        assertThat(encryptor.encrypt("jev-api-key", "tsk_live_abcdef123456")).isNotEqualTo(stored) // iv 가 매번 다르다
+        assertThat(encryptor.encrypt("jev-api-key", "tsk_live_abcdef123456")).isNotEqualTo(stored)
 
         assertThatThrownBy { encryptor.decrypt("other-name", stored) }.isInstanceOf(IllegalStateException::class.java)
         assertThatThrownBy { AesGcmSecretEncryptor(key(2)).decrypt("jev-api-key", stored) }.isInstanceOf(IllegalStateException::class.java)

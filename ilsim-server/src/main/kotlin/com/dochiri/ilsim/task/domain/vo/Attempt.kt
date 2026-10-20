@@ -1,6 +1,5 @@
 package com.dochiri.ilsim.task.domain.vo
 
-/** 단계의 시도 번호(1부터). */
 @JvmInline
 value class Attempt private constructor(val value: Int) {
     init {

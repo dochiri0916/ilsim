@@ -14,10 +14,6 @@ import com.dochiri.ilsim.task.domain.vo.TaskId
 import com.dochiri.ilsim.task.domain.vo.TaskStatus
 import java.time.Instant
 
-/**
- * 요구사항 1건과 그 진행 상태. 불변 객체이며 상태를 바꾸는 메서드는 바뀐 새 [Task] 를 돌려준다.
- * 단계 전이 규칙(승인, 재시도, 실행 횟수 상한)은 모두 이 집합체가 지킨다.
- */
 class Task private constructor(
     val id: TaskId,
     val createdAt: Instant,
@@ -27,24 +23,19 @@ class Task private constructor(
     val status: TaskStatus,
     val runnerId: RunnerId?,
     val branch: Branch?,
-    /** 사람이 개입(거절·재시도)한 뒤로 Runner 에 배정된 횟수. 자동 재시도가 끝없이 이어지지 않게 하는 전체 상한에 쓴다. */
     val runs: RunCount,
     val stages: List<StageState>,
-    /** 이어서 지시한 작업이면 직전 작업의 브랜치. Runner 가 HEAD 대신 이 브랜치에서 worktree 를 만든다. */
     val baseBranch: Branch? = null,
 ) {
-    /** 아직 통과하지 못한 첫 단계. 모두 통과했으면 null. */
     fun current(): StageState? = stages.firstOrNull { it.status != StageStatus.PASSED }
 
     fun stage(stage: Stage): StageState = stages.first { it.stage == stage }
 
-    /** 작업 전체에서 쓴 Claude 비용(USD)과 모델별 내역. */
     fun costUsd(): Double = stages.sumOf { it.costUsd }
 
     fun costByModel(): Map<String, Double> =
         stages.flatMap { it.costByModel.entries }.groupBy({ it.key }, { it.value }).mapValues { it.value.sum() }
 
-    /** Runner 에 배정할 수 있는 상태인지. */
     fun isRunnable(): Boolean = status == TaskStatus.ACTIVE && current()?.status == StageStatus.PENDING
 
     fun hitRunLimit(): Boolean = isRunnable() && runs.value >= MAX_TASK_RUNS
@@ -55,14 +46,12 @@ class Task private constructor(
         return copy(stages = replaceStage(failed), status = TaskStatus.BLOCKED)
     }
 
-    /** 현재 단계를 실행 중으로 넘기고 Runner 를 배정한 새 작업을 돌려준다. */
     fun assign(runnerId: RunnerId): Task {
         val stage = current()
         if (!isRunnable() || stage == null) throw InvalidTaskStateException("배정할 수 있는 단계가 없습니다")
         return copy(stages = replaceStage(stage.start()), runnerId = runnerId, runs = runs.increment())
     }
 
-    /** 모델 선택 등으로 바뀐 현재 단계 상태를 반영한 새 작업을 돌려준다. 단계 식별자는 바꿀 수 없다. */
     fun updateCurrent(updated: StageState): Task {
         val stage = current()
         if (stage == null || stage.stage != updated.stage) throw InvalidTaskStateException("현재 단계가 아닙니다")
@@ -95,7 +84,6 @@ class Task private constructor(
                 return copy(stages = replaceStage(if (stage.executionId == outcome.executionId) costed.recordSession(outcome.sessionId) else costed))
             }
         }
-        // 중지한 뒤 늦게 도착한 결과는 버리고 이미 쓴 비용만 남긴다.
         if (stage != null && stage.status != StageStatus.RUNNING && stage.error == STOPPED_MESSAGE) {
             return copy(stages = replaceStage(withCost(stage, outcome).recordSession(outcome.sessionId)))
         }
@@ -105,7 +93,6 @@ class Task private constructor(
         val withSession = costed.recordSession(outcome.sessionId)
         val recorded = withSession.record(outcome.diff, outcome.error, outcome.validation)
         return when {
-            // 질문에 답만 했으면 문서·테스트·구현 단계 없이 끝낸다. 남은 단계는 실행하지 않은 채(PENDING) 둔다.
             outcome.passed && outcome.answered && stage.stage == Stage.REQUIREMENTS -> withBranch
                 .copy(stages = withBranch.replaceStage(recorded.pass(emptyMap(), awaitApproval = false)), status = TaskStatus.COMPLETED)
             outcome.passed -> withBranch
@@ -122,7 +109,6 @@ class Task private constructor(
         return copy(stages = replaceStage(stage.approve())).completedIfDone()
     }
 
-    /** 승인 전의 요구사항에 사용자가 말을 건다. 같은 세션을 이어서 기존 문서를 고치게 한다. */
     fun message(text: String?): Task {
         val stage = waitingStage()
         if (stage.stage != Stage.REQUIREMENTS) throw InvalidTaskStateException("요구사항 단계에서만 대화할 수 있습니다")
@@ -137,10 +123,6 @@ class Task private constructor(
         return copy(stages = replaceStage(stage.restart(feedback)), runs = RunCount.ZERO)
     }
 
-    /**
-     * 차단된 작업의 실패 단계를 다시 시도한다. 사용자가 [instruction]을 주면 직전 Claude 세션을 이어 그 말을 전하고(CLI 에서 답하듯),
-     * 없으면 마지막 실패 사유를 피드백으로 새로 시작한다. 사용자가 중지한 단계는 중지 문구 대신 그 전 시도의 피드백을 넘긴다.
-     */
     fun retry(instruction: String? = null): Task {
         val stage = current()
         if (status != TaskStatus.BLOCKED || stage == null) throw InvalidTaskStateException("차단된 작업이 아닙니다")
@@ -150,7 +132,6 @@ class Task private constructor(
         return copy(stages = replaceStage(next), runs = RunCount.ZERO, status = TaskStatus.ACTIVE)
     }
 
-    /** 실행 중이거나 대기 중인 단계를 멈추고 작업을 차단한다. 실행 중이던 Runner 는 이를 보고 프로세스를 끝낸다. */
     fun stop(): Task {
         val stage = current()
         if (status != TaskStatus.ACTIVE || stage == null || stage.status !in STOPPABLE) {
@@ -159,10 +140,8 @@ class Task private constructor(
         return copy(stages = replaceStage(stage.fail(STOPPED_MESSAGE)), status = TaskStatus.BLOCKED)
     }
 
-    /** Runner 가 실행 중인 단계를 계속해야 하는지. 중지되거나 서버 재시작으로 실행 상태가 풀렸으면 false. */
     fun isRunning(): Boolean = current()?.status == StageStatus.RUNNING
 
-    /** 서버를 다시 띄우면 Runner 와의 연결이 끊겼으므로 실행 중이던 단계는 대기로 되돌린다. */
     fun recoverAfterRestart(): Task = copy(stages = stages.map { it.recoverInterrupted() })
 
     private fun withCost(stage: StageState, outcome: StageOutcome): StageState {
@@ -198,7 +177,6 @@ class Task private constructor(
     companion object {
         const val MAX_ATTEMPTS: Int = 3
 
-        /** 요구사항 한 건에 사용자가 보낼 수 있는 대화 횟수. 대화가 길어질수록 비용이 커지므로 제한한다. */
         const val MAX_MESSAGES: Int = 10
 
         const val UNKNOWN_MODEL: String = "unknown"
@@ -207,7 +185,6 @@ class Task private constructor(
 
         private val STOPPABLE = setOf(StageStatus.PENDING, StageStatus.RUNNING)
 
-        /** 사람이 개입하지 않은 채 한 작업에 배정할 수 있는 전체 횟수(단계 4개 × 시도 3회). */
         const val MAX_TASK_RUNS: Int = 12
 
         fun create(id: TaskId, now: Instant, projectId: ProjectId, feature: String?, requirement: String?, baseBranch: Branch? = null): Task =
@@ -225,7 +202,6 @@ class Task private constructor(
                 baseBranch = baseBranch,
             )
 
-        /** 저장본에서 되살린다. 검증은 각 VO 가 맡는다. */
         fun restore(
             id: TaskId,
             createdAt: Instant,

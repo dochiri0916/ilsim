@@ -13,11 +13,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
- * 프로젝트에서 검증된 학습 한 건. 생명주기: CANDIDATE(AI 의견에서 등록) → ACTIVE(사용자 승인) → SUPERSEDED(근거가 사라지거나 거절).
- * kind: FALSE_POSITIVE(이 위험 후보는 오탐) | CONFIRMED_RISK(실제로 확인된 위험).
- * 근거(evidence)와 등록 시점의 git 커밋을 함께 기록하고, 코드가 바뀌어 근거가 확인되지 않으면 [ProjectMemory.verify] 가 SUPERSEDED 로 돌린다.
- */
 @Serializable
 data class MemoryEntry(
     val id: String,
@@ -52,17 +47,11 @@ class ProjectMemory(config: ConfigStore) {
         KnowledgeFiles.write(file(projectId), json.encodeToString(entries))
     }
 
-    /** 읽고-고치고-쓰는 동안 서버(웹 승인)와 겹치지 않게 프로젝트 디렉터리를 잠근다. */
     private fun <T> locked(projectId: String, action: () -> T): T = KnowledgeFiles.locked(file(projectId).parent, action)
 
-    /** 승인된(ACTIVE) 오탐 학습의 지문. 이 지문의 위험 후보는 숨겨도 된다. */
     fun suppressed(projectId: String): Set<String> =
         load(projectId).filter { it.status == "ACTIVE" && it.kind == "FALSE_POSITIVE" }.map { it.fingerprint }.toSet()
 
-    /**
-     * AI 검토 의견 중 TRUE/FALSE 로 판정한 것을 CANDIDATE 로 등록한다. UNSURE 는 등록하지 않는다(검증되지 않은 추측은 저장하지 않는다).
-     * 같은 지문이 이미 활성이거나 후보면 건너뛴다. 등록된 새 항목 수를 돌려준다.
-     */
     fun collect(projectId: String, root: Path, findings: List<Violation>, opinions: Map<String, RiskOpinion>, commit: String?): Int = locked(projectId) {
         val entries = load(projectId).toMutableList()
         val known = entries.filter { it.status != "SUPERSEDED" }.map { it.kind + it.fingerprint }.toSet()
@@ -83,10 +72,6 @@ class ProjectMemory(config: ConfigStore) {
         added
     }
 
-    /**
-     * 사용자가 위험 후보를 직접 오탐으로 제외한다. 사용자의 결정이라 바로 ACTIVE 로 등록한다.
-     * [matches] 로 제외할 후보를 고르고, 새로 등록된 수를 돌려준다.
-     */
     fun dismiss(projectId: String, root: Path, findings: List<Violation>, commit: String?, matches: (Violation) -> Boolean): Int = locked(projectId) {
         val entries = load(projectId).toMutableList()
         val active = entries.filter { it.status == "ACTIVE" && it.kind == "FALSE_POSITIVE" }.map { it.fingerprint }.toSet()
@@ -126,7 +111,6 @@ class ProjectMemory(config: ConfigStore) {
         updated
     }
 
-    /** 현재 위험 후보의 지문과 대조해 근거가 사라진 항목을 SUPERSEDED 로 돌린다. 되돌린 항목 수를 돌려준다. */
     fun verify(projectId: String, root: Path, findings: List<Violation>): Int = locked(projectId) {
         val current = findings.map { RiskReviewer.fingerprint(root, it) }.toSet()
         var changed = 0

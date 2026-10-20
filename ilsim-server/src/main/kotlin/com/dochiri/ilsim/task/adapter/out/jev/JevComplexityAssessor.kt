@@ -9,7 +9,6 @@ import com.dochiri.ilsim.task.domain.CostRoutingPolicy
 import com.dochiri.ilsim.task.domain.StageState
 import com.dochiri.ilsim.task.domain.Task
 
-/** JEV 로 요구사항의 난이도와 변경 위험을 점수로 받는다. */
 class JevComplexityAssessor(private val jev: JevGateway) : ComplexityAssessor {
 
     override fun drainUsage() = jev.drainUsage().map { com.dochiri.ilsim.task.domain.AiUsage(it.id, "JEV_ROUTING", it.model, "none", costUsd = it.costUsd,

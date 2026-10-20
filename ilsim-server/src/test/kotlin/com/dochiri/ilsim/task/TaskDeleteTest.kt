@@ -11,7 +11,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
-/** 작업 삭제와, 그 worktree 를 Runner 가 지우도록 넘기는 정리 일감. */
 class TaskDeleteTest {
 
     private val demo = Project("demo", "demo", null)

@@ -11,7 +11,6 @@ internal class ImportRef(val name: String, val line: Int)
 
 internal class SourceFile(val module: String, val path: String, val pkg: String, val imports: List<ImportRef>)
 
-/** main 소스의 package/import 만 읽는다. Kotlin 백틱(`in`)과 별칭(as), 와일드카드, Java static import 를 정규화한다. */
 internal object SourceScanner {
     private val pkgRegex = Regex("""^\s*package\s+([\w.`]+)\s*;?\s*$""")
     private val importRegex = Regex("""^\s*import\s+(?:static\s+)?([\w.`]+?)(?:\.\*)?(?:\s+as\s+\w+)?\s*;?\s*$""")

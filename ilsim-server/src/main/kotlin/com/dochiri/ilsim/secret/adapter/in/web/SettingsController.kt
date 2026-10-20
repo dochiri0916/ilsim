@@ -16,10 +16,6 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
-/**
- * 웹에서 JEV API 키를 등록·삭제한다. 키 값은 응답에 담지 않는다(마지막 4자리만).
- * Runner 는 작업을 받을 때 `/runner/api/secrets/jev` 로 키를 받아 메모리에만 두고 쓴다.
- */
 @RestController
 class SettingsController(
     private val secrets: ManageSecretUseCase,

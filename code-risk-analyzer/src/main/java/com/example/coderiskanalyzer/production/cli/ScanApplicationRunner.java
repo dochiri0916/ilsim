@@ -6,7 +6,6 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-/** Bridges bootRun/jar arguments to the same scan command used by Spring Shell. */
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE)
 public class ScanApplicationRunner implements ApplicationRunner {

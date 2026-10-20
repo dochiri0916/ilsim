@@ -11,7 +11,6 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** 삭제된 작업의 worktree 를 지우고, 끝나지 않은 작업이면 브랜치도 지운다. */
 class TaskCleanupTest {
 
     private lateinit var root: Path

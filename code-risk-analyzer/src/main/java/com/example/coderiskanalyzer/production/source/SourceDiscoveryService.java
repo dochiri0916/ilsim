@@ -39,7 +39,6 @@ public class SourceDiscoveryService {
         return discover(projectRoot, includeTests, configuredRoots, excludes, new ArrayList<>());
     }
 
-    /** Like {@link #discover(Path, boolean, List, List)}, additionally reporting entries that could not be read. */
     public List<SourceFile> discover(Path projectRoot, boolean includeTests,
                                      List<String> configuredRoots, List<String> excludes, List<Path> unreadable) {
         Path normalizedRoot = projectRoot.toAbsolutePath().normalize();
@@ -74,7 +73,6 @@ public class SourceDiscoveryService {
     }
 
     private void walk(Path root, Path current, List<SourceFile> files, List<Path> unreadable) {
-        // Inside a real Java source root, directory names are package names, not build output.
         boolean javaSourceRoot = root.endsWith(Path.of("src", "main", "java")) || root.endsWith(Path.of("src", "test", "java"));
         try {
             Files.walkFileTree(current, new SimpleFileVisitor<>() {

@@ -11,7 +11,6 @@ import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtPsiFactory
 
-/** Kotlin's parser supplies syntax nodes; comments and string contents never stand in for executable code. */
 final class KotlinSourceAstInspector {
     private KotlinSourceAstInspector() {
     }

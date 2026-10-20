@@ -22,7 +22,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
-/** 웹에서 시작한 Claude 로그인이 Runner 와 주고받는 흐름, 공통 설정 저장, 계정 삭제. */
 class ClaudeAccountTest {
 
     private class MemoryEnvironment : ClaudeEnvironmentStore {

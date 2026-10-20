@@ -4,7 +4,6 @@ import { api } from './api'
 import { ClaudeAccounts, ClaudeEnvironmentEditor } from './ClaudeSettings'
 import { usePoll } from './usePoll'
 
-/** 로그인한 계정의 비밀번호 변경. 계정 생성은 관리자가 DB 에서 직접 한다. */
 function Account() {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -52,7 +51,6 @@ function Account() {
   )
 }
 
-/** Google Authenticator 2단계 인증. 켜면 비밀번호로 새로 로그인할 때 코드를 묻고, 자동 로그인된 기기는 묻지 않는다. */
 function TwoFactor() {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null)
@@ -123,7 +121,6 @@ function TwoFactor() {
   )
 }
 
-/** JEV API 키 등록. 키는 서버가 암호화해 MySQL 에 저장하며 화면에는 마지막 4자리만 보인다. */
 export function Settings() {
   const settings = usePoll(api.settings, 10000)
   const [key, setKey] = useState('')

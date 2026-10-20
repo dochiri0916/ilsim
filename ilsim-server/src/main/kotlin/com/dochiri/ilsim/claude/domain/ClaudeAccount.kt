@@ -3,10 +3,6 @@ package com.dochiri.ilsim.claude.domain
 import com.dochiri.ilsim.claude.domain.exception.InvalidClaudeRequestException
 import java.time.Instant
 
-/**
- * Runner(PC)에 로그인해 둔 Claude 계정. 로그인 정보는 그 PC 의 계정 설정 디렉터리(키체인)에만 있고, 서버는 Runner 가 보고한 상태만 안다.
- * [plan]이 없으면(구독 없음) Runner 는 이 계정을 실행에 쓰지 않는다.
- */
 data class ClaudeAccount(
     val runnerId: String,
     val name: String,
@@ -30,10 +26,6 @@ data class ClaudeAccount(
 
 enum class LoginStatus { REQUESTED, WAITING_CODE, CODE_SUBMITTED, DONE, FAILED }
 
-/**
- * 웹에서 시작한 Claude 로그인 한 번. REQUESTED → (Runner 가 `claude auth login` 을 띄워 URL 보고) WAITING_CODE →
- * (사용자가 브라우저 로그인 후 코드 입력) CODE_SUBMITTED → DONE / FAILED. 코드는 Runner 가 가져가면 지운다.
- */
 data class LoginSession(
     val id: String,
     val runnerId: String,

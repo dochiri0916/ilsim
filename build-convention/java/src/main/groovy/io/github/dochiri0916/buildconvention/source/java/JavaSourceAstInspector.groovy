@@ -32,7 +32,6 @@ class JavaSourceAstInspector {
         return inspectAll([file]).get(normalizedPath(file))
     }
 
-    /** Parse immutable source snapshots such as Git index blobs without consulting the worktree. */
     static Inspection inspectSource(String fileName, String source) {
         File logicalFile = new File(fileName)
         JavaCompiler compiler = ToolProvider.systemJavaCompiler

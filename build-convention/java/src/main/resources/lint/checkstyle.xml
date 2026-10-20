@@ -14,7 +14,6 @@
 
     <module name="TreeWalker">
         <module name="AvoidStarImport">
-            <!-- tool-test-lab convention: only JPA mappings and Spring Web annotations may use star imports. -->
             <property name="excludes" value="jakarta.persistence,org.springframework.web.bind.annotation"/>
         </module>
         <module name="NeedBraces"/>

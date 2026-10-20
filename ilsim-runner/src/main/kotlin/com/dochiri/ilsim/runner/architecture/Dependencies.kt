@@ -1,6 +1,5 @@
 package com.dochiri.ilsim.runner.architecture
 
-/** 파일의 import 하나를 해석한 결과. 내부 의존이면 [to], 외부 라이브러리면 [external] 이 채워진다. */
 internal class Dep(
     val file: SourceFile,
     val line: Int,
@@ -44,7 +43,6 @@ internal object Dependencies {
 
     private fun isStdlib(name: String) = name.startsWith("kotlin.") || name.startsWith("java.") || name == "kotlin"
 
-    /** `org.springframework.kafka.core.X` → `org.springframework.kafka`, `jakarta.persistence.Entity` → `jakarta.persistence`. */
     fun externalPrefix(name: String): String {
         val segs = name.split('.')
         val want = if (segs[0] in rootLevelTlds) 3 else 2

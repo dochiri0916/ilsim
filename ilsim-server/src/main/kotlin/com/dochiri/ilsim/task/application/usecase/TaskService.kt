@@ -46,10 +46,6 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
-/**
- * 작업 목록을 메모리에 들고 있고, 변경될 때마다 [TaskStore] 에 저장한다. 저장에 실패해도 메모리에서는 계속 동작한다.
- * 단계 전이 규칙은 [Task] 가 지키고, 여기서는 배정 순서·프로젝트 등록·저장만 맡는다.
- */
 class TaskService(
     private val selector: ModelSelector,
     private val store: TaskStore,
@@ -60,7 +56,6 @@ class TaskService(
     private val adjustmentStore: RoutingAdjustmentStore? = null,
 ) : ManageTaskUseCase, QueryTaskUseCase, RunnerUseCase, ProjectUsageRecorder, RoutingUseCase {
 
-    /** 조정 이력(오래된 것부터). 마지막 것이 지금 적용 중인 조정이다. */
     private val adjustmentHistory = Collections.synchronizedList(ArrayList<RoutingAdjustments>())
 
     private val tasks = ConcurrentHashMap<String, Task>()
@@ -69,12 +64,10 @@ class TaskService(
     private val seen = ConcurrentHashMap<String, Instant>()
     private val savedSeen = ConcurrentHashMap<String, Instant>()
 
-    /** Runner 가 아직 가져가지 않은 worktree 정리 일감. 서버를 다시 띄우면 사라지며, 그때 남은 worktree 는 직접 지운다. */
     private val cleanups = Collections.synchronizedList(ArrayList<Cleanup>())
     private val projectUsage = ConcurrentHashMap<String, List<AiUsage>>()
     private val projectSamples = ConcurrentHashMap<String, List<ReviewSampleGrant>>()
 
-    /** 저장된 작업과 프로젝트를 되살린다. 저장소를 못 읽으면 빈 상태로 시작한다. */
     fun restore() {
         try {
             store.loadProjects().forEach { (id, p) ->
@@ -151,7 +144,6 @@ class TaskService(
         return synchronized(list) { ArrayList(list) }
     }
 
-    /** 이벤트 목록. 서버를 다시 띄운 뒤 처음 열 때 저장소에서 최근 것을 읽어 온다. */
     private fun eventList(taskId: String): MutableList<TaskEvent>? {
         if (!tasks.containsKey(taskId)) return null
         return events.computeIfAbsent(taskId) { id ->
@@ -164,7 +156,6 @@ class TaskService(
         }
     }
 
-    /** Runner 가 보고한 프로젝트를 등록하고, 실행 대기 중인 단계 하나를 RUNNING 으로 넘긴다. */
     @Synchronized
     override fun poll(runnerId: String, reported: List<Project>): Assignment? {
         val now = clock.instant()
@@ -181,7 +172,6 @@ class TaskService(
         if (pendingAssessment != null) assigned = assigned.updateCurrent(checkNotNull(assigned.current()).account(listOf(
             AiUsage(pendingAssessment, "JEV_ROUTING", "jev", "probability", status = "UNKNOWN"))))
         val stage = checkNotNull(assigned.current())
-        // 저장 장애는 유료 판단을 시작하기 전에 확인한다.
         store.saveTask(assigned)
         tasks[assigned.id.value] = assigned
         selector.learn(tasks.values)
@@ -264,14 +254,11 @@ class TaskService(
         val outcome = if (raw.executionId == null && before.isRunning()) raw.copy(executionId = before.current()?.executionId, stage = before.current()?.stage?.name) else raw
         val next = before.report(outcome)
         if (next === before) return
-        // 시도마다 검증 결과와 실패 사유를 대화 기록에 남긴다. 단계 상태에는 마지막 시도만 남기 때문이다.
-        // verdict 형식: 첫 줄 PASSED|FAILED, 다음 줄부터 "항목=결과".
         val verdict = listOf(if (command.passed) "PASSED" else "FAILED") + command.validation.orEmpty().map { (k, v) -> "$k=$v" }
         val reportEvents = mutableListOf(TaskEvent(clock.instant(), stage, "verdict", verdict.joinToString("\n"), outcome.executionId?.let { "$it:verdict" }))
         command.error?.takeIf { !command.passed && it.isNotBlank() }?.let {
             reportEvents += TaskEvent(clock.instant(), stage, "failure", it, outcome.executionId?.let { id -> "$id:failure" })
         }
-        // 상태·비용·검증 로그를 함께 저장한 뒤 수신 확인한다.
         store.saveOutcome(next, reportEvents)
         tasks[taskId] = next
         eventList(taskId)?.addAll(reportEvents)
@@ -370,7 +357,6 @@ class TaskService(
         return RoutingOverview(RoutingReport.of(selected, selector.policy), selector.adjustments, adjustmentHistory.toList().reversed(), ModelCatalog.all(), modelUpgrades.toList().reversed())
     }
 
-    /** 모델이 새 버전으로 올라간 기록(시각, 등급, 이전 → 새 ID). 서버를 다시 띄우면 Runner 가 다시 보고한다. */
     private val modelUpgrades = Collections.synchronizedList(ArrayList<String>())
 
     @Synchronized
@@ -417,7 +403,6 @@ class TaskService(
     override fun shouldStop(taskId: String, executionId: String?): Boolean = shouldStop(taskId) ||
         executionId != null && tasks[taskId]?.current()?.executionId != executionId
 
-    /** 작업을 바꾼 새 인스턴스로 교체하고 저장한다. 없는 작업이면 [TaskNotFoundException]. */
     private fun update(taskId: String, change: (Task) -> Task): Task {
         val current = tasks[taskId] ?: throw TaskNotFoundException(taskId)
         val next = change(current)

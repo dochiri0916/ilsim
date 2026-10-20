@@ -97,7 +97,6 @@ const TABS = [
   { href: '#/routing', label: '모델 선택' },
 ]
 
-/** 프로젝트를 먼저 고르고, 그 프로젝트 안에서 탭을 오간다. 설정만 프로젝트와 무관하다. */
 function Shell({ hash, onLogout }: { hash: string; onLogout: () => void }) {
   const projects = usePoll(api.projects, 5000)
   const [projectId, setProjectId] = useSelectedProject(projects.data)

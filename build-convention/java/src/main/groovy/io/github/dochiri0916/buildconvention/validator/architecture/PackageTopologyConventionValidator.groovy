@@ -35,7 +35,6 @@ class PackageTopologyConventionValidator {
             'in',
             'out'
     ] as Set
-    // Inbound contracts are always separated by role.
     private static final Set<String> APPLICATION_PORT_IN_CHILD_SEGMENTS = [
             'usecase',
             'command',
@@ -55,7 +54,6 @@ class PackageTopologyConventionValidator {
             'messaging',
             'web'
     ] as Set
-    // Packages that may hold their own subpackages, and shared-kernel packages that may not.
     private static final Set<String> GLOBAL_TREE_PACKAGES = ['exception', 'persistence', 'configuration', 'messaging'] as Set
     private static final List<List<String>> GLOBAL_EXACT_PACKAGES = [
             ['domain', 'vo'],
@@ -185,7 +183,6 @@ class PackageTopologyConventionValidator {
 
         if (!CONTEXT_LAYER_SEGMENTS.contains(segments[1]) && segments.size() >= 3
                 && CONTEXT_LAYER_SEGMENTS.contains(segments[2])) {
-            // A grouped context: {group}/{module}/{layer}..., such as catalog/product/domain.
             String moduleName = segments[1]
             if (RESERVED_CONTEXT_NAMES.contains(moduleName)) {
                 violations.add("${path} package '${moduleName}' is not a bounded context module; use a real module name")
@@ -202,7 +199,6 @@ class PackageTopologyConventionValidator {
         }
 
         if (segments.size() < 3) {
-            // An aggregate root may sit directly in the domain package, beside its vo/model/exception packages.
             if (layerName == 'application' && typeName ==~ /[A-Z][A-Za-z0-9]*(?:ResultMapper|EventMapper)/) {
                 return
             }
@@ -291,7 +287,6 @@ class PackageTopologyConventionValidator {
         }
     }
 
-    /** Root packages from the configured base package or the *Application bootstrap classes, read without parsing. */
     static Set<String> rootPackages(List<File> sourceFiles, HexagonalConventionExtension convention) {
         if (convention.basePackage != null && !convention.basePackage.isBlank()) {
             return [convention.basePackage.strip()] as Set

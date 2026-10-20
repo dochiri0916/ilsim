@@ -71,7 +71,6 @@ class SideEffectDetectorTests {
                         repository.remove("a"); java.nio.file.Files.delete(java.nio.file.Path.of("x")); }
                 }
                 """, List.of());
-        // The inherited local overload belongs to LocalBase, not the HTTP API.
         assertThat(detector.classify(calls(source).stream().filter(call -> call.toString().equals("wire.postForObject(1)"))
                 .findFirst().orElseThrow())).isEmpty();
         assertThat(detector.detect(source)).extracting(effect -> effect.type())
@@ -154,7 +153,6 @@ class SideEffectDetectorTests {
 
     @Test
     void classDirectoryAndJarPatternResolveTheSameCallsInAScan() throws Exception {
-        // given: the library both as compiled classes and as a JAR found by a pattern
         createJar();
         Path root = tempDir.resolve("src/main/java");
         write(root, "Calls.java", """
@@ -166,10 +164,8 @@ class SideEffectDetectorTests {
                 new ProgramModelBuilder(), new RuleEngine(List.of(new RemoteCallInsideTransactionRule(detector))),
                 List.of(new JsonReporter()));
         for (String classpath : List.of("[library-classes]", "['libs/*.jar']", "['**/api.jar', libs/api.jar]")) {
-            // when
             Files.writeString(tempDir.resolve(".code-risk.yml"), "analysis:\n  classpath: " + classpath + "\n");
             var response = command.scanForCli(new ScanRequest(tempDir.toString(), "json", "", "false", "", "", "", false));
-            // then
             assertThat(response.exitCode()).as(classpath).isZero();
             assertThat(response.output()).as(classpath).contains("TX-003", "RESOLVED_TYPE", "RestOperations.postForObject");
         }

@@ -2,7 +2,6 @@ package com.dochiri.ilsim.task.domain.vo
 
 import com.dochiri.ilsim.task.domain.exception.InvalidTaskRequestException
 
-/** 작업이 쓰는 기능 이름. 파일 경로에 들어가므로 소문자·숫자·하이픈만 허용한다. */
 @JvmInline
 value class Feature private constructor(val value: String) {
     init {

@@ -26,10 +26,6 @@ class SourceInspector {
         return files.toList()
     }
 
-    /**
-     * Source directories of the real source sets so custom srcDir entries cannot hide code from validation.
-     * With a null sourceSetName, every source set except main is returned.
-     */
     static Set<File> sourceDirs(Project project, String sourceSetName, String... defaults) {
         Set<File> dirs = new LinkedHashSet<>()
         defaults.each { String path -> dirs.add(project.file(path)) }

@@ -13,14 +13,11 @@ class BookTitleTest {
     @Test
     @DisplayName("1자와 100자 제목은 앞뒤 공백을 지우고 만든다")
     void boundary() {
-        // given
         final String longest = "가".repeat(100);
 
-        // when
         final BookTitle shortest = BookTitle.of(" 가 ");
         final BookTitle longTitle = BookTitle.of(longest);
 
-        // then
         assertThat(shortest.value()).isEqualTo("가");
         assertThat(longTitle.value()).isEqualTo(longest);
     }
@@ -28,10 +25,8 @@ class BookTitleTest {
     @Test
     @DisplayName("값이 없거나 비어 있거나 100자를 넘으면 예외가 발생한다")
     void invalid() {
-        // given
         final String tooLong = "가".repeat(101);
 
-        // when & then
         assertThatThrownBy(() -> BookTitle.of(null))
                 .isInstanceOf(BookTitleRequiredException.class)
                 .hasMessage("도서 제목은 필수입니다.");

@@ -12,7 +12,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** 일심에 등록한 Claude 계정: 상태 읽기, 로그인 URL, 사용량 기준 선택, 세션의 계정 표시, 공통 설정 적용. */
 class ClaudeAccountsTest {
 
     private lateinit var root: Path
@@ -100,7 +99,6 @@ class ClaudeAccountsTest {
         assertEquals("새 규칙", dir.resolve("CLAUDE.md").readText())
     }
 
-    /** 실제 `claude auth status` 를 부르지 않고 계정 상태를 채운다. */
     private fun withStates(states: List<ClaudeAccountReport>, action: () -> Unit) {
         val field = ClaudeAccounts::class.java.getDeclaredField("states").apply { isAccessible = true }
         @Suppress("UNCHECKED_CAST")

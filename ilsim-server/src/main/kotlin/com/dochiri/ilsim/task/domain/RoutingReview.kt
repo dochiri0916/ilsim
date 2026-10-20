@@ -4,14 +4,9 @@ import java.security.MessageDigest
 import java.time.Instant
 import kotlin.math.pow
 
-/**
- * 사람이 정한 모델·추론 강도 조정. [enabled]가 false 면 JEV 가 고르지 못하고, [successOffset]은 JEV 가 예측한 성공 가능성에 더한다
- * (예측이 실제보다 낙관적이면 음수). 실행 이력의 정책 버전은 바꾸지 않으므로 보정 표본은 그대로 이어진다.
- */
 data class RoutingAdjustment(val model: String, val effort: String, val enabled: Boolean = true, val successOffset: Double = 0.0) {
     val key: String get() = "$model/$effort"
 
-    /** 버전과 무관한 계열 키. 새 버전이 나와도 조정이 그대로 이어진다. */
     val familyKey: String get() = "${ModelTier.of(model)?.label ?: model}/$effort"
 
     fun normalized(): RoutingAdjustment = copy(successOffset = successOffset.takeIf { it.isFinite() }?.coerceIn(-MAX_OFFSET, MAX_OFFSET) ?: 0.0)
@@ -23,7 +18,6 @@ data class RoutingAdjustment(val model: String, val effort: String, val enabled:
     }
 }
 
-/** 조정 묶음 하나. 바꿀 때마다 새 버전으로 쌓고, 이전 버전을 다시 적용해 되돌린다. */
 data class RoutingAdjustments(val items: List<RoutingAdjustment> = emptyList(), val note: String? = null, val createdAt: Instant? = null) {
     private val byKey: Map<String, RoutingAdjustment> = items.associateBy { it.familyKey }
 
@@ -40,19 +34,12 @@ data class RoutingAdjustments(val items: List<RoutingAdjustment> = emptyList(), 
     fun adjust(option: ModelOption, success: Double): Double = (success + (byKey[option.family()]?.successOffset ?: 0.0)).coerceIn(0.0, 1.0)
 
     companion object {
-        /** 기본값과 같은 항목은 버리고, 같은 조합이 여러 번 오면 마지막 것을 쓴다. */
         fun of(items: List<RoutingAdjustment>, note: String?, now: Instant): RoutingAdjustments =
             RoutingAdjustments(items.map { it.normalized().let { a -> a.copy(model = ModelTier.of(a.model)?.modelId ?: a.model) } }.associateBy { it.familyKey }.values.filterNot { it.isDefault }.sortedBy { it.key },
                 note?.trim()?.take(500)?.ifEmpty { null }, now)
     }
 }
 
-/**
- * 완료된 작성 실행 하나에 대한 판정. 같은 작업군(단계·복잡도·위험)의 이력과 비교한다.
- * - OVER: 성공했지만 같은 작업군에서 더 싼 조합이 충분한 표본으로 품질 기준을 넘었다(과한 선택).
- * - UNDER: 실패했고 같은 단계의 다음 시도가 더 높은 조합으로 성공했다(부족한 선택).
- * - FIT: 그 밖의 성공. UNKNOWN: 환경 장애 등 모델 능력과 무관한 실패이거나 판단 근거가 없다.
- */
 enum class SelectionVerdict { FIT, OVER, UNDER, UNKNOWN }
 
 data class ExecutionReview(
@@ -61,16 +48,13 @@ data class ExecutionReview(
     val verdict: SelectionVerdict, val cheaperOption: String? = null, val adjustmentVersion: String? = null,
 )
 
-/** 모델·추론 강도 하나의 성적. [calibrationGap]은 예측 성공률 − 실제 성공률(양수면 JEV 가 낙관적). */
 data class OptionReport(
     val model: String, val effort: String, val executions: Int, val passed: Int, val passRate: Double?,
     val averagePredicted: Double?, val calibrationGap: Double?, val brier: Double?,
     val averageActualCostUsd: Double?, val averageExpectedCostUsd: Double?, val over: Int, val under: Int,
-    /** 표본이 충분할 때 권장 보정값. 예측과 실제 차이를 표본 수로 줄여(작은 표본은 덜 믿음) 계산한다. */
     val recommendedOffset: Double?,
 )
 
-/** 작업군별로 품질 기준을 넘은 조합 중 실측 비용이 가장 낮은 조합과, 실제로 가장 많이 쓴 조합. */
 data class WorkloadReport(val workload: String, val executions: Int, val mostUsed: String?, val cheapestQualified: String?)
 
 data class RoutingReport(
@@ -82,9 +66,7 @@ data class RoutingReport(
     val qualityThreshold: Double,
 ) {
     companion object {
-        /** 비교 자체는 저장된 이력만 쓴다. 추가 AI 호출이 없다. */
         fun of(tasks: Collection<Task>, policy: CostRoutingPolicy, recentLimit: Int = 50): RoutingReport {
-            // 같은 계열은 버전과 무관하게 지금 버전 ID 로 묶는다(새 버전이 이전 버전 성적을 이어받는다).
             val reviews = tasks.flatMap { task -> task.stages.flatMap { stage ->
                 stage.executions.filter { it.completed }.map { task to stage to it.copy(model = ModelTier.of(it.model)?.modelId ?: it.model) }
             } }
@@ -113,7 +95,6 @@ data class RoutingReport(
                 ExecutionReview(task.id.value, stage.stage.name, e.id, e.model, e.effort, e.workload, e.predictedSuccess, e.passed, e.failureKind,
                     e.actualCostUsd, e.expectedCostUsd, verdict.first, verdict.second, e.adjustmentVersion)
             }
-            // 환경 장애는 모델 능력과 무관하므로 성적에서 뺀다.
             val options = judged.filter { it.failureKind !in CostRoutingPolicy.ENVIRONMENT_FAILURES }.groupBy { it.model to it.effort }.map { (k, g) ->
                 val passRate = g.count { it.passed }.toDouble() / g.size
                 val predicted = g.mapNotNull { it.predictedSuccess }.takeIf { it.isNotEmpty() }

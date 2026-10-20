@@ -16,14 +16,12 @@ class ChangedCodeCoverageValidatorTest {
     @Test
     @DisplayName('커밋되지 않은 Java 변경도 변경 코드 커버리지에 포함한다')
     void validatesUncommittedJavaChanges() {
-        // given
         Project project = gitProject('working-tree')
         writeJava(project, sampleSource('1'))
         commitAll(project.projectDir, 'baseline')
         writeJava(project, sampleSource('2'))
         File report = writeCoverageReport(project, 'Sample.java', 5, false)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -31,7 +29,6 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert violations.any { it.contains('Changed production line coverage') }
         assert violations.any { it.contains('Uncovered changed line: src/main/java/com/example/Sample.java:5') }
     }
@@ -39,13 +36,11 @@ class ChangedCodeCoverageValidatorTest {
     @Test
     @DisplayName('추적되지 않은 신규 Java 파일도 변경 코드 커버리지에 포함한다')
     void validatesUntrackedJavaFiles() {
-        // given
         Project project = gitProject('untracked')
         runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
         writeJava(project, sampleSource('1'))
         File report = writeCoverageReport(project, 'Sample.java', 5, false)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -53,7 +48,6 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert violations.any { it.contains('Changed production line coverage') }
         assert violations.any { it.contains('Uncovered changed line: src/main/java/com/example/Sample.java:5') }
     }
@@ -61,7 +55,6 @@ class ChangedCodeCoverageValidatorTest {
     @Test
     @DisplayName('변경된 Java 파일이 JaCoCo XML에 없으면 실패한다')
     void rejectsChangedFileMissingFromCoverageReport() {
-        // given
         Project project = gitProject('missing-coverage')
         writeJava(project, sampleSource('1'))
         commitAll(project.projectDir, 'baseline')
@@ -70,7 +63,6 @@ class ChangedCodeCoverageValidatorTest {
         report.parentFile.mkdirs()
         report.text = '<?xml version="1.0" encoding="UTF-8"?><report name="test"/>'
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -78,7 +70,6 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert violations.any {
             it.contains('Changed production file is missing from JaCoCo XML: src/main/java/com/example/Sample.java')
         }
@@ -87,11 +78,9 @@ class ChangedCodeCoverageValidatorTest {
     @Test
     @DisplayName('base ref가 없으면 변경 커버리지를 계산하지 않고 실패한다')
     void rejectsMissingBaseReference() {
-        // given
         Project project = gitProject('missing-base')
         File report = writeCoverageReport(project, 'Sample.java', 5, true)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -99,18 +88,15 @@ class ChangedCodeCoverageValidatorTest {
                 ' '
         )
 
-        // then
         assert violations == ['changedCoverageBaseRef project property is required']
     }
 
     @Test
     @DisplayName('JaCoCo XML이 없으면 명시적으로 실패한다')
     void rejectsMissingJacocoReport() {
-        // given
         Project project = gitProject('missing-report')
         File report = new File(project.projectDir, 'missing.xml')
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -118,19 +104,16 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert violations.any { it.contains('JaCoCo XML report does not exist') }
     }
 
     @Test
     @DisplayName('존재하지 않는 Git base ref는 fail-closed로 거부한다')
     void rejectsUnknownGitBaseReference() {
-        // given
         Project project = gitProject('unknown-ref')
         runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
         File report = writeCoverageReport(project, 'Sample.java', 5, true)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -138,20 +121,17 @@ class ChangedCodeCoverageValidatorTest {
                 'missing-ref'
         )
 
-        // then
         assert violations.any { it.contains("Cannot calculate changed code coverage from 'missing-ref...HEAD'") }
     }
 
     @Test
     @DisplayName('변경 실행 라인이 없으면 커버리지 위반을 만들지 않는다')
     void acceptsChangedFileWithoutExecutableLines() {
-        // given
         Project project = gitProject('non-executable')
         runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
         writeJava(project, sampleSource('1'))
         File report = writeCoverageReport(project, 'Sample.java', 100, false, 0, 0)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -159,20 +139,17 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('라인이 충족되어도 변경 branch 커버리지가 부족하면 실패한다')
     void rejectsInsufficientChangedBranchCoverage() {
-        // given
         Project project = gitProject('branch-coverage')
         runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
         writeJava(project, sampleSource('1'))
         File report = writeCoverageReport(project, 'Sample.java', 5, true, 3, 1)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -180,7 +157,6 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert !violations.any { it.contains('line coverage') }
         assert violations.any { it.contains('Changed production branch coverage 25.00% is below 85.00%') }
     }
@@ -188,13 +164,11 @@ class ChangedCodeCoverageValidatorTest {
     @Test
     @DisplayName('라인과 branch가 기준 이상이면 변경 커버리지를 통과한다')
     void acceptsCoveredChangedLineAndBranches() {
-        // given
         Project project = gitProject('covered-change')
         runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
         writeJava(project, sampleSource('1'))
         File report = writeCoverageReport(project, 'Sample.java', 5, true, 0, 4)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -202,20 +176,17 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('Production 변경이 없으면 빈 위반 목록을 반환한다')
     void acceptsRepositoryWithoutProductionChanges() {
-        // given
         Project project = gitProject('no-changes')
         writeJava(project, sampleSource('1'))
         commitAll(project.projectDir, 'baseline')
         File report = writeCoverageReport(project, 'Sample.java', 5, true)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
@@ -223,14 +194,12 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('낮게 설정한 기준은 baseline으로 보정하고 미커버 라인은 20건까지만 표시한다')
     void clampsMinimumAndLimitsUncoveredLineDiagnostics() {
-        // given
         Project project = gitProject('many-uncovered-lines')
         runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
         List<String> sourceLines = ['package com.example;', '', 'public final class Sample {']
@@ -241,7 +210,6 @@ class ChangedCodeCoverageValidatorTest {
         HexagonalConventionExtension convention = new HexagonalConventionExtension()
         convention.changedLineCoverageMinimum = 0.10
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project,
                 convention,
@@ -249,7 +217,6 @@ class ChangedCodeCoverageValidatorTest {
                 'HEAD'
         )
 
-        // then
         assert violations.any { it.contains('is below 90.00%') }
         assert violations.count { it.startsWith('Uncovered changed line:') } == 20
         assert violations.any { it == '5 more uncovered changed lines' }
@@ -258,7 +225,6 @@ class ChangedCodeCoverageValidatorTest {
     @Test
     @DisplayName('커밋된 변경 뒤에 작업 트리에서 줄이 밀려도 작업 트리 기준 줄 번호로 검사한다')
     void usesWorkingTreeLineNumbersAfterCommittedChanges() {
-        // given
         Project project = gitProject('shifted-lines')
         writeJava(project, sampleSource('1'))
         commitAll(project.projectDir, 'baseline')
@@ -268,18 +234,15 @@ class ChangedCodeCoverageValidatorTest {
         writeJava(project, '// header\n' + sampleSource('2'))
         File report = writeCoverageReport(project, 'Sample.java', 6, false)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project, new HexagonalConventionExtension(), report, 'base')
 
-        // then
         assert violations.any { it.contains('Uncovered changed line: src/main/java/com/example/Sample.java:6') }
     }
 
     @Test
     @DisplayName('추가 srcDir의 신규 Java 파일도 변경 코드 커버리지에 포함한다')
     void validatesChangedFilesInCustomSourceDirectory() {
-        // given
         Project project = gitProject('custom-source-dir')
         project.pluginManager.apply('java')
         project.sourceSets.main.java.srcDir('src/gen/java')
@@ -289,34 +252,28 @@ class ChangedCodeCoverageValidatorTest {
         generated.text = sampleSource('1')
         File report = writeCoverageReport(project, 'Sample.java', 5, false)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project, new HexagonalConventionExtension(), report, 'HEAD')
 
-        // then
         assert violations.any { it.contains('Uncovered changed line: src/gen/java/com/example/Sample.java:5') }
     }
 
     @Test
     @DisplayName('merge base를 찾을 수 없으면 실패한다')
     void rejectsUnknownBaseRef() {
-        // given
         Project project = gitProject('unknown-base')
         runGit(project.projectDir, 'commit', '--allow-empty', '-m', 'baseline')
         File report = writeCoverageReport(project, 'Sample.java', 5, true)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 project, new HexagonalConventionExtension(), report, 'no-such-ref')
 
-        // then
         assert violations.any { it.contains('no merge base found') }
     }
 
     @Test
     @DisplayName('저장소 루트가 아닌 하위 모듈의 변경도 변경 코드 커버리지에 포함한다')
     void validatesChangedFilesInSubprojectOfRepository() {
-        // given
         Project root = gitProject('multi-module')
         File moduleDir = new File(root.projectDir, 'order')
         moduleDir.mkdirs()
@@ -326,11 +283,9 @@ class ChangedCodeCoverageValidatorTest {
         writeJava(module, sampleSource('2'))
         File report = writeCoverageReport(module, 'Sample.java', 5, false)
 
-        // when
         List<String> violations = ChangedCodeCoverageValidator.validate(
                 module, new HexagonalConventionExtension(), report, 'HEAD')
 
-        // then
         assert violations.any { it.contains('Changed production line coverage') }
         assert violations.any { it.contains('Uncovered changed line: src/main/java/com/example/Sample.java:5') }
     }
@@ -339,13 +294,10 @@ class ChangedCodeCoverageValidatorTest {
     @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     @DisplayName('stderr 출력이 파이프 버퍼보다 커도 프로세스 실행이 멈추지 않는다')
     void drainsLargeStderrWithoutBlocking() {
-        // given
         List<String> command = ['sh', '-c', 'head -c 1000000 /dev/zero | tr "\\0" x >&2; echo done']
 
-        // when
         ChangedCodeCoverageValidator.ProcessResult result = ChangedCodeCoverageValidator.runProcess(command, tempDir)
 
-        // then
         assert result.exitValue == 0
         assert result.stdout.trim() == 'done'
         assert result.stderr.length() == 1000000

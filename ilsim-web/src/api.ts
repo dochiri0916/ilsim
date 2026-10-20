@@ -15,7 +15,6 @@ export interface StageState {
   costUsd?: number
   costByModel?: Record<string, number>
   unknownCalls?: number
-  /** 요구사항 단계에서 사용자가 보낸 대화 메시지와, 지금 말을 걸 수 있는지 */
   messages: string[]
   conversable: boolean
 }
@@ -95,7 +94,6 @@ export interface RoutingOverview {
   }
   current: RoutingAdjustments
   history: RoutingAdjustments[]
-  /** 등급별 지금 쓰는 모델 ID(haiku·sonnet·opus). 같은 계열 새 버전이 나오면 자동으로 올라간다. */
   models: Record<string, string>
   upgrades: string[]
   locked: string[]
@@ -105,7 +103,6 @@ export interface Settings {
   jev: { configured: boolean; last4: string | null; updatedAt: string | null }
 }
 
-/** 일심이 Claude 를 실행하는 모든 곳에 똑같이 까는 CLAUDE.md·settings.json. */
 export interface ClaudeEnvironment {
   claudeMd: string
   settingsJson: string
@@ -113,7 +110,6 @@ export interface ClaudeEnvironment {
   updatedAt: string | null
 }
 
-/** Runner(PC)에 로그인해 둔 Claude 계정. plan 이 없으면 구독이 없어 실행에 쓰지 않는다. */
 export interface ClaudeAccount {
   runnerId: string
   name: string
@@ -205,7 +201,6 @@ export interface UsageWindow {
 
 export interface PlanUsage {
   runnerId: string
-  /** 'claude'(기본 로그인) 또는 'claude@<계정>'. 같은 PC라도 계정마다 따로 보고된다. */
   provider: string
   status: string | null
   fiveHour: UsageWindow | null
@@ -218,9 +213,7 @@ export type RuleSet = 'architecture' | 'convention'
 
 export interface AuthState {
   user?: string
-  /** 비밀번호는 맞았고 Google Authenticator 코드를 기다린다 */
   otpRequired?: boolean
-  /** 로그인한 계정의 2단계 인증 사용 여부(확인 못 하면 null) */
   twoFactor?: boolean | null
 }
 

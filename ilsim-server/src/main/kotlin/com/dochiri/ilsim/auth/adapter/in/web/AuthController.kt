@@ -19,10 +19,6 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
-/**
- * 로그인: 비밀번호 → (2단계 인증을 켠 계정이면) Google Authenticator 코드 → 세션.
- * "자동 로그인"을 고르면 30일짜리 토큰 쿠키를 주고, 그 기기는 세션이 끝나도 코드 없이 다시 들어온다([SessionFilter]).
- */
 @RestController
 class AuthController(
     private val auth: AuthUseCase,
@@ -37,7 +33,6 @@ class AuthController(
 
     data class Code(val code: String? = null)
 
-    /** user 가 없으면 로그인 전. [otpRequired]면 비밀번호는 맞았고 코드를 기다린다. */
     data class AuthState(val user: String? = null, val otpRequired: Boolean = false, val twoFactor: Boolean? = null)
 
     @GetMapping("/api/auth/me")
@@ -63,7 +58,6 @@ class AuthController(
         return ResponseEntity.ok(complete(req, res, user, body.remember))
     }
 
-    /** 로그인 두 번째 단계. 비밀번호를 맞힌 세션에서 [PENDING_TTL] 안에만 받는다. */
     @PostMapping("/api/auth/otp")
     fun otp(@RequestBody body: Code, req: HttpServletRequest, res: HttpServletResponse): ResponseEntity<Any> {
         val user = pending(req)
@@ -83,7 +77,6 @@ class AuthController(
         return ResponseEntity.noContent().build()
     }
 
-    /** 2단계 인증 등록 시작: 새 비밀을 세션에만 두고 QR 용 URI 를 준다. */
     @PostMapping("/api/auth/totp/setup")
     fun totpSetup(req: HttpServletRequest): ResponseEntity<Any> {
         val user = sessionUser(req) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
@@ -124,19 +117,17 @@ class AuthController(
 
     private fun complete(req: HttpServletRequest, res: HttpServletResponse, user: String, keep: Boolean): AuthState {
         if (keep) {
-            // 토큰 저장소(DB)가 안 되면 자동 로그인만 빠지고 로그인은 된다.
             runCatching { cookie.write(res, remember.issue(user)) }.onFailure { log.warn("자동 로그인 토큰을 만들지 못했습니다: {}", it.message) }
         }
         return start(req, user)
     }
 
     private fun start(req: HttpServletRequest, user: String): AuthState {
-        req.getSession(false)?.invalidate() // 세션 고정 공격 방지: 로그인마다 새 세션
+        req.getSession(false)?.invalidate()
         req.getSession(true).setAttribute(SESSION_USER, user)
         return AuthState(user)
     }
 
-    /** 로그인한 사용자가 자기 비밀번호를 바꾼다. 계정 생성은 관리자가 DB 에서 직접 한다. */
     @PostMapping("/api/auth/password")
     fun changePassword(@RequestBody body: PasswordChange, req: HttpServletRequest): ResponseEntity<Any> {
         val user = req.getSession(false)?.getAttribute(SESSION_USER) as? String
@@ -144,7 +135,7 @@ class AuthController(
         if (!auth.changePassword(req.remoteAddr, user, body.currentPassword, body.newPassword)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to "현재 비밀번호가 맞지 않습니다"))
         }
-        start(req, user) // 비밀번호를 바꾸면 세션도 새로 시작하고 모든 기기의 자동 로그인을 끊는다
+        start(req, user)
         runCatching { remember.revokeAll(user) }
         return ResponseEntity.noContent().build()
     }

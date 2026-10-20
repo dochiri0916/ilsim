@@ -17,7 +17,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 
-/** Sonnet 5.5 → 5.6 처럼 같은 계열 새 버전은 이력·조정을 이어받아 바로 쓰고, Fable 은 받지 않는다. */
 class ModelUpgradeTest {
 
     @AfterEach
@@ -70,6 +69,5 @@ class ModelUpgradeTest {
         assertThat(assignment.model).isIn("claude-sonnet-5-6", "claude-opus-5-6")
     }
 
-    /** 저가 조합을 채택하려면 같은 작업군의 기준 경로(보수적 조합) 표본도 있어야 한다. */
     private fun sonnetControl() = (1..6).map { ExecutionRecord("c$it", "claude-sonnet-5-5", "medium", "cost-v1", completed = true, passed = true, workload = "W", actualCostUsd = 0.01) }
 }

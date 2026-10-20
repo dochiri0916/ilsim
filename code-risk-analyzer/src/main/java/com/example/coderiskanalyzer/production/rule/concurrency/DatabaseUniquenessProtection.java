@@ -17,7 +17,6 @@ import com.github.javaparser.ast.expr.NormalAnnotationExpr;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 
-/** Conservative source-level proof of uniqueness for a repository insertion. */
 final class DatabaseUniquenessProtection {
     private static final Set<String> INSERTS = Set.of("save", "saveAll", "insert", "persist");
     private static final Set<String> REPOSITORIES = Set.of(
@@ -75,7 +74,6 @@ final class DatabaseUniquenessProtection {
                             }
                         }
                     }
-                    // Ambiguous mappings cannot establish a protection.
                     if (columns.containsKey(column)) return false;
                     columns.put(column, property);
                 }
@@ -101,10 +99,8 @@ final class DatabaseUniquenessProtection {
                     if (known && !constraint.isEmpty()) constraints.add(constraint);
                 }
             }
-            // A unique subset also makes the complete equality key unique.
             return constraints.stream().anyMatch(properties::containsAll);
         } catch (RuntimeException unresolved) {
-            // Missing types or unsupported mappings must retain the finding.
             return false;
         }
     }
@@ -132,7 +128,6 @@ final class DatabaseUniquenessProtection {
         if (declaration.isEmpty() || !(declaration.get() instanceof ClassOrInterfaceDeclaration repository)) {
             return Optional.empty();
         }
-        // Type-solver ASTs from other files may have no resolver. Use the analyzed AST by qualified name.
         repository = canonical(repository).orElse(null);
         if (repository == null) return Optional.empty();
         Map<String, ClassOrInterfaceDeclaration> parameters = new HashMap<>();

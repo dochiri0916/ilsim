@@ -24,13 +24,10 @@ class RegisterBookServiceTest {
     @Test
     @DisplayName("새 ISBN이면 도서를 저장하고 등록 이벤트를 발행한다")
     void register() {
-        // given
         final RegisterBookCommand command = new RegisterBookCommand(" 9788966260959 ", "클린 코드");
 
-        // when
         final RegisterBookResult result = service.register(command);
 
-        // then
         assertThat(result.isbn()).isEqualTo("9788966260959");
         assertThat(result.title()).isEqualTo("클린 코드");
         assertThat(repository.findByBookId(BookId.parse(result.bookId()))).isPresent();
@@ -41,10 +38,8 @@ class RegisterBookServiceTest {
     @Test
     @DisplayName("이미 등록된 ISBN이면 저장하지 않고 중복 예외가 발생한다")
     void duplicateIsbn() {
-        // given
         service.register(new RegisterBookCommand("9788966260959", "클린 코드"));
 
-        // when & then
         assertThatThrownBy(() -> service.register(new RegisterBookCommand("9788966260959", "다른 제목")))
                 .isInstanceOf(DuplicateIsbnException.class)
                 .hasMessage("이미 등록된 ISBN입니다.");

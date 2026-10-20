@@ -31,7 +31,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
-/** 로그인·비밀번호 변경이 HTTP 에서 세션과 CSRF 헤더 규칙을 지키는지 본다. */
 class AuthHttpTest {
 
     private class Memory : AccountRepository {
@@ -86,7 +85,6 @@ class AuthHttpTest {
     private fun json(url: String, body: String, session: MockHttpSession? = null) =
         post(url).csrf().contentType(MediaType.APPLICATION_JSON).content(body).also { if (session != null) it.session(session) }
 
-    /** 로그인마다 새 세션이 만들어지므로(세션 고정 방지) 응답 요청에 붙은 세션을 쓴다. */
     private fun sessionOf(result: MvcResult): MockHttpSession = result.request.getSession(false) as MockHttpSession
 
     private fun login(password: String = "correct-horse"): MockHttpSession {
@@ -163,7 +161,7 @@ class AuthHttpTest {
         assertThat(result.response.getHeader("Set-Cookie")).contains("HttpOnly").contains("SameSite=Lax")
 
         val restored = mvc.perform(get("/api/auth/me").cookie(cookie)).andExpect(jsonPath("$.user").value("admin")).andReturn()
-        mvc.perform(get("/api/tasks").cookie(cookie)).andExpect(status().isNotFound) // 인증은 통과(컨트롤러가 없어 404)
+        mvc.perform(get("/api/tasks").cookie(cookie)).andExpect(status().isNotFound)
 
         mvc.perform(post("/api/auth/logout").csrf().cookie(cookie).session(sessionOf(restored))).andExpect(status().isNoContent)
         mvc.perform(get("/api/auth/me").cookie(cookie)).andExpect(jsonPath("$.user").doesNotExist())
@@ -203,7 +201,6 @@ class AuthHttpTest {
         mvc.perform(get("/api/tasks").session(pending)).andExpect(status().isUnauthorized)
         mvc.perform(get("/api/auth/me").session(pending)).andExpect(jsonPath("$.otpRequired").value(true))
 
-        // 등록할 때 쓴 코드는 다시 쓸 수 없어 다음 칸 코드로 확인한다.
         val next = Totp.code(secret, Totp.step(Instant.now()) + 1)
         mvc.perform(json("/api/auth/otp", """{"code":"123"}""", pending)).andExpect(status().isUnauthorized)
         val done = mvc.perform(json("/api/auth/otp", """{"code":"$next"}""", pending))
@@ -224,7 +221,7 @@ class AuthHttpTest {
 
     @Test
     fun `TOTP 는 RFC 6238 시험 값과 같다`() {
-        val secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" // "12345678901234567890"
+        val secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
         assertThat(Totp.code(secret, Totp.step(Instant.ofEpochSecond(59)))).isEqualTo("287082")
         assertThat(Totp.code(secret, Totp.step(Instant.ofEpochSecond(1111111109)))).isEqualTo("081804")
         assertThat(Totp.verify(secret, "081804", Instant.ofEpochSecond(1111111109 + 30))).isNotNull()

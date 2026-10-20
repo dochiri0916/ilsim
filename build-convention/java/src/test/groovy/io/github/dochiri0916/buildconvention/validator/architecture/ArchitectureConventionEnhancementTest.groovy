@@ -15,7 +15,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Application에서 허용하지 않은 Spring 기술 타입 의존을 거부한다')
     void rejectsTechnicalFrameworkDependencyInApplication() {
-        // given
         Project project = sampleProject('technical-dependency')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/port/out/OrderQueryPort.java', '''
@@ -28,13 +27,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application must not depend on technical framework type 'org.springframework.data.domain.Page'")
         }
@@ -43,7 +40,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('fully-qualified Spring 기술 타입도 Application에서 거부한다')
     void rejectsFullyQualifiedTechnicalFrameworkDependencyInApplication() {
-        // given
         Project project = sampleProject('fully-qualified-technical-dependency')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/port/out/OrderQueryPort.java', '''
@@ -54,13 +50,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application must not depend on technical framework type 'org.springframework.data.domain.Page'")
         }
@@ -69,7 +63,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Application은 다른 Context Domain 타입을 직접 참조하지 않는다')
     void rejectsCrossContextDomainObjectAndIdentifierValueObject() {
-        // given
         Project project = sampleProject('cross-context-application')
         writeApplication(project)
         writeJava(project, 'com/example/sales/domain/model/Order.java', '''
@@ -108,13 +101,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application must not depend on another context domain model 'com.example.sales.domain.model.Order'")
         }
@@ -126,7 +117,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Published Language 패키지는 다른 Context의 공유 계약으로 명시적으로 허용한다')
     void acceptsExplicitPublishedLanguagePackage() {
-        // given
         Project project = sampleProject('published-language')
         writeApplication(project)
         writeJava(project, 'com/example/sales/domain/model/OrderId.java', '''
@@ -147,17 +137,14 @@ class ArchitectureConventionEnhancementTest {
                 publishedLanguagePackagePrefixes: ['com.example.sales.domain.model'] as Set
         )
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
 
-        // then
         assert !violations.any { it.contains('another context domain model') }
     }
 
     @Test
     @DisplayName('fully-qualified 다른 Context Domain 객체 참조도 거부한다')
     void rejectsFullyQualifiedCrossContextDomainObject() {
-        // given
         Project project = sampleProject('fully-qualified-cross-context')
         writeApplication(project)
         writeJava(project, 'com/example/review/application/port/out/ReviewOrderPort.java', '''
@@ -168,13 +155,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application must not depend on another context domain model 'com.example.sales.domain.model.Order'")
         }
@@ -183,7 +168,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Context 이름과 다른 Aggregate 타입도 직접 참조를 거부한다')
     void rejectsCrossContextAggregateWhoseNameDiffersFromContext() {
-        // given
         Project project = sampleProject('cross-context-domain')
         writeApplication(project)
         writeJava(project, 'com/example/sales/domain/model/Order.java', '''
@@ -207,13 +191,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("domain must not depend directly on another context model 'Order'")
         }
@@ -225,7 +207,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('다른 Context 값 타입 위반은 Aggregate로 단정하지 않고 번역 방법을 안내한다')
     void reportsCrossContextValueTypeWithoutMisclassifyingItAsAggregate() {
-        // given
         Project project = sampleProject('cross-context-value-object')
         writeApplication(project)
         writeJava(project, 'com/example/catalog/domain/model/Money.java', '''
@@ -249,13 +230,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("domain must not depend directly on another context model 'Money'")
                     && it.contains('translate it into a context-owned type')
@@ -268,7 +247,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('오류 메시지의 언어 선택은 아키텍처 검증에서 강제하지 않는다')
     void doesNotEnforceErrorMessageLanguage() {
-        // given
         Project project = sampleProject('message-language')
         writeApplication(project)
         writeJava(project, 'com/example/member/adapter/out/persistence/PersistenceGuard.java', '''
@@ -305,13 +283,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any { it.contains('exception message string literals must be written in Korean') }
         assert !violations.any { it.contains('user-facing ApiErrorMessage title/detail must be written in Korean') }
     }
@@ -319,7 +295,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Mapper는 변환 방향 이름을 사용하고 시간 값을 만들지 않는다 (자식 행 키 UUID는 허용)')
     void rejectsMapperWithAmbiguousMethodAndTimeGeneration() {
-        // given
         Project project = sampleProject('mapper-responsibility')
         writeApplication(project)
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderMapper.java', '''
@@ -344,13 +319,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains("mapper 'OrderMapper' method 'map' must reveal conversion direction") }
         assert violations.any { it.contains("mapper 'OrderMapper' must not generate time values") }
         assert !violations.any { it.contains('toLineEntityKey') }
@@ -359,7 +332,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Mapper의 복수 Entity 변환 메서드는 방향이 드러나면 허용한다')
     void acceptsMapperMethodThatTargetsPluralEntities() {
-        // given
         Project project = sampleProject('mapper-plural-entities')
         writeApplication(project)
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderMapper.java', '''
@@ -378,13 +350,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any {
             it.contains("mapper 'OrderMapper' method 'toItemEntities' must reveal conversion direction")
         }
@@ -393,7 +363,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Application에서 임의 외부 라이브러리 타입 의존을 거부한다')
     void rejectsUnapprovedExternalLibraryDependencyInApplication() {
-        // given
         Project project = sampleProject('external-library-dependency')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/port/out/PaymentPort.java', '''
@@ -406,13 +375,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application dependency 'com.vendor.payment.PaymentClient' is not allowed")
         }
@@ -421,7 +388,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Application Service가 같은 Context의 다른 Service 구현체에 의존하는 것을 거부한다')
     void rejectsSameContextApplicationServiceImplementationDependency() {
-        // given
         Project project = sampleProject('same-context-service-dependency')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/service/CreateOrderService.java', '''
@@ -440,13 +406,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application dependency 'com.example.order.application.service.CreateOrderService' is not allowed")
         }
@@ -455,7 +419,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('fully-qualified Application Service 구현체 의존도 허용 목록을 우회할 수 없다')
     void rejectsFullyQualifiedSameContextServiceDependency() {
-        // given
         Project project = sampleProject('fully-qualified-service-dependency')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/service/PayOrderService.java', '''
@@ -466,13 +429,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application dependency 'com.example.order.application.service.CreateOrderService' is not allowed")
         }
@@ -481,7 +442,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Application은 JDK와 같은 Context Domain Port 예외 및 허용 annotation을 사용한다')
     void acceptsExplicitApplicationDependencyAllowlist() {
-        // given
         Project project = sampleProject('application-allowlist')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/OrderId.java', '''
@@ -536,20 +496,17 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any { it.contains('application dependency') && it.contains('is not allowed') }
     }
 
     @Test
     @DisplayName('Controller collaborator는 Domain 객체가 아니라 Inbound UseCase만 허용한다')
     void rejectsControllerDomainObjectCollaborator() {
-        // given
         Project project = sampleProject('controller-collaborator')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/Order.java', '''
@@ -577,13 +534,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("controller collaborator 'order' must be an inbound UseCase")
         }
@@ -595,7 +550,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Application Service collaborator는 Clock 대신 Outbound Port로 추상화한다')
     void rejectsApplicationServiceTechnicalCollaboratorThatIsNotPort() {
-        // given
         Project project = sampleProject('service-collaborator')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/port/in/usecase/CreateOrderUseCase.java', '''
@@ -636,13 +590,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application service collaborator 'clock' must be an outbound Port or Domain service")
         }
@@ -654,7 +606,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('줄바꿈된 final class 선언도 Application Service의 final로 인식한다')
     void recognizesMultilineFinalApplicationServiceDeclaration() {
-        // given
         Project project = sampleProject('multiline-final-service')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/port/in/usecase/RunOrderUseCase.java', '''
@@ -682,20 +633,17 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any { it.contains("application service 'RunOrderService' must be final") }
     }
 
     @Test
     @DisplayName('줄바꿈된 외부 타입 import도 Application 허용 목록을 우회하지 못한다')
     void rejectsMultilineExternalImportInApplication() {
-        // given
         Project project = sampleProject('multiline-external-import')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/port/out/PaymentPort.java', '''
@@ -709,13 +657,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("application dependency 'com.vendor.payment.PaymentClient' is not allowed")
         }
@@ -724,7 +670,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('쉼표 인자를 가진 annotation 뒤의 record component도 AST로 검증한다')
     void validatesAnnotatedRecordComponentsWithNestedCommas() {
-        // given
         Project project = sampleProject('annotated-record-components')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/Orders.java', '''
@@ -744,13 +689,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("domain record component 'values' must be wrapped in a first-class collection")
         }
@@ -759,7 +702,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('type-use annotation이 붙은 Domain field도 raw scalar와 식별자 규칙을 검증한다')
     void validatesTypeUseAnnotatedDomainField() {
-        // given
         Project project = sampleProject('type-use-field')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/ReferenceHolder.java', '''
@@ -777,13 +719,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains("domain field 'memberId' must use a Value Object") }
         assert violations.any {
             it.contains("domain reference field 'memberId' must use an identifier Value Object type")
@@ -793,7 +733,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('record component를 일반 필드로 중복 판정하지 않는다')
     void doesNotTreatRecordComponentsAsDeclaredFields() {
-        // given
         Project project = sampleProject('record-component-separation')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/Email.java', '''
@@ -864,13 +803,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any { it.contains("domain field 'value'") }
         assert !violations.any { it.contains("domain field 'values'") }
         assert !violations.any { it.contains("domain record component 'value'") }
@@ -880,7 +817,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('fully-qualified JPA field 선언을 AST에서 동등하게 인식한다')
     void acceptsFullyQualifiedJpaFieldDeclarations() {
-        // given
         Project project = sampleProject('qualified-jpa-fields')
         writeApplication(project)
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
@@ -917,13 +853,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any { it.contains("JPA entity 'OrderEntity' must declare @NoArgsConstructor") }
         assert !violations.any { it.contains("JPA entity 'OrderEntity' must declare private Long id with @Id") }
         assert !violations.any { it.contains("JPA technical key 'id' must declare @Getter(AccessLevel.NONE)") }
@@ -937,7 +871,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('multiline relation annotation과 generic Mapper method를 AST로 검출한다')
     void detectsMultilineJpaRelationAndGenericMapperMethod() {
-        // given
         Project project = sampleProject('jpa-relation-and-generic-mapper')
         writeApplication(project)
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
@@ -982,13 +915,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains("JPA entity 'OrderEntity' must not use object relation mappings") }
         assert violations.any {
             it.contains("mapper 'OrderMapper' method 'map' must reveal conversion direction")
@@ -998,7 +929,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('fully-qualified superclass와 outbound Port 구현을 AST로 인식한다')
     void acceptsFullyQualifiedSuperclassAndOutboundPortImplementation() {
-        // given
         Project project = sampleProject('qualified-super-and-port')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/exception/InvalidOrderException.java', '''
@@ -1034,13 +964,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any {
             it.contains("domain exception 'InvalidOrderException' must extend RuntimeException")
         }
@@ -1052,7 +980,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('type-use annotation이 붙은 Controller 반환 타입도 AST로 검증한다')
     void detectsAnnotatedControllerDomainReturnType() {
-        // given
         Project project = sampleProject('annotated-controller-return')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/Order.java', '''
@@ -1081,13 +1008,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains('controller must not expose domain types as response return values')
         }
@@ -1096,7 +1021,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('주석 속 가짜 선언을 record compact constructor로 인정하지 않는다')
     void ignoresCompactConstructorShapeInsideComment() {
-        // given
         Project project = sampleProject('compact-constructor-comment')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/OrderName.java', '''
@@ -1110,13 +1034,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("domain record 'OrderName' must declare a compact constructor for invariants")
         }
@@ -1125,7 +1047,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('줄바꿈된 fully-qualified 기술 타입과 다른 Context 타입을 AST로 거부한다')
     void rejectsMultilineFullyQualifiedApplicationTypes() {
-        // given
         Project project = sampleProject('multiline-qualified-types')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/port/out/PaymentPort.java', '''
@@ -1140,13 +1061,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("technical framework type 'org.springframework.data.domain.Page'")
         }
@@ -1158,7 +1077,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('줄바꿈된 fully-qualified 다른 Context Domain 참조를 AST로 거부한다')
     void rejectsMultilineFullyQualifiedDomainReference() {
-        // given
         Project project = sampleProject('multiline-qualified-domain-reference')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/CatalogSnapshot.java', '''
@@ -1176,13 +1094,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("domain must not depend directly on another context model 'Product'")
         }
@@ -1191,7 +1107,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('줄바꿈된 fully-qualified 내부 계층 참조를 DTO와 Domain에서 거부한다')
     void rejectsMultilineFullyQualifiedLayerReferences() {
-        // given
         Project project = sampleProject('multiline-qualified-layer-references')
         writeApplication(project)
         writeJava(project, 'com/example/order/adapter/in/web/response/GetOrderResponse.java', '''
@@ -1222,13 +1137,11 @@ class ArchitectureConventionEnhancementTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains("API DTO 'GetOrderResponse' must not expose domain/application types") }
         assert violations.any { it.contains('domain must not depend on global.exception') }
     }
@@ -1236,7 +1149,6 @@ class ArchitectureConventionEnhancementTest {
     @Test
     @DisplayName('Response 변환 내부의 Result 일급 컬렉션은 허용하고 필드·공개 반환 노출은 거부한다')
     void allows_result_collection_mapping_without_contract_leaks() {
-        // given
         Project project = sampleProject('response-result-collection-mapping')
         writeApplication(project)
         String response = '''            package com.example.order.adapter.in.web.response;
@@ -1254,10 +1166,8 @@ class ArchitectureConventionEnhancementTest {
         String path = 'com/example/order/adapter/in/web/response/GetOrderResponse.java'
         writeJava(project, path, response)
 
-        // when
         List<String> allowed = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !allowed.any { it.contains('must not expose domain/application types') }
         writeJava(project, path, response.replace('List<String> ids', 'OrderResultItems ids'))
         assert JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension()).any {

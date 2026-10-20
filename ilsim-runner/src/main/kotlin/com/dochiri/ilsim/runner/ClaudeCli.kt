@@ -2,15 +2,12 @@ package com.dochiri.ilsim.runner
 
 import java.nio.file.Files
 
-/** 도구 없이 한 번 질문하고 답을 받는다. 프로젝트 파일에 접근하지 않도록 빈 임시 디렉터리에서 실행한다. */
 object ClaudeCli {
-    /** 답과, 알 수 있으면 그 호출의 비용(USD). */
     data class Answer(val text: String, val costUsd: Double?, val usage: List<AiUsage> = emptyList())
     class Failure(val answer: Answer, message: String) : IllegalStateException(message)
 
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
 
-    /** `--output-format json` 의 단일 결과 객체에서 답과 비용을 읽는다. 형식이 다르면 출력 전체를 답으로 본다. */
     fun parse(output: String): Answer = try {
         val obj = json.parseToJsonElement(output.trim()) as kotlinx.serialization.json.JsonObject
         val text = obj["structured_output"]?.toString() ?: (obj["result"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: output
@@ -50,7 +47,6 @@ object ClaudeCli {
     }
 }
 
-/** 명령·프로젝트 분석의 검토 비용 요약. 서버 전송용 원본은 UsageScope가 수집한다. */
 class CostTally(private val purpose: String = "REVIEW", private val asker: (String, String) -> ClaudeCli.Answer = ReviewRouter::askWithCost) {
     var usd: Double = 0.0
         private set

@@ -5,13 +5,11 @@ import java.time.Instant
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-/** Google Authenticator 와 같은 TOTP(RFC 6238): HMAC-SHA1, 30초, 6자리. */
 object Totp {
     private const val STEP_SECONDS = 30L
     private const val DIGITS = 6
     private const val ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
-    /** 160비트 비밀을 Base32 로. */
     fun newSecret(random: SecureRandom = SecureRandom()): String = base32(ByteArray(20).also(random::nextBytes))
 
     fun uri(issuer: String, account: String, secret: String): String {
@@ -30,7 +28,6 @@ object Totp {
         return (bin % 1_000_000).toString().padStart(DIGITS, '0')
     }
 
-    /** 시계 오차를 앞뒤 한 칸(30초)까지 허용한다. 맞은 칸을 돌려주며, [after] 이하 칸은 재사용이라 거절한다. */
     fun verify(secret: String, code: String?, now: Instant, after: Long = Long.MIN_VALUE): Long? {
         val input = code?.filter { it.isDigit() }?.takeIf { it.length == DIGITS } ?: return null
         val current = step(now)

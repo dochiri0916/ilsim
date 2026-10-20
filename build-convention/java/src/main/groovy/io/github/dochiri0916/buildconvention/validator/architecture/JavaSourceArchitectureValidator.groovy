@@ -142,7 +142,6 @@ class JavaSourceArchitectureValidator {
             'org.springframework.stereotype.Service',
             'org.springframework.transaction.annotation.Transactional'
     ] as Set
-    // JPA mappings and Spring Web annotations may be star-imported; project packages never are.
     private static final Set<String> ALLOWED_WILDCARD_IMPORTS = [
             'jakarta.persistence.*',
             'org.springframework.web.bind.annotation.*'
@@ -884,7 +883,7 @@ class JavaSourceArchitectureValidator {
                 }
             } else if (packageName.contains('.exception')) {
                 violations.add("${path} domain exception support '${type.name}' must end with Exception or ErrorCode")
-            } else if (!packageName.contains('.domain.outbox') // Immutable messaging models may be records outside domain.vo.
+            } else if (!packageName.contains('.domain.outbox')
                     && !packageName.contains('.model') && !packageName.contains('.vo')
                     && !packageName.endsWith(".${convention.domainPackageSegment}")) {
                 violations.add("${path} domain model '${type.name}' must live in domain, domain.model, or domain.vo package")
@@ -892,7 +891,6 @@ class JavaSourceArchitectureValidator {
                     && !['class', 'enum'].contains(type.kind)) {
                 violations.add("${path} domain value object '${type.name}' in domain.vo package must be a final class or enum")
             }
-            // Only events and Outbox models are records; any other domain record is a Value Object written the wrong way.
             if (type.kind == 'record' && !isDomainEventPackage(packageName, convention)
                     && !packageName.contains('.domain.outbox') && !packageName.contains('.vo')) {
                 violations.add("${path} domain Value Object '${type.name}' must be a final class with a private constructor")
@@ -1107,7 +1105,6 @@ class JavaSourceArchitectureValidator {
         }
     }
 
-    /** global.domain value objects and global.application.exception are shared by every context. */
     private static boolean isGlobalSharedKernelType(String dependency) {
         return dependency.contains('.global.domain.') || dependency.contains('.global.application.exception.')
     }
@@ -1441,7 +1438,6 @@ class JavaSourceArchitectureValidator {
                 && (!hasNullGuard(source) || !hasBlankCheck(source))) {
             violations.add("${path} domain record '${type.name}' must null-check and blank-check String components")
         }
-        // A *ReferenceId points at another context's identity, so only the owning context generates it.
         if (type.name.endsWith('Id') && !type.name.endsWith('ReferenceId')
                 && components.size() == 1
                 && normalizeType(components.first().type) == 'String'
@@ -1555,7 +1551,6 @@ class JavaSourceArchitectureValidator {
             violations.add("${path} JPA entity '${type.name}' must not be final")
         }
         if (isMessagingRecordPackage(packageName)) {
-            // persistence-conventions: Outbox/Inbox rows use purpose-specific keys and inherit them from the shared OutboxEntry/InboxEntry.
             return
         }
         if (!type.hasAnnotation('Getter')) {
@@ -1636,7 +1631,7 @@ class JavaSourceArchitectureValidator {
                     || normalizedAnnotationArgument(keyColumn, 'nullable') != 'false') {
                 violations.add("${path} JPA message/snapshot UUID key '${key.name}' must be a required String column with length = 36")
             }
-            return // Delivery/projection keys retain their purpose-specific names.
+            return
         }
         String identifierField = 'publicId'
         JavaSourceAstInspector.AnnotationModel column = domainIdField?.annotation('Column')
@@ -1742,7 +1737,6 @@ class JavaSourceArchitectureValidator {
             violations.add("${path} mapper '${type.name}' method '${methodName}' must reveal conversion direction with toDomain, toEntity, or updateEntity")
         }
         String searchableSource = stripCommentsAndStrings(source)
-        // Row keys of child entities may be generated here; time always comes from the domain or an injected Clock.
         if ((searchableSource =~ /(?m)\b(?:(?:Instant|LocalDate|LocalDateTime|OffsetDateTime|ZonedDateTime)\s*\.\s*now|System\s*\.\s*currentTimeMillis)\s*\(/).find()) {
             violations.add("${path} mapper '${type.name}' must not generate time values")
         }
@@ -1814,7 +1808,6 @@ class JavaSourceArchitectureValidator {
         return (source =~ /(?m)@\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)*(?:Autowired|Component|Service|Repository|Entity|Table|Getter|Setter|Data|Builder|NoArgsConstructor|RequiredArgsConstructor|AllArgsConstructor)\b/).find()
     }
 
-    /** domain-conventions: revision·sequence 같은 메타데이터는 원시 타입을 허용한다(`cartRevision`처럼 접두어가 붙은 이름 포함). */
     private static boolean isMetadataName(String name) {
         String lower = name.toLowerCase(Locale.ROOT)
         return lower.endsWith('revision') || lower.endsWith('sequence')
@@ -1824,10 +1817,6 @@ class JavaSourceArchitectureValidator {
         return (source =~ /(?m)\bthrow\s+new\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*(?:IllegalArgumentException|IllegalStateException|NullPointerException|UnsupportedOperationException|IndexOutOfBoundsException|ArithmeticException|NumberFormatException|ClassCastException|AssertionError)\b/).find()
     }
 
-    /**
-     * Local declaration checks complement ExceptionContractConventionValidator, which resolves the
-     * context's sealed base and verifies ownership and explicit permits across source files.
-     */
     private static void validateExceptionContract(
             String path,
             String layer,
@@ -2226,7 +2215,6 @@ class JavaSourceArchitectureValidator {
             if (fields.contains(simpleName) || fields.contains(dependency)) {
                 return true
             }
-            // adapter-conventions: Request는 toCommand()/toQuery() 안에서 Command·Query와 그 일급 컬렉션을 만들 수 있다.
             boolean inboundMapping = type.name.endsWith('Request')
                     && (dependency.contains('.port.in.command.') || dependency.contains('.port.in.query.'))
                     && type.astType.methods.any { method ->
@@ -2386,7 +2374,6 @@ class JavaSourceArchitectureValidator {
         return SHARED_EXCEPTION_CONTRACT_TYPES.contains(simpleTypeName)
     }
 
-    /** The optional port.in child package a type may use; UseCases have none and stay directly in port.in. */
     private static String inboundPortPackageFor(String typeName) {
         if (typeName.endsWith('UseCase')) {
             return 'usecase'

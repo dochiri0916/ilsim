@@ -40,7 +40,7 @@ class SourceDiscoveryServiceTests {
         Files.createFile(locked.resolve("Hidden.java"));
         java.util.List<Path> unreadable = new java.util.ArrayList<>();
         try {
-            if (!locked.toFile().setReadable(false) || Files.isReadable(locked)) return; // e.g. running as root
+            if (!locked.toFile().setReadable(false) || Files.isReadable(locked)) return;
             service.discover(tempDir, false, java.util.List.of(), java.util.List.of(), unreadable);
             assertThat(unreadable).contains(locked.toAbsolutePath().normalize());
         } finally {

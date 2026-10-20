@@ -29,12 +29,6 @@ import com.github.javaparser.ast.expr.StringLiteralExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import org.springframework.stereotype.Component;
 
-/**
- * Flags request handlers that load a resource by a client-supplied identifier while no caller identity or access
- * rule is visible on the handler or on the project methods it reaches (bounded call graph). A caller identity
- * parameter counts only when the handler uses it. Checks inside unresolved library calls are not seen; the
- * evidence records how much of the path was inspected so a reviewer (or JEV) can judge the rest.
- */
 @Component
 public class MissingObjectAuthorizationRule implements RiskRule {
 
@@ -47,11 +41,9 @@ public class MissingObjectAuthorizationRule implements RiskRule {
             "OAuth2AuthenticationToken", "UsernamePasswordAuthenticationToken");
     private static final Set<String> CALLER_ANNOTATIONS = Set.of("AuthenticationPrincipal", "CurrentSecurityContext");
     private static final Set<String> REQUEST_INPUTS = Set.of("PathVariable", "RequestParam");
-    /** checkOwner(..), verifyAccess(..), assertPermission(..), ensureMember(..), canAccess(..) and similar. */
     private static final java.util.regex.Pattern OWNERSHIP_CHECK = java.util.regex.Pattern.compile(
             "(?i)(check|verify|assert|ensure|validate|require|authori[sz]e|can|has|is)\\w*"
                     + "(owner|ownership|access|permission|authori[sz]|member|allowed|permitted)\\w*");
-    /** findByIdAndOwnerId(..), findByIdAndUser(..), existsByIdAndMemberId(..): the lookup itself is scoped to the caller. */
     private static final java.util.regex.Pattern SCOPED_LOOKUP = java.util.regex.Pattern.compile(
             "(?i)\\w*By\\w*And(owner|user|member|account|customer|author|creator|tenant)\\w*");
 
@@ -101,7 +93,6 @@ public class MissingObjectAuthorizationRule implements RiskRule {
         return node.getAnnotations().stream().anyMatch(annotation -> names.contains(annotation.getName().getIdentifier()));
     }
 
-    /** A caller identity parameter that the handler actually uses, or the security context read directly. */
     private static boolean usesCallerIdentity(MethodDeclaration method) {
         boolean parameter = method.getParameters().stream().filter(p -> annotated(p, CALLER_ANNOTATIONS)
                         || CALLER_TYPES.contains(p.getType().asString().replaceAll("<.*", "")))
@@ -114,7 +105,6 @@ public class MissingObjectAuthorizationRule implements RiskRule {
         return method.findAll(NameExpr.class).stream().anyMatch(name -> name.getNameAsString().equals("SecurityContextHolder"));
     }
 
-    /** An access rule, security context read, ownership check or caller-scoped lookup on the reachable project methods. */
     private static boolean protectedOnPath(CallPaths.Reach reach) {
         for (CallPaths.Declared declared : reach.methods()) {
             MethodDeclaration method = declared.method();

@@ -4,7 +4,6 @@ import java.util.Map;
 
 import com.example.coderiskanalyzer.production.finding.Finding;
 
-/** Caps the number of delegate calls; calls beyond the limit are skipped and counted. */
 public class CallLimitedSemanticJudge implements SemanticJudge {
     private final SemanticJudge delegate;
     private final int maxCalls;

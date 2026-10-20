@@ -21,7 +21,6 @@
         <exclude name="CommentDefaultAccessModifier"/>
         <exclude name="ShortMethodName"/>
         <exclude name="UseDiamondOperator"/>
-        <!-- tool-test-lab convention: `abstract sealed` exception bases. -->
         <exclude name="ModifierOrder"/>
     </rule>
     <rule ref="category/java/design.xml">
@@ -35,7 +34,6 @@
         <exclude name="CouplingBetweenObjects"/>
         <exclude name="ExcessiveImports"/>
         <exclude name="UseObjectForClearerAPI"/>
-        <!-- tool-test-lab convention: rich aggregates and enums carrying behavior. -->
         <exclude name="TooManyMethods"/>
         <exclude name="DataClass"/>
     </rule>
@@ -44,7 +42,6 @@
         <exclude name="AvoidLiteralsInIfCondition"/>
         <exclude name="NullAssignment"/>
         <exclude name="MissingSerialVersionUID"/>
-        <!-- tool-test-lab convention: record-style accessors such as id() beside the id field. -->
         <exclude name="AvoidFieldNameMatchingMethodName"/>
     </rule>
 </ruleset>

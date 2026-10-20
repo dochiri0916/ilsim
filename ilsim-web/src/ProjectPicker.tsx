@@ -8,11 +8,10 @@ function load(): string {
   try { return localStorage.getItem(KEY) ?? '' } catch { return '' }
 }
 
-/** 화면 사이에서 공유하는 선택 프로젝트. 고른 값은 이 브라우저에 기억하고, 없거나 사라졌으면 연결된 프로젝트를 고른다. */
 export function useSelectedProject(projects: Project[] | null) {
   const [picked, setPicked] = useState(load)
   useEffect(() => {
-    try { localStorage.setItem(KEY, picked) } catch { /* 저장소가 막혀도 동작한다 */ }
+    try { localStorage.setItem(KEY, picked) } catch { }
   }, [picked])
   const valid = projects?.some((p) => p.id === picked) ? picked : ''
   const projectId = valid || projects?.find((p) => p.online)?.id || projects?.[0]?.id || ''

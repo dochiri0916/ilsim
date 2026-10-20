@@ -292,7 +292,6 @@ class ScanCommandTests {
     @Test
     void unknownRatioIsMeasuredBeforeExclusionsAndHasInclusiveThreshold() throws Exception {
         writeAdequacyProject();
-        // A same-name unresolved production call leaves linkage UNKNOWN.
         Files.writeString(tempDir.resolve("src/test/java/example/OrderServiceTest.java"), """
                 package example;
                 import org.junit.jupiter.api.Test;
@@ -496,7 +495,6 @@ class ScanCommandTests {
     void parseFailureTakesPrecedenceOverTestGapGateAndReportIsWritten() throws Exception {
         writeAdequacyProject();
         Files.writeString(tempDir.resolve("src/main/java/Broken.java"), "class Broken {}");
-        // JavaParser recovers many syntax errors with a non-null AST. Supply its unrecoverable result explicitly.
         var parser = new JavaSourceParser() {
             @Override public java.util.List<com.example.coderiskanalyzer.production.parser.ParsedSource> parse(
                     java.util.List<com.example.coderiskanalyzer.production.source.SourceFile> files,
@@ -653,7 +651,7 @@ class ScanCommandTests {
         Files.writeString(tempDir.resolve("evidence.json"), mapper.writeValueAsString(manifest));
         for (String format : java.util.List.of("console", "json", "sarif")) {
             var response = command().scanForCli(new ScanRequest(tempDir.toString(), format, "", "false", "off", "", "", false, "evidence.json"));
-            assertThat(response.exitCode()).isEqualTo(1); // other persistence gaps remain
+            assertThat(response.exitCode()).isEqualTo(1);
             assertThat(response.output()).contains(obligation.path("obligationId").asText() + " | COVERED", "PARTIAL", "EXECUTION_TEST");
             if (!format.equals("console")) assertThat(response.output()).contains("databaseVerifiedByAnalyzer", "staticStatus");
         }

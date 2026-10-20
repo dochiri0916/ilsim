@@ -10,7 +10,6 @@ import com.example.coderiskanalyzer.testanalysis.TestAdequacyResult;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.*;
 
-/** Observed static-analysis scope and limitations, never an execution-safety score. */
 public record AnalysisCompleteness(int filesDiscovered, int filesSelected, int filesParsedAsContext,
         int methodCalls, int unresolvedMethodCalls, double unresolvedCallRatio,
         int testObligations, int unknownTestObligations, double unknownRatio,

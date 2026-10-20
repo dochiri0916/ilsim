@@ -16,14 +16,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** verdict: TRUE(실제 위험) | FALSE(오탐) | UNSURE. 판단 보조 의견이며 게이트의 BLOCK 판정에는 쓰지 않는다. */
 @Serializable
 data class RiskOpinion(val verdict: String, val reason: String, val recommendation: String = "", val reviewer: String = "")
 
-/**
- * 정적 탐지가 만든 REVIEW 후보를 AI가 한 번 검토한다. 후보마다 해당 코드 발췌(약 36줄)만 보내고,
- * 오탐 여부와 이 코드에 맞는 적용 방안(outbox, inbox, 서킷브레이커 등)을 받는다. 코드가 바뀌면 지문이 달라져 다시 검토한다.
- */
 object RiskReviewer {
     private const val BEFORE = 8
     private const val AFTER = 28
@@ -59,7 +54,6 @@ object RiskReviewer {
             appendLine("### id=$i ${v.ruleId} ${v.file}:${v.line}")
             appendLine("지적: ${v.message}")
         }
-        // 같은 파일의 겹치는 행은 한 번만 보낸다. 후보 ID는 위의 파일:행을 참조한다.
         batch.groupBy { it.file }.forEach { (file, candidates) ->
             val lines = root.resolve(file).takeIf { it.exists() }?.readLines().orEmpty()
             val ranges = candidates.flatMap { v -> (maxOf(1, v.line - BEFORE)..minOf(lines.size, v.line + AFTER)).toList() }.toSortedSet()
@@ -80,15 +74,9 @@ object RiskReviewer {
         }
     }
 
-    /** 아직 검토하지 않은 REVIEW 후보만 AI에 보내 의견을 합쳐 돌려준다. */
-    /** JEV 확률이 이 값 이하면 오탐, 이상이면 실제 위험으로 보고 Claude 에 묻지 않는다. 사이는 Claude 가 본다. */
     const val SCREEN_LOW = 0.2
     const val SCREEN_HIGH = 0.8
 
-    /**
-     * [screen] 이 있으면 먼저 후보별 위험 확률을 받아 확실한 것은 거기서 정하고(reviewer=jev), 애매한 것만 Claude 에게 보낸다.
-     * [screen] 이 null 을 돌려주면(JEV 를 쓸 수 없거나 호출 상한) 그 후보는 Claude 가 본다.
-     */
     fun review(
         root: Path, findings: List<Violation>, known: Map<String, RiskOpinion>, reviewer: String, force: Boolean,
         screen: (Violation) -> Double? = { null }, checkpoint: (Map<String, RiskOpinion>) -> Unit = {}, ask: (String) -> String,
@@ -118,7 +106,6 @@ object RiskReviewer {
         return result
     }
 
-    /** 위험 규칙 검토 의견도 프로젝트 id 별로 저장한다: `~/.ilsim/projects/<id>/risk-review.json` */
     class Store(config: ConfigStore) {
         private val base: Path = config.location.parent.resolve("projects")
         private val jsonOut = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }

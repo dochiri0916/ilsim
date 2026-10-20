@@ -5,7 +5,6 @@ import com.dochiri.ilsim.claude.domain.ClaudeAccount
 import com.dochiri.ilsim.claude.domain.LoginSession
 import java.util.concurrent.ConcurrentHashMap
 
-/** 계정 상태는 Runner 가 몇 분마다 다시 보고하고, 로그인은 짧게 끝나므로 서버를 다시 띄우면 사라져도 된다. */
 class InMemoryClaudeAccountStore : ClaudeAccountStore {
     private val accounts = ConcurrentHashMap<String, List<ClaudeAccount>>()
     private val logins = ConcurrentHashMap<String, LoginSession>()

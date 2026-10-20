@@ -12,7 +12,6 @@ internal class Rule(
 
 private fun c(vararg r: String) = r.map { Regex(it) }
 
-/** 의존성 좌표(`group:artifact`)와 플러그인 id 로 기술을 식별하는 규칙표. */
 internal val RULES: List<Rule> = listOf(
     Rule("spring-boot", "Spring Boot", Category.FRAMEWORK, c("""org\.springframework\.boot:spring-boot-starter.*"""), c("""org\.springframework\.boot""")),
     Rule("spring-web-mvc", "Spring Web MVC", Category.FRAMEWORK, c("""org\.springframework\.boot:spring-boot-starter-(web|webmvc)""")),

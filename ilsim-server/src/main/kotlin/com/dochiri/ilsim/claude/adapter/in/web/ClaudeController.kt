@@ -16,10 +16,6 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
-/**
- * Claude 계정(PC 별 로그인)과 일심 공통 Claude 설정. 웹은 `/api/claude`, Runner 는 `/runner/api/claude`.
- * 로그인 코드는 응답에 다시 담지 않고, Runner 에 한 번만 넘긴다.
- */
 @RestController
 class ClaudeController(private val claude: ClaudeUseCase) {
 
@@ -31,7 +27,6 @@ class ClaudeController(private val claude: ClaudeUseCase) {
         }
     }
 
-    /** 웹에 보이는 로그인 진행 상황. 코드는 담지 않는다. */
     data class LoginResponse(val id: String, val runnerId: String, val name: String, val status: String, val requestedAt: Instant,
         val url: String?, val error: String?, val email: String?, val plan: String?) {
         companion object {

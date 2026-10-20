@@ -8,7 +8,6 @@ import kotlin.io.path.readText
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** 규칙 모델은 등록된 프로젝트 id 별로 저장해 다른 프로젝트에 섞이지 않게 한다: `~/.ilsim/projects/<id>/architecture.json` */
 class ArchitectureStore(config: ConfigStore) {
     private val base: Path = config.location.parent.resolve("projects")
     private val json = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
@@ -20,7 +19,6 @@ class ArchitectureStore(config: ConfigStore) {
 
     fun save(projectId: String, model: ArchitectureModel): Path = update(projectId) { model }
 
-    /** 잠금을 잡은 채 지금 저장된 모델을 [change] 에 넘기고 그 결과를 저장한다. */
     fun update(projectId: String, change: (ArchitectureModel?) -> ArchitectureModel): Path {
         val f = file(projectId)
         return KnowledgeFiles.locked(f.parent) {

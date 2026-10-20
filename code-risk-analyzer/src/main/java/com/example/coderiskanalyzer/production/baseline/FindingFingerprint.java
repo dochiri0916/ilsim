@@ -14,7 +14,6 @@ public final class FindingFingerprint {
 
     private FindingFingerprint() {}
 
-    /** Additive v2 identity for rules with semantic declaration and evidence paths; v1 stays intact. */
     public static String stableOf(Path root, Finding finding) {
         return finding.concurrencyAssessment() == null ? null : stableOf(root, finding.concurrencyAssessment());
     }

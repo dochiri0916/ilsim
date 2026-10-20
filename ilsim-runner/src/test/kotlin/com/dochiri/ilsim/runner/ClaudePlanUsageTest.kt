@@ -34,7 +34,7 @@ class ClaudePlanUsageTest {
 
     @Test
     fun `연도가 넘어가거나 날짜가 없거나 시각을 못 읽어도 다룬다`() {
-        val now = java.time.Instant.parse("2026-12-31T14:00:00Z") // 서울 23시
+        val now = java.time.Instant.parse("2026-12-31T14:00:00Z")
         assertEquals(java.time.Instant.parse("2027-01-02T11:00:00Z").epochSecond,
             UsageCommand.parse("Current week (all models): 5% used · resets Jan 2 at 8pm (Asia/Seoul)", now)?.sevenDay?.resetsAt)
         assertEquals(java.time.Instant.parse("2026-12-31T17:20:00Z").epochSecond,

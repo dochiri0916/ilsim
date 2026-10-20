@@ -13,13 +13,10 @@ class DomainValueObjectConventionValidatorTest {
     @Test
     @DisplayName('private 생성자와 값 동등성을 갖춘 VO와 UUID v7 식별자를 허용한다')
     void acceptsValueObjectAndIdentifier() {
-        // given
         String source = identifier()
 
-        // when
         List<String> violations = validate('OrderId', source)
 
-        // then
         assert violations.isEmpty()
         assert validate('MemberReferenceId', source.replace('OrderId', 'MemberReferenceId')
                 .replace('public static MemberReferenceId generate() { return of(com.github.f4b6a3.uuid.UuidCreator.getTimeOrderedEpoch()); }', '')).isEmpty()
@@ -28,13 +25,10 @@ class DomainValueObjectConventionValidatorTest {
     @Test
     @DisplayName('record와 공개 및 package-private VO 생성자를 거부한다')
     void rejectsExposedConstructorsAndRecords() {
-        // given
         String source = identifier()
 
-        // when
         List<String> violations = validate('OrderId', source.replace('private OrderId', 'OrderId'))
 
-        // then
         assert violations.any { it.contains('only private constructors') }
         assert validate('OrderId', 'public record OrderId(java.util.UUID value) {}')
                 .any { it.contains('final class with a private constructor') }
@@ -45,15 +39,12 @@ class DomainValueObjectConventionValidatorTest {
     @Test
     @DisplayName('VO 불변성과 of 팩터리 및 구성 값 동등성 누락을 거부한다')
     void rejectsMutableValueAndMissingContract() {
-        // given
         String source = identifier().replace('private final UUID value', 'public UUID value')
                 .replace('public final class', 'public class').replace('static OrderId of', 'static OrderId from')
                 .replace('value.equals(other.value)', 'true').replace('value.hashCode()', '1')
 
-        // when
         List<String> violations = validate('OrderId', source)
 
-        // then
         assert violations.any { it.contains('private final fields') }
         assert violations.any { it.contains('must be final') }
         assert violations.any { it.contains('of factory') }
@@ -64,15 +55,12 @@ class DomainValueObjectConventionValidatorTest {
     @Test
     @DisplayName('UUID v4와 v7 검증 누락 및 주석과 문자열을 통한 우회를 거부한다')
     void rejectsIdentifierBypass() {
-        // given
         String source = identifier().replace('if (value.version() != 7) throw new InvalidOrderIdException();',
                 '/* if (value.version() != 7) throw new InvalidOrderIdException(); */ String hint = "value.version() != 7 throw";')
                 .replace('return of(com.github.f4b6a3.uuid.UuidCreator.getTimeOrderedEpoch());', 'return of(UUID.randomUUID());')
 
-        // when
         List<String> violations = validate('OrderId', source)
 
-        // then
         assert violations.any { it.contains('reject non-v7') }
         assert violations.any { it.contains('instead of randomUUID') }
         assert validate('OrderId', identifier().replace('public static OrderId generate() { return of(com.github.f4b6a3.uuid.UuidCreator.getTimeOrderedEpoch()); }', ''))
@@ -84,7 +72,6 @@ class DomainValueObjectConventionValidatorTest {
     @Test
     @DisplayName('일급 컬렉션은 방어 복사하고 컬렉션 하나만 가진다')
     void validatesFirstClassCollection() {
-        // given
         String source = '''
             public final class OrderLines {
                 private final java.util.List<OrderLine> values;
@@ -99,10 +86,8 @@ class DomainValueObjectConventionValidatorTest {
             }
         '''
 
-        // when
         List<String> violations = validate('OrderLines', source)
 
-        // then
         assert violations.isEmpty()
         assert validate('OrderLines', source.replace('java.util.List.copyOf(values)', 'values'))
                 .any { it.contains('defensively copy') }
@@ -115,13 +100,10 @@ class DomainValueObjectConventionValidatorTest {
     @Test
     @DisplayName('상태 enum 위치와 중첩 VO 및 이벤트 보관도 검사한다')
     void validatesEnumsNestedTypesAndEvents() {
-        // given
         String source = 'public final class Holder { public record Inner(String value) {} }'
 
-        // when
         List<String> violations = validate('Holder', source)
 
-        // then
         assert violations.any { it.contains("'Inner' must be a final class") }
         assert validate('Status', 'public enum Status { OPEN }').isEmpty()
         assert !validate('Status', 'public enum Status { OPEN }', 'com.example.order.domain.model').isEmpty()

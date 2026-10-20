@@ -6,7 +6,6 @@ spring-ai = "2.0.1"
 jev-typesafe = "0.2.0"
 
 [libraries]
-# TypeSafe JEV 클라이언트. 서버, Runner, 분석기가 같은 버전을 쓴다.
 jev-typesafe = { module = "io.github.gudcks0305:jev-typesafe", version.ref = "jev-typesafe" }
 
 [plugins]

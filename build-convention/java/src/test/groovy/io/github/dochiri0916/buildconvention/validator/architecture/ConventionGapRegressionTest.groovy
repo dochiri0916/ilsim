@@ -17,10 +17,8 @@ class ConventionGapRegressionTest {
     @Test
     @DisplayName('Application은 HTTP 클라이언트와 파일 I/O 타입에 의존할 수 없다')
     void forbidsIoTypesInApplication() {
-        // given
         List<String> ioTypes = ['java.net.http.HttpClient', 'java.nio.file.Files', 'java.io.FileWriter']
 
-        // when & then
         ioTypes.each { assert TechnicalDependencyCatalog.isForbiddenInApplication(it) }
         assert !TechnicalDependencyCatalog.isForbiddenInApplication('java.util.List')
     }
@@ -28,7 +26,6 @@ class ConventionGapRegressionTest {
     @Test
     @DisplayName('FQN으로 던지는 JDK 기본 예외도 Domain에서 거부한다')
     void rejectsFullyQualifiedJdkExceptionInDomain() {
-        // given
         Project project = project()
         write(project, 'src/main/java/com/example/sales/domain/vo/Money.java', '''
                 package com.example.sales.domain.vo;
@@ -38,17 +35,14 @@ class ConventionGapRegressionTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assert violations.any { it.contains('domain must use domain-specific exceptions instead of JDK basic exceptions') }
     }
 
     @Test
     @DisplayName('NOPMD와 CHECKSTYLE:OFF 주석은 품질 도구 억제로 거부한다')
     void rejectsSuppressionComments() {
-        // given
         Project project = project()
         write(project, 'src/main/java/com/example/sales/domain/vo/Money.java', '''
                 package com.example.sales.domain.vo;
@@ -64,10 +58,8 @@ class ConventionGapRegressionTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         ['Money', 'Price'].each { String name ->
             assert violations.any { it.contains("${name}.java must not suppress PMD/Checkstyle/SpotBugs warnings") }
         }
@@ -76,7 +68,6 @@ class ConventionGapRegressionTest {
     @Test
     @DisplayName('추가 srcDir과 non-main source set의 파일도 검사 대상에 포함한다')
     void collectsSourcesFromCustomSourceDirectories() {
-        // given
         Project project = project()
         project.pluginManager.apply('java')
         project.sourceSets.main.java.srcDir('src/gen/java')
@@ -86,11 +77,9 @@ class ConventionGapRegressionTest {
         write(project, 'src/test/java/com/example/ATest.java', 'package com.example; class ATest {}')
         write(project, 'src/integrationTest/java/com/example/AIT.java', 'package com.example; class AIT {}')
 
-        // when
         List<String> main = SourceInspector.collectMainSourceFiles(project).collect { it.name }
         List<String> tests = SourceInspector.collectTestJavaFiles(project).collect { it.name }
 
-        // then
         assert main.toSet() == ['SalesApplication.java', 'A.java', 'B.java'].toSet()
         assert tests.toSet() == ['ATest.java', 'AIT.java'].toSet()
     }

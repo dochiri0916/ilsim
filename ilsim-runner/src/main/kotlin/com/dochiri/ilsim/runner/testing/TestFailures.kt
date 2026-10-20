@@ -8,14 +8,9 @@ import kotlin.io.path.extension
 import kotlin.io.path.getLastModifiedTime
 import org.w3c.dom.Element
 
-/**
- * 테스트 명령의 출력 대신 JUnit XML 리포트에서 실패한 테스트와 그 이유를 뽑는다.
- * Gradle 출력 끝부분은 종료 로그뿐이라 무엇이 왜 실패했는지 알 수 없기 때문이다.
- */
 object TestFailures {
     data class Failure(val test: String, val message: String, val location: String?)
 
-    /** [since] 이후에 쓰인 리포트의 실패·오류 테스트(최대 [limit]건). 리포트가 없으면 빈 목록. */
     fun collect(root: Path, since: Instant, limit: Int = 10): List<Failure> {
         val out = mutableListOf<Failure>()
         Files.walk(root, 10).use { s ->
@@ -51,13 +46,11 @@ object TestFailures {
         emptyList()
     }
 
-    /** 실패 목록을 사람이 읽고 Claude 가 고칠 수 있는 형태로 적는다. */
     fun render(failures: List<Failure>): String = failures.joinToString("\n") { f ->
         "- ${f.test}${f.location?.let { " ($it)" } ?: ""}: ${f.message.lines().first()}" +
             f.message.lines().drop(1).take(5).joinToString("") { "\n    $it" }
     }
 
-    /** 리포트가 없을 때 쓸 출력 요약. JVM 경고·Spring 로그·Gradle 안내 같은 잡음 줄을 뺀다. */
     fun trimOutput(output: String, maxLines: Int = 60): String = output.lineSequence()
         .filterNot { line ->
             NOISE.any { it.containsMatchIn(line) }

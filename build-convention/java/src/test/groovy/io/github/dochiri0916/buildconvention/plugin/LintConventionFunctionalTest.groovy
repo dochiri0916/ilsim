@@ -234,16 +234,13 @@ class LintConventionFunctionalTest {
     @Test
     @DisplayName('Java 25 프로젝트도 버전을 바꾸지 않고 전체 검증을 통과한다')
     void passesCheckOnJava25ProjectWithoutDowngrading() {
-        // given
         writeReportFixture()
         new File(tempDir, 'build.gradle') << "\njava { toolchain { languageVersion = JavaLanguageVersion.of(25) } }\n"
         ['git', '-C', tempDir.absolutePath, '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
          'commit', '-qam', 'java 25'].execute().waitFor()
 
-        // when
         BuildResult result = runner('check', '-PchangedCoverageBaseRef=HEAD').build()
 
-        // then
         assert result.task(':check').outcome == TaskOutcome.SUCCESS
         File compiled = new File(tempDir, 'build/classes/java/main/com/example/GreetingApplication.class')
         DataInputStream input = new DataInputStream(new FileInputStream(compiled))
@@ -327,7 +324,6 @@ class LintConventionFunctionalTest {
     @Test
     @DisplayName('실제 Gradle 프로젝트에서 아키텍처 검증 태스크를 실행한다')
     void runsArchitectureConventionTaskInRealGradleBuild() {
-        // given
         writeBuildFiles()
         writeJava('com/example/TestApplication.java', '''
                 package com.example;
@@ -336,17 +332,14 @@ class LintConventionFunctionalTest {
                 }
                 ''')
 
-        // when
         BuildResult result = runner('validateArchitectureConventions').build()
 
-        // then
         assert result.task(':validateArchitectureConventions').outcome == TaskOutcome.SUCCESS
     }
 
     @Test
     @DisplayName('실제 Gradle 프로젝트의 Application 기술 의존 위반을 실패시킨다')
     void rejectsApplicationTechnicalDependencyInRealGradleBuild() {
-        // given
         writeBuildFiles()
         writeJava('com/example/TestApplication.java', '''
                 package com.example;
@@ -362,10 +355,8 @@ class LintConventionFunctionalTest {
                 }
                 ''')
 
-        // when
         BuildResult result = runner('validateArchitectureConventions').buildAndFail()
 
-        // then
         assert result.output.contains('Architecture convention violations')
         assert result.output.contains('application must not depend on technical framework type')
     }

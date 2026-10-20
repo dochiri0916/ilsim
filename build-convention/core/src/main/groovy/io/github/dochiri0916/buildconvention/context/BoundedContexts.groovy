@@ -1,13 +1,5 @@
 package io.github.dochiri0916.buildconvention.context
 
-/**
- * Resolves the bounded context of a package or type name.
- *
- * A context is the first package segment under the application root package, so a grouped context such as
- * {@code catalog.category} and {@code catalog.product} belongs to the single context {@code catalog}: its modules
- * share one model and may use each other directly, while other contexts still need integration ports.
- * Without a known root, the segment just before the first layer segment is used.
- */
 final class BoundedContexts {
     private static final List<String> LAYER_SEGMENTS = ['domain', 'application', 'adapter'].asImmutable()
     private static final ThreadLocal<Set<String>> ROOTS = ThreadLocal.withInitial { [] as Set<String> }

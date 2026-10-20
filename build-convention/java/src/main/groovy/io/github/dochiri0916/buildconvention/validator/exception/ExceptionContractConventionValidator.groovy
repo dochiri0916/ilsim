@@ -4,7 +4,6 @@ import io.github.dochiri0916.buildconvention.extension.HexagonalConventionExtens
 import io.github.dochiri0916.buildconvention.validator.domain.aggregate.AggregateBoundaryConventionValidator
 import org.gradle.api.Project
 
-/** Each concrete failure belongs to the sealed hierarchy owned by its context and layer. */
 final class ExceptionContractConventionValidator {
     private ExceptionContractConventionValidator() {}
 
@@ -29,7 +28,6 @@ final class ExceptionContractConventionValidator {
             def inspection = declaration.inspection
             String layer = exceptionLayer(inspection.packageName, convention)
             if (layer == null || type.kind != 'CLASS' || !type.simpleName.endsWith('Exception')) return
-            // Shared storage failure has no business meaning and preserves the original technical cause.
             if (inspection.packageName.endsWith('.global.application.exception')
                     && declaration.name == inspection.packageName + '.RepositoryOperationException') return
             String path = project.relativePath(declaration.file)

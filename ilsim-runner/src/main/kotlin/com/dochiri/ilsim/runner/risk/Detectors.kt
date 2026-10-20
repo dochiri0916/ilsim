@@ -2,15 +2,10 @@ package com.dochiri.ilsim.runner.risk
 
 import com.dochiri.ilsim.runner.convention.ConvFile
 
-/** 탐지 결과 한 건. 규칙의 기본 심각도는 [RiskRules] 가 갖고 프로젝트 설정이 덮어쓴다. */
 internal class Hit(val ruleId: String, val file: String, val line: Int, val message: String)
 
 internal class RiskRule(val id: String, val title: String, val defaultSeverity: String, val spec: String)
 
-/**
- * 트랜잭션·동시성·멱등성 위험 탐지. Java·Kotlin 소스를 텍스트로만 읽으며 컴파일러·JDK 버전에 의존하지 않는다.
- * 타입 해석이 없는 휴리스틱이라 후보를 찾는 수준이고, 정밀도가 높은 규칙만 기본 BLOCK 이다.
- */
 internal object RiskRules {
     val all = listOf(
         RiskRule("TX-001", "트랜잭션 안의 외부 호출·블로킹", "REVIEW", "DIST-CONC-022"),
@@ -48,7 +43,6 @@ internal object RiskRules {
         RiskRule("REL-004", "DLQ·재처리 경로 없는 메시지 소비자", "REVIEW", "RELIABILITY"),
     )
 
-    /** 규칙마다 한 줄 권고. 탐지 결과와 함께 보여 줘서 무엇을 적용해야 하는지 알려 준다. */
     val remedies = mapOf(
         "TX-001" to "외부 호출은 트랜잭션 밖(커밋 후)으로 옮기세요. 메시지는 Transactional Outbox, 그 외 호출은 @TransactionalEventListener(AFTER_COMMIT)로 분리합니다.",
         "TX-002" to "대상 메서드를 별도 빈으로 분리해 주입받아 호출하세요(프록시를 거쳐야 어노테이션이 적용됩니다).",
@@ -87,7 +81,6 @@ internal object RiskRules {
     val byId = all.associateBy { it.id }
 }
 
-/** 프로젝트 전체에서 보호 장치가 한 번이라도 쓰였는지. 한 곳에서 보호가 보이면 다른 곳의 같은 패턴은 후보로 올리지 않는 규칙에 쓴다. */
 internal class Context(
     val hasVersion: Boolean,
     val hasLock: Boolean,
@@ -96,17 +89,14 @@ internal class Context(
     val hasUniqueGuard: Boolean,
     val hasSchedulerLock: Boolean,
     val hasAllOpen: Boolean,
-    /** @Version 이 있는 엔티티의 클래스명·테이블명(소문자). */
     val versionedEntities: Set<String>,
     val hasResilience: Boolean,
     val hasDeadLetter: Boolean,
 )
 
-/** 클래스 하나를 검사하는 동안 쓰는 작업 공간. */
 internal class Scope(val f: ConvFile, val c: Cls, val ctx: Context, private val out: MutableList<Hit>) {
     fun hit(ruleId: String, line: Int, message: String) { out += Hit(ruleId, f.path, line, message) }
 
-    /** 멤버(또는 클래스) 선언 바로 위에 붙은 어노테이션 줄까지 포함한 원문. 어노테이션 인자(readOnly, rollbackFor 등)를 보기 위함이다. */
     fun annotationText(declLine: Int): String {
         val sb = StringBuilder(f.lines.getOrElse(declLine - 1) { "" })
         var i = declLine - 2
@@ -158,7 +148,6 @@ internal object Detectors {
 
     private fun moduleKey(name: String) = name.trimStart(':').substringAfterLast(':').lowercase()
 
-    /** 모듈과 그 모듈이 (간접적으로) 의존하는 모듈들. 공용 모듈이 제공하는 보호 장치(outbox, 멱등성 등)를 쓰는 쪽에도 인정하기 위함이다. */
     internal fun scopeOf(module: String, dependencies: Map<String, List<String>>): Set<String> {
         val graph = dependencies.entries.associate { moduleKey(it.key) to it.value.map(::moduleKey) }
         val seen = mutableSetOf(moduleKey(module))
@@ -167,7 +156,6 @@ internal object Detectors {
         return seen
     }
 
-    /** 보호 장치 판단은 프로젝트 전체가 아니라 그 파일이 속한 모듈과 의존 모듈 안에서만 한다. 모듈 정보가 없으면 전체를 쓴다. */
     fun detect(files: List<ConvFile>, hasAllOpen: Boolean = true, dependencies: Map<String, List<String>> = emptyMap()): List<Hit> {
         val contexts = mutableMapOf<String, Context>()
         val whole by lazy { context(files, hasAllOpen) }
@@ -180,7 +168,6 @@ internal object Detectors {
         }
         return files.filter { !it.test }.flatMap { f ->
             val ctx = contextFor(f)
-            // 휴리스틱 파서가 예상 못 한 소스 때문에 게이트 전체를 중단시키지 않도록 파일 단위로 격리한다.
             runCatching {
                 val out = mutableListOf<Hit>()
                 val classes = StructureParser.classes(f)
@@ -198,7 +185,6 @@ internal object Detectors {
         }
     }
 
-    /** 중괄호로 묶인 블록의 내용. [open] 은 여는 `{` 의 위치다. */
     internal fun braceBlock(text: String, open: Int): String {
         var d = 0
         for (k in open until text.length) {

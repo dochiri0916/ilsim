@@ -16,7 +16,6 @@ import org.springframework.context.annotation.Configuration
 @Configuration(proxyBeanMethods = false)
 class RulesConfiguration {
 
-    /** Runner 와 같은 `~/.ilsim`. 환경 변수 ILSIM_HOME 으로 바꿀 수 있다. */
     @Bean
     fun knowledgeStore(@Value("\${ILSIM_HOME:\${user.home}/.ilsim}") home: String): KnowledgeStore = FileKnowledgeStore(Path.of(home))
 

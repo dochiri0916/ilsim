@@ -22,7 +22,6 @@ import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
 import org.springframework.stereotype.Component;
 
-/** Reports likely credentials without ever including their literal values in a finding. */
 @Component
 public class HardcodedSecretRule implements RiskRule {
 
@@ -30,9 +29,7 @@ public class HardcodedSecretRule implements RiskRule {
             "apikey", "secret", "password", "passwd", "token", "privatekey", "accesskey", "credential");
     private static final Set<String> PLACEHOLDERS = Set.of(
             "dummy", "placeholder", "changeme", "change_me", "your_secret", "your_api_key");
-    /** Short words that only mark a placeholder when they are the value itself or its prefix (not any substring). */
     private static final Set<String> PLACEHOLDER_PREFIXES = Set.of("example", "test");
-    /** Identifier suffixes that name a field or reference rather than hold a credential. */
     private static final Set<String> NON_SECRET_SUFFIXES = Set.of(
             "url", "uri", "type", "header", "param", "name", "path", "claim", "prefix", "endpoint", "field", "key_name");
 

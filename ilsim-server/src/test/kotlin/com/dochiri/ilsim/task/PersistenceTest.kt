@@ -20,7 +20,6 @@ import tools.jackson.module.kotlin.KotlinModule
 
 class PersistenceTest {
 
-    /** 저장할 때 실제 저장과 같은 JSON 왕복을 거치는 메모리 저장소. */
     private class MemoryStore : TaskStore {
         val json: JsonMapper = JsonMapper.builder().addModule(KotlinModule.Builder().build()).build()
         val tasks = LinkedHashMap<String, String>()

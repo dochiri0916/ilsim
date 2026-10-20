@@ -9,10 +9,8 @@ import { StageDots } from './StageDots'
 import { STAGE_LABEL, modelLabel, taskTitle, usd } from './taskView'
 
 const STOPPED = '사용자가 중지했습니다'
-/** 질문에 답만 하고 끝냈다는 Claude 의 표시(서버 PromptTemplates.ANSWERED_MARK). 화면에서는 지운다. */
 const ANSWERED_MARK = '[ILSIM:ANSWERED]'
 
-/** 열어 볼 수 있는 자료: 단계 산출물, 변경 내용, 검증 결과, 모델 선택 이력. */
 type Viewing =
   | { kind: 'artifact'; stage: string; path: string }
   | { kind: 'diff'; stage: string }
@@ -25,7 +23,6 @@ export function TaskDetail({ id }: { id: string }) {
   const [actionError, setActionError] = useState<string | null>(null)
   const [viewing, setViewing] = useState<Viewing | null>(null)
   const logRef = useRef<HTMLUListElement>(null)
-  /** 맨 아래를 보고 있는지. 처음 열면 맨 아래에서 시작하고, 사용자가 위로 올려 읽는 동안에는 따라 내리지 않는다. */
   const stick = useRef(true)
   const eventCount = data?.events.length ?? 0
   const loaded = !!data
@@ -59,7 +56,6 @@ export function TaskDetail({ id }: { id: string }) {
     }
   }
 
-  /** 지금 상태에 맞게 보낸다: 멈췄으면 같은 세션에서 이어 가기, 요구사항 승인 대기면 문서 수정 대화, 그 밖의 승인 대기면 수정 요청. */
   function send() {
     const text = chat.trim()
     if (blocked) act(() => api.retry(id, text || undefined))
@@ -188,7 +184,6 @@ export function TaskDetail({ id }: { id: string }) {
 
 type Item = TaskEvent | TaskEvent[] | { divider: string }
 
-/** 단계가 바뀌는 곳에 구분선을 넣고, 연속된 도구 호출은 한 묶음(배열)으로 접는다. */
 function groupEvents(events: TaskEvent[]): Item[] {
   const out: Item[] = []
   let stage: string | null = null
@@ -226,12 +221,11 @@ function Entry({ item }: { item: Item }) {
         <details className="failed"><summary>실패 내용</summary><pre>{item.data}</pre></details>
       </li>
     )
-    case 'result': return null // 비용·토큰 요약은 상단 비용과 통계에서 본다
+    case 'result': return null
     default: return <li className="log"><small className="muted pre">{item.data}</small></li>
   }
 }
 
-/** 서버의 verdict 이벤트(첫 줄 PASSED|FAILED, 다음 줄부터 "항목=결과")를 신호등으로 보여 준다. */
 function Verdict({ raw }: { raw: string }) {
   const [head, ...rest] = raw.split('\n')
   const validation = Object.fromEntries(rest.map((l) => l.split('=')).filter((p) => p.length === 2)) as Record<string, string>
@@ -277,7 +271,6 @@ const TOOL_LABEL: Record<string, string> = {
   Read: '읽음', Write: '작성', Edit: '수정', Glob: '파일 찾기', Grep: '검색', Bash: '명령 실행',
 }
 
-/** 도구 호출 JSON(길면 중간에 잘려 있다)에서 이름과 대상만 뽑아 한 줄로 보여 준다. */
 function summarizeTool(raw: string): string {
   const [name, ...rest] = raw.split(' ')
   const json = rest.join(' ')

@@ -12,13 +12,10 @@ class BookSearchConditionTest {
     @Test
     @DisplayName("offset을 곱셈 전부터 long으로 계산한다")
     void calculatesLongOffset() {
-        // given
         final BookSearchCondition first = new BookSearchCondition(null, 0, 1);
 
-        // when
         final BookSearchCondition large = new BookSearchCondition(null, Integer.MAX_VALUE, 100);
 
-        // then
         assertThat(first.offset()).isZero();
         assertThat(large.offset()).isEqualTo(214748364700L);
     }
@@ -26,10 +23,8 @@ class BookSearchConditionTest {
     @Test
     @DisplayName("직접 생성한 검색 조건도 페이지 범위를 검증한다")
     void rejectsInvalidBounds() {
-        // given
         final int page = 0;
 
-        // when & then
         assertThatThrownBy(() -> new BookSearchCondition(null, -1, 10))
                 .isInstanceOf(InvalidQueryException.class);
         assertThatThrownBy(() -> new BookSearchCondition(null, page, 0))

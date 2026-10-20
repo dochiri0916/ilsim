@@ -22,7 +22,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-/** Renders findings as SARIF 2.1.0 for CI and code-scanning integrations. */
 @Component
 public class SarifReporter implements Reporter {
 

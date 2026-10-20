@@ -24,7 +24,6 @@ import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtReturnExpression
 import org.jetbrains.kotlin.psi.KtThrowExpression
 
-/** Source rules for Kotlin domain models; identifiers and guards are inspected as syntax nodes. */
 final class KotlinDomainConventionValidator {
     private KotlinDomainConventionValidator() {
     }
@@ -196,14 +195,12 @@ final class KotlinDomainConventionValidator {
         }
     }
 
-    /** Looks inside generic arguments, so List<OrderEvent> counts as an event reference. */
     private static boolean referencesDomainEvent(KtParameter field, KtFile file) {
         KotlinSourceAstInspector.nodes(field.typeReference, KtUserType).any { KtUserType reference ->
             KotlinSourceAstInspector.resolve(file, reference.text).contains('.domain.event.')
         }
     }
 
-    /** {Aggregate}Change pairs the changed aggregate with the events that change produced. */
     private static boolean changeResult(KtClass type, List<KtParameter> fields, KtFile file, Map<String, KtClassOrObject> types) {
         if (!type.name?.endsWith('Change')) return false
         String aggregateName = type.name.substring(0, type.name.length() - 'Change'.length())

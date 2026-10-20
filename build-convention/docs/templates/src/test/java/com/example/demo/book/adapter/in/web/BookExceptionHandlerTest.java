@@ -33,7 +33,6 @@ class BookExceptionHandlerTest {
     @Test
     @DisplayName("도메인 예외는 모두 400과 예외별 코드, 예외 메시지로 바뀐다")
     void domainExceptions() {
-        // given
         final Map<BookDomainException, String> codes = Map.of(
                 new BookIdRequiredException(), "BOOK_ID_REQUIRED",
                 new InvalidBookIdException(), "BOOK_ID_INVALID",
@@ -42,11 +41,9 @@ class BookExceptionHandlerTest {
                 new BookTitleRequiredException(), "BOOK_TITLE_REQUIRED",
                 new InvalidBookTitleException(), "BOOK_TITLE_INVALID");
 
-        // when
         codes.forEach((exception, code) -> {
             final ProblemDetail problem = handler.handle(exception);
 
-            // then
             assertThat(problem.getStatus()).isEqualTo(400);
             assertThat(problem.getProperties()).containsEntry("code", code).containsEntry("timestamp", NOW);
             assertThat(problem.getDetail()).isEqualTo(exception.getMessage());
@@ -56,18 +53,15 @@ class BookExceptionHandlerTest {
     @Test
     @DisplayName("애플리케이션 예외는 예외별 상태와 코드로 바뀐다")
     void applicationExceptions() {
-        // given
         final Map<BookApplicationException, Integer> statuses = Map.of(
                 new DuplicateIsbnException(), 409,
                 new BookNotFoundException(), 404,
                 new InvalidCommandException("입력이 잘못되었습니다."), 400,
                 new InvalidQueryException("조회 입력이 잘못되었습니다."), 400);
 
-        // when
         statuses.forEach((exception, status) -> {
             final ProblemDetail problem = handler.handle(exception);
 
-            // then
             assertThat(problem.getStatus()).isEqualTo(status);
             assertThat(problem.getDetail()).isEqualTo(exception.getMessage());
         });

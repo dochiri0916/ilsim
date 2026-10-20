@@ -12,7 +12,6 @@ import com.dochiri.ilsim.task.domain.vo.TaskStatus
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/** 질문 입력은 요구사항 단계에서 Claude 가 답만 하고 작업을 끝낸다. */
 class TaskAnswerTest {
 
     private val demo = Project("demo", "demo", null)

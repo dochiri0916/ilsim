@@ -2,7 +2,6 @@ package io.github.dochiri0916.buildconvention.validator.adapter.web
 
 import io.github.dochiri0916.buildconvention.source.java.JavaSourceAstInspector
 
-/** Structural guarantees for common ProblemDetails and Spring exception advice. */
 final class WebExceptionConventionValidator {
     static List<String> validate(String path, String packageName,
                                  JavaSourceAstInspector.TypeModel type, Set<String> imports) {

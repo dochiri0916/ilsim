@@ -28,7 +28,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
-/** 실행 이력으로 JEV 의 모델 선택을 판정하고(과한·부족한 선택, 예측 보정), 사람의 조정이 다음 선택에 반영되는지 본다. */
 class RoutingReviewTest {
 
     private val haiku = ModelTier.HAIKU.modelId

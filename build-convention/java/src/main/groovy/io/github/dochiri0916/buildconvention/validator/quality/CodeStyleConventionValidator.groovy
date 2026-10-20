@@ -6,7 +6,6 @@ import io.github.dochiri0916.buildconvention.validator.domain.collection.Immutab
 import java.util.regex.Pattern
 import org.gradle.api.Project
 
-/** Common declarations plus mechanically decidable object-calisthenics rules. */
 final class CodeStyleConventionValidator {
     private static final Set<String> PROXY_ANNOTATIONS = ['Transactional', 'Async', 'Cacheable', 'CachePut', 'CacheEvict'] as Set
 
@@ -33,7 +32,6 @@ final class CodeStyleConventionValidator {
         type.methods.each { method ->
             boolean compact = type.kind == 'RECORD' && method.constructor
                     && (method.declarationHeader =~ /\b${Pattern.quote(type.simpleName)}\s*$/).find()
-            // coding-conventions: 본문이 없는 인터페이스·추상 메서드의 파라미터에는 final이 효과가 없고 PMD·Checkstyle이 거부하므로 제외한다.
             if (!compact && method.hasBody && method.finalParameters.any { parameter -> !parameter }) {
                 violations.add("${path} code convention method '${method.name}' must declare every parameter final")
             }
@@ -74,7 +72,6 @@ final class CodeStyleConventionValidator {
     private static boolean hasMultipleDotsOnLine(JavaSourceAstInspector.TypeModel type,
                                                  JavaSourceAstInspector.MethodModel method) {
         String body = method.body ?: ''
-        // Javac expands Unicode escapes before parsing; do not let encoded punctuation hide chains.
         if (body.contains('\\u')) {
             body = method.codeBody ?: ''
         }

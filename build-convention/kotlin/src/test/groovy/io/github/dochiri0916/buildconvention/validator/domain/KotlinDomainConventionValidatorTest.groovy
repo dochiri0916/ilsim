@@ -153,23 +153,19 @@ class KotlinDomainConventionValidatorTest {
     @Test
     @DisplayName('넘침을 검사하는 값 객체의 연산자로 합산하는 fold를 허용하고 검사를 벗어난 합산은 거부한다')
     void acceptsCheckedValueOperatorTotals() {
-        // given: the total is folded with OrderAmount.plus, which checks overflow itself
         Project project = amountFixture()
         assert analyze(project).violations.isEmpty()
 
-        // when: the operator stops checking overflow
         project = amountFixture()
         File amount = domainFile(project, 'vo/OrderAmount.kt')
         amount.text = replaceOnce(amount.text, 'Math.addExact(value, other.value)', 'value + other.value')
         assert analyze(project).violations.any { it.contains('checked addition') }
 
-        // when: the fold unwraps the value and adds primitives
         project = amountFixture()
         File items = domainFile(project, 'OrderItems.kt')
         items.text = replaceOnce(items.text, 'total + OrderAmount.of(item.amount)', 'OrderAmount.of(total.value + item.amount)')
         assert analyze(project).violations.any { it.contains('checked addition') }
 
-        // when: the fold starts from a primitive and only later wraps it
         project = amountFixture()
         items = domainFile(project, 'OrderItems.kt')
         items.text = replaceOnce(items.text, 'values.fold(OrderAmount.ZERO) { total, item -> total + OrderAmount.of(item.amount) }',
@@ -180,18 +176,15 @@ class KotlinDomainConventionValidatorTest {
     @Test
     @DisplayName('도메인 이벤트는 domain.event 타입과 Change 결과만 담을 수 있고 애그리거트는 보관할 수 없다')
     void restrictsDomainEventCarriers() {
-        // given: OrderEvents in domain.event and OrderChange pairing the aggregate with its events
         Project project = eventFixture()
         assert analyze(project).violations.isEmpty()
 
-        // when: the aggregate keeps events behind a generic type
         project = eventFixture()
         File order = domainFile(project, 'Order.kt')
         order.text = replaceOnce(order.text, '    val status: OrderStatus,\n',
                 '    val status: OrderStatus,\n    val events: List<com.example.saga.order.domain.event.OrderEvent>,\n')
         assert analyze(project).violations.any { it.contains("aggregates must not retain domain events in 'events'") }
 
-        // when: a type that is neither an event collection nor a Change result carries events
         project = eventFixture()
         File change = domainFile(project, 'OrderChange.kt')
         change.text = change.text.replace('OrderChange', 'OrderOutcome')

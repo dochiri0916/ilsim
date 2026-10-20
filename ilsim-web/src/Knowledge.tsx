@@ -15,7 +15,6 @@ function ruleState(r: RuleView): 'approved' | 'rejected' | 'pending' {
 const STATE_LABEL = { approved: '승인됨', rejected: '거절됨', pending: '승인 대기' }
 const STATE_ORDER = { pending: 0, approved: 1, rejected: 2 }
 
-/** 승인 대기를 맨 위로 올린다. 같은 상태 안에서는 원래 순서를 지킨다. */
 function byState<T>(items: T[], state: (t: T) => keyof typeof STATE_ORDER): T[] {
   return [...items].sort((a, b) => STATE_ORDER[state(a)] - STATE_ORDER[state(b)])
 }
@@ -24,7 +23,6 @@ function memoryState(m: MemoryView): 'approved' | 'rejected' | 'pending' {
   return m.status === 'ACTIVE' ? 'approved' : m.status === 'CANDIDATE' ? 'pending' : 'rejected'
 }
 
-/** 마우스를 올리거나(데스크톱) 눌러 포커스하면(모바일) 적용 시 장단점을 보여 준다. */
 function TradeoffTip({ t }: { t: Tradeoff & { note?: string } }) {
   return (
     <span className="tip" tabIndex={0} aria-label="적용 시 장단점">
@@ -63,7 +61,6 @@ const ANALYSIS_LABEL: Record<Analysis['status'], string> = {
   REQUESTED: 'Runner 대기 중…', RUNNING: '분석 중…', DONE: '분석 완료', FAILED: '분석 실패',
 }
 
-/** 프로젝트의 규칙과 검증된 학습을 보고 승인·거절한다. 거절한 규칙은 어떤 검사에서도 쓰이지 않는다. */
 export function Knowledge({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState<Tab>('architecture')
   const [busy, setBusy] = useState(false)
@@ -76,7 +73,6 @@ export function Knowledge({ projectId }: { projectId: string }) {
   const analyzing = a?.status === 'REQUESTED' || a?.status === 'RUNNING'
   const [showReport, setShowReport] = useState(false)
 
-  // 분석이 끝나면 Runner 가 새로 쓴 규칙을 바로 불러온다.
   useEffect(() => { if (a?.finishedAt) knowledge.reload() }, [a?.finishedAt])
 
   async function run(fn: () => Promise<void>) {

@@ -15,7 +15,6 @@ class JavaSourceArchitectureRuleMatrixTest {
     @Test
     @DisplayName('Application 타입의 패키지와 Port Service 계약 위반을 모두 거부한다')
     void rejectsApplicationPackageAndContractViolations() {
-        // given
         Project project = sampleProject('application-rules')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/service/CreateOrderUseCase.java', '''
@@ -101,10 +100,8 @@ class JavaSourceArchitectureRuleMatrixTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assertContains(violations, "inbound port 'CreateOrderUseCase' must live in application..port.in")
         assertContains(violations, "application DTO 'CreateOrderCommand' must live in application..port.in")
         assertContains(violations, "outbound port 'OrderRepositoryPort' must live in application..port.out")
@@ -123,7 +120,6 @@ class JavaSourceArchitectureRuleMatrixTest {
     @Test
     @DisplayName('Web Adapter와 오류 변환 책임을 벗어난 타입 사용을 거부한다')
     void rejectsWebAdapterAndErrorMappingViolations() {
-        // given
         Project project = sampleProject('web-rules')
         writeApplication(project)
         writeJava(project, 'com/example/order/application/service/LegacyRequest.java', '''
@@ -205,10 +201,8 @@ class JavaSourceArchitectureRuleMatrixTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assertContains(violations, "API DTO 'LegacyRequest' must live in adapter.in.web package")
         assertContains(violations, "request DTO 'OrderRequest' must live in adapter.in.web.request package")
         assertContains(violations, "API DTO 'ApiRequest' must be a record")
@@ -225,7 +219,6 @@ class JavaSourceArchitectureRuleMatrixTest {
     @Test
     @DisplayName('Domain 타입의 불변성 패키지 필드와 record 계약 위반을 거부한다')
     void rejectsDomainModelAndRecordViolations() {
-        // given
         Project project = sampleProject('domain-rules')
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/model/MutableOrder.java', '''
@@ -355,10 +348,8 @@ class JavaSourceArchitectureRuleMatrixTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assertContains(violations, "domain class 'MutableOrder' must be a record or final aggregate root")
         assertContains(violations, 'domain must not use Spring/JPA/QueryDSL/Lombok annotations')
         assertContains(violations, 'requireNonNull is only allowed for structural guards in a private aggregate constructor')
@@ -390,7 +381,6 @@ class JavaSourceArchitectureRuleMatrixTest {
     @Test
     @DisplayName('JPA Entity Persistence Adapter와 Mapper의 기술 책임 위반을 거부한다')
     void rejectsPersistenceAndMapperViolations() {
-        // given
         Project project = sampleProject('persistence-rules')
         writeApplication(project)
         writeJava(project, 'com/example/order/adapter/out/misc/OrderJpaRepository.java', '''
@@ -472,10 +462,8 @@ class JavaSourceArchitectureRuleMatrixTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assertContains(violations, "JPA repository 'OrderJpaRepository' must be an interface")
         assertContains(violations, "JPA repository 'OrderJpaRepository' should live in a persistence/repository package")
         assertContains(violations, "outbound adapter entity 'OrderEntity' must live in a persistence package")

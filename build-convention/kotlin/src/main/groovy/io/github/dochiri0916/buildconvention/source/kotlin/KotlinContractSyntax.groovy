@@ -11,7 +11,6 @@ import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.jetbrains.kotlin.psi.KtUserType
 
-/** Compare executable PSI structure against a closed contract; trivia and import aliases are immaterial. */
 final class KotlinContractSyntax {
     private KotlinContractSyntax() {
     }

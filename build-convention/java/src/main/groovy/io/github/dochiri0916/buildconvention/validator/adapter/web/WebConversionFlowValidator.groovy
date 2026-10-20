@@ -4,7 +4,6 @@ import io.github.dochiri0916.buildconvention.source.java.JavaLexicalScanner
 import io.github.dochiri0916.buildconvention.source.java.SourceTypeIndex
 import org.gradle.api.Project
 
-/** Require existing application contracts to cross the web boundary through DTO conversions or a web Mapper. */
 final class WebConversionFlowValidator {
     static List<String> validate(Project project, SourceTypeIndex index) {
         List<String> violations = []

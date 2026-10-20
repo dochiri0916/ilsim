@@ -16,7 +16,6 @@ class JavaSyntaxAdversarialFixtureTest {
     @Test
     @DisplayName('주석 문자열 문자와 text block의 brace 뒤에 있는 Repository 변경도 분석한다')
     void parsesTransactionalMethodBodyAfterAdversarialBraceTokens() {
-        // given
         Project project = sampleProject('transaction-parser')
         writeApplication(project)
         writeAggregate(project, 'Order')
@@ -67,10 +66,8 @@ class JavaSyntaxAdversarialFixtureTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assert violations.any {
             it.contains("application service method 'checkout' must not modify multiple aggregate repositories")
         }
@@ -79,7 +76,6 @@ class JavaSyntaxAdversarialFixtureTest {
     @Test
     @DisplayName('Java 테스트 phase와 assertion은 text block 내부의 주석 모양에 영향받지 않는다')
     void parsesJavaTestMethodAfterAdversarialBraceAndCommentTokens() {
-        // given
         Project project = sampleProject('test-parser')
         writeApplication(project)
         writeJava(project, 'src/test/java/com/example/ParserFixtureTest.java', '''
@@ -117,17 +113,14 @@ class JavaSyntaxAdversarialFixtureTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assert !violations.any { it.contains("test method 'parses_complex_body'") }
     }
 
     @Test
     @DisplayName('줄바꿈된 fully-qualified Transactional도 비공개 메서드 위반으로 감지한다')
     void detectsMultilineQualifiedTransactionalOnPrivateMethod() {
-        // given
         Project project = sampleProject('qualified-transactional')
         writeApplication(project)
         writeJava(project, 'src/main/java/com/example/sales/application/service/RegisterOrderService.java', '''
@@ -158,10 +151,8 @@ class JavaSyntaxAdversarialFixtureTest {
             method.name == 'persist'
         }
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assert persistMethod.annotations*.simpleName.contains('Transactional')
         assert violations.any {
             it.contains("non-public method 'persist' must not declare @Transactional")
@@ -171,7 +162,6 @@ class JavaSyntaxAdversarialFixtureTest {
     @Test
     @DisplayName('annotation 문자열의 닫는 괄호 뒤 readOnly 속성도 AST로 인식한다')
     void detectsReadOnlyAfterClosingParenthesisInsideAnnotationString() {
-        // given
         Project project = sampleProject('nested-transaction-argument')
         writeApplication(project)
         writeJava(project, 'src/main/java/com/example/sales/application/port/out/OrderRepositoryPort.java', '''
@@ -205,10 +195,8 @@ class JavaSyntaxAdversarialFixtureTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assert !violations.any {
             it.contains("query application service method 'getOrder' must declare @Transactional(readOnly = true)")
         }
@@ -220,7 +208,6 @@ class JavaSyntaxAdversarialFixtureTest {
     @Test
     @DisplayName('annotation 문자열의 괄호 뒤 테스트 메서드도 품질 규칙을 검증한다')
     void validatesTestMethodAfterClosingParenthesisInsideAnnotationString() {
-        // given
         Project project = sampleProject('nested-test-annotation-argument')
         writeApplication(project)
         writeJava(project, 'src/test/java/com/example/ParserFixtureTest.java', '''
@@ -240,10 +227,8 @@ class JavaSyntaxAdversarialFixtureTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assert violations.any { it.contains("test method 'missingStructure' must include '// given'") }
         assert violations.any { it.contains("test method 'missingStructure' must assert observable result") }
     }
@@ -251,7 +236,6 @@ class JavaSyntaxAdversarialFixtureTest {
     @Test
     @DisplayName('줄바꿈된 fully-qualified Disabled도 AST로 거부한다')
     void detectsMultilineQualifiedDisabledAnnotation() {
-        // given
         Project project = sampleProject('qualified-disabled')
         writeApplication(project)
         writeJava(project, 'src/test/java/com/example/DisabledFixtureTest.java', '''
@@ -263,17 +247,14 @@ class JavaSyntaxAdversarialFixtureTest {
                 }
                 ''')
 
-        // when
         List<String> violations = validate(project)
 
-        // then
         assert violations.any { it.contains('tests must not use @Disabled') }
     }
 
     @Test
     @DisplayName('메서드 호출 체인 안의 중첩 타입 생성을 fully-qualified 타입 참조로 오인하지 않는다')
     void ignoresNestedTypeConstructionInsideMethodCallChain() {
-        // given
         Project project = sampleProject('member-call-expression')
         writeJava(project, 'src/main/java/com/example/ExpressionFixture.java', '''
                 package com.example;
@@ -294,12 +275,10 @@ class JavaSyntaxAdversarialFixtureTest {
                 }
                 ''')
 
-        // when
         JavaSourceAstInspector.Inspection inspection = JavaSourceAstInspector.inspect(
                 new File(project.projectDir, 'src/main/java/com/example/ExpressionFixture.java')
         )
 
-        // then
         assert inspection.primaryType().qualifiedTypeReferences.isEmpty()
     }
 

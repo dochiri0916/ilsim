@@ -17,7 +17,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
-/** Runner 가 보고한 플랜 사용량이 웹에 보이고, 웹의 새로고침 요청이 Runner 에 한 번만 넘어가는지 본다. */
 class PlanUsageTest {
 
     private val now = Instant.parse("2026-10-17T00:00:00Z")

@@ -28,8 +28,6 @@ class ArchUnitArchitectureValidator {
         JavaClasses importedClasses = new ClassFileImporter()
                 .importPaths(existingClassDirs.collect { File classDir -> classDir.toPath() })
 
-        // ArchUnit only logs class files it cannot parse (for example a newer Java version) and then
-        // checks the rest, which would let those classes pass unchecked.
         List<String> unreadable = (compiledClassNames(existingClassDirs) - importedClasses.collect { it.name }).sort()
         if (!unreadable.isEmpty()) {
             return ["ArchUnit could not read compiled classes; update the bundled bytecode reader for this Java version: ${unreadable.join(', ')}".toString()]
@@ -128,11 +126,6 @@ class ArchUnitArchitectureValidator {
         }
     }
 
-    /**
-     * Project types are governed by the layer rules, so only types from outside the project are checked here.
-     * A type is a project type when it was compiled with the project, or lives under the base package or a
-     * published language package.
-     */
     private static DescribedPredicate<JavaClass> externalTypeNotAllowedInDomain(
             HexagonalConventionExtension convention,
             JavaClasses importedClasses

@@ -5,7 +5,6 @@ import io.github.dochiri0916.buildconvention.source.java.JavaSourceAstInspector
 import io.github.dochiri0916.buildconvention.validator.domain.collection.ImmutableCollectionConventionValidator
 import org.gradle.api.Project
 
-/** Contract shape and service orchestration rules, independent of Gradle wiring. */
 final class ApplicationContractConventionValidator {
     private static final Set<String> METADATA = ['page', 'size', 'limit', 'offset', 'sequence', 'revision'] as Set
     private static final Set<String> SCALARS = ['String', 'boolean', 'int', 'long', 'double', 'float',

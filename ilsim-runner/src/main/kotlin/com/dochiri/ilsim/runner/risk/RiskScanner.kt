@@ -14,11 +14,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** 프로젝트별 위험 규칙 설정. overrides 의 값은 BLOCK | REVIEW | OFF 이고 없으면 규칙의 기본 심각도를 쓴다. */
 @Serializable
 data class RiskConfig(
     val overrides: Map<String, String> = emptyMap(),
-    /** 사용자가 AI 검토 도입을 승인한 규칙. 승인 전에는 어떤 규칙도 AI를 호출하지 않는다. */
     val aiReview: Set<String> = emptySet(),
 )
 
@@ -28,7 +26,6 @@ object RiskScanner {
 
     fun effective(config: RiskConfig, id: String): String = config.overrides[id] ?: RiskRules.byId.getValue(id).defaultSeverity
 
-    /** [onlyFiles] 가 있으면 그 파일의 결과만 돌려준다 (게이트에서 바꾼 파일에만 강제하기 위함). 소스가 하나도 없으면 null. */
     fun scan(root: Path, profile: ProjectProfile, config: RiskConfig = RiskConfig(), onlyFiles: Set<String>? = null): List<Violation>? {
         val facts = FactScanner.scan(root, profile.modules)
         if (facts.main.isEmpty()) return null
@@ -41,7 +38,6 @@ object RiskScanner {
             .sortedWith(compareBy({ it.file }, { it.line }, { it.ruleId }))
     }
 
-    /** 빌드 파일에 kotlin-spring(allopen) 플러그인이 있는지. 있으면 Kotlin 클래스도 프록시할 수 있다. */
     private fun hasAllOpen(root: Path): Boolean = try {
         Files.walk(root, 4).use { s ->
             s.anyMatch { p ->
@@ -54,7 +50,6 @@ object RiskScanner {
 
     fun remedy(ruleId: String): String? = RiskRules.remedies[ruleId]
 
-    /** 결과에 나온 규칙마다 한 번씩 권고를 보여 준다. */
     fun remedies(findings: List<Violation>): String = findings.map { it.ruleId }.distinct().sorted()
         .joinToString("\n") { "  $it → ${remedy(it)}" }
 
@@ -62,7 +57,6 @@ object RiskScanner {
         "  ${it.id} ${effective(config, it.id).padEnd(6)} ${it.title} (${it.spec})"
     }
 
-    /** 위험 규칙 설정도 프로젝트 id 별로 저장한다: `~/.ilsim/projects/<id>/risk.json` */
     class Store(config: ConfigStore) {
         private val base: Path = config.location.parent.resolve("projects")
         private val json = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }

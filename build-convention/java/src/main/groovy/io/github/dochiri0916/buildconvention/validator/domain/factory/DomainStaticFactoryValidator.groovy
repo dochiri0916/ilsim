@@ -32,7 +32,6 @@ class DomainStaticFactoryValidator {
                 return
             }
 
-            // Events and Outbox records keep their canonical constructors; value objects are classes.
             inspection.types.each { JavaSourceAstInspector.TypeModel type ->
                 if (type.kind == 'RECORD' && (packageName.contains('.domain.vo') || packageName.endsWith('.global.domain'))) {
                     violations.add("${project.relativePath(file)} domain Value Object '${type.simpleName}' must be a final class with a private constructor")

@@ -4,7 +4,6 @@ import io.github.dochiri0916.buildconvention.source.java.JavaLexicalScanner
 import io.github.dochiri0916.buildconvention.source.java.JavaSourceAstInspector
 import java.util.regex.Pattern
 
-/** Shared collection contract for application wrappers and external DTO/event exceptions. */
 final class ImmutableCollectionConventionValidator {
     private ImmutableCollectionConventionValidator() {
     }

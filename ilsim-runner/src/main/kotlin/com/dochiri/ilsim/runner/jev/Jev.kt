@@ -17,11 +17,6 @@ import kotlin.io.path.readText
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
- * TypeSafe JEV(결정 모델) 어댑터. 텍스트를 만들지 않고 yes/no 판단의 확률만 돌려주므로, 결과는 판단 근거로만 쓰고 최종 결정은 정책이 한다.
- * 키(환경 변수 TYPESAFE_API_KEY 또는 JEV_API_KEY)가 없거나 호출이 실패하면 null 을 돌려주어 호출한 쪽이 정적·규칙 기반 동작으로 되돌아가게 한다.
- */
-/** 서버에 웹으로 등록된 키. 작업을 받을 때마다 갱신하며 메모리에만 둔다. 환경 변수보다 우선한다. */
 object JevKey {
     @Volatile var fromServer: String? = null
 }
@@ -34,7 +29,6 @@ class Jev(private val client: JevClient?, private val cacheDirectory: Path? = nu
 
     val enabled: Boolean get() = client != null
 
-    /** 질문 id → 확률(0..1). 한 번의 요청에 같은 상태로 여러 질문을 보낸다. 실패하면 null. */
     fun probabilities(state: Any, questions: Map<String, NoulQuestion>): Map<String, Double>? {
         val c = client ?: return null
         if (questions.isEmpty()) return emptyMap()

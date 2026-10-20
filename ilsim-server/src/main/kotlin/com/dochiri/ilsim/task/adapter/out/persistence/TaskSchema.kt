@@ -3,7 +3,6 @@ package com.dochiri.ilsim.task.adapter.out.persistence
 import java.util.concurrent.atomic.AtomicBoolean
 import org.springframework.jdbc.core.JdbcTemplate
 
-/** 테이블은 처음 쓸 때 만든다(서버가 뜰 때 DB 가 아직 없을 수 있다). */
 class TaskSchema(private val jdbc: JdbcTemplate) {
     private val ready = AtomicBoolean(false)
 

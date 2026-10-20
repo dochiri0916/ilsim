@@ -20,7 +20,6 @@ public class JavaSourceParser {
         return parse(files, files.stream().map(SourceFile::root).distinct().toList());
     }
 
-    /** Parse the requested files while keeping all discovered source roots available to symbol resolution. */
     public List<ParsedSource> parse(List<SourceFile> files, List<Path> sourceRoots) {
         return parse(files, sourceRoots, List.of());
     }

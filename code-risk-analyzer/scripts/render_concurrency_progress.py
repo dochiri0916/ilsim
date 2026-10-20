@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Render the implementation ledger from the catalog shipped with the analyzer."""
 import argparse
 import json
 from pathlib import Path

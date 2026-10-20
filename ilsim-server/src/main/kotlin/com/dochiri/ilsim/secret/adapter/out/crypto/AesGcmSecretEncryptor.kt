@@ -14,11 +14,6 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import org.slf4j.LoggerFactory
 
-/**
- * 비밀 값을 AES-256-GCM 으로 암호화한다. 암호문은 `base64(iv ‖ 암호문 ‖ 태그)` 이고, 이름을 추가 인증 데이터로 묶는다.
- * 마스터 키는 DB 에 두지 않는다: 환경 변수 ILSIM_SECRET_KEY(아무 문자열, SHA-256 으로 32바이트화)가 있으면 그것을,
- * 없으면 `~/.ilsim/server-secret.key` 를 쓰고 처음에 만든다.
- */
 class AesGcmSecretEncryptor(masterKey: ByteArray) : SecretEncryptor {
 
     private val key: SecretKeySpec
@@ -78,7 +73,6 @@ class AesGcmSecretEncryptor(masterKey: ByteArray) : SecretEncryptor {
                 try {
                     Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"))
                 } catch (_: UnsupportedOperationException) {
-                    // POSIX 가 아닌 파일 시스템
                 }
                 log.info("암호화 마스터 키를 새로 만들었습니다: {} (잃어버리면 저장된 키를 복호화할 수 없으니 백업하세요)", file)
                 return generated

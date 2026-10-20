@@ -15,7 +15,6 @@ import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
 
-/** First-class collections own an immutable snapshot; derived scalar caches are not extra component values. */
 final class KotlinCollectionRules {
     private KotlinCollectionRules() {
     }
@@ -89,10 +88,6 @@ final class KotlinCollectionRules {
         }
     }
 
-    /**
-     * A fold may use + or - only as the operator of a domain value type that checks overflow itself: the fold starts
-     * from that type, the accumulator is the left operand, and the operator body calls Math.addExact/subtractExact.
-     */
     private static boolean checkedValueOperator(KtCallExpression fold, KtBinaryExpression arithmetic, KtFile file,
                                                 Map<String, KtClassOrObject> types) {
         def lambda = fold.lambdaArguments.isEmpty() ? null : fold.lambdaArguments.first().getLambdaExpression()

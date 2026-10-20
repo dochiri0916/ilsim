@@ -5,15 +5,10 @@ import java.nio.file.Path
 
 internal fun Dep.isCrossSlice() = to != null && from.slice != null && to.slice != null && from.slice != to.slice
 
-/** 같은 슬라이스 안, 슬라이스↔공유, 공유↔공유, FLAT 단위 간 의존. 슬라이스 간 의존과 가상 단위(루트 등)는 제외한다. */
 internal fun Dep.isUnitEdge() = to != null && !isCrossSlice() && from.unit != to.unit && from.unit !in pseudoUnits && to.unit !in pseudoUnits
 
 internal val pseudoUnits = setOf("(root)", "(slice-root)", "(outside)")
 
-/**
- * 프로젝트의 패키지 구조와 import 그래프에서 아키텍처를 추론하고 검증 규칙 후보를 만든다.
- * 이름 템플릿(헥사고날, 레이어드 등)을 쓰지 않으며, 규칙은 모두 이 프로젝트에서 관측된 사실에서만 나온다.
- */
 object ArchitectureMiner {
 
     fun mine(root: Path, profile: ProjectProfile): ArchitectureModel =
@@ -94,7 +89,6 @@ object ArchitectureMiner {
                 mapOf("unit" to listOf(u)), if (n >= 5) "BLOCK" else "REVIEW", Evidence(n, n))
         }
 
-    /** 양방향 모두 한 번도 관측되지 않은 단위 쌍. 의도된 분리인지 사용자가 판단해야 하므로 REVIEW 후보로만 만든다. */
     private fun absentRules(unitFiles: Map<String, List<SourceFile>>, pairs: Set<Pair<String, String>>, leaves: Set<String>, notes: MutableList<String>): List<ArchRule> {
         val used = pairs.map { it.second }.toSet()
         val rules = unitFiles.filter { it.value.size >= 3 && it.key !in leaves }.keys.sorted().flatMap { a ->
@@ -138,7 +132,6 @@ object ArchitectureMiner {
             }
         }
 
-    /** 외부 라이브러리 사용 위치를 첫 세그먼트별로 묶어 각 묶음의 공통 접두 경로를 허용 위치로 삼는다. 거의 모든 단위에서 쓰이면 규칙으로 만들지 않는다. */
     private fun confinementRules(deps: List<Dep>, unitCount: Int): List<ArchRule> =
         deps.filter { it.external != null && it.from.unit !in pseudoUnits }.groupBy { it.external!! }.toSortedMap().mapNotNull { (prefix, ds) ->
             val files = ds.map { it.file.path }.distinct()

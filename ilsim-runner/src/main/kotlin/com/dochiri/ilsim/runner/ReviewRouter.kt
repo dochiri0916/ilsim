@@ -5,7 +5,6 @@ import io.github.gudcks0305.jev.NoulQuestion
 import com.dochiri.ilsim.runner.audit.ChangeAudit
 import java.util.UUID
 
-/** 독립 검토도 작성과 별도로 평가한다. JEV는 근거 선택/수행 가능성만 판단하고 개방형 검토는 유지한다. */
 object ReviewRouter {
     const val POLICY = "review-cost-v2-support-5.5"
     val policyKey: String get() = "${ReviewContext.policy.version}/${ReviewCache.digest(ReviewContext.policy.profiles.toString())}/${System.getenv("ILSIM_JEV_POLICY") ?: "jev-v2"}/rules=${System.getenv("ILSIM_JEV_RULE_COMPLETION") == "true"}/review=${System.getenv("ILSIM_REVIEW_ALLOW_UNVERIFIED") == "true"}"
@@ -25,7 +24,6 @@ object ReviewRouter {
         val answers = if (jev.enabled) jev.probabilities(mapOf("policy" to policyKey, "reviewInput" to prompt), questions) else null
         return candidates.mapIndexedNotNull { i, c ->
             val profile = profiles.firstOrNull { it.model == c.model && it.effort == c.effort }
-            // JEV 장애 시에도 외부 품질 검증이 끝난 정책은 재사용한다. 미검증 조합은 채택하지 않는다.
             val observed = profile?.takeIf { it.eligible && it.samples > 0 }?.let { it.passed.toDouble() / it.samples }
             val p = (answers?.get("c$i")?.takeIf { it.isFinite() && it in 0.97..1.0 }
                 ?: if (answers == null && !allowUnverified) observed ?: if (c == fallback) 0.97 else null else null)
@@ -80,7 +78,6 @@ object ReviewRouter {
         } catch (e: Exception) {
             DecisionScope.record(purpose, "SAMPLE_FAILED", e.message.orEmpty(), prompt)
         }
-        // 비교 응답은 운영 판정에 섞지 않고 비용·원문·연결 ID를 별도로 보존한다.
         return answer
     }
 }

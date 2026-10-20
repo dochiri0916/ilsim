@@ -5,7 +5,6 @@ import java.security.MessageDigest
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
-/** 실제 판단 입력·모델·effort·프롬프트/정책 버전이 같은 유효한 응답만 재사용한다. */
 class ReviewCache(private val directory: Path) {
     fun <T> get(prompt: String, reviewer: String, parse: (String) -> T, ask: () -> String): T {
         val file = directory.resolve(digest("review-v2\u0000$reviewer\u0000$prompt") + ".json")

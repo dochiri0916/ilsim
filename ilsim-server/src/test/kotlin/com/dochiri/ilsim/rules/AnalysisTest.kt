@@ -22,7 +22,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
-/** 웹 분석 요청이 Runner 에 한 번만 넘어가고, 결과가 다시 웹에 보이는지 본다. */
 class AnalysisTest {
 
     private class MutableClock(var now: Instant) : Clock() {

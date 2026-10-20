@@ -15,10 +15,6 @@ const VERDICT: Record<ExecutionReview['verdict'], { label: string; tone: string 
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '-' : `${Math.round(v * 100)}%`)
 const signed = (v: number | null | undefined) => (v === null || v === undefined ? '-' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}%p`)
 
-/**
- * JEV 가 작업마다 고른 모델·추론 강도가 맞았는지 실행 이력으로 보여 주고, 조합을 끄거나 성공 예측을 보정한다.
- * 집계는 저장된 이력만 써서 추가 AI 비용이 없다. 조정은 전체 프로젝트 공통이며 다음 선택부터 적용된다.
- */
 export function Routing({ projectId }: { projectId: string }) {
   const [scope, setScope] = useState<'project' | 'all'>('all')
   const data = usePoll(() => api.routing(scope === 'project' ? projectId : undefined), 10000, [scope, projectId])

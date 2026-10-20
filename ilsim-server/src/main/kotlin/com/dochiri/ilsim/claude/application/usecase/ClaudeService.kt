@@ -12,7 +12,6 @@ import java.time.Clock
 import java.time.Duration
 import java.util.UUID
 
-/** 로그인 상태 전이가 엇갈리지 않도록 한 번에 하나씩 처리한다. [isJsonObject]는 settings.json 형식 검사. */
 class ClaudeService(
     private val environments: ClaudeEnvironmentStore,
     private val store: ClaudeAccountStore,
@@ -29,7 +28,6 @@ class ClaudeService(
 
     override fun logins(): List<LoginSession> {
         val now = clock.instant()
-        // 오래 끝나지 않은 로그인은 Runner 가 놓친 것으로 보고 실패로 닫는다.
         store.logins().filter { it.active && Duration.between(it.requestedAt, now) > LOGIN_TTL }
             .forEach { store.saveLogin(it.finish(false, null, null, "시간이 지나 로그인을 취소했습니다")) }
         return store.logins().sortedByDescending { it.requestedAt }

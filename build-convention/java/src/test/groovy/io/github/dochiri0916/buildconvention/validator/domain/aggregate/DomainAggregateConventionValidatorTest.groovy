@@ -16,7 +16,6 @@ class DomainAggregateConventionValidatorTest {
     @Test
     @DisplayName('Product 형태의 불변 Aggregate와 일급 컬렉션을 허용한다')
     void acceptsImmutableAggregateWithIdentifierCollection() {
-        // given
         Project project = sampleProject('valid-product')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
@@ -62,17 +61,14 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { violation -> violation.contains('Product.java') }
     }
 
     @Test
     @DisplayName('원시 원소 컬렉션과 방어 복사 누락을 거부한다')
     void rejectsRawElementCollectionAndMissingDefensiveCopy() {
-        // given
         Project project = sampleProject('invalid-product')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
@@ -100,10 +96,8 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { violation -> violation.contains("collection field 'categoryIds' must contain") }
         assert violations.any { violation -> violation.contains("collection field 'categoryIds' must defensively copy with Set.copyOf") }
         assert violations.any { violation -> violation.contains('aggregate with identifier VO must override equals and hashCode') }
@@ -112,7 +106,6 @@ class DomainAggregateConventionValidatorTest {
     @Test
     @DisplayName('Aggregate의 Map도 일급 컬렉션으로 감싸야 한다')
     void acceptsMapValueObjectsAndRenamedConstructorParameter() {
-        // given
         Project project = sampleProject('map-value-objects')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Tag.java', '''
@@ -150,17 +143,14 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { violation -> violation.contains("domain field 'tags' must use a first-class collection") }
     }
 
     @Test
     @DisplayName('Aggregate array는 validator 오류 대신 명확한 위반으로 보고한다')
     void rejectsArrayCollectionWithoutCrashing() {
-        // given
         Project project = sampleProject('array-collection')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
@@ -191,10 +181,8 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { violation ->
             violation.contains("collection field 'categoryIds' must use List, Set, Map")
         }
@@ -203,7 +191,6 @@ class DomainAggregateConventionValidatorTest {
     @Test
     @DisplayName('식별자를 가진 Domain record Aggregate를 거부한다')
     void rejectsRecordAggregate() {
-        // given
         Project project = sampleProject('record-aggregate')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
@@ -219,10 +206,8 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { violation ->
             violation.contains("domain aggregate 'Product' must be a final class, not a record")
         }
@@ -231,7 +216,6 @@ class DomainAggregateConventionValidatorTest {
     @Test
     @DisplayName('문자열 Value Object record의 null과 blank 불변식을 모두 요구한다')
     void rejectsStringValueObjectWithoutBlankInvariant() {
-        // given
         Project project = sampleProject('invalid-value-object')
         writeJava(project, 'com/example/catalog/domain/model/ProductName.java', '''
                 package com.example.catalog.domain.model;
@@ -246,10 +230,8 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { violation ->
             violation.contains("domain record 'ProductName' must null-check and blank-check String components")
         }
@@ -258,7 +240,6 @@ class DomainAggregateConventionValidatorTest {
     @Test
     @DisplayName('무상태 Domain Service는 final class로 허용한다')
     void acceptsFinalDomainService() {
-        // given
         Project project = sampleProject('final-domain-service')
         writeJava(project, 'com/example/catalog/domain/model/PricingService.java', '''
                 package com.example.catalog.domain.model;
@@ -267,10 +248,8 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { violation ->
             violation.contains("domain service 'PricingService' must be final")
         }
@@ -279,7 +258,6 @@ class DomainAggregateConventionValidatorTest {
     @Test
     @DisplayName('식별자 필드명이 id가 아닌 Aggregate도 검증 대상에서 제외하지 않는다')
     void rejectsAggregateWithoutIdFieldInsteadOfSkippingValidation() {
-        // given
         Project project = sampleProject('no-id-field')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
@@ -299,17 +277,14 @@ class DomainAggregateConventionValidatorTest {
                 }
         ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { violation -> violation.contains("must declare identifier field 'id'") }
     }
 
     @Test
     @DisplayName('같은 파일의 보조 top-level 타입도 도메인 규칙으로 검증한다')
     void validatesSecondaryTopLevelTypeInSameFile() {
-        // given
         Project project = sampleProject('secondary-type')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
@@ -344,17 +319,14 @@ class DomainAggregateConventionValidatorTest {
                 }
         ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { violation -> violation.contains("'Loose'") || violation.contains('Loose') }
     }
 
     @Test
     @DisplayName('비공개 equals는 Aggregate의 ID 동등성 구현으로 인정하지 않는다')
     void rejectsAggregateWithNonPublicEquals() {
-        // given
         Project project = sampleProject('non-public-equals')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
@@ -382,10 +354,8 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { violation ->
             violation.contains('aggregate with identifier VO must override equals and hashCode')
         }
@@ -394,7 +364,6 @@ class DomainAggregateConventionValidatorTest {
     @Test
     @DisplayName('Aggregate의 가변 상태와 ID 이외의 동등성 및 restore 부작용을 거부한다')
     void rejectsMutableStateNonIdEqualityAndRestoreSideEffects() {
-        // given
         Project project = sampleProject('invalid-aggregate-semantics')
         writeProductSupportTypes(project)
         writeJava(project, 'com/example/catalog/domain/model/Product.java', '''
@@ -437,10 +406,8 @@ class DomainAggregateConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { it.contains('state must use private final fields') }
         assert violations.any { it.contains("equals and hashCode must use identifier field 'id' only") }
         assert violations.any { it.contains('restore must not create a new id, time, UUID, or domain event') }

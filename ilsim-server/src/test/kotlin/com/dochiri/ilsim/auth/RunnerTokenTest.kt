@@ -57,7 +57,7 @@ class RunnerTokenTest {
         val token = Files.readString(home.resolve("token")).trim()
         assertThat(status(filter, "/runner/api/poll", token)).isEqualTo(200)
         assertThat(status(filter, "/runner/api/poll", null)).isEqualTo(401)
-        assertThat(status(filter, "/api/tasks", null)).isEqualTo(200) // /api 는 이 필터의 대상이 아니다
+        assertThat(status(filter, "/api/tasks", null)).isEqualTo(200)
         assertThat(status(RunnerTokenFilter("", home.toString()), "/runner/api/poll", token)).isEqualTo(200)
     }
 }

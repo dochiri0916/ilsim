@@ -13,7 +13,6 @@ import org.jetbrains.kotlin.psi.KtStringTemplateEntryWithExpression
 import org.jetbrains.kotlin.psi.KtSuperTypeCallEntry
 import org.jetbrains.kotlin.psi.KtTypeAlias
 
-/** Closed source contracts for the inbound UUID guard and outbound UUID-v7 generator/port chain. */
 final class KotlinIdentifierBoundaryRules {
     private static final String CREATOR = 'com.github.f4b6a3.uuid.UuidCreator'
     private static final Set<String> EXTERNAL_TYPES = ['java.util.UUID', CREATOR, 'kotlin.jvm.JvmInline',

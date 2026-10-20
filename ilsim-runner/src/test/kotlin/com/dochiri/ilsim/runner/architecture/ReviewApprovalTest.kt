@@ -23,7 +23,7 @@ class ReviewApprovalTest {
         val r = ArchitectureReviewer.apply(model, response, "h", "sonnet")
         assertEquals("KEEP", r.rules.first { it.id == "a" }.review?.verdict)
         assertEquals("SUSPECT", r.rules.first { it.id == "b" }.review?.verdict)
-        assertEquals(null, r.rules.first { it.id == "c" }.review) // 알 수 없는 verdict 는 버린다
+        assertEquals(null, r.rules.first { it.id == "c" }.review)
         assertTrue(r.rules.none { it.approved || it.rejected })
         assertEquals(listOf("m1"), r.review!!.missingRules)
         assertEquals(listOf("a"), RuleApproval.keepIds(r))
@@ -45,7 +45,6 @@ class ReviewApprovalTest {
         assertEquals("", incomplete.review!!.modelHash)
         ArchitectureReviewer.review(incomplete, "sonnet", ask = ask)
         assertEquals(4, calls)
-        // 승인 상태가 바뀌어도 요약 해시는 같다
         assertEquals(ArchitectureReviewer.hash(model), ArchitectureReviewer.hash(RuleApproval.approve(model, listOf("a"))))
         assertNotEquals(ArchitectureReviewer.hash(model), ArchitectureReviewer.hash(model.copy(rules = model.rules.drop(1))))
     }
@@ -87,7 +86,7 @@ class ReviewApprovalTest {
         val reviewed = ArchitectureReviewer.apply(soft, response, "h", "sonnet")
         val blockKeep = ArchitectureReviewer.apply(model, response, "h", "sonnet")
         assertEquals(listOf(false, false, false), RuleApproval.autoApprove(blockKeep).rules.map { it.approved }, "BLOCK 규칙은 KEEP 이어도 자동 승인하지 않는다")
-        val decided = RuleApproval.reject(reviewed, listOf("a")) // 사용자가 KEEP 이던 a 를 거절
+        val decided = RuleApproval.reject(reviewed, listOf("a"))
         val auto = RuleApproval.autoApprove(decided)
         assertEquals(listOf(false, false, false), auto.rules.map { it.approved }, "거절한 a 는 승인하지 않고 SUSPECT 인 b 와 의견 없는 c 도 승인하지 않는다")
 

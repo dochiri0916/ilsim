@@ -16,7 +16,6 @@ class AggregateBoundaryConventionValidatorTest {
     @Test
     @DisplayName('같은 Context의 다른 Aggregate Root는 식별자 VO 없이 직접 보관할 수 없다')
     void rejectsDirectAggregateRootReferenceInsideSameContext() {
-        // given
         Project project = sampleProject('same-context-reference')
         writeApplication(project)
         writeAggregate(project, 'Order')
@@ -36,13 +35,11 @@ class AggregateBoundaryConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("domain must reference aggregate root 'Cart' through an identifier VO")
         }
@@ -51,7 +48,6 @@ class AggregateBoundaryConventionValidatorTest {
     @Test
     @DisplayName('두 Repository Port가 같은 Aggregate Root를 저장하면 다중 Aggregate 변경으로 보지 않는다')
     void acceptsTwoRepositoryPortsBoundToSameAggregateRoot() {
-        // given
         Project project = sampleProject('same-aggregate-repositories')
         writeApplication(project)
         writeAggregate(project, 'Order')
@@ -90,13 +86,11 @@ class AggregateBoundaryConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any {
             it.contains("application service method 'archive' must not modify multiple aggregate repositories")
         }
@@ -105,7 +99,6 @@ class AggregateBoundaryConventionValidatorTest {
     @Test
     @DisplayName('하나의 Repository Port가 여러 Aggregate Root를 저장하면 모호한 경계로 거부한다')
     void rejectsRepositoryPortBoundToMultipleAggregateRoots() {
-        // given
         Project project = sampleProject('ambiguous-repository')
         writeApplication(project)
         writeAggregate(project, 'Order')
@@ -122,13 +115,11 @@ class AggregateBoundaryConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("repository port 'CombinedRepositoryPort' must manage exactly one aggregate root")
                     && it.contains('Cart, Order')
@@ -138,7 +129,6 @@ class AggregateBoundaryConventionValidatorTest {
     @Test
     @DisplayName('Aggregate Root가 시그니처에 없는 Repository Port는 경계를 결정할 수 없어 거부한다')
     void rejectsRepositoryPortWithoutAggregateRootType() {
-        // given
         Project project = sampleProject('unbound-repository')
         writeApplication(project)
         writeJava(project, 'com/example/sales/application/port/out/EmailRepositoryPort.java', '''
@@ -149,13 +139,11 @@ class AggregateBoundaryConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains("repository port 'EmailRepositoryPort' must expose one aggregate root")
         }
@@ -164,7 +152,6 @@ class AggregateBoundaryConventionValidatorTest {
     @Test
     @DisplayName('Java 문법을 파싱할 수 없으면 검증을 통과시키지 않는다')
     void failsClosedWhenJavaSourceCannotBeParsed() {
-        // given
         Project project = sampleProject('invalid-java')
         writeApplication(project)
         writeJava(project, 'com/example/sales/domain/model/BrokenOrder.java', '''
@@ -173,13 +160,11 @@ class AggregateBoundaryConventionValidatorTest {
                 public record BrokenOrder(String value) {
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any {
             it.contains('BrokenOrder.java could not be parsed as Java source')
         }
@@ -188,7 +173,6 @@ class AggregateBoundaryConventionValidatorTest {
     @Test
     @DisplayName('Repository 타입은 FQCN import fallback과 동명 모호성을 구분해 Aggregate Root에 연결한다')
     void resolvesRepositoryTypeReferencesWithoutGuessingAmbiguousSimpleNames() {
-        // given
         Project project = sampleProject('repository-resolution')
         writeApplication(project)
         writeAggregate(project, 'Order')
@@ -244,7 +228,6 @@ class AggregateBoundaryConventionValidatorTest {
                         new HexagonalConventionExtension()
                 )
 
-        // when
         String fromQualifiedType = analysis.aggregateRootForRepository(
                 serviceFile,
                 'com.example.sales.application.port.out.OrderRepositoryPort[]'
@@ -260,7 +243,6 @@ class AggregateBoundaryConventionValidatorTest {
         )
         String missingRoot = analysis.aggregateRootForRepository(serviceFile, 'MissingRepositoryPort')
 
-        // then
         assert fromQualifiedType == 'com.example.sales.domain.model.Order'
         assert fromImportedType == 'com.example.sales.domain.model.Order'
         assert ambiguousRoot == null

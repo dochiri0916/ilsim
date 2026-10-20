@@ -8,11 +8,6 @@ import kotlin.io.path.fileSize
 import kotlin.io.path.name
 import kotlin.io.path.readText
 
-/**
- * 프로젝트에 이미 있는 문서를 어떤 기준으로 볼지 정의한다. 명령(목적)마다 기준이 다르다.
- * 기준은 사람이 읽는 지침([criteria])과 후보를 거르는 키워드([keywords])로 나뉜다.
- * 문서 선택은 [DocumentSelector] 가 맡고, 기본 구현은 이름·경로·제목 키워드만 쓴다. JEV 로 교체할 수 있다.
- */
 enum class DocPurpose(val label: String, val keywords: List<String>, val criteria: String) {
     ARCHITECTURE(
         "아키텍처",
@@ -30,14 +25,12 @@ enum class DocPurpose(val label: String, val keywords: List<String>, val criteri
 
 data class DocumentRef(val path: String, val score: Int, val reason: String)
 
-/** 후보 문서 중 이 목적에 쓸 문서를 고른다. JEV 로 교체할 지점이다. */
 interface DocumentSelector {
     fun select(purpose: DocPurpose, candidates: List<DocumentFile>): List<DocumentRef>
 }
 
 data class DocumentFile(val path: String, val text: String)
 
-/** 파일명·경로·제목에 목적의 키워드가 얼마나 있는지로 고른다. AI를 쓰지 않는다. */
 class HeuristicDocumentSelector(private val limit: Int = 3, private val minScore: Int = 3) : DocumentSelector {
     override fun select(purpose: DocPurpose, candidates: List<DocumentFile>): List<DocumentRef> =
         candidates.mapNotNull { d ->
@@ -46,20 +39,18 @@ class HeuristicDocumentSelector(private val limit: Int = 3, private val minScore
             val nameHits = purpose.keywords.filter { it in name }
             val dirHits = purpose.keywords.filter { it in lower.substringBeforeLast('/', "") }
             val headingHits = d.text.lineSequence().filter { it.startsWith("#") }.take(200).count { h -> purpose.keywords.any { it in h.lowercase() } }
-            val guidance = name in setOf("agents.md", "claude.md") // 프로젝트 지침 문서는 두 목적 모두에서 후보
+            val guidance = name in setOf("agents.md", "claude.md")
             val score = nameHits.size * 3 + dirHits.size + minOf(headingHits, 3) + if (guidance) 2 else 0
             if (score < minScore) null
             else DocumentRef(d.path, score, listOfNotNull(nameHits.takeIf { it.isNotEmpty() }?.let { "파일명 ${it.joinToString()}" }, dirHits.takeIf { it.isNotEmpty() }?.let { "경로 ${it.joinToString()}" }, headingHits.takeIf { it > 0 }?.let { "제목 ${it}곳" }).joinToString(" · "))
         }.sortedByDescending { it.score }.take(limit)
 }
 
-/** 선택한 문서에서 이 목적과 관련된 절만 잘라 낸 결과. [text] 가 AI 검토 입력에 들어간다. */
 class DocumentContext(val purpose: DocPurpose, val refs: List<DocumentRef>, val text: String) {
     val hash: String get() = MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
     val isEmpty get() = text.isBlank()
 
     companion object {
-        /** JEV 키가 있으면 JEV 로, 없으면 이름·경로·제목 키워드로 고른다. */
         fun defaultSelector(): DocumentSelector = com.dochiri.ilsim.runner.jev.Jev.fromEnvironment().let { if (it.enabled) com.dochiri.ilsim.runner.jev.JevDocumentSelector(it) else HeuristicDocumentSelector() }
 
         private const val PER_DOC = 2500
@@ -90,7 +81,6 @@ class DocumentContext(val purpose: DocPurpose, val refs: List<DocumentRef>, val 
             return DocumentContext(purpose, used, parts.joinToString("\n\n"))
         }
 
-        /** 제목이나 첫 부분에 목적 키워드가 있는 절만 모아 [PER_DOC] 자까지 자른다. */
         internal fun excerpt(text: String, purpose: DocPurpose): String {
             val sections = mutableListOf<String>()
             var current = StringBuilder()

@@ -2,7 +2,6 @@ spring:
   application:
     name: ilsim-server
   datasource:
-    # docker compose 의 MySQL. 기동 시점에 DB 가 없어도 서버는 뜨고, 키 저장 기능만 503 으로 응답한다.
     url: ${ILSIM_DB_URL:jdbc:mysql://127.0.0.1:3306/ilsim?useUnicode=true&characterEncoding=utf8&connectionTimeZone=Asia/Seoul}
     username: ${ILSIM_DB_USER:ilsim}
     password: ${ILSIM_DB_PASSWORD:ilsim}
@@ -26,10 +25,7 @@ spring:
         protocol: STREAMABLE
 server:
   port: 8080
-  # 기본은 이 PC 에서만 접속. Tailscale 처럼 다른 기기에서 직접 붙으려면 ILSIM_BIND=0.0.0.0
   address: ${ILSIM_BIND:127.0.0.1}
-  # 터널·리버스 프록시 뒤에서 쓰면 ILSIM_FORWARD_HEADERS=native. 접속자 IP 를 X-Forwarded-For 에서 읽는다.
-  # 헤더는 이 PC(루프백)에서 온 요청에서만 믿는다.
   forward-headers-strategy: ${ILSIM_FORWARD_HEADERS:none}
   tomcat:
     remoteip:
@@ -39,7 +35,6 @@ server:
       timeout: 12h
       cookie:
         http-only: true
-        # HTTPS 로 접속할 때(터널 등)는 ILSIM_SECURE_COOKIE=true
         secure: ${ILSIM_SECURE_COOKIE:false}
         same-site: lax
         name: ILSIM_SESSION

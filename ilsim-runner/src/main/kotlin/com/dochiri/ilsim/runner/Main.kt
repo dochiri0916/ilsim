@@ -120,13 +120,11 @@ private fun architecture(store: ConfigStore, args: Array<String>) {
     analyzeArchitecture(store, args[1], System.out)
 }
 
-/** [id] 가 등록된 프로젝트면 규칙을 저장하고 AI 검토까지 한다. 등록되지 않았으면 경로로 보고 분석만 한다. 출력은 [out] 으로 보낸다. */
 fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
     val registered = store.load().projects[id]
     val path = Path.of(registered?.path ?: id).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
     val archStore = ArchitectureStore(store)
-    // 다시 분석해도 사용자가 내린 승인·거절과 AI 의견은 같은 규칙에 유지한다.
     var model = RuleApproval.carryOver(registered?.let { archStore.load(id) }, ArchitectureMiner.mine(path, profile))
     val self = if (model.rules.isEmpty()) null else ArchitectureChecker.check(path, profile, model)
     if (registered != null) {
@@ -134,7 +132,6 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
     out.append(ArchitectureReport.summary(model, self))
     if (registered != null && model.rules.isNotEmpty()) {
-        // 정적으로 만든 규칙을 AI가 한 번 검토하고, 확실한 것만 승인한다. 애매한 것은 사용자에게 넘긴다.
         val cost = CostTally("ARCHITECTURE_REVIEW")
         try {
             val docs = DocumentContext.build(path, DocPurpose.ARCHITECTURE)
@@ -206,7 +203,6 @@ private fun rulesCmd(store: ConfigStore, args: Array<String>) {
     conv?.let { println("[코드 컨벤션]"); print(ConventionReport.rules(it)) }
 }
 
-/** 규칙 id 는 아키텍처와 컨벤션을 가리지 않고 받는다. 어느 쪽 규칙인지는 id 로 찾는다. */
 private fun decide(store: ConfigStore, args: Array<String>, approve: Boolean) {
     val id = requireProject(store, args)
     val targets = args.drop(2)
@@ -374,14 +370,12 @@ private fun convention(store: ConfigStore, args: Array<String>) {
     analyzeConvention(store, args[1], System.out)
 }
 
-/** [id] 가 등록된 프로젝트면 규칙을 저장하고 AI 검토까지 한다. 등록되지 않았으면 경로로 보고 분석만 한다. 출력은 [out] 으로 보낸다. */
 fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
     val registered = store.load().projects[id]
     val path = Path.of(registered?.path ?: id).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
     val previous = registered?.let { ConventionStore(store).load(id) }
     val mined = ConventionMiner.mine(path, profile)
-    // 다시 분석해도 사용자가 내린 승인·거절과 AI 의견은 같은 규칙에 유지한다.
     var model = ConventionApproval.carryOver(previous, mined)
     val self = if (model.rules.isEmpty()) null else ConventionChecker.check(path, profile, model)
     if (registered != null) {
@@ -460,7 +454,6 @@ private fun set(store: ConfigStore, args: Array<String>) {
     println("설정: ${args[1]} ${args[2]} = $command")
 }
 
-/** 웹의 분석 버튼: 아키텍처와 컨벤션 규칙을 차례로 다시 뽑는다. 앞이 실패해도 뒤는 돌린다. */
 private fun analyzeProject(store: ConfigStore, projectId: String, policy: ReviewPolicySnapshot = ReviewPolicySnapshot()): AnalysisResult {
     val usage = mutableListOf<AiUsage>()
     return UsageScope.collect(usage, executionId = "analysis:${java.util.UUID.randomUUID()}") {
@@ -502,7 +495,6 @@ private fun run(store: ConfigStore) {
     while (true) {
         try {
             durable.flushResults()
-            // 키 부재(204)는 해제하고, 조회 장애는 기존 키를 유지한다.
             runCatching { client.jevKey() }.onSuccess { JevKey.fromServer = it }
                 .onFailure { System.err.println("JEV 키 갱신 실패, 기존 판단 경로 유지: ${it.message}") }
             runCatching { client.claimCleanups(report.map { it.id }) }.getOrDefault(emptyList()).forEach {

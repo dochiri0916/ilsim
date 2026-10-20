@@ -77,7 +77,6 @@ class HexagonalArchitectureValidatorTest {
     @Test
     @DisplayName('Domain에서 Application과 양쪽 Adapter로 향하는 모든 의존을 거부한다')
     void rejectsEveryOutwardDependencyFromDomain() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/domain/model/Order.java', '''
                 package com.example.order.domain.model;
@@ -90,20 +89,17 @@ class HexagonalArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = HexagonalArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.count { it.contains('domain -> application/adapter forbidden') } == 3
     }
 
     @Test
     @DisplayName('사용자 정의 Inbound Adapter segment에서도 Outbound Adapter 의존을 거부한다')
     void supportsCustomInboundAdapterSegment() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/delivery/web/OrderController.java', '''
                 package com.example.order.delivery.web;
@@ -124,10 +120,8 @@ class HexagonalArchitectureValidatorTest {
         HexagonalConventionExtension convention = new HexagonalConventionExtension()
         convention.presentationPackageSegment = 'delivery'
 
-        // when
         List<String> violations = HexagonalArchitectureValidator.validate(project, convention)
 
-        // then
         assert violations.size() == 1
         assert violations.first().contains('adapter.in -> adapter.out forbidden')
     }
@@ -135,7 +129,6 @@ class HexagonalArchitectureValidatorTest {
     @Test
     @DisplayName('줄바꿈된 import도 Domain 의존 방향 검사를 우회하지 못한다')
     void rejectsMultilineDomainImport() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/domain/model/Order.java', '''
                 package com.example.order.domain.model;
@@ -148,13 +141,11 @@ class HexagonalArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = HexagonalArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains('domain -> application/adapter forbidden') }
     }
 

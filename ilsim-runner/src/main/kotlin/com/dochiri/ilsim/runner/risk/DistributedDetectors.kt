@@ -5,7 +5,6 @@ import com.dochiri.ilsim.runner.risk.Detectors.remoteType
 import com.dochiri.ilsim.runner.risk.Detectors.repoType
 import com.dochiri.ilsim.runner.risk.Detectors.writeCall
 
-/** DB 갱신 경쟁, 중복 요청·메시지, 다중 인스턴스에서 깨지는 가정을 본다. */
 internal object DistributedDetectors {
     private val listeners = setOf("KafkaListener", "RabbitListener", "JmsListener", "SqsListener", "StreamListener", "EventListener")
     private val findCall = Regex("""\.(findById|findBy\w+|getById|getReferenceById|get\w*By\w+)\s*\(""")

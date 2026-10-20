@@ -11,7 +11,6 @@ import tools.jackson.databind.DeserializationFeature
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.KotlinModule
 
-/** MySQL `routing_adjustments` 테이블. 조정마다 한 행을 쌓는다. 테이블은 처음 쓸 때 만든다. */
 class JdbcRoutingAdjustmentStore(private val jdbc: JdbcTemplate) : RoutingAdjustmentStore {
     private val ready = AtomicBoolean(false)
     private val json: JsonMapper = JsonMapper.builder().addModule(KotlinModule.Builder().build())

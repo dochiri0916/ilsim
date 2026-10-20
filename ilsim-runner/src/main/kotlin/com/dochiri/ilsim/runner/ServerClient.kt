@@ -24,15 +24,11 @@ data class AssignedTask(
     val attempt: Int,
     val feature: String,
     val model: String,
-    /** 추론 강도(low, medium, high, xhigh, max). 서버가 안 보내면 medium. */
     val effort: String = "medium",
     val prompt: String,
-    /** 요구사항 대화를 이어 갈 Claude 세션. 있으면 `--resume` 으로 같은 세션에서 문서를 고친다. */
     val resumeSessionId: String? = null,
-    /** 이 PC 에 등록된 프로젝트 테스트 명령. 서버가 아니라 Runner 가 채워 Claude 에 허용할 명령으로 쓴다. */
     val testCommand: String? = null,
     val executionId: String? = null,
-    /** 이어서 지시한 작업이면 worktree 를 만들 기준 브랜치(직전 작업의 브랜치). 없으면 HEAD. */
     val baseBranch: String? = null,
     val reviewPolicy: ReviewPolicySnapshot = ReviewPolicySnapshot(),
 )
@@ -49,24 +45,19 @@ data class StageResult(
     val artifacts: Map<String, String> = emptyMap(),
     val validation: Map<String, String> = emptyMap(),
     val branch: String? = null,
-    /** 이번 실행에서 쓴 Claude 비용(USD)과 모델. 서버가 단계·작업별로 합산한다. */
     val costUsd: Double? = null,
     val model: String? = null,
-    /** AI 검토 호출에 쓴 비용과 모델. */
     val reviewCostUsd: Double? = null,
     val reviewModel: String? = null,
-    /** 이번 실행의 Claude 세션. 서버가 요구사항 단계의 대화를 이어 가는 데 쓴다. */
     val sessionId: String? = null,
     val executionId: String? = null,
     val stage: String? = null,
     val usage: List<AiUsage> = emptyList(),
     val failureKind: String? = null,
     val decisions: List<ProcessingDecision> = emptyList(),
-    /** 요구사항 단계에서 질문에 답만 하고 끝냈으면 true. */
     val answered: Boolean = false,
 )
 
-/** 웹에서 삭제한 작업의 worktree 정리 일감. [keepBranch] 면 브랜치(끝난 작업의 결과)는 남긴다. */
 @Serializable
 data class Cleanup(val taskId: String, val projectId: String, val feature: String, val branch: String? = null, val keepBranch: Boolean = true)
 
@@ -85,16 +76,13 @@ data class ClaudeLoginResult(val loggedIn: Boolean, val email: String? = null, v
 @Serializable
 data class AnalysisJob(val projectId: String)
 
-/** 웹에서 요청한 프로젝트 분석(아키텍처·컨벤션 규칙 추출)의 결과. [report] 는 CLI 와 같은 사람이 읽는 출력이다. */
 @Serializable
 data class AnalysisResult(val passed: Boolean, val report: String, val error: String? = null, val usage: List<AiUsage> = emptyList())
 
-/** 실행기가 서버로 보내는 두 가지: 진행 이벤트와 단계 결과. 테스트에서 가짜로 바꾼다. */
 interface TaskSink {
     fun event(taskId: String, stage: String, type: String, data: String)
     fun result(taskId: String, result: StageResult)
 
-    /** 실행 중인 작업을 그만둬야 하는지. 기본은 계속(false). */
     fun shouldStop(taskId: String): Boolean = false
     fun shouldStop(taskId: String, executionId: String?): Boolean = shouldStop(taskId)
 }
@@ -123,7 +111,6 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
         }
     }
 
-    /** 웹에서 요청된 분석 중 이 Runner 프로젝트의 것 하나를 가져온다. 없으면(204) null. */
     fun claimCleanups(projects: List<String>): List<Cleanup> {
         val res = post("/runner/api/cleanup/claim", json.encodeToString(mapOf("projects" to projects)))
         check(res.statusCode() == 200) { "정리 요청 확인 실패: HTTP ${res.statusCode()}" }
@@ -156,7 +143,6 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
         check(res.statusCode() in 200..299) { "사용량 전송 실패: HTTP ${res.statusCode()}" }
     }
 
-    /** 웹에서 사용량을 새로 재 달라고 했으면 true. */
     fun claimUsageRefresh(runnerId: String): Boolean {
         val res = post("/runner/api/usage/claim", json.encodeToString(mapOf("runnerId" to runnerId)))
         return when (res.statusCode()) {
@@ -166,14 +152,12 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
         }
     }
 
-    /** 토큰 없이 확인한 등급별 최신 모델 ID 를 보고한다. 서버가 받아들인 새 버전만 돌아온다. */
     fun reportModels(models: Map<String, String>): Map<String, String> {
         val res = post("/runner/api/models", json.encodeToString(models))
         check(res.statusCode() == 200) { "모델 버전 보고 실패: HTTP ${res.statusCode()}" }
         return json.decodeFromString(res.body())
     }
 
-    /** 일심 공통 Claude 설정(CLAUDE.md·settings.json). */
     fun claudeEnvironment(): ClaudeEnvironmentReport {
         val res = http.send(
             HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/claude/environment")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).GET().build(),
@@ -183,7 +167,6 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
         return json.decodeFromString(res.body())
     }
 
-    /** 계정 상태를 보고하고, 웹에서 지운 계정 이름을 받는다. */
     fun reportClaudeAccounts(runnerId: String, accounts: List<ClaudeAccountReport>): List<String> {
         val res = post("/runner/api/claude/accounts", json.encodeToString(ClaudeAccountsRequest(runnerId, accounts)))
         check(res.statusCode() == 200) { "Claude 계정 보고 실패: HTTP ${res.statusCode()}" }
@@ -204,7 +187,6 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
         check(res.statusCode() == 200) { "로그인 URL 전송 실패: HTTP ${res.statusCode()}" }
     }
 
-    /** 사용자가 웹에 넣은 코드. 아직 없으면 null. 한 번 받으면 서버에서 지워진다. */
     fun claudeLoginCode(id: String): String? {
         val res = post("/runner/api/claude/logins/$id/code", "{}")
         if (res.statusCode() != 200) return null
@@ -216,7 +198,6 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
         check(res.statusCode() == 200) { "로그인 결과 전송 실패: HTTP ${res.statusCode()}" }
     }
 
-    /** 웹에서 등록한 JEV 키. 등록된 키가 없으면(204) null. 받은 키는 파일에 쓰지 않고 메모리에만 둔다. */
     fun jevKey(): String? {
         val res = http.send(
             HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/secrets/jev")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).GET().build(),

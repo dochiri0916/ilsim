@@ -53,7 +53,6 @@ class StackDetectorTest {
             }
         """.trimIndent())
         write(root, "app/src/main/kotlin/demo/DemoApplication.kt", "@SpringBootApplication\nclass DemoApplication")
-        // 헥사고날 `out` 패키지는 빌드 산출물 디렉터리로 오인하면 안 된다.
         write(root, "app/src/main/kotlin/demo/application/port/out/SavePort.kt", "interface SavePort")
         write(root, "app/src/main/kotlin/demo/application/port/in/UsePort.kt", "interface UsePort")
         write(root, "app/src/test/kotlin/demo/ArchTest.kt", "import com.tngtech.archunit.core.domain.JavaClasses\nclass ArchTest")
@@ -76,10 +75,10 @@ class StackDetectorTest {
         assertEquals(listOf("app", "infra", "core-contract"), p.modules.map { it.name })
 
         val app = p.modules.first { it.name == "app" }
-        assertEquals(3, app.mainFiles["Kotlin"]) // DemoApplication, port/out, port/in
-        assertEquals(2, app.testFiles) // test + integrationTest
+        assertEquals(3, app.mainFiles["Kotlin"])
+        assertEquals(2, app.testFiles)
         assertTrue(app.springBootApplication)
-        assertEquals(listOf("infra"), app.projectDependencies) // 동적 project() 는 제외
+        assertEquals(listOf("infra"), app.projectDependencies)
         assertEquals(1, p.modules.first { it.name == "infra" }.mainFiles["Java"])
         assertEquals("Kotlin", p.primaryLanguage)
     }
@@ -97,9 +96,9 @@ class StackDetectorTest {
     fun `모듈 이름 조건에 따라 공통 의존성의 적용 모듈이 달라진다`() {
         val p = StackDetector.detect(sampleProject())
         val web = p.frameworks.first { it.id == "spring-web-mvc" }
-        assertEquals(listOf("app", "infra"), web.modules) // -contract 모듈 제외
+        assertEquals(listOf("app", "infra"), web.modules)
         val tc = p.testing.first { it.id == "testcontainers" }
-        assertEquals(listOf("app"), tc.modules) // name == "app" 만 일치
+        assertEquals(listOf("app"), tc.modules)
         assertEquals(listOf("app"), p.frameworks.first { it.id == "resilience4j" }.modules)
     }
 

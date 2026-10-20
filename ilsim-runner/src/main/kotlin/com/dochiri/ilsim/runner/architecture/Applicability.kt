@@ -2,16 +2,11 @@ package com.dochiri.ilsim.runner.architecture
 
 import kotlinx.serialization.Serializable
 
-/**
- * 이 프로젝트에 아키텍처 검증을 적용할 수 있는지에 대한 판정. 구조에서 계산한 수치로만 정하며 AI를 쓰지 않는다.
- * status: APPLICABLE(전체 적용) | PARTIAL(일관된 영역만 적용, 나머지는 미검증) | NOT_APPLICABLE(검증하지 않음, 게이트는 SKIPPED).
- */
 @Serializable
 data class Applicability(
     val status: String,
     val metrics: Map<String, Double> = emptyMap(),
     val reasons: List<String> = emptyList(),
-    /** PARTIAL 일 때 검증에서 제외하는 단위·슬라이스. */
     val unverifiedUnits: List<String> = emptyList(),
     val unverifiedSlices: List<String> = emptyList(),
 ) {
@@ -23,14 +18,10 @@ data class Applicability(
 }
 
 internal object ApplicabilityAssessor {
-    /** 단위로 분류된 파일 비율: 이 미만이면 비적용, 미만(PARTIAL)이면 부분 적용. */
     const val MIN_CLASSIFIED = 0.5
     const val FULL_CLASSIFIED = 0.8
-    /** 순환에 속한 단위 비율이 이 이상이면 층 구조가 없는 것으로 본다. */
     const val MAX_CYCLIC_UNITS = 0.5
-    /** 슬라이스가 갖춘 레이어 비율(평균)이 이 미만이면 슬라이스들이 같은 구조가 아닌 것으로 본다. */
     const val MIN_UNIFORMITY = 0.4
-    /** 개별 슬라이스가 이 미만이면 해당 슬라이스만 제외한다. */
     const val SLICE_UNIFORMITY = 0.5
 
     fun notApplicable(reason: String) = Applicability(Applicability.NOT_APPLICABLE, reasons = listOf(reason))

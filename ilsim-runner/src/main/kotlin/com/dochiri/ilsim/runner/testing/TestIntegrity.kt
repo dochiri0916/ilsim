@@ -14,10 +14,6 @@ import kotlin.io.path.getLastModifiedTime
 import kotlin.io.path.name
 import kotlin.io.path.readText
 
-/**
- * 테스트가 실제로 검증하는지를 본다. 테스트를 끄거나, 단언을 빼거나, 항상 통과하게 만들어 게이트를 우회하는 변경을 찾는다.
- * 정적 검사([scan])는 이번 작업에서 바뀐 테스트 파일에만 적용하고, 실행 결과([skipped])는 바뀐 테스트 클래스의 건너뛴 케이스를 본다.
- */
 object TestIntegrity {
     private val skipAnnotations = setOf(
         "Disabled", "Ignore", "DisabledIf", "DisabledOnOs", "DisabledOnJre", "DisabledForJreRange",
@@ -69,10 +65,6 @@ object TestIntegrity {
         if (Regex("""\b(throw|fail|assert|AssertionError)""").containsMatchIn(block)) null else hit.range.first
     }
 
-    /**
-     * 테스트 실행 결과 XML 에서 [changedTests] 의 클래스가 건너뛴 케이스를 찾는다. [since] 이후에 만들어진 결과만 본다.
-     * 결과 위치는 Gradle(`test-results`)과 Maven(`surefire-reports`, `failsafe-reports`)의 관례를 따른다.
-     */
     fun skipped(root: Path, since: Instant, changedTests: Set<String>): List<String> {
         val classes = changedTests.map { it.substringAfterLast('/').substringBeforeLast('.') }.toSet()
         if (classes.isEmpty()) return emptyList()

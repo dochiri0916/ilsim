@@ -4,7 +4,6 @@ import io.github.dochiri0916.buildconvention.source.kotlin.KotlinContractSyntax
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
 
-/** Identifiers are pure UUID wrappers. Validation and generation belong to the adapter boundaries. */
 final class KotlinIdentifierRules {
     private KotlinIdentifierRules() {
     }

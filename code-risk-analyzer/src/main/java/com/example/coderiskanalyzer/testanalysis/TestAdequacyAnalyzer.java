@@ -23,7 +23,6 @@ import com.github.javaparser.ast.expr.SwitchExpr;
 import com.github.javaparser.ast.expr.ConditionalExpr;
 import org.springframework.stereotype.Component;
 
-/** Deterministic AST-based test adequacy analysis, kept separate from production risk rules. */
 @Component
 public class TestAdequacyAnalyzer {
     private static final Set<String> ASSERTIONS = Set.of("assertEquals", "assertNotEquals", "assertTrue", "assertFalse",
@@ -384,7 +383,6 @@ public class TestAdequacyAnalyzer {
                 : new SourceLocation(absolute, r.begin.line, r.begin.column, r.end.line, r.end.column);
     }
     private static String id(int[] next) { return "OBLIGATION-%03d".formatted(next[0]++); }
-    // The anchor only disambiguates obligations whose stable key would otherwise repeat within a method.
     private static String id(int[] next, com.github.javaparser.ast.Node node) {
         return node.getBegin().map(begin -> id(next, begin.line, begin.column)).orElseGet(() -> id(next));
     }
@@ -395,7 +393,6 @@ public class TestAdequacyAnalyzer {
     private List<TestObligation> stableIdentifiers(List<TestObligation> obligations) {
         List<String> keys = obligations.stream().map(TestAdequacyAnalyzer::stableKey).toList();
         Map<String, Long> counts = keys.stream().collect(Collectors.groupingBy(key -> key, Collectors.counting()));
-        // Unique keys keep their earlier identifiers; only repeated keys are extended with the AST anchor.
         List<String> anchored = new ArrayList<>();
         for (int i = 0; i < keys.size(); i++) {
             String id = obligations.get(i).id();

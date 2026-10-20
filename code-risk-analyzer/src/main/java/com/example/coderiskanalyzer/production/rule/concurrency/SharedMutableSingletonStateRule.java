@@ -118,7 +118,6 @@ public class SharedMutableSingletonStateRule implements RiskRule {
         return node.findAncestor(SynchronizedStmt.class).isPresent();
     }
 
-    /** A bare name that a local variable or parameter shadows does not refer to the field; {@code this.x} always does. */
     private boolean referencesField(Node expression, String fieldName, boolean shadowed) {
         if (expression instanceof NameExpr name) return !shadowed && name.getNameAsString().equals(fieldName);
         if (expression instanceof FieldAccessExpr field) {

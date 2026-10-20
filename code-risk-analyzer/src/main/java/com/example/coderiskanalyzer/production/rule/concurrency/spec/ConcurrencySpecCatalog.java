@@ -11,7 +11,6 @@ import com.example.coderiskanalyzer.production.finding.Finding;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
-/** Implementation ledger and conditional links to existing rules; it does not execute extra detectors. */
 @Component
 public final class ConcurrencySpecCatalog {
     private static final String RESOURCE = "/concurrency/specification.json";
@@ -53,7 +52,6 @@ public final class ConcurrencySpecCatalog {
                 all().stream().map(rule -> new RuleProgress(rule.id(), rule.priority(), rule.implementationStatus())).toList());
     }
 
-    /** Multiple specification IDs annotate one existing finding; conditional links require actual evidence. */
     public FindingMapping forFinding(Finding finding) {
         var matches = all().stream().filter(rule -> rule.bindings().stream()
                 .anyMatch(binding -> binding.matches(finding))).toList();

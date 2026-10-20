@@ -45,7 +45,6 @@ import org.springframework.shell.core.command.annotation.Command;
 import org.springframework.shell.core.command.annotation.Option;
 import org.springframework.stereotype.Component;
 
-/** Runs discovery, parsing, analysis, optional semantic review, and reporting for one target project. */
 @Component
 public class ScanCommand {
 
@@ -217,7 +216,6 @@ public class ScanCommand {
                             .flatMap(unit -> unit.getStorage().map(storage -> storage.getPath().toAbsolutePath().normalize()))
                             .filter(path -> !isTestSource(path)).ifPresent(resolvedProductionPaths::add);
                 } catch (RuntimeException ignored) {
-                    // Unresolved calls are handled conservatively by TestAdequacyAnalyzer.
                 }
             });
         }
@@ -230,7 +228,6 @@ public class ScanCommand {
                     config.classpath().stream().map(target::resolve).toList()));
             if (!hasProductionSeed) productionAdequacyScope.addAll(productionContext.stream().map(SourceFile::path).toList());
         }
-        // Keep reachable production helpers as context without widening the changed-file risk entry points.
         Set<Path> parsedPaths = parsedSources.stream().map(p -> p.sourceFile().path())
                 .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
         while (hasProductionSeed) {
@@ -245,7 +242,6 @@ public class ScanCommand {
                                 .filter(path -> !parsedPaths.contains(path) && discoveredByPath.containsKey(path)
                                         && !isTestSource(path)).ifPresent(helperPaths::add);
                     } catch (RuntimeException ignored) {
-                        // Unresolved calls remain visible in completeness metrics.
                     }
                 }
             }
@@ -428,10 +424,8 @@ public class ScanCommand {
         return reviewCandidates(findings, judge, new ProjectModel(List.of()));
     }
 
-    /** Caller's JEV call cap (e.g. the ai command) for projects whose .code-risk.yml sets no jev.max-calls. */
     public static final String JEV_CALL_CAP_ENV = "CODE_RISK_JEV_MAX_CALLS";
 
-    /** jev.max-calls wins; otherwise a valid non-negative integer from the environment; otherwise no cap. */
     public static Integer jevCallCap(Integer configured, String environment) {
         if (configured != null) return configured;
         if (environment == null || environment.isBlank()) return null;
@@ -443,14 +437,8 @@ public class ScanCommand {
         }
     }
 
-    /** Longest method source sent to JEV; longer bodies are cut so one finding cannot dominate the request. */
     static final int MAX_JEV_SOURCE_CHARS = 6000;
 
-    /**
-     * Sends each reviewable finding with the source of the method it points at, so JEV can judge what the static
-     * rule could not (protections on the call path, business meaning). Files with a hardcoded-secret finding are
-     * never sent. The answer is attached as evidence; only IDEM-001 keeps its existing confirmation path.
-     */
     public List<Finding> reviewCandidates(List<Finding> findings, SemanticJudge judge, ProjectModel model) {
         Set<Path> secretFiles = findings.stream().filter(finding -> finding.ruleId().equals("SEC-005"))
                 .map(finding -> finding.location() == null ? null : finding.location().file())
@@ -492,7 +480,6 @@ public class ScanCommand {
         return List.copyOf(reviewed);
     }
 
-    /** Rules whose JEV opinion is attached as evidence only; status, severity and confidence stay static. SEC-005 is never sent. */
     public static final Set<String> RISK_REVIEW_RULES = Set.of("IDEM-002", "IDEM-003", "IDEM-004", "CON-001", "CON-002",
             "CON-003", "CON-004", "CON-005", "TX-001", "TX-002", "TX-003", "TX-004", "TX-005",
             "SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-006", "SEC-007", "REL-001");
@@ -538,7 +525,6 @@ public class ScanCommand {
                         && Set.of("PARTIAL", "UNKNOWN").contains(e.attributes().get("coverageStatus")));
     }
 
-    /** Adds the JEV opinion as evidence only; the static status, severity and confidence are preserved. */
     private Finding withTestReview(Finding finding, com.example.coderiskanalyzer.production.judge.TestAdequacyReview review) {
         if (!review.reviewed()) return finding;
         var obligation = finding.evidence().stream().filter(e -> e.type().equals("TEST_OBLIGATION")).findFirst().orElseThrow();

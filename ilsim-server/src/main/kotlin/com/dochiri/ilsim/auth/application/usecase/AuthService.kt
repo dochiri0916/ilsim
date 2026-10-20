@@ -8,7 +8,6 @@ import com.dochiri.ilsim.auth.domain.LoginThrottle
 import com.dochiri.ilsim.auth.domain.exception.LoginLockedException
 import java.time.Clock
 
-/** 로그인 확인과 비밀번호 변경. 계정 생성은 관리자가 DB 에서 직접 한다. 저장소를 쓸 수 없으면 [Unavailable]. */
 class AuthService(
     private val repository: AccountRepository,
     private val hasher: PasswordHasher,
@@ -19,7 +18,6 @@ class AuthService(
 
     class Unavailable(cause: Throwable) : RuntimeException("계정 저장소(DB)를 사용할 수 없습니다", cause)
 
-    // 계정이 없을 때도 같은 시간이 걸리게 해서 계정 존재 여부가 시간으로 드러나지 않게 한다.
     private val dummyHash: String = hasher.hash("dummy-password")
 
     override fun login(clientKey: String, username: String?, password: String?): String? {
@@ -50,8 +48,6 @@ class AuthService(
         return guarded { repository.updatePasswordHash(username, newHash) }
     }
 
-    // 접속처(IP) 기준 제한은 한 곳에서 오는 추측을 막고, 계정 기준 제한은 여러 곳에서 나눠 오는 추측을 막는다.
-    // 계정 기준은 실제 있는 계정에만 센다. 없는 아이디를 무한히 보내도 메모리가 늘지 않게 한다.
     private fun failed(clientKey: String, accountName: String?, now: java.time.Instant) {
         throttle.recordFailure(clientKey, now)
         accountName?.let { accountThrottle.recordFailure(it, now) }

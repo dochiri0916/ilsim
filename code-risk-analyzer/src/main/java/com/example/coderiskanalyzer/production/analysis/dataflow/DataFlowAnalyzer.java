@@ -29,7 +29,6 @@ public class DataFlowAnalyzer {
     private static final Set<String> SOURCE_ANNOTATIONS = Set.of(
             "RequestParam", "PathVariable", "RequestHeader", "RequestBody", "KafkaListener", "RabbitListener", "JmsListener");
 
-    /** Values of these types cannot carry injection payloads, so they never propagate taint. */
     private static final Set<String> NON_INJECTABLE_TYPES = Set.of("byte", "short", "int", "long", "float", "double",
             "boolean", "char", "Byte", "Short", "Integer", "Long", "Float", "Double", "Boolean", "BigDecimal",
             "BigInteger", "UUID", "LocalDate", "LocalDateTime", "Instant");
@@ -52,7 +51,6 @@ public class DataFlowAnalyzer {
         return analyze(method, source, sinkKind, collectTaintedVariables(method, Map.of()));
     }
 
-    /** Follow request-tainted arguments into project methods, preserving the actual sink's source location. */
     public List<DataFlowPath> analyze(MethodDeclaration method, ParsedSource source, TaintSinkKind sinkKind,
                                       List<ParsedSource> context) {
         record Declared(MethodDeclaration method, ParsedSource source) {}
@@ -290,7 +288,6 @@ public class DataFlowAnalyzer {
                     if (type.isReferenceType()) types.add(type.asReferenceType().getQualifiedName());
                 }
             } catch (RuntimeException ignored) {
-                // Name heuristics are retained only when API types cannot be resolved.
             }
         }
         return types;

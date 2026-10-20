@@ -53,7 +53,6 @@ class LintConventionPlugin implements Plugin<Project> {
             'validatePitMutationGate'
     ].asImmutable()
     private static final List<String> PIT_TARGET_TESTS = ['*Test', '*Tests'].asImmutable()
-    // Convention tasks registered with exactly one action; extra or missing actions mean the task was tampered with.
     private static final Map<String, Integer> EXPECTED_ACTION_COUNTS = [
             validateArchUnitArchitecture      : 1,
             validateChangedCodeCoverage       : 1,
@@ -759,14 +758,12 @@ class LintConventionPlugin implements Plugin<Project> {
     private static boolean isTaskExcluded(Project project, String taskName) {
         String taskPath = project.path == ':' ? ":${taskName}" : "${project.path}:${taskName}"
         boolean excludedByName = project.gradle.startParameter.excludedTaskNames.any { String excludedTaskName ->
-            // A qualified -x path only excludes the task of the project it names, not same-named tasks elsewhere.
             String qualifiedName = excludedTaskName.startsWith(':') ? excludedTaskName : ":${excludedTaskName}"
             excludedTaskName == taskName || qualifiedName == taskPath
         }
         return excludedByName || isMissingFromTaskGraph(project, taskName)
     }
 
-    /** Catches -x abbreviations (camel case, prefixes) that the raw excluded name list cannot match. */
     private static boolean isMissingFromTaskGraph(Project project, String taskName) {
         def task = project.tasks.findByName(taskName)
         if (task == null) {
@@ -785,7 +782,6 @@ class LintConventionPlugin implements Plugin<Project> {
         try {
             return task.onlyIf.isSatisfiedBy(task)
         } catch (Exception ignored) {
-            // An onlyIf spec that cannot be evaluated must not count as satisfied.
             return false
         }
     }
@@ -930,7 +926,6 @@ class LintConventionPlugin implements Plugin<Project> {
         return files != null && !files.isEmpty()
     }
 
-    /** Returns null when the task source cannot be resolved, so callers fail closed instead of skipping the check. */
     private static List<File> taskSourceFiles(def task) {
         try {
             return task.source.files.findAll { File file -> file.isFile() }.toList()
@@ -1126,7 +1121,6 @@ class LintConventionPlugin implements Plugin<Project> {
         try {
             return regularFileProperty.asFile.orNull as File
         } catch (Exception ignored) {
-            // Fall through for Gradle APIs that expose RegularFile instead of Provider<File>.
         }
         try {
             def regularFile = regularFileProperty.orNull
@@ -1212,7 +1206,6 @@ class LintConventionPlugin implements Plugin<Project> {
     }
 
     private static boolean hasPathSegment(Project project, File file, String segment) {
-        // Segment names are matched below the source root so the checkout location cannot affect classification.
         String relative = SourceInspector.sourceDirs(project, 'main', 'src/main/java', 'src/main/groovy')
                 .collect { File dir -> dir.toPath() }
                 .findAll { java.nio.file.Path dir -> file.toPath().startsWith(dir) }
@@ -1224,8 +1217,6 @@ class LintConventionPlugin implements Plugin<Project> {
     private static void configureJava21Convention(Project project) {
         project.pluginManager.withPlugin('java') {
             JavaPluginExtension javaExtension = project.extensions.findByType(JavaPluginExtension)
-            // Java 21 is only the default: a project that declares 21 or newer keeps its own version,
-            // and validateJavaVersionConvention still rejects anything below 21.
             javaExtension.toolchain.languageVersion.convention(JavaLanguageVersion.of(21))
             project.tasks.withType(JavaCompile).configureEach { JavaCompile task ->
                 task.options.release.convention(javaExtension.toolchain.languageVersion.map { it.asInt() })

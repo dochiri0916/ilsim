@@ -4,7 +4,6 @@ import com.dochiri.ilsim.runner.DecisionScope
 import io.github.gudcks0305.jev.NoulQuestion
 import kotlinx.serialization.json.*
 
-/** 규칙별 판정과 전역 누락 검토를 분리한다. 품질 비교를 통과한 환경에서만 JEV 완료를 허용한다. */
 object JevRuleReview {
     data class Answer(val text: String, val reviewer: String)
 

@@ -12,7 +12,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/** 요구사항 단계에서 Claude 가 질문에 답만 했으면 파일 변경을 버리고 답한 것으로 보고한다. */
 class TaskExecutorAnswerTest {
 
     private class Sink : TaskSink {

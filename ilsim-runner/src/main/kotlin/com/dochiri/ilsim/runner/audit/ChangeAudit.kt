@@ -3,11 +3,6 @@ package com.dochiri.ilsim.runner.audit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/**
- * 정적 검사를 모두 통과한 Agent의 변경을 AI가 독립적으로 한 번 더 본다.
- * 코드를 전부 AI가 쓰는 흐름에서 정적 검사가 못 보는 누락·무관한 변경·테스트 우회를 찾는 것이 목적이며,
- * 설계의 좋고 나쁨은 판단하지 않는다. 결과는 판단 보조이고 통과 여부를 정하지 않는다(최종 통제는 정적 검사와 테스트).
- */
 object ChangeAudit {
     private const val DIFF_LIMIT = 24_000
     private const val SPEC_LIMIT = 6_000
@@ -23,9 +18,6 @@ object ChangeAudit {
 
     private val types = setOf("OMISSION", "UNRELATED", "TEST_BYPASS", "RULE", "WEAK_TEST")
 
-    /**
-     * Agent 에게 되돌려 고치게 할 지적. WEAK_TEST 는 구현 단계에서 테스트를 고칠 수 없어서 승인자에게만 보인다.
-     */
     fun fixable(r: Result): List<Finding> = r.findings.filter { it.type != "WEAK_TEST" }
 
     fun prompt(stage: String, requirements: String?, testSpec: String?, rulesBrief: String?, validation: Map<String, String>, diff: String, survivors: List<String> = emptyList(), committedTests: Map<String, String> = emptyMap()): String = buildString {

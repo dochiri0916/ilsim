@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
-/** 웹에서 프로젝트 분석을 요청하면 Runner 가 가져가 규칙을 다시 뽑고 결과를 보고한다. */
 @RestController
 class AnalysisController(private val analyses: AnalysisUseCase, private val costs: ProjectUsageRecorder? = null) {
 

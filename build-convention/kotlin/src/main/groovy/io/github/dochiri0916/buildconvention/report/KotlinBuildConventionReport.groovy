@@ -3,7 +3,6 @@ package io.github.dochiri0916.buildconvention.report
 import groovy.json.JsonOutput
 import org.gradle.api.Project
 
-/** Preserve the consumer's report schema and statuses; Java-only checks are explicitly NOT_APPLIED. */
 final class KotlinBuildConventionReport {
     private KotlinBuildConventionReport() {
     }

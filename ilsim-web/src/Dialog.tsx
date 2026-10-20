@@ -1,6 +1,5 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 
-/** 화면 위에 띄우는 창. 닫기 버튼·바깥 클릭·Esc 로 닫힌다. */
 export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { ref.current?.showModal() }, [])

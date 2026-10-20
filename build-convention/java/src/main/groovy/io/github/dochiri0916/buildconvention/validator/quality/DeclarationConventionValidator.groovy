@@ -4,7 +4,6 @@ import io.github.dochiri0916.buildconvention.source.java.SourceTypeIndex
 import java.util.regex.Pattern
 import org.gradle.api.Project
 
-/** Common contracts apply to ordinary interfaces and global configuration as well as ports. */
 final class DeclarationConventionValidator {
     static List<String> validate(Project project, SourceTypeIndex index) {
         List<String> violations = []
@@ -42,7 +41,6 @@ final class DeclarationConventionValidator {
                 }
                 complete &= collectMethods(parent, index, inherited, methods, visited)
             } else {
-                // JDK interfaces are safe to inspect; never load project/dependency classes.
                 try {
                     if (!parentName.startsWith('java.')) {
                         complete = false

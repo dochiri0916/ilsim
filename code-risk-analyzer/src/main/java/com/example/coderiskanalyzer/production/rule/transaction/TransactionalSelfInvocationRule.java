@@ -42,7 +42,6 @@ public class TransactionalSelfInvocationRule implements RiskRule {
                         for (MethodDeclaration callee : transactional) {
                             if (callee == caller || !call.getNameAsString().equals(callee.getNameAsString())) continue;
                             if (call.getArguments().size() != callee.getParameters().size()) continue;
-                            // A caller already inside a transaction joins a default-propagation callee, so nothing is bypassed.
                             if (TransactionRuleSupport.isTransactional(caller, type) && !changesPropagation(callee)) continue;
                             findings.add(finding(source, callee, call));
                         }

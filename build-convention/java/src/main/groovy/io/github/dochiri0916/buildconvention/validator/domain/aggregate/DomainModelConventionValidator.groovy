@@ -4,7 +4,6 @@ import io.github.dochiri0916.buildconvention.source.java.JavaSourceAstInspector
 import java.util.regex.Pattern
 import org.gradle.api.Project
 
-/** Aggregate state and identity rules extracted from the source architecture validator. */
 final class DomainModelConventionValidator {
     private DomainModelConventionValidator() {
     }

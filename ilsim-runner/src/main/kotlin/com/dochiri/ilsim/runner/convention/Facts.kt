@@ -7,7 +7,6 @@ import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
 import kotlin.io.path.readLines
 
-/** 어노테이션이 붙은 선언 하나. kind: type | func | field */
 internal class Decl(val kind: String, val name: String, val line: Int, val annotations: List<String>, val topLevel: Boolean)
 
 internal class ConvFile(
@@ -19,17 +18,14 @@ internal class ConvFile(
     val types: List<Decl>,
     val annotated: List<Decl>,
 ) {
-    /** 소스가 속한 빌드 모듈 이름. 모듈 구분이 없는 입력에서는 빈 문자열이다. */
     var module: String = ""
 }
 
-/** [dependencies] 는 모듈 이름 → 그 모듈이 의존하는 모듈 이름들. */
 internal class Facts(val files: List<ConvFile>, val dependencies: Map<String, List<String>> = emptyMap()) {
     val main = files.filter { !it.test }
     val tests = files.filter { it.test }
 }
 
-/** 소스를 텍스트로만 읽어 선언·어노테이션을 뽑는다. 컴파일러를 쓰지 않으므로 완전한 파서가 아니라 관행 채굴에 충분한 근사다. */
 internal object FactScanner {
     private val pkgRegex = Regex("""^\s*package\s+([\w.`]+)""")
     private val typeRegex = Regex("""^(\s*)(?:[a-z]+\s+)*?(?:class|interface|object|record)\s+(\w+)""")
@@ -105,7 +101,6 @@ internal object FactScanner {
         return ConvFile(path, if (ext == "kt") "kotlin" else "java", test, pkg, lines, types, annotated)
     }
 
-    /** `@Name(...)` 하나를 읽어 (이름, 남은 문자열, 추가로 소비한 줄 수)를 돌려준다. 괄호가 여러 줄에 걸치면 닫힐 때까지 읽는다. */
     private fun readAnnotation(text: String, lines: List<String>, index: Int): Triple<String, String, Int> {
         val m = Regex("""^@(?:\w+:)?([\w.]+)""").find(text) ?: return Triple("?", "", 0)
         var rest = text.substring(m.value.length)

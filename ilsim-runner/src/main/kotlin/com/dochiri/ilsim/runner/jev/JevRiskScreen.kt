@@ -6,10 +6,6 @@ import com.dochiri.ilsim.runner.risk.RiskRules
 import io.github.gudcks0305.jev.NoulQuestion
 import java.nio.file.Path
 
-/**
- * 위험 후보를 코드 발췌와 함께 JEV 에 물어 실제 위험일 확률을 얻는다. Claude 보다 훨씬 싸서 먼저 걸러 내는 용도이며,
- * 확실하지 않은 후보만 Claude 가 이어서 본다(RiskReviewer). 한 번 실행에 부르는 횟수는 [maxCalls] 로 제한한다.
- */
 object JevRiskScreen {
     private const val MAX_CALLS = 20
 
@@ -37,7 +33,6 @@ object JevRiskScreen {
         }
     }
 
-    /** 동일 상태의 후보 질문을 한 HTTP 요청에 묶는다. 후보별 답과 장애 fallback은 유지한다. */
     fun batched(jev: Jev, root: Path, findings: List<Violation>, maxCandidates: Int = MAX_CALLS): (Violation) -> Double? {
         val candidates = findings.take(maxCandidates)
         val answers by lazy {

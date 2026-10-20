@@ -5,10 +5,6 @@ import com.dochiri.ilsim.runner.convention.ConventionModel
 import com.dochiri.ilsim.runner.risk.RiskConfig
 import com.dochiri.ilsim.runner.risk.RiskRules
 
-/**
- * 승인된 기존 규칙을 Agent 프롬프트에 붙일 요약으로 만든다. Agent가 위반하고 재시도하며 배우지 않고 처음부터 따르게 하기 위함이다.
- * 설계를 평가하거나 새로 제안하지 않고, 이 프로젝트가 이미 지키는 규칙만 전달한다.
- */
 object RulesBrief {
     private const val LIMIT = 30
     private val evidenceSuffix = Regex("""\s*\((관측|허용|근거)[^)]*\)\s*$""")

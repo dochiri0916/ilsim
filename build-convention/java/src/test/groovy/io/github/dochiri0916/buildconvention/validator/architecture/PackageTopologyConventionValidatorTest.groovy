@@ -15,7 +15,6 @@ class PackageTopologyConventionValidatorTest {
     @Test
     @DisplayName('부트스트랩과 명시적 base package가 없으면 패키지 검증에 실패한다')
     void rejectsProjectWithoutApplicationRoot() {
-        // given
         Project project = sampleProject('missing-root')
         writeJava(project, 'com/example/order/domain/model/Order.java', '''
                 package com.example.order.domain.model;
@@ -24,20 +23,17 @@ class PackageTopologyConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = PackageTopologyConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains('base package could not be determined') }
     }
 
     @Test
     @DisplayName('명시한 base package로 부트스트랩 없는 모듈을 검증한다')
     void acceptsExplicitBasePackageWithoutBootstrap() {
-        // given
         Project project = sampleProject('explicit-root')
         writeJava(project, 'com/example/order/domain/model/Order.java', '''
                 package com.example.order.domain.model;
@@ -48,10 +44,8 @@ class PackageTopologyConventionValidatorTest {
         HexagonalConventionExtension convention = new HexagonalConventionExtension()
         convention.basePackage = 'com.example'
 
-        // when
         List<String> violations = PackageTopologyConventionValidator.validate(project, convention)
 
-        // then
         assert !violations.any { it.contains('base package could not be determined') }
         assert !violations.any { it.contains('must be under application root package') }
     }
@@ -59,7 +53,6 @@ class PackageTopologyConventionValidatorTest {
     @Test
     @DisplayName('base package에 레이어 이름이 있으면 레이어 판별이 모호하므로 거부한다')
     void rejectsRootPackageContainingLayerSegment() {
-        // given
         Project project = sampleProject('ambiguous-root')
         writeJava(project, 'com/domain/order/domain/model/Order.java', '''
                 package com.domain.order.domain.model;
@@ -70,30 +63,24 @@ class PackageTopologyConventionValidatorTest {
         HexagonalConventionExtension convention = new HexagonalConventionExtension()
         convention.basePackage = 'com.domain'
 
-        // when
         List<String> violations = PackageTopologyConventionValidator.validate(project, convention)
 
-        // then
         assert violations.any { it.contains("must not contain layer segment 'domain'") }
     }
 
     @Test
     @DisplayName('빈 source 프로젝트는 package root 없이 허용한다')
     void acceptsProjectWithoutMainJavaSources() {
-        // given
         Project project = sampleProject('empty-project')
 
-        // when
         List<String> violations = PackageTopologyConventionValidator.validate(project)
 
-        // then
         assert violations.isEmpty()
     }
 
     @Test
     @DisplayName('Context 우선 package topology의 모든 잘못된 분기를 진단한다')
     void rejectsInvalidContextFirstTopologyBranches() {
-        // given
         Project project = sampleProject('topology-matrix')
         writeJava(project, 'com/example/TestApplication.java', '''
                 package com.example;
@@ -136,13 +123,11 @@ class PackageTopologyConventionValidatorTest {
         writeType(project, 'com/example/global/persistence/auditing/BaseEntity.java', 'com.example.global.persistence.auditing', 'BaseEntity')
         writeType(project, 'com/example/global/configuration/properties/AppProperties.java', 'com.example.global.configuration.properties', 'AppProperties')
 
-        // when
         List<String> violations = PackageTopologyConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains("must be under application root package 'com.example'") }
         assert violations.any { it.contains('root package may contain only the application bootstrap class') }
         assert violations.any { it.contains('Auth.java') && it.contains('global package must be limited to global.exception, global.persistence, global.configuration, global.domain.vo/exception/outbox, global.messaging, or global.application.exception') }
@@ -171,7 +156,6 @@ class PackageTopologyConventionValidatorTest {
     @Test
     @DisplayName('줄바꿈된 package에서도 잘못된 Domain child를 AST로 거부한다')
     void rejectsInvalidMultilinePackageTopology() {
-        // given
         Project project = sampleProject('multiline-package')
         writeJava(project, 'com/example/TestApplication.java', '''
                 package com.example;
@@ -186,20 +170,17 @@ class PackageTopologyConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = PackageTopologyConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert violations.any { it.contains('order.domain package must use model, vo, event, outbox, or exception') }
     }
 
     @Test
     @DisplayName('줄바꿈된 bootstrap package에서도 application root를 AST로 결정한다')
     void resolvesApplicationRootFromMultilinePackage() {
-        // given
         Project project = sampleProject('multiline-bootstrap')
         writeJava(project, 'com/example/TestApplication.java', '''
                 package com
@@ -215,13 +196,11 @@ class PackageTopologyConventionValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = PackageTopologyConventionValidator.validate(
                 project,
                 new HexagonalConventionExtension()
         )
 
-        // then
         assert !violations.any { it.contains('application base package could not be determined') }
         assert !violations.any { it.contains('must be under application root package') }
     }
@@ -235,7 +214,6 @@ class PackageTopologyConventionValidatorTest {
     @Test
     @DisplayName('묶음 컨텍스트는 모듈 한 단계만 허용하고 그 아래는 같은 규칙으로 검사한다')
     void acceptsOneModuleLevelUnderAGroupedContext() {
-        // given
         Project project = sampleProject('grouped-context')
         writeJava(project, 'com/example/TestApplication.java', '''
                 package com.example;
@@ -250,10 +228,8 @@ class PackageTopologyConventionValidatorTest {
         writeType(project, 'com/example/catalog/product/adapter/in/scheduler/Job.java', 'com.example.catalog.product.adapter.in.scheduler', 'Job')
         writeType(project, 'com/example/catalog/product/sub/domain/model/Deep.java', 'com.example.catalog.product.sub.domain.model', 'Deep')
 
-        // when
         List<String> violations = PackageTopologyConventionValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         ['Product', 'GetProductUseCase', 'CategoryController'].each { String name ->
             assert !violations.any { it.contains("${name}.java") }
         }

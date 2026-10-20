@@ -5,7 +5,6 @@ import com.dochiri.ilsim.runner.architecture.RuleReview
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** 개별 근거가 유효한 의견은 재사용하되, 바뀐 전체 근거의 누락·충돌 검토와 재판정 권한은 유지한다. */
 object RuleReviewReuse {
     fun response(prompt: String, expected: List<String>, reused: Map<String, RuleReview>, ask: (String) -> String): String {
         if (reused.isEmpty()) return ask(prompt)

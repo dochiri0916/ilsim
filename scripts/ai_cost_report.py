@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""동일 집계 기준의 두 기간을 완료 작업당 비용으로 비교한다. 표준 라이브러리만 사용한다."""
 import argparse
 import json
 import math
@@ -24,7 +23,6 @@ def summarize(data):
         completed = sum(t.get("status") == "COMPLETED" for t in tasks)
         cost = data.get("costUsd", sum(t.get("costUsd", 0) for t in tasks)) if isinstance(data, dict) else sum(t.get("costUsd", 0) for t in tasks)
         unknown = data.get("unknownCalls", 0) if isinstance(data, dict) and "unknownCalls" in data else sum(s.get("unknownCalls", 0) for t in tasks for s in t.get("stages", []))
-        # 과거 계측 자료는 비용 누락 여부를 확인할 수 없다.
         lower = (unknown > 0 or not isinstance(data, dict) or "costUsd" not in data
                  or data.get("costIsLowerBound", False)
                  or any(not t.get("stages") or any("unknownCalls" not in s for s in t["stages"]) for t in tasks))

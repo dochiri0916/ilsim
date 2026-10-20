@@ -1023,7 +1023,6 @@ class JavaSourceArchitectureValidatorTest {
     @Test
     @DisplayName('단순한 대칭 분기의 else를 허용한다')
     void 'accepts else when it keeps a simple branch readable'() {
-        // given
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/global/exception/FlowGuard.java', '''
@@ -1041,10 +1040,8 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains('must not use else; use guard clauses and early return') }
     }
 
@@ -1927,7 +1924,6 @@ class JavaSourceArchitectureValidatorTest {
     @Test
     @DisplayName('Application 기술 의존과 Web Adapter 책임 위반을 거부한다')
     void 'rejects Spring Security dependency, generic DTOs, and manual MVC extension wiring'() {
-        // given
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/member/application/service/RegisterMemberService.java', '''
@@ -1975,10 +1971,8 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { it.contains('application must depend on a password port') }
         assert violations.any { it.contains('web configuration must inject Interceptor/ArgumentResolver components') }
         assert violations.any { it.contains("API DTO 'MemberResponse' must be a record") }
@@ -2398,7 +2392,6 @@ class JavaSourceArchitectureValidatorTest {
     @Test
     @DisplayName('기존 분할 허용 설정으로 sealed 예외 계층을 우회할 수 없다')
     void rejects_exception_hierarchy_bypass() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/product/domain/exception/InvalidProductNameException.java', """
             package com.example.product.domain.exception;
@@ -2409,16 +2402,13 @@ class JavaSourceArchitectureValidatorTest {
         HexagonalConventionExtension convention = new HexagonalConventionExtension(
                 enforceContextExceptionConsolidation: false,
                 exceptionTypeSplitAllowlist: ['com.example.product:domain'] as Set)
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, convention)
-        // then
         assert violations.any { it.contains("concrete domain exception 'InvalidProductNameException' must extend its own context") }
     }
 
     @Test
     @DisplayName('의미별 여러 final 예외가 동일한 sealed 기반을 상속하면 허용한다')
     void accepts_multiple_specific_sealed_exceptions() {
-        // given
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/product/domain/exception/ProductDomainException.java', """
@@ -2436,16 +2426,13 @@ class JavaSourceArchitectureValidatorTest {
                 }
             """)
         }
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
-        // then
         assert violations.empty
     }
 
     @Test
     @DisplayName('tool-test-lab 구조(묶음 컨텍스트, domain 루트 애그리거트, global 공유 값, sealed 예외)를 허용한다')
     void 'accepts the tool-test-lab layout'() {
-        // given
         Project project = sampleProject()
         writeApplication(project)
         writeExceptionBase(project, 'com.example.global.domain.exception', 'GlobalDomainException', ['IllegalMoneyException'])
@@ -2638,10 +2625,8 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains('package must follow') || it.contains('global package must be limited') }
         assert !violations.any { it.contains('another context') }
         assert !violations.any { it.contains('exception') && it.contains('must') }
@@ -2653,7 +2638,6 @@ class JavaSourceArchitectureValidatorTest {
     @Test
     @DisplayName('tool-test-lab에 없는 구조와 예외 스타일은 거부한다')
     void 'rejects layouts and exception styles outside the tool-test-lab convention'() {
-        // given
         Project project = sampleProject()
         writeApplication(project)
         writeJava(project, 'com/example/order/domain/event/OrderPlaced.java', '''
@@ -2722,10 +2706,8 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains('OrderPlaced.java') && it.contains('order.domain package must use') }
         assert violations.any { it.contains('WebConfig.java global package must be limited') }
         assert !violations.any { it.contains('FindOrderQuery.java') && it.contains('package must use') }
@@ -2750,7 +2732,6 @@ class JavaSourceArchitectureValidatorTest {
     @Test
     @DisplayName('테스트 메서드 이름이 snake_case가 아니면 거부한다')
     void rejects_test_method_names_that_are_not_snake_case() {
-        // given
         Project project = sampleProject()
         writeTestJava(project, 'com/example/order/NamingTest.java', '''
                 package com.example.order;
@@ -2788,10 +2769,8 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { it.contains("test method 'rejectsOrder' must be named in snake_case") }
         assert !violations.any { it.contains("test method 'approves_order_when_stock_is_sufficient'") }
     }
@@ -2799,7 +2778,6 @@ class JavaSourceArchitectureValidatorTest {
     @Test
     @DisplayName('유니크 제약 이름이 uk_ 형식이 아니면 거부한다')
     void rejects_unique_constraint_names_without_uk_prefix() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/adapter/out/persistence/OrderEntity.java', '''
                 package com.example.order.adapter.out.persistence;
@@ -2837,17 +2815,14 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert violations.any { it.contains("JPA unique constraint 'orders_public_id_key' must be named uk_{table}_{column}") }
     }
 
     @Test
     @DisplayName('outbox 패키지의 Entry는 일반 Entity 형태 규칙에서 제외하되 final 금지는 유지한다')
     void exempts_outbox_entry_from_generic_entity_shape_rules() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/adapter/out/persistence/outbox/OrderOutboxEntry.java', '''
                 package com.example.order.adapter.out.persistence.outbox;
@@ -2863,17 +2838,14 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("JPA entity 'OrderOutboxEntry'") }
     }
 
     @Test
     @DisplayName('domain.outbox의 추상 기반 클래스는 final 집계 루트 규칙에서 제외한다')
     void allows_abstract_outbox_base_class_and_rejects_other_non_final_domain_classes() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/domain/outbox/OrderOutbox.java', '''
                 package com.example.order.domain.outbox;
@@ -2893,10 +2865,8 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("domain class 'OrderOutbox'") }
         assert violations.any { it.contains("domain class 'Basket' must be a record or final aggregate root") }
     }
@@ -2904,7 +2874,6 @@ class JavaSourceArchitectureValidatorTest {
     @Test
     @DisplayName('MockMvc andExpect 검증은 관찰 가능한 결과 검증으로 인정한다')
     void accepts_mockmvc_and_expect_as_observable_assertion() {
-        // given
         Project project = sampleProject()
         writeTestJava(project, 'com/example/order/WebTest.java', '''
                 package com.example.order;
@@ -2929,17 +2898,14 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("test method 'responds_conflict'") }
     }
 
     @Test
     @DisplayName('공개 통합 이벤트 계약은 Port 접미사 없이 공통 마커 인터페이스를 구현할 수 있다')
     void allows_public_integration_event_contract_with_shared_marker() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/global/messaging/IntegrationEvent.java', '''
                 package com.example.global.messaging;
@@ -2958,10 +2924,8 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("'OrderIntegrationEvent'") }
         assert !violations.any { it.contains("IntegrationEvent' is not allowed") }
     }
@@ -2969,7 +2933,6 @@ class JavaSourceArchitectureValidatorTest {
     @Test
     @DisplayName('global.messaging 인프라는 발행·수신 트랜잭션을 직접 관리할 수 있다')
     void allows_messaging_infrastructure_to_manage_transactions() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/global/messaging/persistence/OutboxDispatcher.java', '''
                 package com.example.global.messaging.persistence;
@@ -2985,17 +2948,14 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains('REQUIRES_NEW, NESTED, NOT_SUPPORTED, or TransactionTemplate') }
     }
 
     @Test
     @DisplayName('projection 조회 모델 Entity는 일반 Entity 형태 규칙에서 제외한다')
     void exempts_projection_entity_from_generic_entity_shape_rules() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/adapter/out/persistence/projection/CartSnapshotEntity.java', '''
                 package com.example.order.adapter.out.persistence.projection;
@@ -3016,17 +2976,14 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("JPA entity 'CartSnapshotEntity'") }
     }
 
     @Test
     @DisplayName('접두어가 붙은 revision 메타데이터 필드는 원시 타입을 허용한다')
     void allows_prefixed_revision_metadata_fields_as_raw_scalars() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/domain/Order.java', '''
                 package com.example.order.domain;
@@ -3044,17 +3001,14 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("domain field 'cartRevision'") }
     }
 
     @Test
     @DisplayName('List.copyOf로 방어적 복사한 일급 컬렉션을 허용한다')
     void accepts_first_class_collection_copied_with_list_copy_of() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/domain/vo/OrderLines.java', '''
                 package com.example.order.domain.vo;
@@ -3086,17 +3040,14 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("domain collection field 'values'") }
     }
 
     @Test
     @DisplayName('Request는 toCommand 안에서 Command의 일급 컬렉션을 만들 수 있지만 다른 공개 메서드로 노출하지 못한다')
     void allows_request_to_build_command_collections_only_inside_to_command() {
-        // given
         Project project = sampleProject()
         writeJava(project, 'com/example/order/application/port/in/command/RegisterCommand.java', '''
                 package com.example.order.application.port.in.command;
@@ -3149,10 +3100,8 @@ class JavaSourceArchitectureValidatorTest {
                 }
                 ''')
 
-        // when
         List<String> violations = JavaSourceArchitectureValidator.validate(project, new HexagonalConventionExtension())
 
-        // then
         assert !violations.any { it.contains("API DTO 'RegisterRequest'") }
         assert violations.any { it.contains("API DTO 'LeakyRequest'") }
     }

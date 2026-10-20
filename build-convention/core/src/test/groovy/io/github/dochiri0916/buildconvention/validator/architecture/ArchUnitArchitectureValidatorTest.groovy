@@ -17,27 +17,23 @@ class ArchUnitArchitectureValidatorTest {
     @Test
     @DisplayName('읽지 못한 클래스 파일이 있으면 검증을 통과시키지 않는다')
     void rejectsClassFilesArchUnitCannotRead() {
-        // given: a class file from a newer Java version than the bundled bytecode reader supports
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File classFile = new File(tempDir, 'classes/com/example/order/domain/Order.class')
         classFile.parentFile.mkdirs()
         classFile.bytes = [0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x7F, 0x00, 0x01] as byte[]
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [new File(tempDir, 'classes')]
         )
 
-        // then
         assert violations.any { it.contains('could not read compiled classes') && it.contains('com.example.order.domain.Order') }
     }
 
     @Test
     @DisplayName('컴파일된 Application 클래스의 Adapter 의존을 거부한다')
     void rejectsCompiledApplicationDependencyOnAdapter() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File adapterSource = writeSource('com/example/order/adapter/out/OrderAdapter.java', '''
                 package com.example.order.adapter.out;
@@ -72,21 +68,18 @@ class ArchUnitArchitectureValidatorTest {
         )
         assert compilationResult == 0
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [classDir]
         )
 
-        // then
         assert violations.any { it.contains('application must not depend on adapters') }
     }
 
     @Test
     @DisplayName('컴파일된 Application과 Domain의 Jackson 의존을 거부한다')
     void rejectsCompiledJacksonDependencyInApplicationAndDomain() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File jacksonSource = writeSource('com/fasterxml/jackson/databind/ObjectMapper.java', '''
                 package com.fasterxml.jackson.databind;
@@ -120,14 +113,12 @@ class ArchUnitArchitectureValidatorTest {
         )
         assert compilationResult == 0
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [classDir]
         )
 
-        // then
         assert violations.any { it.contains('application must not depend on technical framework types') }
         assert violations.any { it.contains('domain must stay framework independent') }
     }
@@ -135,7 +126,6 @@ class ArchUnitArchitectureValidatorTest {
     @Test
     @DisplayName('컴파일된 Application Port의 Spring Data 타입 의존을 거부한다')
     void rejectsCompiledApplicationDependencyOnTechnicalFramework() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File pageSource = writeSource('org/springframework/data/domain/Page.java', '''
                 package org.springframework.data.domain;
@@ -166,40 +156,34 @@ class ArchUnitArchitectureValidatorTest {
         )
         assert compilationResult == 0
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [classDir]
         )
 
-        // then
         assert violations.any { it.contains('application must not depend on technical framework types') }
     }
 
     @Test
     @DisplayName('컴파일된 클래스 디렉터리가 없으면 위반이 없다')
     void accepts_project_without_compiled_classes() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File regularFile = new File(tempDir, 'not-a-directory')
         regularFile.text = 'x'
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [new File(tempDir, 'missing'), regularFile]
         )
 
-        // then
         assert violations.empty
     }
 
     @Test
     @DisplayName('컴파일된 Adapter의 Application Service 의존을 거부한다')
     void rejectsCompiledAdapterDependencyOnApplicationService() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File serviceSource = writeSource('com/example/order/application/service/OrderService.java', '''
                 package com.example.order.application.service;
@@ -227,14 +211,12 @@ class ArchUnitArchitectureValidatorTest {
                 ''')
         File classDir = compile([serviceSource, inboundSource, outboundSource])
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [classDir]
         )
 
-        // then
         List<String> matched = violations.findAll { it.contains('adapters must depend on ports instead of application services') }
         assert matched.any { it.contains('OrderScheduler') }
         assert matched.any { it.contains('OrderPersistenceAdapter') }
@@ -243,7 +225,6 @@ class ArchUnitArchitectureValidatorTest {
     @Test
     @DisplayName('컴파일된 Adapter의 Port 의존은 허용한다')
     void acceptsCompiledAdapterDependencyOnPorts() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File useCaseSource = writeSource('com/example/order/application/port/in/usecase/PlaceOrderUseCase.java', '''
                 package com.example.order.application.port.in.usecase;
@@ -276,21 +257,18 @@ class ArchUnitArchitectureValidatorTest {
                 ''')
         File classDir = compile([useCaseSource, portSource, inboundSource, outboundSource])
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [classDir]
         )
 
-        // then
         assert violations.empty
     }
 
     @Test
     @DisplayName('컴파일된 Domain이 프로젝트 밖의 허용되지 않은 타입에 의존하면 거부한다')
     void rejectsCompiledDomainDependencyOnUnlistedExternalType() {
-        // given: a library outside the project that no deny list names
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File libraryDir = compile([writeSource('org/apache/commons/lang3/StringUtils.java', '''
                 package org.apache.commons.lang3;
@@ -314,14 +292,12 @@ class ArchUnitArchitectureValidatorTest {
                 ''')
         File classDir = compile([domainSource], 'classes', libraryDir)
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [classDir]
         )
 
-        // then
         assert violations.any {
             it.contains('domain must depend only on the language standard library and project types') &&
                     it.contains('org.apache.commons.lang3.StringUtils')
@@ -331,7 +307,6 @@ class ArchUnitArchitectureValidatorTest {
     @Test
     @DisplayName('컴파일된 Domain의 표준 라이브러리·프로젝트 타입·Published Language 의존은 허용한다')
     void acceptsCompiledDomainDependencyOnStandardLibraryAndProjectTypes() {
-        // given: types compiled outside the project that the convention declares as project types
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File libraryDir = compile([
                 writeSource('com/example/shared/kernel/Money.java', '''
@@ -390,17 +365,14 @@ class ArchUnitArchitectureValidatorTest {
         convention.basePackage = 'com.example.shared'
         convention.publishedLanguagePackagePrefixes = ['com.example.contract.'] as Set
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(project, convention, [classDir])
 
-        // then
         assert violations.empty
     }
 
     @Test
     @DisplayName('컴파일된 Application과 Domain의 Jackson 3 의존을 거부한다')
     void rejectsCompiledJackson3DependencyInApplicationAndDomain() {
-        // given
         Project project = ProjectBuilder.builder().withProjectDir(tempDir).build()
         File jacksonSource = writeSource('tools/jackson/databind/ObjectMapper.java', '''
                 package tools.jackson.databind;
@@ -428,14 +400,12 @@ class ArchUnitArchitectureValidatorTest {
                 ''')
         File classDir = compile([jacksonSource, applicationSource, domainSource])
 
-        // when
         List<String> violations = ArchUnitArchitectureValidator.validate(
                 project,
                 new HexagonalConventionExtension(),
                 [classDir]
         )
 
-        // then
         assert violations.any { it.contains('application must not depend on technical framework types') && it.contains('tools.jackson') }
         assert violations.any { it.contains('domain must stay framework independent') && it.contains('tools.jackson') }
     }

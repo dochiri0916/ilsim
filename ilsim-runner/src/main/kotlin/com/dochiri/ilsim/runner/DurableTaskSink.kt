@@ -9,7 +9,6 @@ import kotlinx.serialization.json.Json
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
-/** 결과를 먼저 저장하고 ACK까지 재전송한다. 진행 로그 전송은 출력 소비 스레드를 막지 않는다. */
 class DurableTaskSink(
     private val server: TaskSink,
     private val directory: Path,
@@ -40,7 +39,6 @@ class DurableTaskSink(
         flushResults()
     }
 
-    /** 새 배정을 받기 전에 반드시 미전송 결과부터 확인한다. */
     @Synchronized fun flushResults() {
         files("results").forEach { file ->
             val pending = json.decodeFromString<PendingResult>(file.readText())
