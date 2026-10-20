@@ -2,12 +2,21 @@ package com.dochiri.ilsim.claude.application.port.out
 
 import com.dochiri.ilsim.claude.domain.ClaudeAccount
 import com.dochiri.ilsim.claude.domain.ClaudeEnvironment
+import com.dochiri.ilsim.claude.domain.ClaudeSkill
 import com.dochiri.ilsim.claude.domain.LoginSession
 
 interface ClaudeEnvironmentStore {
     fun load(): ClaudeEnvironment?
 
     fun save(environment: ClaudeEnvironment)
+}
+
+interface ClaudeSkillStore {
+    fun all(): List<ClaudeSkill>
+
+    fun save(skill: ClaudeSkill)
+
+    fun delete(name: String): Boolean
 }
 
 interface ClaudeAccountStore {

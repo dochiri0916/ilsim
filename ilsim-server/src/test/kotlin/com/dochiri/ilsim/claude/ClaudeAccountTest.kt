@@ -35,7 +35,7 @@ class ClaudeAccountTest {
 
     @BeforeEach
     fun setUp() {
-        val service = ClaudeService(MemoryEnvironment(), InMemoryClaudeAccountStore(), { it.trim().startsWith("{") && it.trim().endsWith("}") }, Clock.fixed(now, ZoneOffset.UTC))
+        val service = ClaudeService(MemoryEnvironment(), MemorySkills(), InMemoryClaudeAccountStore(), { it.trim().startsWith("{") && it.trim().endsWith("}") }, Clock.fixed(now, ZoneOffset.UTC))
         mvc = MockMvcBuilders.standaloneSetup(ClaudeController(service)).build()
     }
 

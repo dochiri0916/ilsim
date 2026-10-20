@@ -16,7 +16,12 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 @Serializable
-data class ClaudeEnvironmentReport(val claudeMd: String = "", val settingsJson: String = "{}", val version: String = "")
+data class ClaudeEnvironmentReport(
+    val claudeMd: String = "",
+    val settingsJson: String = "{}",
+    val version: String = "",
+    val skills: List<ClaudeSkillReport> = emptyList(),
+)
 
 @Serializable
 data class ClaudeAccountReport(val name: String, val loggedIn: Boolean, val email: String? = null, val plan: String? = null) {
@@ -67,6 +72,7 @@ object ClaudeAccounts {
         if (marker.exists() && marker.readText() == env.version) return
         KnowledgeFiles.write(dir.resolve("CLAUDE.md"), env.claudeMd)
         KnowledgeFiles.write(dir.resolve("settings.json"), env.settingsJson)
+        ClaudeSkills.install(dir.resolve("skills"), env.skills)
         marker.writeText(env.version)
     }
 

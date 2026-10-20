@@ -1,7 +1,7 @@
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { ClaudeAccounts, ClaudeEnvironmentEditor } from './ClaudeSettings'
+import { ClaudeAccounts, ClaudeEnvironmentEditor, ClaudeSkillsEditor } from './ClaudeSettings'
 import { usePoll } from './usePoll'
 
 function Account() {
@@ -182,6 +182,7 @@ export function Settings() {
     </section>
     <ClaudeAccounts />
     <ClaudeEnvironmentEditor />
+    <ClaudeSkillsEditor />
     <Account />
     <TwoFactor />
     </>

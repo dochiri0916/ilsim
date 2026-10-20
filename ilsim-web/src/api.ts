@@ -103,11 +103,18 @@ export interface Settings {
   jev: { configured: boolean; last4: string | null; updatedAt: string | null }
 }
 
+export interface ClaudeSkill {
+  name: string
+  files: Record<string, string>
+  updatedAt: string | null
+}
+
 export interface ClaudeEnvironment {
   claudeMd: string
   settingsJson: string
   version: string
   updatedAt: string | null
+  skills: ClaudeSkill[]
 }
 
 export interface ClaudeAccount {
@@ -256,6 +263,10 @@ export const api = {
   claudeEnvironment: () => call<ClaudeEnvironment>('/api/claude/environment'),
   saveClaudeEnvironment: (claudeMd: string, settingsJson: string) =>
     call<ClaudeEnvironment>('/api/claude/environment', { method: 'PUT', body: JSON.stringify({ claudeMd, settingsJson }) }),
+  claudeSkills: () => call<ClaudeSkill[]>('/api/claude/skills'),
+  saveClaudeSkill: (name: string, files: Record<string, string>) =>
+    call<ClaudeSkill>(`/api/claude/skills/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify({ files }) }),
+  deleteClaudeSkill: (name: string) => call<void>(`/api/claude/skills/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   claudeAccounts: () => call<{ accounts: ClaudeAccount[]; logins: ClaudeLogin[] }>('/api/claude/accounts'),
   startClaudeLogin: (runnerId: string, name: string) => call<ClaudeLogin>('/api/claude/logins', { method: 'POST', body: JSON.stringify({ runnerId, name }) }),
   submitClaudeCode: (id: string, code: string) => call<ClaudeLogin>(`/api/claude/logins/${id}/code`, { method: 'POST', body: JSON.stringify({ code }) }),

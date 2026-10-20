@@ -3,8 +3,10 @@ package com.dochiri.ilsim.claude.application.usecase
 import com.dochiri.ilsim.claude.application.port.`in`.ClaudeUseCase
 import com.dochiri.ilsim.claude.application.port.out.ClaudeAccountStore
 import com.dochiri.ilsim.claude.application.port.out.ClaudeEnvironmentStore
+import com.dochiri.ilsim.claude.application.port.out.ClaudeSkillStore
 import com.dochiri.ilsim.claude.domain.ClaudeAccount
 import com.dochiri.ilsim.claude.domain.ClaudeEnvironment
+import com.dochiri.ilsim.claude.domain.ClaudeSkill
 import com.dochiri.ilsim.claude.domain.LoginSession
 import com.dochiri.ilsim.claude.domain.LoginStatus
 import com.dochiri.ilsim.claude.domain.exception.InvalidClaudeRequestException
@@ -14,15 +16,27 @@ import java.util.UUID
 
 class ClaudeService(
     private val environments: ClaudeEnvironmentStore,
+    private val skillStore: ClaudeSkillStore,
     private val store: ClaudeAccountStore,
     private val isJsonObject: (String) -> Boolean,
     private val clock: Clock = Clock.systemUTC(),
 ) : ClaudeUseCase {
 
-    override fun environment(): ClaudeEnvironment = environments.load() ?: ClaudeEnvironment()
+    override fun environment(): ClaudeEnvironment = (environments.load() ?: ClaudeEnvironment()).withSkills(skillStore.all())
 
     override fun saveEnvironment(claudeMd: String?, settingsJson: String?): ClaudeEnvironment =
-        ClaudeEnvironment.of(claudeMd, settingsJson, isJsonObject, clock.instant()).also(environments::save)
+        ClaudeEnvironment.of(claudeMd, settingsJson, isJsonObject, clock.instant()).also(environments::save).withSkills(skillStore.all())
+
+    override fun skills(): List<ClaudeSkill> = skillStore.all().sortedBy { it.name }
+
+    @Synchronized
+    override fun saveSkill(name: String?, files: Map<String, String>?): ClaudeSkill =
+        ClaudeSkill.of(name, files, clock.instant()).also(skillStore::save)
+
+    @Synchronized
+    override fun removeSkill(name: String) {
+        if (!skillStore.delete(ClaudeSkill.name(name))) throw InvalidClaudeRequestException("스킬이 없습니다: $name")
+    }
 
     override fun accounts(): List<ClaudeAccount> = store.accounts().sortedWith(compareBy({ it.runnerId }, { it.name }))
 

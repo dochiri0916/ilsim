@@ -3,6 +3,7 @@ package com.dochiri.ilsim.claude.adapter.`in`.web
 import com.dochiri.ilsim.claude.application.port.`in`.ClaudeUseCase
 import com.dochiri.ilsim.claude.domain.ClaudeAccount
 import com.dochiri.ilsim.claude.domain.ClaudeEnvironment
+import com.dochiri.ilsim.claude.domain.ClaudeSkill
 import com.dochiri.ilsim.claude.domain.LoginSession
 import com.dochiri.ilsim.claude.domain.exception.InvalidClaudeRequestException
 import java.time.Instant
@@ -21,9 +22,17 @@ class ClaudeController(private val claude: ClaudeUseCase) {
 
     data class EnvironmentRequest(val claudeMd: String? = null, val settingsJson: String? = null)
 
-    data class EnvironmentResponse(val claudeMd: String, val settingsJson: String, val version: String, val updatedAt: Instant?) {
+    data class SkillResponse(val name: String, val files: Map<String, String>, val updatedAt: Instant?) {
         companion object {
-            fun from(e: ClaudeEnvironment) = EnvironmentResponse(e.claudeMd, e.settingsJson, e.version, e.updatedAt)
+            fun from(s: ClaudeSkill) = SkillResponse(s.name, s.files, s.updatedAt)
+        }
+    }
+
+    data class SkillRequest(val files: Map<String, String>? = null)
+
+    data class EnvironmentResponse(val claudeMd: String, val settingsJson: String, val version: String, val updatedAt: Instant?, val skills: List<SkillResponse>) {
+        companion object {
+            fun from(e: ClaudeEnvironment) = EnvironmentResponse(e.claudeMd, e.settingsJson, e.version, e.updatedAt, e.skills.map(SkillResponse::from))
         }
     }
 
@@ -56,6 +65,19 @@ class ClaudeController(private val claude: ClaudeUseCase) {
     @PutMapping("/api/claude/environment")
     fun saveEnvironment(@RequestBody request: EnvironmentRequest): EnvironmentResponse =
         EnvironmentResponse.from(claude.saveEnvironment(request.claudeMd, request.settingsJson))
+
+    @GetMapping("/api/claude/skills")
+    fun skills(): List<SkillResponse> = claude.skills().map(SkillResponse::from)
+
+    @PutMapping("/api/claude/skills/{name}")
+    fun saveSkill(@PathVariable name: String, @RequestBody request: SkillRequest): SkillResponse =
+        SkillResponse.from(claude.saveSkill(name, request.files))
+
+    @DeleteMapping("/api/claude/skills/{name}")
+    fun removeSkill(@PathVariable name: String): ResponseEntity<Void> {
+        claude.removeSkill(name)
+        return ResponseEntity.noContent().build()
+    }
 
     @GetMapping("/api/claude/accounts")
     fun accounts(): AccountsResponse = AccountsResponse(claude.accounts(), claude.logins().map(LoginResponse::from))
