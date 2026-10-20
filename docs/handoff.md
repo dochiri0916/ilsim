@@ -3,7 +3,7 @@
 AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일을 먼저 읽고, 작업을 마치면 갱신한다. `.claude/settings.json`의 훅이 시작할 때 이 파일을 보여 주고, 작업 트리에 이 파일보다 나중에 바뀐 파일이 있으면 종료를 막는다.
 여러 세션이 동시에 쓰므로 바꿀 부분만 Edit로 고치고 파일 전체를 다시 쓰지 않는다. 다른 세션이 쓴 항목은 건드리지 않는다([AGENTS.md](../AGENTS.md)).
 
-마지막 갱신: 2026-10-18 (Claude 여러 계정·공통 설정, JEV 모델 선택 평가·조정, 새 모델 버전 자동 도입·Fable 잠금, Codex 제거)
+마지막 갱신: 2026-10-20 (주석 제거·추천·스킬 기능별 커밋·푸시)
 
 ## 작업 규칙 (사용자 지시)
 
@@ -88,7 +88,7 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
 ## 2026-10-18 Codex 연동 (만들었다가 사용자 지시로 전부 제거)
 
 - Codex 실행기·계정별 Agent(`accounts.agent`, `Task.agent`, 프로젝트 `agent`/`codex-model`)·Codex 사용량을 만들었으나, 사용자가 Claude 두 번째 계정을 결제하고 "코덱스 관련은 다 지워"라고 해 코드·테스트·README·웹에서 모두 제거했다(커밋된 적 없음). DB에서도 웹 계정 `codex`를 지우고 `accounts.agent` 열을 삭제했다. 남은 것은 Claude 계정별 사용량을 위한 `PlanUsage.provider`(`claude`, `claude@<계정>`)뿐이다. 작업 저장본 1건에 남은 `"agent"` 필드는 역직렬화가 무시한다.
-- `PLAN.md`의 Codex 문구도 사용자 지시로 지웠다(Claude Code만). 이 PC의 brew `codex` 제거(의존성 `openssl@3`도 자동 제거됨)와 `~/programming/test` 삭제는 권한 분류기가 거부해 사용자가 직접 실행해 끝냈고, `~/.codex`(2.1GB)도 사용자가 직접 지웠다(ChatGPT 데스크톱 앱이 실행 중인 상태라 앱이 다시 만들 수 있다).
+- `PLAN.md`의 Codex 문구도 사용자 지시로 지웠다(Claude Code만). 이 PC의 brew `codex` 제거(의존성 `openssl@3`도 자동 제거됨)와 PC의 테스트 폴더 삭제는 권한 분류기가 거부해 사용자가 직접 실행해 끝냈고, `~/.codex`(2.1GB)도 사용자가 직접 지웠다(ChatGPT 데스크톱 앱이 실행 중인 상태라 앱이 다시 만들 수 있다).
 
 ## 2026-10-18 Claude 여러 계정·공통 설정 (`c0e1987`, 푸시됨)
 
@@ -98,8 +98,8 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
 - Runner: `ClaudeAccounts.kt`. 계정 디렉터리 `~/.ilsim/claude-accounts/<이름>`, `Shell.process`가 `claude` 실행 시 스레드의 계정(`ClaudeAccountScope`)으로 `CLAUDE_CONFIG_DIR`를 넣고 API 키 변수 3개를 지운다. 공통 설정을 계정 디렉터리에 `CLAUDE.md`·`settings.json`으로 씀(버전 마커). 세션 id는 `claude@<계정>:<id>`, 이어 가기는 그 계정, 새 세션은 5시간·주간 중 큰 쪽이 가장 낮은 usable 계정(구독 없으면 제외), 계정이 없으면 기본 `~/.claude`. `PlanUsageReporter`가 5분마다 설정 동기화·계정 상태 보고·계정별 `/usage`. `ClaudeLoginWorker` 스레드가 `claude auth login --claudeai`(BROWSER 비활성)를 띄워 URL·코드를 중계.
 - 웹: 설정에 "Claude 계정"(추가·로그인 카드·삭제)·"Claude 공통 설정" 편집, 사용량 탭은 계정별 카드.
 - 이 PC 상태: 서버·Runner를 새 코드로 재시작(로그 scratchpad). 사용자 `~/.claude`의 CLAUDE.md·settings.json을 공통 설정으로 등록. 계정 `personal` 로그인을 시작해 URL 중계와 설정 파일 적용까지 확인했고, 사용자가 웹에서 로그인·코드 입력을 해야 끝난다(15분 지나면 실패 처리, 디렉터리는 남으므로 웹에서 삭제). 두 번째 계정은 아직 구독 없음.
-- 검증: 루트 `./gradlew check` 통과(`ClaudeAccountsTest` 5, `ClaudeAccountTest` 3), 웹 빌드 통과. 사용자가 웹에서 `personal`(dochiri0916@gmail.com, pro) 로그인 완료 → DONE·usable. 키체인에 `Claude Code-credentials-edde1da4`가 따로 생기고 기본 `~/.claude` 로그인은 유지됨. 계정별 `/usage`(claude@personal 5시간 35%·주간 50%)와 Codex 사용량 보고 확인. 실제 작업에서의 `rate_limit_event`·두 계정 번갈아 실행은 미검증(두 번째 계정 구독 전).
-  - 결제 전 확인(사용자 결정): sandbox 질문 작업 `4fe95bc9`(답변만, $0.024)이 `Claude 계정: personal`로 실행되고 세션 기록이 `~/.ilsim/claude-accounts/personal/projects`에 남았으며 서버에 `claude@personal:<id>`로 저장됨. 이후 사용자가 두 번째 계정을 결제하고 웹에서 `second`(second-account, pro)를 등록해 두 계정 모두 usable이고, Codex 제거 후 재시작한 서버·Runner에서 계정별 사용량(`claude@personal`, `claude@second`) 보고 확인. 처음 시도한 `second` 로그인은 claude.ai 승인 화면이 "Max 또는 Pro 구독 필요"로 막아 구독 없이 등록할 수 없음을 확인했고, 웹 API로 삭제했다(대기 중이던 로그인 프로세스는 15분 뒤 끝나고 Runner가 다음 동기화 때 디렉터리를 지운다).
+- 검증: 루트 `./gradlew check` 통과(`ClaudeAccountsTest` 5, `ClaudeAccountTest` 3), 웹 빌드 통과. 사용자가 웹에서 `personal`(pro) 로그인 완료 → DONE·usable. 키체인에 `Claude Code-credentials-edde1da4`가 따로 생기고 기본 `~/.claude` 로그인은 유지됨. 계정별 `/usage`(claude@personal 5시간 35%·주간 50%)와 Codex 사용량 보고 확인. 실제 작업에서의 `rate_limit_event`·두 계정 번갈아 실행은 미검증(두 번째 계정 구독 전).
+  - 결제 전 확인(사용자 결정): sandbox 질문 작업 `4fe95bc9`(답변만, $0.024)이 `Claude 계정: personal`로 실행되고 세션 기록이 `~/.ilsim/claude-accounts/personal/projects`에 남았으며 서버에 `claude@personal:<id>`로 저장됨. 이후 사용자가 두 번째 계정을 결제하고 웹에서 `second`(pro)를 등록해 두 계정 모두 usable이고, Codex 제거 후 재시작한 서버·Runner에서 계정별 사용량(`claude@personal`, `claude@second`) 보고 확인. 처음 시도한 `second` 로그인은 claude.ai 승인 화면이 "Max 또는 Pro 구독 필요"로 막아 구독 없이 등록할 수 없음을 확인했고, 웹 API로 삭제했다(대기 중이던 로그인 프로세스는 15분 뒤 끝나고 Runner가 다음 동기화 때 디렉터리를 지운다).
 
 ## 2026-10-18 JEV 모델 선택 평가·조정 (`c0e1987`, 푸시됨)
 
@@ -111,6 +111,18 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
   - Fable 잠금: 서버 `ModelCatalog.LOCKED`(받지 않음·조정 거부), Runner `Shell.process`가 `--model`에 fable이 있으면 실행 거부.
   - 실수 기록: 확인 중 `claude -p "/models"`(없는 명령)를 실행해 기본 로그인에서 Opus 호출 1회($0.09)가 발생했다.
   - 검증: 루트 `./gradlew check` 통과(`ModelUpgradeTest` 4, `ModelDiscoveryTest` 3), 웹 빌드 통과. 서버·Runner 재시작 후 실제 감지 결과 5.5 그대로(도입 기록 없음), 웹 "모델 선택" 탭에 사용 모델·잠금 표시.
+
+## 2026-10-18 주석 제거·추천·스킬·개인정보 (커밋·푸시: `d145216` 주석 제거, `aad2215` 추천, `5c4fefc` 스킬, 이후 docs)
+
+- 사용자 지시: 주석은 요청이 있을 때만 쓴다(`AGENTS.md` 규칙 추가). 저장소의 kt·kts·java·groovy·gradle·ts·tsx·css·xml·yml·properties·toml·sh·py 주석을 모두 지웠다. 제외: 분석기 테스트 픽스처(`src/test/resources`), Gradle Wrapper(`gradlew*`, `gradle-wrapper.properties`), 셰뱅, `vite-env.d.ts`의 `/// <reference>`(지시자). 문자열 속 주석 기호는 유지.
+- 추천·업그레이드: Runner `standards/Recommendations.kt`(`ArchitectureRecommender`, `ConventionRecommender`, `RecommendationReport`), 새 Probe `convention/DesignProbes.kt`(no-comments, domain-encapsulation, identifier-value-object, max-function-lines 30, max-nesting 2, max-file-lines 300)와 `CodeText`(문자열·주석 제거 보기, 함수 범위). 규칙에 `recommendation{principle,rationale}` 필드, id `recommend:` 접두사. 분석 시 채굴 규칙 뒤에 붙이고 AI 검토·자동 승인에서는 뺀다. 위반 0이면 BLOCK, 있으면 REVIEW. 재분석 시 승인은 유지되고 위반이 사라지면 BLOCK. CLI `ilsim-runner recommend <id|경로>`(AI 없음). 서버 `RuleView`에 principle·rationale·compliant·total·examples. 웹 규칙 화면에 "추천" 표시와 "업그레이드 작업 만들기"(리팩터링 작업 생성 후 작업 화면으로 이동).
+- 이 저장소에 `recommend` 실행 결과: 주석 307/307, 도메인 캡슐화 40/40 준수. 식별자 값 객체 3/31, 함수 30줄 999/1061, 중첩 949/1061, 파일 300줄 301/307 위반 있음.
+- Claude 스킬: 서버 `claude_skills` 테이블(`JdbcClaudeSkillStore`), `ClaudeSkill`(이름 규칙, SKILL.md+description 머리말 필수, 상대 경로만, 50파일·50만 자), `PortablePaths`(공통 설정·스킬에 `/Users/<x>`, `/home/<x>`, `C:\Users\<x>` 거절). API `GET /api/claude/skills`, `PUT|DELETE /api/claude/skills/{name}`, Runner용 환경 응답에 `skills` 포함(버전 해시에 포함). Runner `ClaudeSkills.install`이 계정 디렉터리 `skills/<이름>`에 설치하고 `.ilsim-skills` 목록으로 일심 설치분만 정리(`synced`·사용자 스킬은 유지). 웹 설정 "Claude 스킬"(추가·편집·삭제·폴더에서 가져오기). 계정 미등록 PC의 기본 `~/.claude`에는 설치하지 않는다(공통 설정과 같은 동작).
+- 개인정보 점검: 작업 트리 추적 파일에는 이 파일의 이메일 2개·절대 경로 1개만 있어 가렸다.
+- 이력 재작성(2026-10-19, 사용자 지시): `git filter-repo`로 파일 내용의 `/Users/<이름>`→`~`, 두 번째 계정 이메일→`second-account`, 작성자 실명→`dochiri0916`으로 바꾸고 origin 브랜치 7개를 강제 푸시했다(`history/code-risk-analyzer/main`은 해당 없음). 모든 SHA가 바뀌었다. 이 파일의 옛 SHA 대응: `d6985af`→`e2b32cf`, `c0e1987`→`5c0674d`, `74fa418`→`3b3b0bd`, `3220b81`→`64ac088`, `92532ff`→`b8154b7`, `e672453`→`3ef7c14`. 다른 PC의 클론은 `git fetch && git reset --hard origin/main`(미커밋 변경 백업 후) 필요. 별도 저장소 원격(`build-convention-origin`, `integration-sync`) 이력은 건드리지 않았다.
+- 스킬은 일심(DB)에만 저장하고 기본 `~/.claude`에는 설치하지 않는다(사용자 결정).
+- 공통 CLAUDE.md에 "주석은 요청 시에만" 추가는 사용자 결정(A)이나 미적용: `claude` 테스트 계정 로그인이 401(비밀번호 불일치)이라 API로 넣지 못했다.
+- 검증: 주석 제거 후 루트 `./gradlew check`·`build-convention` 자체 `./gradlew check`·웹 빌드 통과. 기능 추가 후 루트 `./gradlew check`(새 테스트 `RecommendationsTest` 5, `ClaudeSkillsTest` 3, `ClaudeSkillTest` 2 포함)·웹 빌드 통과. 서버·Runner 재시작과 브라우저·실제 E2E는 안 했다.
 
 ## 사용자 확인 대기
 
