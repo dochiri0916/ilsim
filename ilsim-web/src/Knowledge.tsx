@@ -8,18 +8,20 @@ import { memoryTradeoff, ruleTradeoff, type Tradeoff } from './ruleTradeoffs'
 type Tab = 'architecture' | 'convention' | 'memory'
 const TAB_LABEL: Record<Tab, string> = { architecture: '아키텍처 규칙', convention: '컨벤션', memory: '학습 메모리' }
 
-function ruleState(r: RuleView): 'approved' | 'rejected' | 'pending' {
-  return r.approved ? 'approved' : r.rejected ? 'rejected' : 'pending'
+type State = 'approved' | 'rejected' | 'pending' | 'off'
+
+function ruleState(r: RuleView): State {
+  return r.approved ? 'approved' : r.rejected ? (r.decidedBy === 'auto' ? 'off' : 'rejected') : 'pending'
 }
 
-const STATE_LABEL = { approved: '승인됨', rejected: '거절됨', pending: '승인 대기' }
-const STATE_ORDER = { pending: 0, approved: 1, rejected: 2 }
+const STATE_LABEL: Record<State, string> = { approved: '승인됨', rejected: '거절됨', pending: '승인 대기', off: '자동 꺼짐' }
+const STATE_ORDER: Record<State, number> = { pending: 0, approved: 1, off: 2, rejected: 3 }
 
 function byState<T>(items: T[], state: (t: T) => keyof typeof STATE_ORDER): T[] {
   return [...items].sort((a, b) => STATE_ORDER[state(a)] - STATE_ORDER[state(b)])
 }
 
-function memoryState(m: MemoryView): 'approved' | 'rejected' | 'pending' {
+function memoryState(m: MemoryView): State {
   return m.status === 'ACTIVE' ? 'approved' : m.status === 'CANDIDATE' ? 'pending' : 'rejected'
 }
 
@@ -37,7 +39,7 @@ function TradeoffTip({ t }: { t: Tradeoff & { note?: string } }) {
 }
 
 function Item({ title, meta, body, state, tradeoff, onApprove, onReject, busy }: {
-  title: string; meta: string; body: React.ReactNode; state: 'approved' | 'rejected' | 'pending'
+  title: string; meta: string; body: React.ReactNode; state: State
   tradeoff?: Tradeoff & { note?: string }; onApprove: () => void; onReject: () => void; busy: boolean
 }) {
   return (
@@ -50,8 +52,8 @@ function Item({ title, meta, body, state, tradeoff, onApprove, onReject, busy }:
       <small className="muted">{meta}</small>
       <div className="item-body">{body}</div>
       <div className="row actions">
-        {state !== 'approved' && <button disabled={busy} onClick={onApprove}>승인</button>}
-        {state !== 'rejected' && <button className="secondary" disabled={busy} onClick={onReject}>거절</button>}
+        {state !== 'approved' && <button disabled={busy} onClick={onApprove}>{state === 'off' ? '켜기' : '승인'}</button>}
+        {state !== 'rejected' && state !== 'off' && <button className="secondary" disabled={busy} onClick={onReject}>거절</button>}
       </div>
     </li>
   )
@@ -169,7 +171,7 @@ export function Knowledge({ projectId }: { projectId: string }) {
           <ul className="plain items">
             {byState(k[tab], ruleState).map((r) => (
               <Item key={r.id} title={r.description} state={ruleState(r)} busy={busy} tradeoff={ruleTradeoff(r.kind, r.severity)}
-                meta={`${r.recommended ? '추천 · ' : ''}${r.kind}${r.severity ? ` · ${r.severity}` : ''}${r.decidedBy ? ` · ${r.decidedBy}` : ''}`}
+                meta={`${r.recommended ? '추천 · ' : ''}${r.kind}${r.severity ? ` · ${r.severity}` : ''}${r.decidedBy ? ` · ${r.decidedBy === 'auto' ? '프로젝트가 따르지 않아 자동 OFF' : r.decidedBy}` : ''}`}
                 body={<RuleBody r={r} busy={busy} onUpgrade={() => run(async () => {
                   const task = await api.createTask(projectId, '', upgradeRequest(tab, r))
                   location.hash = `#/tasks/${task.id}`
