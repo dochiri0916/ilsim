@@ -52,7 +52,8 @@ object ProcessClaudeAgent : ClaudeAgent {
             "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}",
             "--allowedTools", Gate.allowedTools(task.stage, task.testCommand))
 
-    override fun run(worktree: Path, task: AssignedTask, prompt: String, onLine: (String) -> Unit): AgentRun {
+    override fun run(worktree: Path, assigned: AssignedTask, prompt: String, onLine: (String) -> Unit): AgentRun {
+        val task = ProviderAccounts.adapt(assigned)
         val cliVersion = version
         val builder = Shell.process(
             worktree,
@@ -112,8 +113,10 @@ object ProcessClaudeAgent : ClaudeAgent {
                 inputTokens = group.sumOf { it.inputTokens }, cacheReadTokens = group.sumOf { it.cacheReadTokens }, cacheWriteTokens = group.sumOf { it.cacheWriteTokens },
                 status = "RECOVERED", toolCalls = if (model == steps.values.first().model) tools else 0)
         } else parsed
-        UsageScope.complete(pendingId, usage)
-        return AgentRun(exit, timedOut.get(), cost, ClaudeAccountScope.tag(session), failure, usage, actualModel, errors.toString().takeLast(1000).takeIf { exit != 0 })
+        val billed = ProviderAccounts.priced(usage)
+        UsageScope.complete(pendingId, billed)
+        val totalCost = if (billed === usage) cost else billed.sumOf { it.costUsd ?: 0.0 }
+        return AgentRun(exit, timedOut.get(), totalCost, ClaudeAccountScope.tag(session), failure, billed, actualModel, errors.toString().takeLast(1000).takeIf { exit != 0 })
     }
 }
 

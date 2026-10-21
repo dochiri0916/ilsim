@@ -144,8 +144,9 @@ class TaskExecutor(
         val resume = task.resumeSessionId
         if (resume != null) {
             val owner = ClaudeAccountScope.accountOf(resume)
-            if (owner == null || owner in ClaudeAccounts.usable()) return owner
+            if (owner == null || owner in ClaudeAccounts.usableAny()) return owner
         }
+        ProviderAccounts.usableName()?.takeIf { name -> ProviderAccounts.config(name)?.let { ProviderAccounts.eligible(task, it) } == true }?.let { return it }
         return ClaudeAccounts.pick()
     }
 

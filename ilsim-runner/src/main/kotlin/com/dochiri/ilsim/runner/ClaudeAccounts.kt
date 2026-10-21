@@ -48,6 +48,7 @@ object ClaudeAccounts {
     }
 
     fun status(name: String): ClaudeAccountReport {
+        ProviderAccounts.config(name)?.let { return ClaudeAccountReport(name, ProviderAccounts.key(it) != null, it.provider, "api") }
         val r = runCatching { Shell.run(tmp, "claude", "auth", "status", "--json", timeoutMinutes = 1) }.getOrNull()
         return parseStatus(name, r?.output.orEmpty())
     }
@@ -59,7 +60,14 @@ object ClaudeAccounts {
         return ClaudeAccountReport(name, obj["loggedIn"]?.jsonPrimitive?.booleanOrNull == true, text("email"), text("subscriptionType"))
     }
 
-    fun usable(): List<String> = states.values.filter { it.usable }.map { it.name }.sorted()
+    fun usable(): List<String> = states.values.filter { it.usable && ProviderAccounts.config(it.name) == null }.map { it.name }.sorted()
+
+    internal fun refreshForTest(reports: List<ClaudeAccountReport>) {
+        states.clear()
+        reports.forEach { states[it.name] = it }
+    }
+
+    fun usableAny(): List<String> = states.values.filter { it.usable }.map { it.name }.sorted()
 
     fun pick(usage: (String) -> PlanUsageReport? = { PlanUsageWatch.latest(ClaudeAccountScope.provider(it)) }): String? =
         usable().minByOrNull { name -> usage(name)?.let { maxOf(it.fiveHour?.utilization ?: 0.0, it.sevenDay?.utilization ?: 0.0) } ?: 0.0 }
@@ -136,6 +144,7 @@ object ClaudeAccountScope {
         env.remove("ANTHROPIC_API_KEY")
         env.remove("ANTHROPIC_AUTH_TOKEN")
         env.remove("CLAUDE_CODE_OAUTH_TOKEN")
+        ProviderAccounts.config(name)?.let { ProviderAccounts.environment(it, env) }
     }
 
     fun tag(sessionId: String?): String? = sessionId?.let { id -> current.get()?.let { "claude@$it:$id" } ?: id }
