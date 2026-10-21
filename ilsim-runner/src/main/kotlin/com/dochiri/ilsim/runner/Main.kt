@@ -64,8 +64,13 @@ private const val USAGE = """사용법:
     ilsim-runner standards                       기본 아키텍처·컨벤션 목록
     ilsim-runner recommend <id|경로>             헥사고날·DDD·클린 아키텍처·객체지향·생활 체조 기준 추천 규칙(정적, AI 없음)
     ilsim-runner apply-standards <id> [--architecture <표준> --root <패키지>] [--convention <표준>]
+  시험용 프로젝트 모음(채굴 회귀 확인, AI 없음)
+    ilsim-runner corpus add <id> <기준 폴더 기준 상대경로>   프로젝트 추가(현재 HEAD 고정)
+    ilsim-runner corpus update [id...]           현재 채굴 결과를 기준으로 저장
+    ilsim-runner corpus check [id...]            기준과 비교(변화·커밋 불일치 시 종료 코드 1)
+                                                 옵션: --base <폴더>(기본 ILSIM_CORPUS_BASE 또는 ~/programming), --data <폴더>(기본 ilsim-runner/corpus)
   JEV
-    ilsim-runner jev                             JEV 연결 확인 (환경 변수 TYPESAFE_API_KEY 필요)
+    ilsim-runner jev                            JEV 연결 확인 (환경 변수 TYPESAFE_API_KEY 필요)
   실행
     ilsim-runner run                             서버에 연결해 작업 수행 (토큰: ILSIM_TOKEN 또는 서버가 만든 ~/.ilsim/token)"""
 
@@ -96,8 +101,32 @@ fun main(args: Array<String>) {
         "standards" -> standards()
         "recommend" -> recommend(store, args)
         "apply-standards" -> applyStandards(store, args)
+        "corpus" -> corpus(args)
         "jev" -> jevCheck()
         "run" -> run(store)
+        else -> { println(USAGE); exitProcess(1) }
+    }
+}
+
+private fun corpus(args: Array<String>) {
+    val rest = args.drop(1)
+    fun option(name: String) = rest.zipWithNext().firstOrNull { it.first == name }?.second
+    val positional = rest.filterIndexed { i, a -> !a.startsWith("--") && rest.getOrNull(i - 1)?.startsWith("--") != true }
+    val base = Path.of(option("--base") ?: System.getenv("ILSIM_CORPUS_BASE") ?: "${System.getProperty("user.home")}/programming").toAbsolutePath().normalize()
+    val data = Path.of(option("--data") ?: "ilsim-runner/corpus").toAbsolutePath().normalize()
+    val corpus = com.dochiri.ilsim.runner.corpus.Corpus(data, base)
+    when (positional.firstOrNull()) {
+        "add" -> {
+            if (positional.size != 3) { println(USAGE); exitProcess(1) }
+            val e = corpus.add(positional[1], positional[2])
+            println("추가: ${e.id} ${e.path} (${e.commit.take(7)}). 기준을 저장하려면 corpus update ${e.id}")
+        }
+        "update" -> corpus.update(positional.drop(1)).forEach(::println)
+        "check" -> {
+            val (clean, lines) = corpus.check(positional.drop(1))
+            lines.forEach(::println)
+            if (!clean) exitProcess(1)
+        }
         else -> { println(USAGE); exitProcess(1) }
     }
 }

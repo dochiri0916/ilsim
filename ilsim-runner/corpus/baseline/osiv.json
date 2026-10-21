@@ -1,0 +1,245 @@
+{
+    "id": "osiv",
+    "commit": "c13ca239efd3326dd8ff3ce81ff989c1ab95f66b",
+    "mode": "FLAT",
+    "applicability": "APPLICABLE",
+    "slices": [],
+    "architecture": [
+        {
+            "id": "absent-edge:config>service",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "absent-edge:controller>domain",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "absent-edge:controller>repository",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "confinement:jakarta.persistence",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "confinement:org.springframework.data",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "confinement:org.springframework.stereotype",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "confinement:org.springframework.transaction",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "forbid-edge:repository>config",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "forbid-edge:repository>service",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "forbid-edge:service>controller",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "layer-externals:config",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "layer-externals:controller",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "layer-externals:domain",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "layer-externals:p6spy",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "layer-externals:repository",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "layer-externals:service",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "leaf-unit:domain",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "leaf-unit:p6spy",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "no-cycles:unit",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        }
+    ],
+    "convention": [
+        {
+            "id": "annotation-companion:Entity+Getter",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "annotation-confinement:GeneratedValue",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "annotation-confinement:Getter",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "annotation-confinement:RequiredArgsConstructor",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-confinement:Transactional",
+            "severity": "REVIEW",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "indent-style",
+            "severity": "BLOCK",
+            "compliant": 11,
+            "total": 11
+        },
+        {
+            "id": "max-line-length",
+            "severity": "REVIEW",
+            "compliant": 13,
+            "total": 14
+        },
+        {
+            "id": "no-debug-output",
+            "severity": "BLOCK",
+            "compliant": 14,
+            "total": 14
+        },
+        {
+            "id": "no-field-injection",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "no-wildcard-import",
+            "severity": "BLOCK",
+            "compliant": 89,
+            "total": 89
+        },
+        {
+            "id": "package-suffix:config",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "package-suffix:controller",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "package-suffix:osiv",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "package-suffix:repository",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "package-suffix:service",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "stereotype-package:Component",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "stereotype-package:Entity",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "stereotype-package:RestController",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "stereotype-package:Service",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "test-method-style",
+            "severity": "BLOCK",
+            "compliant": 9,
+            "total": 9
+        }
+    ]
+}

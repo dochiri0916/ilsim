@@ -1,0 +1,364 @@
+{
+    "id": "multi-module",
+    "commit": "febd5716c51dc2b2608b8ea7c28826b0534c7103",
+    "mode": "SLICED",
+    "applicability": "NOT_APPLICABLE",
+    "slices": [
+        "errorhandling",
+        "jpa",
+        "security",
+        "time"
+    ],
+    "architecture": [
+        {
+            "id": "confinement:io.jsonwebtoken",
+            "severity": "BLOCK",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "confinement:io.jsonwebtoken.security",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "confinement:jakarta.persistence",
+            "severity": "BLOCK",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "confinement:jakarta.servlet",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "confinement:jakarta.validation",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "confinement:javax.crypto",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "confinement:lombok",
+            "severity": "BLOCK",
+            "compliant": 17,
+            "total": 17
+        },
+        {
+            "id": "confinement:lombok.extern",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "confinement:org.slf4j",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "confinement:org.springframework.beans",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "confinement:org.springframework.boot",
+            "severity": "BLOCK",
+            "compliant": 28,
+            "total": 28
+        },
+        {
+            "id": "confinement:org.springframework.context",
+            "severity": "BLOCK",
+            "compliant": 17,
+            "total": 17
+        },
+        {
+            "id": "confinement:org.springframework.core",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "confinement:org.springframework.data",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "confinement:org.springframework.http",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "confinement:org.springframework.security",
+            "severity": "BLOCK",
+            "compliant": 8,
+            "total": 8
+        },
+        {
+            "id": "confinement:org.springframework.stereotype",
+            "severity": "BLOCK",
+            "compliant": 21,
+            "total": 21
+        },
+        {
+            "id": "confinement:org.springframework.validation",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "confinement:org.springframework.web",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "leaf-unit:adapter",
+            "severity": "BLOCK",
+            "compliant": 49,
+            "total": 49
+        }
+    ],
+    "convention": [
+        {
+            "id": "annotation-companion:Repository+RequiredArgsConstructor",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-companion:Service+RequiredArgsConstructor",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "annotation-confinement:Column",
+            "severity": "REVIEW",
+            "compliant": 13,
+            "total": 13
+        },
+        {
+            "id": "annotation-confinement:ConditionalOnBean",
+            "severity": "REVIEW",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "annotation-confinement:ConditionalOnWebApplication",
+            "severity": "REVIEW",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "annotation-confinement:ExceptionHandler",
+            "severity": "REVIEW",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "annotation-confinement:Getter",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "annotation-confinement:Import",
+            "severity": "REVIEW",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-confinement:Param",
+            "severity": "REVIEW",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "annotation-confinement:Query",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-confinement:Transactional",
+            "severity": "REVIEW",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "annotation-suffix:AutoConfiguration",
+            "severity": "BLOCK",
+            "compliant": 16,
+            "total": 16
+        },
+        {
+            "id": "annotation-suffix:ConfigurationProperties",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-suffix:EnableConfigurationProperties",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-suffix:EntityListeners",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "annotation-suffix:Repository",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-suffix:RestControllerAdvice",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "annotation-suffix:Service",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "domain-final-fields",
+            "severity": "BLOCK",
+            "compliant": 10,
+            "total": 10
+        },
+        {
+            "id": "functional-interface",
+            "severity": "REVIEW",
+            "compliant": 12,
+            "total": 13
+        },
+        {
+            "id": "indent-style",
+            "severity": "REVIEW",
+            "compliant": 112,
+            "total": 116
+        },
+        {
+            "id": "max-line-length",
+            "severity": "BLOCK",
+            "compliant": 123,
+            "total": 123
+        },
+        {
+            "id": "no-debug-output",
+            "severity": "BLOCK",
+            "compliant": 123,
+            "total": 123
+        },
+        {
+            "id": "no-field-injection",
+            "severity": "BLOCK",
+            "compliant": 27,
+            "total": 27
+        },
+        {
+            "id": "no-value-annotation",
+            "severity": "BLOCK",
+            "compliant": 117,
+            "total": 117
+        },
+        {
+            "id": "no-wildcard-import",
+            "severity": "BLOCK",
+            "compliant": 625,
+            "total": 625
+        },
+        {
+            "id": "package-method:exception.code",
+            "severity": "BLOCK",
+            "compliant": 23,
+            "total": 23
+        },
+        {
+            "id": "package-method:service.execute",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "package-suffix:audit",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "package-suffix:exception",
+            "severity": "BLOCK",
+            "compliant": 23,
+            "total": 23
+        },
+        {
+            "id": "package-suffix:issuer",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "package-suffix:jwt",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "package-suffix:service",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "stereotype-package:Entity",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "stereotype-package:Repository",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "stereotype-package:Service",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "test-class-suffix",
+            "severity": "REVIEW",
+            "compliant": 52,
+            "total": 55
+        },
+        {
+            "id": "test-method-style",
+            "severity": "BLOCK",
+            "compliant": 189,
+            "total": 189
+        }
+    ]
+}

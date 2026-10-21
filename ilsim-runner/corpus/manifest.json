@@ -1,0 +1,34 @@
+{
+    "projects": [
+        {
+            "id": "java-ref",
+            "path": "laboratory/java-conventions-reference",
+            "commit": "fdf6f307eb6163e61aec1d450a89f6cbc1058872+42d0418a"
+        },
+        {
+            "id": "kotlin-ref",
+            "path": "laboratory/kotlin-conventions-reference",
+            "commit": "ca18b9c7f7e12bf91af84a61e51ac9f84ca3ced7"
+        },
+        {
+            "id": "haru-simgi",
+            "path": "project/haru-simgi",
+            "commit": "67c9c9f0b49e8bea8afb4be78431e289d93cda4f+95582933"
+        },
+        {
+            "id": "multi-module",
+            "path": "utility/multi-module",
+            "commit": "febd5716c51dc2b2608b8ea7c28826b0534c7103"
+        },
+        {
+            "id": "osiv",
+            "path": "utility/ilsim-osiv",
+            "commit": "c13ca239efd3326dd8ff3ce81ff989c1ab95f66b"
+        },
+        {
+            "id": "kafka-traffic-lab",
+            "path": "laboratory/kafka-traffic-lab",
+            "commit": "9b76c81d8e3e061a0cb5b2818b2d5ed8126180c1"
+        }
+    ]
+}

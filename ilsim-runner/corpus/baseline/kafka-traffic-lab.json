@@ -1,0 +1,394 @@
+{
+    "id": "kafka-traffic-lab",
+    "commit": "9b76c81d8e3e061a0cb5b2818b2d5ed8126180c1",
+    "mode": "SLICED",
+    "applicability": "APPLICABLE",
+    "slices": [
+        "order",
+        "outbox",
+        "product",
+        "productstock"
+    ],
+    "architecture": [
+        {
+            "id": "confinement:jakarta",
+            "severity": "BLOCK",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "confinement:jakarta.persistence",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "confinement:jakarta.validation",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "confinement:org.apache.kafka",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "confinement:org.springframework.context",
+            "severity": "BLOCK",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "confinement:org.springframework.data",
+            "severity": "BLOCK",
+            "compliant": 8,
+            "total": 8
+        },
+        {
+            "id": "confinement:org.springframework.kafka",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "confinement:org.springframework.scheduling",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "confinement:tools.jackson.databind",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "cross-slice-targets",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "forbid-edge:application>adapter",
+            "severity": "BLOCK",
+            "compliant": 19,
+            "total": 19
+        },
+        {
+            "id": "layer-externals:application",
+            "severity": "REVIEW",
+            "compliant": 69,
+            "total": 69
+        },
+        {
+            "id": "layer-externals:domain",
+            "severity": "REVIEW",
+            "compliant": 18,
+            "total": 18
+        },
+        {
+            "id": "leaf-unit:domain",
+            "severity": "BLOCK",
+            "compliant": 18,
+            "total": 18
+        },
+        {
+            "id": "no-cycles:slice",
+            "severity": "BLOCK",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "no-cycles:unit",
+            "severity": "BLOCK",
+            "compliant": 3,
+            "total": 3
+        }
+    ],
+    "convention": [
+        {
+            "id": "annotation-companion:Entity+NoArgsConstructor",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-companion:Repository+RequiredArgsConstructor",
+            "severity": "BLOCK",
+            "compliant": 9,
+            "total": 9
+        },
+        {
+            "id": "annotation-companion:RestController+RequestMapping",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-companion:Service+RequiredArgsConstructor",
+            "severity": "BLOCK",
+            "compliant": 10,
+            "total": 10
+        },
+        {
+            "id": "annotation-confinement:Bean",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "annotation-confinement:Column",
+            "severity": "REVIEW",
+            "compliant": 39,
+            "total": 39
+        },
+        {
+            "id": "annotation-confinement:Enumerated",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-confinement:GeneratedValue",
+            "severity": "REVIEW",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-confinement:Getter",
+            "severity": "REVIEW",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "annotation-confinement:Header",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-confinement:KafkaListener",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-confinement:Modifying",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "annotation-confinement:NoArgsConstructor",
+            "severity": "REVIEW",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-confinement:Param",
+            "severity": "REVIEW",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "annotation-confinement:Positive",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-confinement:PostMapping",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "annotation-confinement:RequestBody",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "annotation-confinement:RequestMapping",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-confinement:Transactional",
+            "severity": "REVIEW",
+            "compliant": 10,
+            "total": 10
+        },
+        {
+            "id": "annotation-confinement:Version",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-suffix:Configuration",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-suffix:Repository",
+            "severity": "BLOCK",
+            "compliant": 9,
+            "total": 9
+        },
+        {
+            "id": "annotation-suffix:RestController",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-suffix:Service",
+            "severity": "BLOCK",
+            "compliant": 10,
+            "total": 10
+        },
+        {
+            "id": "indent-style",
+            "severity": "BLOCK",
+            "compliant": 93,
+            "total": 93
+        },
+        {
+            "id": "max-line-length",
+            "severity": "BLOCK",
+            "compliant": 128,
+            "total": 129
+        },
+        {
+            "id": "no-debug-output",
+            "severity": "BLOCK",
+            "compliant": 129,
+            "total": 129
+        },
+        {
+            "id": "no-field-injection",
+            "severity": "BLOCK",
+            "compliant": 31,
+            "total": 31
+        },
+        {
+            "id": "no-wildcard-import",
+            "severity": "BLOCK",
+            "compliant": 448,
+            "total": 454
+        },
+        {
+            "id": "package-method:service.execute",
+            "severity": "BLOCK",
+            "compliant": 10,
+            "total": 10
+        },
+        {
+            "id": "package-suffix:command",
+            "severity": "BLOCK",
+            "compliant": 9,
+            "total": 9
+        },
+        {
+            "id": "package-suffix:exception",
+            "severity": "BLOCK",
+            "compliant": 9,
+            "total": 9
+        },
+        {
+            "id": "package-suffix:in",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "package-suffix:kafkatrafficlab",
+            "severity": "REVIEW",
+            "compliant": 1,
+            "total": 1
+        },
+        {
+            "id": "package-suffix:out",
+            "severity": "REVIEW",
+            "compliant": 17,
+            "total": 18
+        },
+        {
+            "id": "package-suffix:outbox",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "package-suffix:query",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "package-suffix:request",
+            "severity": "BLOCK",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "package-suffix:response",
+            "severity": "BLOCK",
+            "compliant": 5,
+            "total": 5
+        },
+        {
+            "id": "package-suffix:result",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "package-suffix:service",
+            "severity": "BLOCK",
+            "compliant": 10,
+            "total": 10
+        },
+        {
+            "id": "package-suffix:usecase",
+            "severity": "BLOCK",
+            "compliant": 9,
+            "total": 9
+        },
+        {
+            "id": "package-suffix:web",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "parameter-final",
+            "severity": "BLOCK",
+            "compliant": 108,
+            "total": 109
+        },
+        {
+            "id": "stereotype-package:Entity",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "stereotype-package:RestController",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "stereotype-package:Service",
+            "severity": "BLOCK",
+            "compliant": 10,
+            "total": 10
+        }
+    ]
+}
