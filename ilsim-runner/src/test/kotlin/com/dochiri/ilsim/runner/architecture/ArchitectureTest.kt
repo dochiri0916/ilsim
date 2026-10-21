@@ -84,6 +84,21 @@ class ArchitectureTest {
     }
 
     @Test
+    fun `한 모듈만 전체 레이어를 가지면 그 모듈의 레이어를 다른 어댑터 모듈에도 적용한다`() {
+        val m = mine(project(
+            kt("com.acme.security.adapter.web", "SecurityController", "com.acme.security.application.Login"),
+            kt("com.acme.security.application", "Login", "com.acme.security.domain.Account"),
+            kt("com.acme.security.domain", "Account"),
+            kt("com.acme.jpa.adapter.persistence", "JpaConfig"),
+            kt("com.acme.time.adapter.clock", "ClockConfig"),
+            kt("com.acme.errors.adapter.web", "ErrorAdvice"),
+        ))
+        assertEquals(listOf("errors", "jpa", "security", "time"), m.layout.slices)
+        assertEquals(listOf("adapter", "application", "domain"), m.layout.layerNames)
+        assertEquals("domain", Locator(m.layout).locate("com.acme.security.domain").unit)
+    }
+
+    @Test
     fun `반복 구조를 이름 템플릿 없이 슬라이스와 레이어로 추론한다`() {
         val m = mine(project(*slicedFiles()))
         assertEquals("SLICED", m.layout.mode)

@@ -60,6 +60,17 @@ internal object LayoutInference {
     private fun repeated(parents: Map<String, Set<String>>): Set<String> =
         parents.values.flatten().groupingBy { it }.eachCount().filterValues { it >= 2 }.keys
 
+    private const val MIN_ANCHOR_LAYERS = 3
+
+    private fun anchored(children: Map<String, Set<String>>, candidates: Set<String>): Pair<List<String>, Set<String>>? {
+        if (candidates.isEmpty()) return null
+        val anchor = children.entries.filter { it.value.size >= MIN_ANCHOR_LAYERS && it.value.any { n -> n in candidates } }
+            .maxByOrNull { it.value.size } ?: return null
+        val layers = anchor.value
+        val slices = children.filterValues { names -> names.any { it in layers } }.keys
+        return if (slices.size >= 3) slices.toList() to layers else null
+    }
+
     private fun strict(rels: List<List<String>>, children: Map<String, Set<String>>): Pair<List<String>, Set<String>>? {
         val grand = linkedMapOf<String, MutableSet<String>>()
         rels.filter { it.size >= 3 }.forEach { grand.getOrPut("${it[0]}.${it[1]}") { linkedSetOf() } += it[2] }
@@ -69,7 +80,7 @@ internal object LayoutInference {
         val firstTop = qualified(children, candidates)
         val firstNested = qualified(grand.filterKeys { it.substringBefore('.') !in firstTop }, candidates)
         val layers = repeated(firstTop + firstNested)
-        if (layers.isEmpty()) return null
+        if (layers.isEmpty()) return anchored(children, candidates)
         val top = qualified(children, layers).keys
         val nested = qualified(grand.filterKeys { it.substringBefore('.') !in top }, layers).keys
         val slices = top + nested

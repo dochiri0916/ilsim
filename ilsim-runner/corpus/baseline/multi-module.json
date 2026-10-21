@@ -2,7 +2,7 @@
     "id": "multi-module",
     "commit": "febd5716c51dc2b2608b8ea7c28826b0534c7103",
     "mode": "SLICED",
-    "applicability": "NOT_APPLICABLE",
+    "applicability": "PARTIAL",
     "slices": [
         "errorhandling",
         "jpa",
@@ -45,12 +45,6 @@
             "severity": "REVIEW",
             "compliant": 3,
             "total": 3
-        },
-        {
-            "id": "confinement:lombok",
-            "severity": "BLOCK",
-            "compliant": 17,
-            "total": 17
         },
         {
             "id": "confinement:lombok.extern",
@@ -107,12 +101,6 @@
             "total": 8
         },
         {
-            "id": "confinement:org.springframework.stereotype",
-            "severity": "BLOCK",
-            "compliant": 21,
-            "total": 21
-        },
-        {
             "id": "confinement:org.springframework.validation",
             "severity": "REVIEW",
             "compliant": 2,
@@ -125,10 +113,34 @@
             "total": 7
         },
         {
-            "id": "leaf-unit:adapter",
+            "id": "forbid-edge:application>adapter",
             "severity": "BLOCK",
-            "compliant": 49,
-            "total": 49
+            "compliant": 18,
+            "total": 18
+        },
+        {
+            "id": "layer-externals:application",
+            "severity": "REVIEW",
+            "compliant": 52,
+            "total": 52
+        },
+        {
+            "id": "leaf-unit:domain",
+            "severity": "BLOCK",
+            "compliant": 22,
+            "total": 22
+        },
+        {
+            "id": "no-cycles:unit",
+            "severity": "BLOCK",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "pure-layer:domain",
+            "severity": "BLOCK",
+            "compliant": 22,
+            "total": 22
         }
     ],
     "convention": [
