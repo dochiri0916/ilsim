@@ -61,6 +61,10 @@ internal object CodeText {
     private val javaMethod = Regex("""^\s*(?:@\w+\s+)*(?:(?:public|protected|private|static|final|synchronized|abstract|default|native)\s+)*(?:<[^>]+>\s+)?([\w.<>\[\], ?]+)\s+(\w+)\s*\(""")
     private val keywords = setOf("if", "for", "while", "switch", "catch", "return", "new", "else", "try", "do", "synchronized", "throw", "case")
 
+    fun functionNames(file: ConvFile): List<String> =
+        if (file.lang == "kotlin") file.view.code.mapNotNull { ktFun.find(it)?.groupValues?.get(1)?.trim('`') }
+        else functions(file).map { it.name }
+
     fun functions(file: ConvFile): List<FunctionSpan> {
         val code = file.view.code
         val out = mutableListOf<FunctionSpan>()

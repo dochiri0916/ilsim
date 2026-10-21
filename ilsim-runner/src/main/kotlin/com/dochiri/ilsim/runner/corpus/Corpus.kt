@@ -24,6 +24,12 @@ data class CorpusManifest(val projects: List<CorpusEntry> = emptyList())
 data class RuleStat(val id: String, val severity: String, val compliant: Int, val total: Int)
 
 @Serializable
+data class Label(val id: String, val note: String = "")
+
+@Serializable
+data class Labels(val correct: List<Label> = emptyList(), val wrong: List<Label> = emptyList(), val expect: List<Label> = emptyList())
+
+@Serializable
 data class CorpusSnapshot(
     val id: String,
     val commit: String,
@@ -38,6 +44,24 @@ class Corpus(private val data: Path, private val base: Path) {
     private val json = Json { prettyPrint = true; encodeDefaults = true }
     private val manifestFile get() = data.resolve("manifest.json")
     private fun baselineFile(id: String) = data.resolve("baseline").resolve("$id.json")
+    private fun labelFile(id: String) = data.resolve("labels").resolve("$id.json")
+
+    fun labels(id: String): Labels = labelFile(id).let { if (it.exists()) json.decodeFromString(it.readText()) else Labels() }
+
+    fun addLabels(id: String, kind: String, items: List<Label>): Labels {
+        require(manifest().projects.any { it.id == id }) { "목록에 없는 프로젝트: $id" }
+        val cur = labels(id)
+        fun merge(old: List<Label>) = (old.filter { o -> items.none { it.id == o.id } } + items).sortedBy { it.id }
+        val next = when (kind) {
+            "correct" -> cur.copy(correct = merge(cur.correct), wrong = cur.wrong.filter { w -> items.none { it.id == w.id } })
+            "wrong" -> cur.copy(wrong = merge(cur.wrong), correct = cur.correct.filter { c -> items.none { it.id == c.id } })
+            "expect" -> cur.copy(expect = merge(cur.expect))
+            else -> throw IllegalArgumentException("라벨 종류는 correct|wrong|expect 입니다: $kind")
+        }
+        Files.createDirectories(labelFile(id).parent)
+        labelFile(id).writeText(json.encodeToString(next) + "\n")
+        return next
+    }
 
     fun manifest(): CorpusManifest = if (manifestFile.exists()) json.decodeFromString(manifestFile.readText()) else CorpusManifest()
 
@@ -96,8 +120,14 @@ class Corpus(private val data: Path, private val base: Path) {
             if (commit != e.commit) { lines += "${e.id}: 건너뜀 (기준 커밋 ${short(e.commit)} 와 다름: ${short(commit)})"; clean = false; continue }
             val file = baselineFile(e.id)
             if (!file.exists()) { lines += "${e.id}: 기준 없음 (corpus update 필요)"; clean = false; continue }
-            val diff = diff(json.decodeFromString(file.readText()), snapshot(e.id, dir, commit))
-            if (diff.isEmpty()) lines += "${e.id}: 변화 없음" else { clean = false; lines += "${e.id}: 변화 ${diff.size}건"; lines += diff.map { "  $it" } }
+            val current = snapshot(e.id, dir, commit)
+            val diff = diff(json.decodeFromString(file.readText()), current)
+            val labels = labels(e.id)
+            val problems = labelProblems(labels, current)
+            val total = labels.correct.size + labels.wrong.size + labels.expect.size
+            val quality = if (total == 0) "" else " · 라벨 ${total - problems.size}/$total 충족"
+            if (diff.isEmpty() && problems.isEmpty()) lines += "${e.id}: 변화 없음$quality"
+            else { clean = false; lines += "${e.id}: 변화 ${diff.size}건 · 라벨 문제 ${problems.size}건$quality"; lines += (diff + problems).map { "  $it" } }
         }
         return clean to lines
     }
@@ -119,6 +149,13 @@ class Corpus(private val data: Path, private val base: Path) {
                 arch.rules.map { RuleStat(it.id, it.proposedSeverity, it.evidence.compliant, it.evidence.total) }.sortedBy { it.id },
                 conv.rules.map { RuleStat(it.id, it.severity, it.evidence.compliant, it.evidence.total) }.sortedBy { it.id },
             )
+        }
+
+        fun labelProblems(labels: Labels, snap: CorpusSnapshot): List<String> {
+            val ids = (snap.architecture + snap.convention).map { it.id }.toSet()
+            return labels.correct.filter { it.id !in ids }.map { "맞다고 표시한 규칙이 사라짐: ${it.id}" } +
+                labels.wrong.filter { it.id in ids }.map { "틀리다고 표시한 규칙이 채굴됨: ${it.id}${if (it.note.isEmpty()) "" else " (${it.note})"}" } +
+                labels.expect.filter { x -> ids.none { it.startsWith(x.id) } }.map { "기대한 규칙이 채굴되지 않음: ${it.id}${if (it.note.isEmpty()) "" else " (${it.note})"}" }
         }
 
         fun diff(old: CorpusSnapshot, new: CorpusSnapshot): List<String> {

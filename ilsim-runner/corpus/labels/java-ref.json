@@ -1,0 +1,83 @@
+{
+    "correct": [],
+    "wrong": [
+        {
+            "id": "annotation-suffix:Getter",
+            "note": "우연의 일치"
+        },
+        {
+            "id": "annotation-suffix:Order",
+            "note": "우연의 일치"
+        },
+        {
+            "id": "shared-independence",
+            "note": "중첩 BC 오분류"
+        }
+    ],
+    "expect": [
+        {
+            "id": "class-final",
+            "note": "문서: Java final 관례"
+        },
+        {
+            "id": "confinement:jakarta.persistence",
+            "note": "문서: JPA는 영속 어댑터에만"
+        },
+        {
+            "id": "domain-final-fields",
+            "note": "문서: Java final 관례"
+        },
+        {
+            "id": "forbid-edge:application>adapter",
+            "note": "문서: application은 adapter에 의존하지 않는다"
+        },
+        {
+            "id": "forbid-edge:domain>adapter",
+            "note": "문서: domain은 adapter에 의존하지 않는다"
+        },
+        {
+            "id": "forbid-edge:domain>application",
+            "note": "문서: domain은 application에 의존하지 않는다"
+        },
+        {
+            "id": "no-field-injection",
+            "note": "문서: 생성자 주입"
+        },
+        {
+            "id": "no-value-annotation",
+            "note": "문서: @Value 대신 ConfigurationProperties"
+        },
+        {
+            "id": "no-wildcard-import",
+            "note": "문서: 와일드카드 import 금지"
+        },
+        {
+            "id": "package-method:request.toCommand",
+            "note": "문서: Request는 toCommand"
+        },
+        {
+            "id": "package-method:vo.of",
+            "note": "문서: VO 팩터리 of"
+        },
+        {
+            "id": "package-suffix:usecase",
+            "note": "문서: usecase 패키지는 UseCase"
+        },
+        {
+            "id": "parameter-final",
+            "note": "문서: Java final 관례"
+        },
+        {
+            "id": "readonly-transactions",
+            "note": "문서: 조회는 readOnly"
+        },
+        {
+            "id": "test-method-style",
+            "note": "문서: 테스트 메서드 snake_case"
+        },
+        {
+            "id": "vo-private-constructor",
+            "note": "문서: VO 생성자는 private"
+        }
+    ]
+}

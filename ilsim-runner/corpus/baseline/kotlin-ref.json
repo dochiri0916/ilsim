@@ -394,6 +394,24 @@
             "total": 1699
         },
         {
+            "id": "package-method:domain.create",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "package-method:request.toCommand",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "package-method:vo.of",
+            "severity": "REVIEW",
+            "compliant": 36,
+            "total": 37
+        },
+        {
             "id": "package-suffix:application",
             "severity": "BLOCK",
             "compliant": 12,

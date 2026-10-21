@@ -160,11 +160,13 @@ internal object DomainFinalFields : Probe("domain-final-fields") {
 internal object PackageMethod : Probe("package-method", minSamples = 5) {
     private val skipPrefix = Regex("""^(get|set|is|has|with|equals|hashCode|toString|main|copy|component\d*|values|valueOf)""")
 
-    private fun byPackage(f: Facts) = f.main.filter { it.types.isNotEmpty() }.groupBy { it.pkg.substringAfterLast('.') }
+    private fun isEnum(c: ConvFile) = c.types.firstOrNull { it.topLevel }?.let { Regex("""\benum\b""").containsMatchIn(c.declaration(it)) } == true
+
+    private fun byPackage(f: Facts) = f.main.filter { it.types.isNotEmpty() && !isEnum(it) }.groupBy { it.pkg.substringAfterLast('.') }
 
     private fun names(c: ConvFile): Set<String> {
         val types = c.types.map { it.name }.toSet()
-        return CodeText.functions(c).map { it.name }.filter { it !in types && !skipPrefix.containsMatchIn(it) }.toSet()
+        return CodeText.functionNames(c).filter { it !in types && !skipPrefix.containsMatchIn(it) }.toSet()
     }
 
     override fun candidates(f: Facts): List<Candidate> =

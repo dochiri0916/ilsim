@@ -67,7 +67,9 @@ private const val USAGE = """사용법:
   시험용 프로젝트 모음(채굴 회귀 확인, AI 없음)
     ilsim-runner corpus add <id> <기준 폴더 기준 상대경로>   프로젝트 추가(현재 HEAD 고정)
     ilsim-runner corpus update [id...]           현재 채굴 결과를 기준으로 저장
-    ilsim-runner corpus check [id...]            기준과 비교(변화·커밋 불일치 시 종료 코드 1)
+    ilsim-runner corpus check [id...]            기준과 비교(변화·라벨 문제·커밋 불일치 시 종료 코드 1)
+    ilsim-runner corpus label <id> correct|wrong|expect <규칙id> [메모...]   정답 라벨(expect는 id 접두사로 기대한 규칙)
+    ilsim-runner corpus export <id> <등록한 프로젝트 id>   웹·CLI에서 사용자가 승인/거절한 규칙을 라벨로 가져오기
                                                  옵션: --base <폴더>(기본 ILSIM_CORPUS_BASE 또는 ~/programming), --data <폴더>(기본 ilsim-runner/corpus)
   JEV
     ilsim-runner jev                            JEV 연결 확인 (환경 변수 TYPESAFE_API_KEY 필요)
@@ -122,6 +124,21 @@ private fun corpus(args: Array<String>) {
             println("추가: ${e.id} ${e.path} (${e.commit.take(7)}). 기준을 저장하려면 corpus update ${e.id}")
         }
         "update" -> corpus.update(positional.drop(1)).forEach(::println)
+        "label" -> {
+            if (positional.size < 4) { println(USAGE); exitProcess(1) }
+            val labels = corpus.addLabels(positional[1], positional[2], listOf(com.dochiri.ilsim.runner.corpus.Label(positional[3], positional.drop(4).joinToString(" "))))
+            println("라벨: 맞다 ${labels.correct.size} · 틀리다 ${labels.wrong.size} · 기대 ${labels.expect.size}")
+        }
+        "export" -> {
+            if (positional.size != 3) { println(USAGE); exitProcess(1) }
+            val store = ConfigStore()
+            val arch = ArchitectureStore(store).load(positional[2])?.rules.orEmpty().map { Triple(it.id, it.decidedBy, it.approved to it.rejected) }
+            val conv = ConventionStore(store).load(positional[2])?.rules.orEmpty().map { Triple(it.id, it.decidedBy, it.approved to it.rejected) }
+            val user = (arch + conv).filter { it.second == "user" && !Recommendations.isRecommended(it.first) }
+            corpus.addLabels(positional[1], "correct", user.filter { it.third.first }.map { com.dochiri.ilsim.runner.corpus.Label(it.first, "사용자 승인") })
+            val labels = corpus.addLabels(positional[1], "wrong", user.filter { it.third.second }.map { com.dochiri.ilsim.runner.corpus.Label(it.first, "사용자 거절") })
+            println("가져옴: 승인 ${user.count { it.third.first }} · 거절 ${user.count { it.third.second }} (라벨 맞다 ${labels.correct.size} · 틀리다 ${labels.wrong.size})")
+        }
         "check" -> {
             val (clean, lines) = corpus.check(positional.drop(1))
             lines.forEach(::println)

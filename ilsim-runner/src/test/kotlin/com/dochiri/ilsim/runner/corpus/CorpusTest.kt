@@ -29,6 +29,36 @@ class CorpusTest {
     }
 
     @Test
+    fun `라벨은 맞다고 한 규칙이 사라지거나 틀리다고 한 규칙이 채굴되거나 기대한 규칙이 없으면 문제로 알린다`() {
+        val snap = snapshot(listOf(RuleStat("keep", "BLOCK", 5, 5), RuleStat("bad", "BLOCK", 5, 5), RuleStat("pkg:a.b", "BLOCK", 5, 5)))
+        val labels = Labels(
+            correct = listOf(Label("keep"), Label("gone")),
+            wrong = listOf(Label("bad", "우연"), Label("never")),
+            expect = listOf(Label("pkg:a"), Label("pkg:z")),
+        )
+        val problems = Corpus.labelProblems(labels, snap)
+        assertEquals(3, problems.size)
+        assertTrue(problems.any { it.contains("사라짐: gone") })
+        assertTrue(problems.any { it.contains("채굴됨: bad (우연)") })
+        assertTrue(problems.any { it.contains("채굴되지 않음: pkg:z") })
+    }
+
+    @Test
+    fun `라벨을 바꾸면 반대 목록에서 빠지고 같은 id는 덮어쓴다`() {
+        val data = Files.createTempDirectory("ilsim-corpus-data")
+        val base = Files.createTempDirectory("ilsim-corpus-base")
+        val dir = base.resolve("p").also { it.createDirectories() }
+        Shell.gitOk(dir, "init", "-q")
+        Shell.gitOk(dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init")
+        val corpus = Corpus(data, base)
+        corpus.add("p", "p")
+        corpus.addLabels("p", "correct", listOf(Label("r1"), Label("r2")))
+        val next = corpus.addLabels("p", "wrong", listOf(Label("r1", "아님")))
+        assertEquals(listOf("r2"), next.correct.map { it.id })
+        assertEquals(listOf("아님"), next.wrong.map { it.note })
+    }
+
+    @Test
     fun `기준을 저장한 뒤 같은 상태면 변화가 없고 코드가 바뀌면 건너뛴다`() {
         val base = Files.createTempDirectory("ilsim-corpus-base")
         val data = Files.createTempDirectory("ilsim-corpus-data")
