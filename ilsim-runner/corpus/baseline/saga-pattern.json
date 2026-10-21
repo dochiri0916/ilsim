@@ -427,12 +427,6 @@
             "total": 5
         },
         {
-            "id": "package-suffix:inventory",
-            "severity": "REVIEW",
-            "compliant": 1,
-            "total": 1
-        },
-        {
             "id": "package-suffix:mapper",
             "severity": "BLOCK",
             "compliant": 6,
@@ -497,12 +491,6 @@
             "severity": "REVIEW",
             "compliant": 20,
             "total": 21
-        },
-        {
-            "id": "package-suffix:shipping",
-            "severity": "REVIEW",
-            "compliant": 1,
-            "total": 1
         },
         {
             "id": "stereotype-package:Repository",

@@ -158,7 +158,7 @@ internal object DomainFinalFields : Probe("domain-final-fields") {
 }
 
 internal object PackageMethod : Probe("package-method", minSamples = 5) {
-    private val skipPrefix = Regex("""^(get|set|is|has|with|equals|hashCode|toString|main|copy|component\d*|values|valueOf)""")
+    private val skipPrefix = Regex("""^((?:get|set|is|has|with)(?:[A-Z_\d]|$)|equals|hashCode|toString|main|copy|component\d*|values|valueOf)""")
 
     private fun isEnum(c: ConvFile) = c.types.firstOrNull { it.topLevel }?.let { Regex("""\benum\b""").containsMatchIn(c.declaration(it)) } == true
 

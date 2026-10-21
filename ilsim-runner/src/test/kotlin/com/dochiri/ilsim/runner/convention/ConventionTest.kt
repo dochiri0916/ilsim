@@ -157,6 +157,17 @@ class ConventionTest {
     }
 
     @Test
+    fun `@SpringBootApplication 타입은 패키지 접미사 규칙을 만들지 않는다`() {
+        val files = mapOf(
+            "src/main/java/com/x/ShopApplication.java" to "package com.x;\n\n@SpringBootApplication\npublic class ShopApplication {\n}\n",
+            "src/main/java/com/x/service/OrderService.java" to "package com.x.service;\n\n@Service\npublic class OrderService {\n}\n",
+        )
+        val ids = mine(files).rules.map { it.id }
+        assertTrue("package-suffix:x" !in ids)
+        assertTrue("package-suffix:service" in ids)
+    }
+
+    @Test
     fun `역할 어노테이션이 아닌 어노테이션의 이름 접미사 규칙은 어노테이션 이름과 무관하면 만들지 않는다`() {
         val entity = { n: String -> "src/main/java/com/x/persistence/${n}Entity.java" to
             "package com.x.persistence;\n\n@Getter\npublic class ${n}Entity {\n}\n" }

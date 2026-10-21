@@ -52,7 +52,7 @@ object ConventionMiner {
         }
 
     private fun merge(rules: List<ConventionRule>, signatures: Map<String, String>): List<ConventionRule> =
-        rules.groupBy { signatures.getValue(it.id) }.values.map { group ->
+        rules.groupBy { if ("annotation" in it.params) signatures.getValue(it.id) else it.id }.values.map { group ->
             val ordered = group.sortedBy { if (it.params["annotation"]?.firstOrNull() in Probes.roleAnnotations) 0 else 1 }
             val head = ordered.first()
             val same = ordered.drop(1).mapNotNull { it.params["annotation"]?.firstOrNull() }

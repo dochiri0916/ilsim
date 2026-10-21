@@ -5,16 +5,11 @@
     "applicability": "APPLICABLE",
     "slices": [
         "order",
+        "outbox",
         "product",
         "productstock"
     ],
     "architecture": [
-        {
-            "id": "absent-edge:application>shared:outbox",
-            "severity": "REVIEW",
-            "compliant": 61,
-            "total": 61
-        },
         {
             "id": "confinement:jakarta",
             "severity": "BLOCK",
@@ -32,12 +27,6 @@
             "severity": "REVIEW",
             "compliant": 3,
             "total": 3
-        },
-        {
-            "id": "confinement:lombok.extern",
-            "severity": "BLOCK",
-            "compliant": 5,
-            "total": 5
         },
         {
             "id": "confinement:org.apache.kafka",
@@ -58,12 +47,6 @@
             "total": 8
         },
         {
-            "id": "confinement:org.springframework.http",
-            "severity": "REVIEW",
-            "compliant": 4,
-            "total": 4
-        },
-        {
             "id": "confinement:org.springframework.kafka",
             "severity": "BLOCK",
             "compliant": 6,
@@ -76,69 +59,63 @@
             "total": 2
         },
         {
-            "id": "confinement:org.springframework.transaction",
-            "severity": "BLOCK",
-            "compliant": 11,
-            "total": 11
-        },
-        {
-            "id": "confinement:org.springframework.web",
-            "severity": "REVIEW",
-            "compliant": 4,
-            "total": 4
-        },
-        {
             "id": "confinement:tools.jackson.databind",
             "severity": "REVIEW",
             "compliant": 3,
             "total": 3
         },
         {
+            "id": "cross-slice-targets",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
             "id": "forbid-edge:application>adapter",
             "severity": "BLOCK",
-            "compliant": 15,
-            "total": 15
+            "compliant": 19,
+            "total": 19
         },
         {
             "id": "layer-externals:application",
             "severity": "REVIEW",
-            "compliant": 61,
-            "total": 61
+            "compliant": 69,
+            "total": 69
         },
         {
             "id": "layer-externals:domain",
             "severity": "REVIEW",
-            "compliant": 14,
-            "total": 14
+            "compliant": 18,
+            "total": 18
         },
         {
             "id": "leaf-unit:domain",
-            "severity": "BLOCK",
-            "compliant": 14,
-            "total": 14
-        },
-        {
-            "id": "leaf-unit:shared:outbox",
             "severity": "BLOCK",
             "compliant": 18,
             "total": 18
         },
         {
-            "id": "no-cycles:unit",
-            "severity": "BLOCK",
-            "compliant": 4,
-            "total": 4
-        },
-        {
-            "id": "shared-independence",
+            "id": "no-cycles:slice",
             "severity": "BLOCK",
             "compliant": 2,
             "total": 2
+        },
+        {
+            "id": "no-cycles:unit",
+            "severity": "BLOCK",
+            "compliant": 3,
+            "total": 3
         }
     ],
     "convention": [
         {
             "id": "annotation-companion:Entity+NoArgsConstructor",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-companion:Entity+Table",
             "severity": "BLOCK",
             "compliant": 7,
             "total": 7
@@ -151,6 +128,12 @@
         },
         {
             "id": "annotation-companion:RestController+RequestMapping",
+            "severity": "REVIEW",
+            "compliant": 3,
+            "total": 3
+        },
+        {
+            "id": "annotation-companion:RestController+RequiredArgsConstructor",
             "severity": "REVIEW",
             "compliant": 3,
             "total": 3
@@ -331,12 +314,6 @@
         },
         {
             "id": "package-suffix:in",
-            "severity": "REVIEW",
-            "compliant": 1,
-            "total": 1
-        },
-        {
-            "id": "package-suffix:kafkatrafficlab",
             "severity": "REVIEW",
             "compliant": 1,
             "total": 1

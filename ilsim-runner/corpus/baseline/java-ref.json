@@ -183,6 +183,12 @@
             "total": 18
         },
         {
+            "id": "annotation-companion:Entity+Table",
+            "severity": "BLOCK",
+            "compliant": 18,
+            "total": 18
+        },
+        {
             "id": "annotation-companion:Repository+RequiredArgsConstructor",
             "severity": "BLOCK",
             "compliant": 11,
@@ -190,6 +196,18 @@
         },
         {
             "id": "annotation-companion:RestController+RequestMapping",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-companion:RestController+RequiredArgsConstructor",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-companion:RestController+Tag",
             "severity": "BLOCK",
             "compliant": 7,
             "total": 7
@@ -465,6 +483,18 @@
             "total": 6
         },
         {
+            "id": "package-method:domain.id",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
+            "id": "package-method:domain.restore",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
             "id": "package-method:request.toCommand",
             "severity": "BLOCK",
             "compliant": 7,
@@ -529,12 +559,6 @@
             "severity": "BLOCK",
             "compliant": 26,
             "total": 26
-        },
-        {
-            "id": "package-suffix:tooltestlab",
-            "severity": "REVIEW",
-            "compliant": 1,
-            "total": 1
         },
         {
             "id": "package-suffix:usecase",

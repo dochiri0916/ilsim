@@ -247,7 +247,9 @@ internal object Probes {
     }
 
     object PackageSuffix : Probe("package-suffix", minSamples = 1) {
-        private fun byPackage(f: Facts) = f.main.flatMap { c -> c.types.filter { it.topLevel }.map { c.pkg to it } }
+        private fun checked(c: ConvFile) = c.types.filter { it.topLevel && "SpringBootApplication" !in it.annotations }
+
+        private fun byPackage(f: Facts) = f.main.flatMap { c -> checked(c).map { c.pkg to it } }
             .groupBy({ it.first.substringAfterLast('.') }, { it.second })
 
         override fun candidates(f: Facts): List<Candidate> =
@@ -260,7 +262,7 @@ internal object Probes {
             val seg = one(params, "segment"); val suffix = one(params, "suffix")
             return f.main.flatMap { c ->
                 if (c.pkg.substringAfterLast('.') != seg) emptyList()
-                else c.types.filter { it.topLevel }.map { Sample(c.path, it.line, it.name.endsWith(suffix), "`$seg` 패키지의 타입 `${it.name}` 은 `$suffix` 로 끝나야 합니다") }
+                else checked(c).map { Sample(c.path, it.line, it.name.endsWith(suffix), "`$seg` 패키지의 타입 `${it.name}` 은 `$suffix` 로 끝나야 합니다") }
             }
         }
     }

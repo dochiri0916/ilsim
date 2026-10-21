@@ -113,6 +113,20 @@ class ArchitectureTest {
     }
 
     @Test
+    fun `절반만 쓰는 슬라이스는 공유 커널이 아니다`() {
+        val m = mine(project(
+            kt("com.acme.order.domain", "OrderEntity", "com.acme.core.domain.Money"),
+            kt("com.acme.order.application", "OrderService", "com.acme.order.domain.OrderEntity"),
+            kt("com.acme.cart.domain", "CartEntity", "com.acme.core.domain.Money"),
+            kt("com.acme.cart.application", "CartService", "com.acme.cart.domain.CartEntity"),
+            kt("com.acme.member.domain", "MemberEntity"),
+            kt("com.acme.member.application", "MemberService", "com.acme.member.domain.MemberEntity"),
+            kt("com.acme.core.domain", "Money"), kt("com.acme.core.application", "Clock"),
+        ))
+        assertTrue(m.layout.shared.isEmpty())
+    }
+
+    @Test
     fun `계층이 먼저인 구조는 기능 이름을 레이어로 오인하지 않고 단위로 본다`() {
         val m = mine(project(
             kt("com.acme.adapter.out.outbox", "A1", "com.acme.application.outbox.P1"),

@@ -69,7 +69,7 @@ object ArchitectureMiner {
         val cross = deps.filter { it.isCrossSlice() }
         val outgoing = cross.map { it.from.slice!! }.toSet()
         val incoming = cross.groupBy({ it.to!!.slice!! }, { it.from.slice!! }).mapValues { it.value.toSet().size }
-        val needed = maxOf(2, (layout.slices.size - 1 + 1) / 2)
+        val needed = layout.slices.size - 1
         return layout.slices.filter { it !in outgoing && (incoming[it] ?: 0) >= needed }.sorted()
     }
 

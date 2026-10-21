@@ -146,6 +146,18 @@
             "total": 7
         },
         {
+            "id": "annotation-companion:Entity+NoArgsConstructor",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
+            "id": "annotation-companion:Entity+Table",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
             "id": "annotation-companion:Repository+RequiredArgsConstructor",
             "severity": "BLOCK",
             "compliant": 8,
@@ -153,6 +165,12 @@
         },
         {
             "id": "annotation-companion:RestController+RequestMapping",
+            "severity": "REVIEW",
+            "compliant": 2,
+            "total": 2
+        },
+        {
+            "id": "annotation-companion:RestController+RequiredArgsConstructor",
             "severity": "REVIEW",
             "compliant": 2,
             "total": 2
@@ -318,12 +336,6 @@
             "severity": "REVIEW",
             "compliant": 1,
             "total": 1
-        },
-        {
-            "id": "package-suffix:outboxpattern",
-            "severity": "REVIEW",
-            "compliant": 2,
-            "total": 2
         },
         {
             "id": "package-suffix:poller",

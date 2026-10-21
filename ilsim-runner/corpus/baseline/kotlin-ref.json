@@ -183,6 +183,12 @@
             "total": 7
         },
         {
+            "id": "annotation-companion:RestController+Tag",
+            "severity": "BLOCK",
+            "compliant": 7,
+            "total": 7
+        },
+        {
             "id": "annotation-confinement:ApiResponses",
             "severity": "REVIEW",
             "compliant": 20,
@@ -435,6 +441,12 @@
             "total": 6
         },
         {
+            "id": "package-method:domain.restore",
+            "severity": "BLOCK",
+            "compliant": 6,
+            "total": 6
+        },
+        {
             "id": "package-method:request.toCommand",
             "severity": "BLOCK",
             "compliant": 7,
@@ -505,12 +517,6 @@
             "severity": "BLOCK",
             "compliant": 26,
             "total": 26
-        },
-        {
-            "id": "package-suffix:tooltestlab",
-            "severity": "REVIEW",
-            "compliant": 1,
-            "total": 1
         },
         {
             "id": "package-suffix:usecase",
