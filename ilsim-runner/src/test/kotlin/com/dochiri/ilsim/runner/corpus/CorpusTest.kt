@@ -41,6 +41,13 @@ class CorpusTest {
         assertTrue(problems.any { it.contains("사라짐: gone") })
         assertTrue(problems.any { it.contains("채굴됨: bad (우연)") })
         assertTrue(problems.any { it.contains("채굴되지 않음: pkg:z") })
+        val q = Corpus.quality(labels, snap)
+        assertEquals(1, q.precisionHit)
+        assertEquals(2, q.precisionTotal)
+        assertEquals(2, q.recallHit)
+        assertEquals(4, q.recallTotal)
+        assertEquals("정밀도 50% (1/2) · 재현율 50% (2/4)", q.describe())
+        assertEquals("정밀도 - · 재현율 -", Quality().describe())
     }
 
     @Test

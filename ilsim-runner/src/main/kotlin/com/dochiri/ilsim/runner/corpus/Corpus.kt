@@ -40,6 +40,15 @@ data class CorpusSnapshot(
     val convention: List<RuleStat>,
 )
 
+data class Quality(val precisionHit: Int = 0, val precisionTotal: Int = 0, val recallHit: Int = 0, val recallTotal: Int = 0) {
+    operator fun plus(o: Quality) = Quality(precisionHit + o.precisionHit, precisionTotal + o.precisionTotal, recallHit + o.recallHit, recallTotal + o.recallTotal)
+
+    fun describe(): String {
+        fun part(name: String, hit: Int, total: Int) = if (total == 0) "$name -" else "$name ${Math.round(hit * 100.0 / total)}% ($hit/$total)"
+        return "${part("정밀도", precisionHit, precisionTotal)} · ${part("재현율", recallHit, recallTotal)}"
+    }
+}
+
 class Corpus(private val data: Path, private val base: Path) {
     private val json = Json { prettyPrint = true; encodeDefaults = true }
     private val manifestFile get() = data.resolve("manifest.json")
@@ -113,6 +122,7 @@ class Corpus(private val data: Path, private val base: Path) {
         val m = manifest()
         val lines = mutableListOf<String>()
         var clean = true
+        var overall = Quality()
         for (e in select(m, ids)) {
             val dir = resolve(e)
             if (!dir.resolve(".git").exists()) { lines += "${e.id}: 건너뜀 (프로젝트 없음: $dir)"; clean = false; continue }
@@ -125,10 +135,13 @@ class Corpus(private val data: Path, private val base: Path) {
             val labels = labels(e.id)
             val problems = labelProblems(labels, current)
             val total = labels.correct.size + labels.wrong.size + labels.expect.size
-            val quality = if (total == 0) "" else " · 라벨 ${total - problems.size}/$total 충족"
+            val q = quality(labels, current)
+            overall += q
+            val quality = if (total == 0) "" else " · ${q.describe()}"
             if (diff.isEmpty() && problems.isEmpty()) lines += "${e.id}: 변화 없음$quality"
             else { clean = false; lines += "${e.id}: 변화 ${diff.size}건 · 라벨 문제 ${problems.size}건$quality"; lines += (diff + problems).map { "  $it" } }
         }
+        if (overall.precisionTotal + overall.recallTotal > 0) lines += "전체: ${overall.describe()}"
         return clean to lines
     }
 
@@ -149,6 +162,14 @@ class Corpus(private val data: Path, private val base: Path) {
                 arch.rules.map { RuleStat(it.id, it.proposedSeverity, it.evidence.compliant, it.evidence.total) }.sortedBy { it.id },
                 conv.rules.map { RuleStat(it.id, it.severity, it.evidence.compliant, it.evidence.total) }.sortedBy { it.id },
             )
+        }
+
+        fun quality(labels: Labels, snap: CorpusSnapshot): Quality {
+            val ids = (snap.architecture + snap.convention).map { it.id }.toSet()
+            val correctHit = labels.correct.count { it.id in ids }
+            val wrongMined = labels.wrong.count { it.id in ids }
+            val expectHit = labels.expect.count { x -> ids.any { it.startsWith(x.id) } }
+            return Quality(correctHit, correctHit + wrongMined, correctHit + expectHit, labels.correct.size + labels.expect.size)
         }
 
         fun labelProblems(labels: Labels, snap: CorpusSnapshot): List<String> {
