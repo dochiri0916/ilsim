@@ -9,6 +9,7 @@
 ./gradlew clean build --no-daemon   # 모든 모듈 빌드와 테스트
 ./gradlew check --no-daemon         # 모든 모듈과 build-convention 검증
 ./gradlew :ilsim-server:test        # 모듈 하나만
+ilsim-runner corpus check [id...]   # 저장소 루트에서 시험용 모음을 기준과 비교, 차이가 있으면 종료 코드 1
 ```
 
 웹(`ilsim-web`)은 npm 프로젝트이므로 해당 디렉터리에서 `npm run build`로 검증한다.
