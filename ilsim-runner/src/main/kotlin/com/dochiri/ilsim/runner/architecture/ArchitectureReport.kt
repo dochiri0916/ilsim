@@ -7,6 +7,7 @@ object ArchitectureReport {
         appendLine("루트 패키지: ${m.layout.rootPrefix.ifEmpty { "(없음)" }} · 모드: ${m.layout.mode}")
         if (m.layout.mode == "SLICED") {
             appendLine("슬라이스(반복되는 형제 구조): ${m.layout.slices.joinToString()}")
+            if (m.layout.shared.isNotEmpty()) appendLine("공유 커널(모든 슬라이스가 쓰고 아무것도 쓰지 않는 슬라이스): ${m.layout.shared.joinToString()}")
             appendLine("슬라이스 내부 레이어: ${m.layout.layerNames.joinToString()}")
         }
         if (m.layerLevels.isNotEmpty()) {

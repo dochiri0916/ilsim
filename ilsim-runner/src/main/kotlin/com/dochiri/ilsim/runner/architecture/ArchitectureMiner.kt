@@ -15,15 +15,21 @@ object ArchitectureMiner {
         mine(SourceScanner.scan(root, profile.modules), profile.name)
 
     internal fun mine(files: List<SourceFile>, name: String?): ArchitectureModel {
-        val layout = LayoutInference.infer(files.map { it.pkg })
+        var layout = LayoutInference.infer(files.map { it.pkg })
         val notes = mutableListOf<String>()
         if (layout.mode == "UNKNOWN") {
             notes += "패키지 구조에서 아키텍처 단위를 추론하지 못했습니다"
             return ArchitectureModel(name, files.size, layout, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), notes,
                 ApplicabilityAssessor.notApplicable(notes.last()))
         }
-        val locator = Locator(layout)
-        val deps = Dependencies.resolve(files, locator)
+        var locator = Locator(layout)
+        var deps = Dependencies.resolve(files, locator)
+        val kernels = sharedKernels(deps, layout)
+        if (kernels.isNotEmpty()) {
+            layout = layout.copy(slices = layout.slices - kernels.toSet(), shared = kernels)
+            locator = Locator(layout)
+            deps = Dependencies.resolve(files, locator)
+        }
 
         val unitEdgeDeps = deps.filter { it.isUnitEdge() }
         val crossDeps = deps.filter { it.isCrossSlice() }
@@ -56,6 +62,15 @@ object ArchitectureMiner {
             files, layout, locator, layers.map { it.name }, unitPairs, sliceEdges.map { it.from to it.to }.toSet(), rules.size,
         )
         return ArchitectureModel(name, files.size, layout, layers, levels.orEmpty(), unitEdges, sliceEdges, rules, notes, applicability)
+    }
+
+    private fun sharedKernels(deps: List<Dep>, layout: Layout): List<String> {
+        if (layout.mode != "SLICED" || layout.slices.size < 3) return emptyList()
+        val cross = deps.filter { it.isCrossSlice() }
+        val outgoing = cross.map { it.from.slice!! }.toSet()
+        val incoming = cross.groupBy({ it.to!!.slice!! }, { it.from.slice!! }).mapValues { it.value.toSet().size }
+        val needed = maxOf(2, (layout.slices.size - 1 + 1) / 2)
+        return layout.slices.filter { it !in outgoing && (incoming[it] ?: 0) >= needed }.sorted()
     }
 
     private fun edgeStats(deps: List<Dep>, key: (Dep) -> Pair<String, String>): List<EdgeStat> =

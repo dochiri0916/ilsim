@@ -5,11 +5,16 @@
     "applicability": "APPLICABLE",
     "slices": [
         "order",
-        "outbox",
         "product",
         "productstock"
     ],
     "architecture": [
+        {
+            "id": "absent-edge:application>shared:outbox",
+            "severity": "REVIEW",
+            "compliant": 61,
+            "total": 61
+        },
         {
             "id": "confinement:jakarta",
             "severity": "BLOCK",
@@ -27,6 +32,12 @@
             "severity": "REVIEW",
             "compliant": 3,
             "total": 3
+        },
+        {
+            "id": "confinement:lombok.extern",
+            "severity": "BLOCK",
+            "compliant": 5,
+            "total": 5
         },
         {
             "id": "confinement:org.apache.kafka",
@@ -47,6 +58,12 @@
             "total": 8
         },
         {
+            "id": "confinement:org.springframework.http",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
             "id": "confinement:org.springframework.kafka",
             "severity": "BLOCK",
             "compliant": 6,
@@ -59,52 +76,64 @@
             "total": 2
         },
         {
+            "id": "confinement:org.springframework.transaction",
+            "severity": "BLOCK",
+            "compliant": 11,
+            "total": 11
+        },
+        {
+            "id": "confinement:org.springframework.web",
+            "severity": "REVIEW",
+            "compliant": 4,
+            "total": 4
+        },
+        {
             "id": "confinement:tools.jackson.databind",
             "severity": "REVIEW",
             "compliant": 3,
             "total": 3
         },
         {
-            "id": "cross-slice-targets",
-            "severity": "REVIEW",
-            "compliant": 2,
-            "total": 2
-        },
-        {
             "id": "forbid-edge:application>adapter",
             "severity": "BLOCK",
-            "compliant": 19,
-            "total": 19
+            "compliant": 15,
+            "total": 15
         },
         {
             "id": "layer-externals:application",
             "severity": "REVIEW",
-            "compliant": 69,
-            "total": 69
+            "compliant": 61,
+            "total": 61
         },
         {
             "id": "layer-externals:domain",
             "severity": "REVIEW",
-            "compliant": 18,
-            "total": 18
+            "compliant": 14,
+            "total": 14
         },
         {
             "id": "leaf-unit:domain",
             "severity": "BLOCK",
+            "compliant": 14,
+            "total": 14
+        },
+        {
+            "id": "leaf-unit:shared:outbox",
+            "severity": "BLOCK",
             "compliant": 18,
             "total": 18
         },
         {
-            "id": "no-cycles:slice",
+            "id": "no-cycles:unit",
+            "severity": "BLOCK",
+            "compliant": 4,
+            "total": 4
+        },
+        {
+            "id": "shared-independence",
             "severity": "BLOCK",
             "compliant": 2,
             "total": 2
-        },
-        {
-            "id": "no-cycles:unit",
-            "severity": "BLOCK",
-            "compliant": 3,
-            "total": 3
         }
     ],
     "convention": [

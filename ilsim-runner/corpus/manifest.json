@@ -29,6 +29,16 @@
             "id": "kafka-traffic-lab",
             "path": "laboratory/kafka-traffic-lab",
             "commit": "9b76c81d8e3e061a0cb5b2818b2d5ed8126180c1"
+        },
+        {
+            "id": "saga-pattern",
+            "path": "study/saga-pattern",
+            "commit": "4230b5f36bb74d043f5876b621df66e8626ec4f0"
+        },
+        {
+            "id": "outbox-pattern",
+            "path": "study/outbox-pattern",
+            "commit": "13123eefbcb4d1d1a0ba02f6df71e965c3e7600b+b533928b"
         }
     ]
 }

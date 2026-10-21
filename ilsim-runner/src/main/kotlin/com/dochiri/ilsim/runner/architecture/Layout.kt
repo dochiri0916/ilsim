@@ -12,6 +12,7 @@ internal class Locator(val layout: Layout) {
         if (rel.isEmpty()) return Loc(null, "(root)", "")
         val c = rel[0]
         if (layout.mode == "SLICED") {
+            if (c in layout.shared) return Loc(null, "shared:$c", rel.joinToString("."))
             val slice = when {
                 c in layout.slices -> c
                 rel.size > 1 && "$c.${rel[1]}" in layout.slices -> "$c.${rel[1]}"
@@ -44,13 +45,14 @@ internal object LayoutInference {
             rel.getOrNull(1)?.let(set::add)
         }
 
-        strict(all.map { it.drop(lcp.size) }.filter { it.isNotEmpty() }, grandChildren)?.let { (slices, layers) ->
-            return Layout(root, "SLICED", slices.sorted(), layers.sorted())
+        val rels = all.map { it.drop(lcp.size) }.filter { it.isNotEmpty() }
+        strict(rels, grandChildren)?.let { (slices, layers) ->
+            if (coverage(rels, slices.toSet(), layers) >= MIN_COVERAGE) return Layout(root, "SLICED", slices.sorted(), layers.sorted())
         }
         val counts = grandChildren.values.flatten().groupingBy { it }.eachCount()
         val layerNames = counts.filterValues { it >= 2 }.keys
         val slices = grandChildren.filter { (_, names) -> names.any { it in layerNames } }.keys
-        return if (slices.size >= 2) {
+        return if (slices.size >= 2 && coverage(rels, slices, layerNames) >= MIN_COVERAGE) {
             Layout(root, "SLICED", slices.sorted(), layerNames.sorted())
         } else {
             Layout(root, if (grandChildren.isEmpty()) "UNKNOWN" else "FLAT")
@@ -61,6 +63,20 @@ internal object LayoutInference {
         parents.values.flatten().groupingBy { it }.eachCount().filterValues { it >= 2 }.keys
 
     private const val MIN_ANCHOR_LAYERS = 3
+    private const val MIN_COVERAGE = 0.5
+
+    private fun coverage(rels: List<List<String>>, slices: Set<String>, layers: Set<String>): Double {
+        if (rels.isEmpty()) return 0.0
+        val covered = rels.count { rel ->
+            val depth = when {
+                rel[0] in slices -> 1
+                rel.size > 1 && "${rel[0]}.${rel[1]}" in slices -> 2
+                else -> return@count false
+            }
+            rel.getOrNull(depth) in layers
+        }
+        return covered.toDouble() / rels.size
+    }
 
     private fun anchored(children: Map<String, Set<String>>, candidates: Set<String>): Pair<List<String>, Set<String>>? {
         if (candidates.isEmpty()) return null

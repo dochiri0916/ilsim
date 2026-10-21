@@ -1,5 +1,10 @@
 {
-    "correct": [],
+    "correct": [
+        {
+            "id": "shared-independence",
+            "note": "문서: global은 공유 커널, 슬라이스가 global을 쓴다"
+        }
+    ],
     "wrong": [
         {
             "id": "annotation-suffix:Getter",
@@ -8,10 +13,6 @@
         {
             "id": "annotation-suffix:Order",
             "note": "우연의 일치"
-        },
-        {
-            "id": "shared-independence",
-            "note": "중첩 BC 오분류"
         }
     ],
     "expect": [

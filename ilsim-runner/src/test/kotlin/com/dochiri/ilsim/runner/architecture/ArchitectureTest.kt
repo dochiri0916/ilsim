@@ -99,6 +99,36 @@ class ArchitectureTest {
     }
 
     @Test
+    fun `다른 슬라이스를 쓰지 않고 여럿이 쓰는 슬라이스는 공유 커널로 본다`() {
+        val slice = { n: String -> arrayOf(
+            kt("com.acme.$n.domain", "${n}Entity", "com.acme.core.domain.Money"),
+            kt("com.acme.$n.application", "${n}Service", "com.acme.$n.domain.${n}Entity"),
+        ) }
+        val m = mine(project(*slice("order"), *slice("cart"), *slice("member"),
+            kt("com.acme.core.domain", "Money"), kt("com.acme.core.application", "Clock")))
+        assertEquals(listOf("cart", "member", "order"), m.layout.slices)
+        assertEquals(listOf("core"), m.layout.shared)
+        assertEquals("shared:core", Locator(m.layout).locate("com.acme.core.domain").unit)
+        assertTrue(m.rules.any { it.id == "shared-independence" })
+    }
+
+    @Test
+    fun `계층이 먼저인 구조는 기능 이름을 레이어로 오인하지 않고 단위로 본다`() {
+        val m = mine(project(
+            kt("com.acme.adapter.out.outbox", "A1", "com.acme.application.outbox.P1"),
+            kt("com.acme.adapter.out.storage", "A2", "com.acme.application.storage.P2"),
+            kt("com.acme.adapter.in.outbox", "A3", "com.acme.application.outbox.P1"),
+            kt("com.acme.application.outbox", "P1", "com.acme.domain.D"),
+            kt("com.acme.application.storage", "P2"),
+            kt("com.acme.domain", "D"), kt("com.acme.domain", "D2"), kt("com.acme.domain", "D3"),
+            kt("com.acme.adapter.in.web", "C1", "com.acme.domain.D"), kt("com.acme.adapter.in.web", "C2"), kt("com.acme.adapter.in.web", "C3"),
+            kt("com.acme.adapter.out.persistence", "R1", "com.acme.domain.D"), kt("com.acme.adapter.out.persistence", "R2"),
+        ))
+        assertEquals("FLAT", m.layout.mode)
+        assertTrue(m.layerLevels.flatten().containsAll(listOf("adapter", "application", "domain")))
+    }
+
+    @Test
     fun `반복 구조를 이름 템플릿 없이 슬라이스와 레이어로 추론한다`() {
         val m = mine(project(*slicedFiles()))
         assertEquals("SLICED", m.layout.mode)
