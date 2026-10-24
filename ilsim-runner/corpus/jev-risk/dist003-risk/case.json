@@ -1,0 +1,1 @@
+{"rule": "DIST-003", "label": "RISK", "hidden": false, "note": "인스턴스마다 정산 잡이 돌아 중복 결제"}

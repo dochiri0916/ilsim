@@ -1,0 +1,11 @@
+diff --git a/src/test/java/com/x/order/OrderServiceTest.java b/src/test/java/com/x/order/OrderServiceTest.java
+--- a/src/test/java/com/x/order/OrderServiceTest.java
++++ b/src/test/java/com/x/order/OrderServiceTest.java
+@@ -20,3 +20,10 @@ class OrderServiceTest {
++
++    @Test
++    void 배송이_시작된_주문은_취소할_수_없다() {
++        given(orderRepository.findById(1L)).willReturn(Optional.of(orderWithStatus(OrderStatus.SHIPPED)));
++        assertThatThrownBy(() -> orderService.cancel(1L, "변심"))
++                .isInstanceOf(OrderNotCancellableException.class);
++    }

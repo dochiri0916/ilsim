@@ -1,0 +1,1 @@
+{"rule": "TX-002", "label": "SAFE", "hidden": false, "note": "클래스 전체가 @Transactional이라 호출자도 이미 트랜잭션 안"}

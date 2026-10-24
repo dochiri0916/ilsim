@@ -1,0 +1,1 @@
+{"rule": "IDEM-001", "label": "SAFE", "hidden": false, "note": "등급을 절대값으로 설정해 같은 메시지를 다시 처리해도 결과가 같음"}

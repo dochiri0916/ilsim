@@ -1,0 +1,12 @@
+{
+  "requirements": [
+    {"id": "R1", "text": "외부 결제 API 호출의 읽기 타임아웃을 3초로 설정한다."},
+    {"id": "R2", "text": "결제 호출이 실패하면 재시도해 최대 3번까지 시도한다."},
+    {"id": "R3", "text": "모든 시도가 실패하면 결제 상태를 FAILED로 저장한다."}
+  ],
+  "variants": [
+    {"id": "yaml-R1", "replace": {"R1": "variants/yaml-R1.diff"}, "expect": {"R1": "MET"}, "note": "설정 파일 값으로 타임아웃 지정"},
+    {"id": "wrong-attempts-R2", "replace": {"R2": "variants/wrong-attempts-R2.diff"}, "expect": {"R2": "MISSING"}, "note": "최대 4번 시도"},
+    {"id": "unsaved-R3", "replace": {"R3": "variants/unsaved-R3.diff"}, "expect": {"R3": "MISSING"}, "note": "트랜잭션·저장 없이 준영속 엔티티 상태만 바꿈"}
+  ]
+}

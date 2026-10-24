@@ -1,0 +1,1 @@
+{"rule": "TX-004", "label": "SAFE", "hidden": false, "note": "메모리 메트릭 기록 실패만 삼키고 DB 작업은 try 밖"}

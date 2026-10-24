@@ -33,20 +33,24 @@ object JevRiskScreen {
         }
     }
 
+    const val DECIDABLE = 0.9
+
+    fun answers(jev: Jev, root: Path, candidates: List<Violation>): Map<String, Double>? {
+        val state = candidates.mapIndexed { i, v -> mapOf("id" to "r$i", "ruleId" to v.ruleId, "finding" to v.message,
+            "code" to RiskReviewer.excerpt(root, v), "remedy" to RiskRules.remedies[v.ruleId].orEmpty()) }
+        val questions = candidates.indices.flatMap { i -> listOf(
+            "r$i" to NoulQuestion.of("r$i", "후보 r${i}의 위험이 코드 근거에서 확인되는가? 보호 장치를 확인하지 못하면 불확실성을 반영하라.")
+                .withCriteria("위험과 보호 장치 부재가 근거에서 확인됨", "유효한 보호 장치가 근거에서 확인됨"),
+            "e$i" to NoulQuestion.of("e$i", "후보 r${i}의 제공된 근거만으로 TRUE 또는 FALSE를 확정할 수 있는가? 호출자·DB·인프라 확인이 더 필요하면 No."),
+        ) }.toMap()
+        return jev.probabilities(mapOf("candidates" to state), questions)
+    }
+
     fun batched(jev: Jev, root: Path, findings: List<Violation>, maxCandidates: Int = MAX_CALLS): (Violation) -> Double? {
         val candidates = findings.take(maxCandidates)
-        val answers by lazy {
-            val state = candidates.mapIndexed { i, v -> mapOf("id" to "r$i", "ruleId" to v.ruleId, "finding" to v.message,
-                "code" to RiskReviewer.excerpt(root, v), "remedy" to RiskRules.remedies[v.ruleId].orEmpty()) }
-            val questions = candidates.indices.flatMap { i -> listOf(
-                "r$i" to NoulQuestion.of("r$i", "후보 r${i}의 위험이 코드 근거에서 확인되는가? 보호 장치를 확인하지 못하면 불확실성을 반영하라.")
-                    .withCriteria("위험과 보호 장치 부재가 근거에서 확인됨", "유효한 보호 장치가 근거에서 확인됨"),
-                "e$i" to NoulQuestion.of("e$i", "후보 r${i}의 제공된 근거만으로 TRUE 또는 FALSE를 확정할 수 있는가? 호출자·DB·인프라 확인이 더 필요하면 No."),
-            ) }.toMap()
-            jev.probabilities(mapOf("candidates" to state), questions)
-        }
+        val answers by lazy { answers(jev, root, candidates) }
         return { v -> candidates.indexOf(v).takeIf { it >= 0 }?.let { i ->
-            if ((answers?.get("e$i") ?: 0.0) >= 0.9) answers?.get("r$i") else null
+            if ((answers?.get("e$i") ?: 0.0) >= DECIDABLE) answers?.get("r$i") else null
         } }
     }
 }

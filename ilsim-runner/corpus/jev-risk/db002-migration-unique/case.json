@@ -1,0 +1,1 @@
+{"rule": "DB-002", "label": "SAFE", "hidden": true, "note": "유니크 제약이 SQL 마이그레이션에만 있음(발췌 밖)"}

@@ -1,0 +1,14 @@
+diff --git a/src/main/resources/db/migration/V7__coupon_one_per_order.sql b/src/main/resources/db/migration/V7__coupon_one_per_order.sql
+new file mode 100644
+--- /dev/null
++++ b/src/main/resources/db/migration/V7__coupon_one_per_order.sql
+@@ -0,0 +1,2 @@
++ALTER TABLE coupon
++    ADD CONSTRAINT uk_coupon_used_order UNIQUE (used_order_id);
+diff --git a/src/main/java/com/x/coupon/Coupon.java b/src/main/java/com/x/coupon/Coupon.java
+--- a/src/main/java/com/x/coupon/Coupon.java
++++ b/src/main/java/com/x/coupon/Coupon.java
+@@ -22,6 +22,7 @@ public class Coupon {
+ 
++    @Column(unique = true)
+     private Long usedOrderId;

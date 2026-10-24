@@ -1,0 +1,1 @@
+{"rule": "TX-002", "label": "RISK", "hidden": false, "note": "자기 호출이라 @Transactional이 적용되지 않음"}

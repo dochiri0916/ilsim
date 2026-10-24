@@ -1,0 +1,23 @@
+diff --git a/src/main/java/com/x/order/OrderService.java b/src/main/java/com/x/order/OrderService.java
+--- a/src/main/java/com/x/order/OrderService.java
++++ b/src/main/java/com/x/order/OrderService.java
+@@ -27,3 +27,3 @@ public class OrderService {
+         Order order = orderRepository.findById(orderId).orElseThrow();
+-        order.cancel();
++        order.cancel(reason);
+     }
+diff --git a/src/main/java/com/x/order/Order.java b/src/main/java/com/x/order/Order.java
+--- a/src/main/java/com/x/order/Order.java
++++ b/src/main/java/com/x/order/Order.java
+@@ -30,8 +30,12 @@ public class Order {
+     @Enumerated(EnumType.STRING)
+     private OrderStatus status;
+ 
++    @Column(name = "cancel_reason")
++    private String cancelReason;
++
+-    public void cancel() {
++    public void cancel(String reason) {
+         this.status = OrderStatus.CANCELLED;
++        this.cancelReason = reason;
+     }

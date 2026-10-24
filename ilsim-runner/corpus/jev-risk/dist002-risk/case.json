@@ -1,0 +1,1 @@
+{"rule": "DIST-002", "label": "RISK", "hidden": false, "note": "synchronized는 인스턴스 간 보호가 안 되고 커밋 전에 풀림"}

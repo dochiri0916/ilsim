@@ -1,0 +1,7 @@
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -17,3 +17,3 @@ public class PostService {
+     public List<PostResponse> list(int page, int size) {
+-        Pageable pageable = PageRequest.of(page, size);
++        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt"));

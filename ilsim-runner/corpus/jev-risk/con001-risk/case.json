@@ -1,0 +1,1 @@
+{"rule": "CON-001", "label": "RISK", "hidden": false, "note": "싱글톤 빈의 HashMap을 여러 요청이 동시에 수정"}

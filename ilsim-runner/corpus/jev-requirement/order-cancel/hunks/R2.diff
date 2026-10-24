@@ -1,0 +1,25 @@
+diff --git a/src/main/java/com/x/order/OrderService.java b/src/main/java/com/x/order/OrderService.java
+--- a/src/main/java/com/x/order/OrderService.java
++++ b/src/main/java/com/x/order/OrderService.java
+@@ -14,6 +14,7 @@ public class OrderService {
+     private final OrderRepository orderRepository;
++    private final StockService stockService;
+ 
+@@ -28,5 +29,8 @@ public class OrderService {
+         order.cancel();
++        for (OrderItem item : order.getItems()) {
++            stockService.restore(item.getProductId(), item.getQuantity());
++        }
+     }
+diff --git a/src/test/java/com/x/order/OrderServiceTest.java b/src/test/java/com/x/order/OrderServiceTest.java
+--- a/src/test/java/com/x/order/OrderServiceTest.java
++++ b/src/test/java/com/x/order/OrderServiceTest.java
+@@ -35,3 +35,11 @@ class OrderServiceTest {
++
++    @Test
++    void 취소하면_모든_상품_재고를_되돌린다() {
++        given(orderRepository.findById(1L)).willReturn(Optional.of(paidOrder(item(10L, 2), item(11L, 1))));
++        orderService.cancel(1L, "단순 변심");
++        then(stockService).should().restore(10L, 2);
++        then(stockService).should().restore(11L, 1);
++    }

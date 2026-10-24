@@ -1,0 +1,12 @@
+{
+  "requirements": [
+    {"id": "R1", "text": "배송이 시작된(SHIPPED, DELIVERED) 주문은 취소할 수 없고 OrderNotCancellableException을 던진다."},
+    {"id": "R2", "text": "주문을 취소하면 주문한 모든 상품의 수량만큼 재고를 되돌린다."},
+    {"id": "R3", "text": "취소할 때 받은 취소 사유를 주문에 저장한다."}
+  ],
+  "variants": [
+    {"id": "partial-R2", "replace": {"R2": "variants/partial-R2.diff"}, "expect": {"R2": "MISSING"}, "note": "첫 번째 상품만 재고 복구"},
+    {"id": "test-only-R1", "replace": {"R1": "variants/test-only-R1.diff"}, "expect": {"R1": "MISSING"}, "note": "테스트만 추가하고 구현 없음"},
+    {"id": "enum-method-R1", "replace": {"R1": "variants/enum-method-R1.diff"}, "expect": {"R1": "MET"}, "note": "상태 enum 메서드로 간접 구현"}
+  ]
+}

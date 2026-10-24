@@ -1,0 +1,1 @@
+{"rule": "DB-001", "label": "SAFE", "hidden": false, "note": "SERIALIZABLE 격리로 동시 차감 충돌을 DB가 막음"}

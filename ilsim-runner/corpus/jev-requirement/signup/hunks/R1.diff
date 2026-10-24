@@ -1,0 +1,39 @@
+diff --git a/src/main/java/com/x/member/MemberService.java b/src/main/java/com/x/member/MemberService.java
+--- a/src/main/java/com/x/member/MemberService.java
++++ b/src/main/java/com/x/member/MemberService.java
+@@ -19,6 +19,9 @@ public class MemberService {
+     @Transactional
+     public Long signUp(SignUpCommand command) {
++        if (memberRepository.existsByEmail(command.email())) {
++            throw new DuplicateEmailException(command.email());
++        }
+         Member member = Member.create(command.email(), passwordEncoder.encode(command.password()));
+         return memberRepository.save(member).getId();
+     }
+diff --git a/src/main/java/com/x/member/DuplicateEmailException.java b/src/main/java/com/x/member/DuplicateEmailException.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/member/DuplicateEmailException.java
+@@ -0,0 +1,11 @@
++package com.x.member;
++
++import org.springframework.http.HttpStatus;
++import org.springframework.web.bind.annotation.ResponseStatus;
++
++@ResponseStatus(HttpStatus.CONFLICT)
++public class DuplicateEmailException extends RuntimeException {
++    public DuplicateEmailException(String email) {
++        super("이미 가입한 이메일: " + email);
++    }
++}
+diff --git a/src/test/java/com/x/member/MemberServiceTest.java b/src/test/java/com/x/member/MemberServiceTest.java
+--- a/src/test/java/com/x/member/MemberServiceTest.java
++++ b/src/test/java/com/x/member/MemberServiceTest.java
+@@ -30,3 +30,10 @@ class MemberServiceTest {
++
++    @Test
++    void 이미_가입한_이메일이면_예외() {
++        given(memberRepository.existsByEmail("a@x.com")).willReturn(true);
++        assertThatThrownBy(() -> memberService.signUp(new SignUpCommand("a@x.com", "password1")))
++                .isInstanceOf(DuplicateEmailException.class);
++    }

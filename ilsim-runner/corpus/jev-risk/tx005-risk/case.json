@@ -1,0 +1,1 @@
+{"rule": "TX-005", "label": "RISK", "hidden": false, "note": "주문과 주문 항목 저장이 각각 따로 커밋됨"}

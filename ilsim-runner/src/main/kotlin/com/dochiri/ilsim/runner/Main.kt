@@ -16,6 +16,8 @@ import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.document.DocPurpose
 import com.dochiri.ilsim.runner.document.DocumentContext
 import com.dochiri.ilsim.runner.jev.Jev
+import com.dochiri.ilsim.runner.jev.JevRequirementEval
+import com.dochiri.ilsim.runner.jev.JevRiskEval
 import com.dochiri.ilsim.runner.jev.JevKey
 import com.dochiri.ilsim.runner.jev.JevRiskScreen
 import com.dochiri.ilsim.runner.memory.NoiseDetector
@@ -34,8 +36,10 @@ import com.dochiri.ilsim.runner.profile.StackDetector
 import java.nio.file.Path
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
+import kotlin.io.path.writeText
 import kotlin.system.exitProcess
 
 private const val USAGE = """사용법:
@@ -73,6 +77,9 @@ private const val USAGE = """사용법:
                                                  옵션: --base <폴더>(기본 ILSIM_CORPUS_BASE 또는 ~/programming), --data <폴더>(기본 ilsim-runner/corpus)
   JEV
     ilsim-runner jev                            JEV 연결 확인 (환경 변수 TYPESAFE_API_KEY 필요)
+    ilsim-runner jev-eval [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 사례로 JEV 위험 선별 평가 (코드 발췌가 TypeSafe로 전송, --agent는 Claude 비교)
+    ilsim-runner jev-eval --project <경로>... [--limit <n>] [--agent]   실제 코드 후보에서 판단이 갈린 것만 추림 (라벨 없음)
+    ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
   실행
     ilsim-runner run                             서버에 연결해 작업 수행 (토큰: ILSIM_TOKEN 또는 서버가 만든 ~/.ilsim/token)"""
 
@@ -105,6 +112,7 @@ fun main(args: Array<String>) {
         "apply-standards" -> applyStandards(store, args)
         "corpus" -> corpus(args)
         "jev" -> jevCheck()
+        "jev-eval" -> jevEval(args)
         "run" -> run(store)
         else -> { println(USAGE); exitProcess(1) }
     }
@@ -473,6 +481,36 @@ private fun jevCheck() {
     val p = jev.probability(mapOf("text" to "The build passed with exit code 0."), io.github.gudcks0305.jev.NoulQuestion.of("passed", "Did the build succeed?"))
     if (p == null) { println("JEV 호출에 실패했습니다. 키와 네트워크를 확인하세요"); exitProcess(1) }
     println("JEV 연결 확인: 응답 확률 ${"%.2f".format(p)} (1에 가까울수록 정상)")
+}
+
+private fun jevEval(args: Array<String>) {
+    val rest = args.drop(1)
+    fun option(name: String) = rest.zipWithNext().firstOrNull { it.first == name }?.second
+    val jev = Jev.uncached()
+    if (!jev.enabled) { println("JEV 키가 없습니다. 환경 변수 TYPESAFE_API_KEY 를 설정하세요"); exitProcess(1) }
+    val repeat = option("--repeat")?.toIntOrNull()?.coerceIn(1, 5) ?: 1
+    val cost = CostTally(if (rest.firstOrNull() == "requirements") "REVIEW" else "RISK_REVIEW")
+    fun save(text: String) = option("--out")?.let { out -> Path.of(out).also { it.toAbsolutePath().parent.createDirectories() }.writeText(text); println("저장: $out") }
+    if (rest.firstOrNull() == "requirements") {
+        val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-requirement").toAbsolutePath().normalize()
+        val samples = JevRequirementEval.load(dir)
+        if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
+        val runs = JevRequirementEval.jev(samples, jev, repeat).toMutableList()
+        if ("--agent" in rest) runs += JevRequirementEval.agent(samples, "Agent($AI_MODEL)") { cost.ask(it, AI_MODEL) }
+        println(JevRequirementEval.report(samples, runs))
+        cost.summary()?.let(::println)
+        save(JevRequirementEval.toJson(samples, runs))
+        return
+    }
+    val projects = rest.zipWithNext().filter { it.first == "--project" }.map { Path.of(it.second).toAbsolutePath().normalize() }
+    val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-risk").toAbsolutePath().normalize()
+    val samples = if (projects.isEmpty()) JevRiskEval.load(dir) else JevRiskEval.unlabeled(projects, option("--limit")?.toIntOrNull() ?: 20)
+    if (samples.isEmpty()) { println("평가 사례가 없습니다: ${projects.ifEmpty { listOf(dir) }.joinToString()}"); exitProcess(1) }
+    val runs = mutableListOf(JevRiskEval.batched(samples, jev, repeat), JevRiskEval.single(samples, jev, repeat))
+    if ("--agent" in rest) runs += JevRiskEval.agent(samples, "Agent($AI_MODEL)") { cost.ask(it, AI_MODEL) }
+    println(if (projects.isEmpty()) JevRiskEval.report(samples, runs) else JevRiskEval.disagreements(samples, runs))
+    cost.summary()?.let(::println)
+    save(JevRiskEval.toJson(samples, runs))
 }
 
 private fun recommend(store: ConfigStore, args: Array<String>) {

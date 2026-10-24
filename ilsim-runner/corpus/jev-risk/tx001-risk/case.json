@@ -1,0 +1,1 @@
+{"rule": "TX-001", "label": "RISK", "hidden": false, "note": "트랜잭션 안에서 외부 결제 승인 호출"}

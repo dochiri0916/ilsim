@@ -1,0 +1,1 @@
+{"rule": "TX-005", "label": "SAFE", "hidden": false, "note": "TransactionTemplate으로 두 저장을 한 트랜잭션에 묶음"}

@@ -1,0 +1,1 @@
+{"rule": "DIST-001", "label": "RISK", "hidden": false, "note": "DB 저장과 Kafka 발행이 한 트랜잭션에 묶이지 않음"}

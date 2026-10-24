@@ -1,0 +1,16 @@
+diff --git a/src/main/java/com/x/post/PostRepository.java b/src/main/java/com/x/post/PostRepository.java
+--- a/src/main/java/com/x/post/PostRepository.java
++++ b/src/main/java/com/x/post/PostRepository.java
+@@ -5,4 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
+ 
+ public interface PostRepository extends JpaRepository<Post, Long> {
++
++    Page<Post> findAllByDeletedFalse(Pageable pageable);
+ }
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -19,3 +19,3 @@ public class PostService {
+-        return postRepository.findAll(pageable).map(PostResponse::from).toList();
++        return postRepository.findAllByDeletedFalse(pageable).map(PostResponse::from).toList();
+     }

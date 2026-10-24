@@ -1,0 +1,27 @@
+diff --git a/src/main/java/com/x/payment/PaymentGateway.java b/src/main/java/com/x/payment/PaymentGateway.java
+--- a/src/main/java/com/x/payment/PaymentGateway.java
++++ b/src/main/java/com/x/payment/PaymentGateway.java
+@@ -18,4 +18,9 @@ public class PaymentGateway {
+     public PaymentResult approve(PaymentRequest request) {
+         return paymentRestClient.post().uri("/approve").body(request).retrieve().body(PaymentResult.class);
+     }
++
++    @Recover
++    public PaymentResult recover(RestClientException e, PaymentRequest request) {
++        request.payment().fail();
++        return PaymentResult.failed();
++    }
+ }
+diff --git a/src/main/java/com/x/payment/PaymentRequest.java b/src/main/java/com/x/payment/PaymentRequest.java
+--- a/src/main/java/com/x/payment/PaymentRequest.java
++++ b/src/main/java/com/x/payment/PaymentRequest.java
+@@ -1,7 +1,7 @@
+ package com.x.payment;
+ 
+-public record PaymentRequest(Long paymentId, long amount) {
++public record PaymentRequest(Payment payment, Long paymentId, long amount) {
+     public static PaymentRequest from(Payment payment) {
+-        return new PaymentRequest(payment.getId(), payment.getAmount());
++        return new PaymentRequest(payment, payment.getId(), payment.getAmount());
+     }
+ }

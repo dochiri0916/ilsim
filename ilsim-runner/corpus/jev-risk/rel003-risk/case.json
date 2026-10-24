@@ -1,0 +1,1 @@
+{"rule": "REL-003", "label": "RISK", "hidden": false, "note": "backoff 없이 외부 호출을 즉시 5번 재시도"}

@@ -1,0 +1,12 @@
+diff --git a/src/main/java/com/x/coupon/Coupon.java b/src/main/java/com/x/coupon/Coupon.java
+--- a/src/main/java/com/x/coupon/Coupon.java
++++ b/src/main/java/com/x/coupon/Coupon.java
+@@ -25,7 +25,10 @@ public class Coupon {
+     private Long usedOrderId;
+ 
++    private LocalDateTime usedAt;
++
+     public void use(Long orderId) {
+         this.usedOrderId = orderId;
++        this.usedAt = LocalDateTime.now();
+     }

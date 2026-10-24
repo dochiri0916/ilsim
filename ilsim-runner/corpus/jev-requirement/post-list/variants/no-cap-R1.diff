@@ -1,0 +1,24 @@
+diff --git a/src/main/java/com/x/post/PostController.java b/src/main/java/com/x/post/PostController.java
+--- a/src/main/java/com/x/post/PostController.java
++++ b/src/main/java/com/x/post/PostController.java
+@@ -17,7 +17,11 @@ public class PostController {
+     @GetMapping("/posts")
+-    public List<PostResponse> list() {
+-        return postService.list();
++    public List<PostResponse> list(
++            @RequestParam(defaultValue = "0") int page,
++            @RequestParam(defaultValue = "20") int size
++    ) {
++        return postService.list(page, size);
+     }
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -15,6 +15,7 @@ public class PostService {
+     @Transactional(readOnly = true)
+-    public List<PostResponse> list() {
+-        return postRepository.findAll().stream().map(PostResponse::from).toList();
++    public List<PostResponse> list(int page, int size) {
++        Pageable pageable = PageRequest.of(page, size);
++        return postRepository.findAll(pageable).map(PostResponse::from).toList();
+     }

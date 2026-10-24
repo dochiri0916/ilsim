@@ -77,6 +77,12 @@ object RiskReviewer {
     const val SCREEN_LOW = 0.2
     const val SCREEN_HIGH = 0.8
 
+    fun screenVerdict(p: Double): String? = when {
+        p <= SCREEN_LOW -> "FALSE"
+        p >= SCREEN_HIGH -> "TRUE"
+        else -> null
+    }
+
     fun review(
         root: Path, findings: List<Violation>, known: Map<String, RiskOpinion>, reviewer: String, force: Boolean,
         screen: (Violation) -> Double? = { null }, checkpoint: (Map<String, RiskOpinion>) -> Unit = {}, ask: (String) -> String,
@@ -87,9 +93,9 @@ object RiskReviewer {
         findings.filter { it.severity == "REVIEW" && it !in pending }.forEach { DecisionScope.record("RISK_CANDIDATE", "CACHE", "동일 지적·코드·정책의 유효한 의견", fingerprints.getValue(it)) }
         val todo = pending.filter { v ->
             val p = screen(v)?.takeIf { it.isFinite() && it in 0.0..1.0 } ?: return@filter true
-            when {
-                p <= SCREEN_LOW -> { result[fingerprint(root, v)] = RiskOpinion("FALSE", "JEV 위험 확률 ${"%.2f".format(p)}: 보호 장치가 보이거나 위험이 확인되지 않음", reviewer = "jev"); DecisionScope.record("RISK_CANDIDATE", "JEV", "충분한 근거와 낮은 위험 확률 $p", fingerprints.getValue(v)); false }
-                p >= SCREEN_HIGH -> { result[fingerprint(root, v)] = RiskOpinion("TRUE", "JEV 위험 확률 ${"%.2f".format(p)}: 보호 장치 없이 위험이 확인됨", RiskRules.remedies[v.ruleId].orEmpty(), reviewer = "jev"); DecisionScope.record("RISK_CANDIDATE", "JEV", "충분한 근거와 높은 위험 확률 $p", fingerprints.getValue(v)); false }
+            when (screenVerdict(p)) {
+                "FALSE" -> { result[fingerprint(root, v)] = RiskOpinion("FALSE", "JEV 위험 확률 ${"%.2f".format(p)}: 보호 장치가 보이거나 위험이 확인되지 않음", reviewer = "jev"); DecisionScope.record("RISK_CANDIDATE", "JEV", "충분한 근거와 낮은 위험 확률 $p", fingerprints.getValue(v)); false }
+                "TRUE" -> { result[fingerprint(root, v)] = RiskOpinion("TRUE", "JEV 위험 확률 ${"%.2f".format(p)}: 보호 장치 없이 위험이 확인됨", RiskRules.remedies[v.ruleId].orEmpty(), reviewer = "jev"); DecisionScope.record("RISK_CANDIDATE", "JEV", "충분한 근거와 높은 위험 확률 $p", fingerprints.getValue(v)); false }
                 else -> true
             }
         }

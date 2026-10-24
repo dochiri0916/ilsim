@@ -1,0 +1,1 @@
+{"rule": "DB-001", "label": "SAFE", "hidden": true, "note": "사용자 정의 분산 락 어노테이션(구현은 발췌 밖)"}

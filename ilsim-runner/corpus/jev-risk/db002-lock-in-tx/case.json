@@ -1,0 +1,1 @@
+{"rule": "DB-002", "label": "RISK", "hidden": false, "note": "트랜잭션 안에서 락을 풀어 커밋 전에 다른 요청이 확인을 통과함"}

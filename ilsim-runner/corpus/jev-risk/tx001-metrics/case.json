@@ -1,0 +1,1 @@
+{"rule": "TX-001", "label": "SAFE", "hidden": false, "note": "프로세스 내부 메트릭 카운터 증가라 외부 호출이 아님"}

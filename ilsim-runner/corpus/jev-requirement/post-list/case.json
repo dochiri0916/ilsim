@@ -1,0 +1,12 @@
+{
+  "requirements": [
+    {"id": "R1", "text": "게시글 목록 API는 page와 size 파라미터를 받고, size는 최대 100으로 제한한다."},
+    {"id": "R2", "text": "게시글은 최신 작성순(createdAt 내림차순)으로 정렬한다."},
+    {"id": "R3", "text": "삭제된 글(deleted = true)은 목록에서 제외한다."}
+  ],
+  "variants": [
+    {"id": "no-cap-R1", "replace": {"R1": "variants/no-cap-R1.diff"}, "expect": {"R1": "MISSING"}, "note": "page·size는 받지만 최대 100 제한 없음"},
+    {"id": "wrong-sort-R2", "replace": {"R2": "variants/wrong-sort-R2.diff"}, "expect": {"R2": "MISSING"}, "note": "오래된 순으로 정렬"},
+    {"id": "restriction-R3", "replace": {"R3": "variants/restriction-R3.diff"}, "expect": {"R3": "MET"}, "note": "엔티티 @SQLRestriction으로 제외"}
+  ]
+}

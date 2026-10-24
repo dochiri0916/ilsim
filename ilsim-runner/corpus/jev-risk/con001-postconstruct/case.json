@@ -1,0 +1,1 @@
+{"rule": "CON-001", "label": "SAFE", "hidden": false, "note": "초기화 때 한 번만 쓰고 이후 읽기만 하는 불변 맵"}

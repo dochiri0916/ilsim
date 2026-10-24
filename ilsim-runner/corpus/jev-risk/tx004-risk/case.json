@@ -1,0 +1,1 @@
+{"rule": "TX-004", "label": "RISK", "hidden": false, "note": "쓰기 도중 예외를 삼켜 일부만 커밋되거나 rollback-only 충돌"}

@@ -1,0 +1,1 @@
+{"rule": "IDEM-001", "label": "SAFE", "hidden": false, "note": "로그아웃은 여러 번 호출해도 결과가 같음"}

@@ -1,0 +1,11 @@
+{
+  "requirements": [
+    {"id": "R1", "text": "만료된 쿠폰(만료 시각이 지난 쿠폰)은 사용할 수 없고 CouponExpiredException을 던진다."},
+    {"id": "R2", "text": "한 주문에는 쿠폰을 하나만 사용할 수 있다."},
+    {"id": "R3", "text": "쿠폰을 사용하면 사용 시각을 기록한다."}
+  ],
+  "variants": [
+    {"id": "inverted-R1", "replace": {"R1": "variants/inverted-R1.diff"}, "expect": {"R1": "MISSING"}, "note": "만료 비교가 뒤집혀 유효 쿠폰을 거부"},
+    {"id": "unique-R2", "replace": {"R2": "variants/unique-R2.diff"}, "expect": {"R2": "MET"}, "note": "DB 유니크 제약과 엔티티 제약으로 구현"}
+  ]
+}

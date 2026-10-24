@@ -1,0 +1,1 @@
+{"rule": "DIST-003", "label": "SAFE", "hidden": false, "note": "인스턴스 로컬 캐시 갱신이라 모든 인스턴스에서 돌아야 함"}

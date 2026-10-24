@@ -1,0 +1,1 @@
+{"rule": "DIST-002", "label": "SAFE", "hidden": false, "note": "JVM 락이 아니라 Redis 분산 락이고 저장 후 해제"}

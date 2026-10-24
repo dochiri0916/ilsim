@@ -1,0 +1,1 @@
+{"rule": "TX-007", "label": "SAFE", "hidden": false, "note": "쓰기 대상이 JPA가 아닌 Redis 저장소라 readOnly와 무관"}

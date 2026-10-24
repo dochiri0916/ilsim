@@ -1,0 +1,19 @@
+diff --git a/src/main/java/com/x/coupon/CouponService.java b/src/main/java/com/x/coupon/CouponService.java
+--- a/src/main/java/com/x/coupon/CouponService.java
++++ b/src/main/java/com/x/coupon/CouponService.java
+@@ -24,5 +24,8 @@ public class CouponService {
+         Coupon coupon = couponRepository.findById(couponId).orElseThrow();
++        if (couponRepository.existsByUsedOrderId(orderId)) {
++            throw new IllegalStateException("이 주문에는 이미 쿠폰을 사용했습니다");
++        }
+         coupon.use(orderId);
+     }
+diff --git a/src/main/java/com/x/coupon/CouponRepository.java b/src/main/java/com/x/coupon/CouponRepository.java
+--- a/src/main/java/com/x/coupon/CouponRepository.java
++++ b/src/main/java/com/x/coupon/CouponRepository.java
+@@ -4,4 +4,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
+ 
+ public interface CouponRepository extends JpaRepository<Coupon, Long> {
++
++    boolean existsByUsedOrderId(Long orderId);
+ }

@@ -1,0 +1,12 @@
+diff --git a/src/main/java/com/x/order/OrderService.java b/src/main/java/com/x/order/OrderService.java
+--- a/src/main/java/com/x/order/OrderService.java
++++ b/src/main/java/com/x/order/OrderService.java
+@@ -14,6 +14,7 @@ public class OrderService {
+     private final OrderRepository orderRepository;
++    private final StockService stockService;
+ 
+@@ -28,5 +29,6 @@ public class OrderService {
+         order.cancel();
++        OrderItem item = order.getItems().get(0);
++        stockService.restore(item.getProductId(), item.getQuantity());
+     }

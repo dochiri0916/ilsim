@@ -1,0 +1,12 @@
+{
+  "requirements": [
+    {"id": "R1", "text": "이미 가입한 이메일로 가입하면 DuplicateEmailException을 던지고 HTTP 409로 응답한다."},
+    {"id": "R2", "text": "비밀번호가 8자 미만이면 가입을 거부하고 HTTP 400으로 응답한다. 8자는 허용한다."},
+    {"id": "R3", "text": "가입이 끝나면 MemberJoinedEvent를 발행한다."}
+  ],
+  "variants": [
+    {"id": "comment-only-R1", "replace": {"R1": "variants/comment-only-R1.diff"}, "expect": {"R1": "MISSING"}, "note": "예외 클래스와 TODO 주석만 있고 검사 없음"},
+    {"id": "off-by-one-R2", "replace": {"R2": "variants/off-by-one-R2.diff"}, "expect": {"R2": "MISSING"}, "note": "8자도 거부(<= 8)"},
+    {"id": "annotation-R2", "replace": {"R2": "variants/annotation-R2.diff"}, "expect": {"R2": "MET"}, "note": "@Size(min = 8)과 @Valid로 구현"}
+  ]
+}

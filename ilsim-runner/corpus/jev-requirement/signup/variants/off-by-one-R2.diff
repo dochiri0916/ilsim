@@ -1,0 +1,25 @@
+diff --git a/src/main/java/com/x/member/MemberService.java b/src/main/java/com/x/member/MemberService.java
+--- a/src/main/java/com/x/member/MemberService.java
++++ b/src/main/java/com/x/member/MemberService.java
+@@ -20,5 +20,8 @@ public class MemberService {
+     public Long signUp(SignUpCommand command) {
++        if (command.password() == null || command.password().length() <= 8) {
++            throw new InvalidPasswordException("비밀번호는 8자 이상이어야 합니다");
++        }
+         Member member = Member.create(command.email(), passwordEncoder.encode(command.password()));
+diff --git a/src/main/java/com/x/member/InvalidPasswordException.java b/src/main/java/com/x/member/InvalidPasswordException.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/member/InvalidPasswordException.java
+@@ -0,0 +1,11 @@
++package com.x.member;
++
++import org.springframework.http.HttpStatus;
++import org.springframework.web.bind.annotation.ResponseStatus;
++
++@ResponseStatus(HttpStatus.BAD_REQUEST)
++public class InvalidPasswordException extends RuntimeException {
++    public InvalidPasswordException(String message) {
++        super(message);
++    }
++}

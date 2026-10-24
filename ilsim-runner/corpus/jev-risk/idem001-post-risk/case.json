@@ -1,0 +1,1 @@
+{"rule": "IDEM-001", "label": "RISK", "hidden": false, "note": "재전송된 POST가 주문을 중복 생성"}

@@ -1,0 +1,1 @@
+{"rule": "DB-002", "label": "SAFE", "hidden": false, "note": "Redis 분산 락이 확인과 저장(커밋)을 함께 감쌈"}
