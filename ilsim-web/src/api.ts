@@ -146,7 +146,6 @@ export const api = {
   totpEnable: (code: string) => post('/api/auth/totp/enable', { code }),
   totpDisable: (code: string) => post('/api/auth/totp/disable', { code }),
   logout: () => post('/api/auth/logout'),
-  sendMessage: (taskId: string, text: string) => post(`/api/tasks/${taskId}/messages`, { text }),
   changePassword: (currentPassword: string, newPassword: string) =>
     post('/api/auth/password', { currentPassword, newPassword }),
   stats: (projectId: string) => call<Stats>(`/api/stats?projectId=${encodeURIComponent(projectId)}`),
@@ -161,8 +160,6 @@ export const api = {
   projects: () => call<Project[]>('/api/projects'),
   tasks: () => call<Task[]>('/api/tasks'),
   task: (id: string) => call<{ task: Task; events: TaskEvent[] }>(`/api/tasks/${id}`),
-  approve: (id: string) => post(`/api/tasks/${id}/approve`),
-  reject: (id: string, feedback: string) => post(`/api/tasks/${id}/reject`, { feedback }),
   retry: (id: string, instruction?: string) => post(`/api/tasks/${id}/retry`, { instruction }),
   stop: (id: string) => post(`/api/tasks/${id}/stop`),
   deleteTask: (id: string) => call<void>(`/api/tasks/${id}`, { method: 'DELETE' }),

@@ -9,7 +9,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|mcp__.*__approve_stage|mcp__.*__reject_stage",
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ilsim\" hook pre-tool-use" }
         ]

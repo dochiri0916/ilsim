@@ -24,7 +24,7 @@ Claude 앱(Claude Code)
 일심 서버(ilsim-server, 개인 PC 또는 사내 중앙 서버)
   ├─ 작업·단계·승인 상태, 비용·판정 이력, JEV 키, 규칙·학습
   ├─ 검색 인덱스 관리(PostgreSQL+pgvector, 임베딩은 Ollama `bge-m3`)
-  └─ 웹(승인·통계·설정)
+  └─ 웹(작업 보기·통계·규칙·설정)
 ```
 
 - MCP 서버는 코드가 있는 PC에서 돌아야 하므로 로컬 stdio로 둔다. 기존 Runner의 분석기·검사·서버 클라이언트를 그대로 쓰기 위해 `ilsim-runner`의 하위 명령으로 만든다.
@@ -39,7 +39,7 @@ Claude 앱(Claude Code)
 4. Agent가 `find_context`·`get_rules`로 필요한 자료를 더 조회하고 작업한다. 중간에 `check_change`로 정적 검사를 돌릴 수 있다.
 5. Agent가 `submit_result`를 호출한다. MCP가 해당 단계의 게이트를 실행하고 결과를 서버에 보낸다.
    - 실패하면 구체적인 수정 사항을 돌려주고 Agent가 고친 뒤 다시 제출한다.
-   - 승인 단계(요구사항·TC)는 사용자가 웹에서 승인해야 다음 단계로 간다.
+   - 승인 단계(요구사항·TC)는 사용자가 Claude 앱에서 승인해야 다음 단계로 간다(`approve_stage`·`reject_stage`, 매번 사용자 확인 창).
 6. 마지막 단계가 통과하면 작업이 완료되고 활성 상태가 풀린다.
 
 ## 4. MCP 도구
@@ -52,8 +52,10 @@ Claude 앱(Claude Code)
 | `get_rules` | 경로 목록(선택) | 적용되는 아키텍처·컨벤션·위험 규칙과 승인 상태 | 기존 규칙 저장소 |
 | `check_change` | 없음(작업 트리 기준) | 위반 목록, 위험 후보와 JEV 확률 | 차단하지 않음 |
 | `submit_result` | 요약(선택) | 통과·실패, 게이트별 결과, 수정 사항 | 7장 게이트. 실패는 서버에 보고하지 않고 수정 사항만 돌려준다(시도 횟수 상한으로 차단되지 않게) |
+| `approve_stage` | 단계 | 승인 결과와 다음 단계 지시 | 사용자가 승인한다고 말했을 때만, 호출마다 사용자 확인 창 |
+| `reject_stage` | 단계, 수정 사항 | 같은 단계의 새 지시(사유 포함) | 호출마다 사용자 확인 창 |
 
-- 승인·거절 도구는 두지 않는다. Agent가 스스로 승인할 수 없도록 승인은 웹(또는 일심 CLI)에서만 한다.
+- 승인은 Claude 앱에서 한다(사용자 결정 2026-10-24, 웹 승인 제거). `approve_stage(stage)`·`reject_stage(stage, feedback)`를 두고, Agent는 산출물을 요약해 보여 준 뒤 사용자가 답했을 때만 호출한다. Agent가 스스로 승인하지 못하도록 PreToolUse 훅이 두 도구 호출마다 `ask`를 돌려 앱이 사용자 확인 창을 띄운다(허용 목록에 넣어도 다시 묻는다). `stage`가 현재 승인 대기 단계와 다르면 거절한다.
 - 도구 결과는 짧은 요약과 근거 위치를 주고 원문 전체는 넣지 않는다. 필요한 원문은 Agent가 파일을 직접 읽는다.
 
 ## 5. 강제(훅)
@@ -100,7 +102,7 @@ Claude 앱(Claude Code)
 - 진입점은 Claude 앱 하나다(사용자 결정 2026-10-24, Claude 앱 원격 사용 포함). 작업은 MCP `start_task`로만 만든다.
 - MCP용 API는 Runner 토큰으로 인증하는 `/runner/api` 아래에 둔다: `POST /projects`(프로젝트 등록), `POST /tasks`(Claude 앱 작업 생성), `GET /tasks/{id}`(상태), `POST /tasks/{id}/claim`(단계 시작, 실행 중이면 같은 실행 반환), 결과 보고는 기존 `POST /tasks/{id}/result`. 작업에 `agent`(`runner` | `claude-app`)를 두고, Runner `poll`과 라우팅 학습은 `claude-app` 작업을 제외한다.
 - 모델·effort는 Claude 앱에서 사용자가 정한다. 비용은 Claude 앱 사용량을 받을 수 없으므로 MCP·JEV·독립 검토 비용만 집계한다.
-- 웹은 승인·통계·설정·규칙 화면으로 남기고 작업 생성은 뺀다.
+- 웹은 작업 보기·통계·설정·규칙 화면으로 남기고 작업 생성·승인·거절·대화는 뺀다.
 - Runner의 `run`(서버 작업을 받아 Claude CLI로 실행)과 이 경로에서만 쓰는 기능을 제거한다: 작업 폴링·실행(`TaskExecutor`), 작업용 Claude CLI 실행, 모델·effort 라우팅(`ModelSelector`·비용 라우팅·`RoutingReview`), DeepSeek 공급자 계정, 여러 Claude 계정 선택. 독립 검토의 Claude 호출(`ReviewRouter`·`ClaudeCli`의 검토용 부분)은 남긴다.
 - 제거 시점은 10장 1단계 E2E가 통과한 뒤다. 그 전에 지우면 작업을 실행할 경로가 없어진다.
 
@@ -132,3 +134,4 @@ Claude 앱(Claude Code)
 | 2026-10-24 | 진입점은 Claude 앱 하나, Runner `run`과 관련 기능은 1단계 E2E 통과 후 제거 |
 | 2026-10-24 | MCP 도구는 3개(`start_task`·`next_step`·`submit_result`), 상태 조회는 `next_step`이 겸함. 기준: 비용 절감·편의·어떤 환경에서도 실행·버그·누락 차단 |
 | 2026-10-24 | 1a단계 완료: Runner `run` 루프 전체(작업 실행·웹 분석 요청 처리·Claude 사용량 보고·작업 정리), 모델·effort 라우팅, DeepSeek, 여러 Claude 계정·공통 설정·스킬 동기화, 웹 작업 생성·라우팅·사용량·Claude 설정 화면을 제거. 분석은 CLI로 하고 2단계에서 MCP 도구로 붙인다 |
+| 2026-10-24 | 승인은 Claude 앱에서 한다. MCP `approve_stage`·`reject_stage`와 PreToolUse `ask`로 매번 사용자 확인. 웹의 승인·거절·대화와 서버 웹 승인 API 제거, 웹은 보기·통계·규칙·설정용으로 유지 |

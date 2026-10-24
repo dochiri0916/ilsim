@@ -9,12 +9,6 @@ import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
 
 interface ManageTaskUseCase {
-    fun approve(taskId: String)
-
-    fun message(taskId: String, text: String?)
-
-    fun reject(taskId: String, feedback: String?)
-
     fun retry(taskId: String, instruction: String? = null)
 
     fun stop(taskId: String)
@@ -67,4 +61,8 @@ interface RunnerUseCase {
     }
 
     fun find(taskId: String): Task? = null
+
+    fun approve(taskId: String)
+
+    fun reject(taskId: String, feedback: String?)
 }

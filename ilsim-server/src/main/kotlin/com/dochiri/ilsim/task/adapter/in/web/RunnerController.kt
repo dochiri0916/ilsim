@@ -61,6 +61,14 @@ class RunnerController(private val runner: RunnerUseCase) {
     fun state(@PathVariable id: String): ResponseEntity<AgentTaskResponse> =
         runner.find(id)?.let { ResponseEntity.ok(AgentTaskResponse.of(it)) } ?: ResponseEntity.notFound().build()
 
+    data class RejectRequest(val feedback: String? = null)
+
+    @PostMapping("/tasks/{id}/approve")
+    fun approve(@PathVariable id: String) = runner.approve(id)
+
+    @PostMapping("/tasks/{id}/reject")
+    fun reject(@PathVariable id: String, @RequestBody request: RejectRequest) = runner.reject(id, request.feedback)
+
     @PostMapping("/tasks/{id}/claim")
     fun claim(@PathVariable id: String, @RequestBody request: ClaimRequest): ResponseEntity<Assignment> =
         runner.claim(id, request.runnerId)?.let { ResponseEntity.ok(it) } ?: ResponseEntity.noContent().build()

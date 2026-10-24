@@ -80,6 +80,8 @@ interface AgentTaskServer : TaskSink {
     fun createAgentTask(request: AgentTaskRequest): AgentTaskState
     fun claim(taskId: String, runnerId: String): AssignedTask?
     fun agentTask(taskId: String): AgentTaskState?
+    fun approve(taskId: String)
+    fun reject(taskId: String, feedback: String)
 }
 
 interface TaskSink {
@@ -150,6 +152,16 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
         if (res.statusCode() == 404) return null
         check(res.statusCode() == 200) { "작업 조회 실패: HTTP ${res.statusCode()} ${res.body()}" }
         return json.decodeFromString(res.body())
+    }
+
+    override fun approve(taskId: String) {
+        val res = post("/runner/api/tasks/$taskId/approve", "{}")
+        check(res.statusCode() in 200..299) { "승인 실패: HTTP ${res.statusCode()} ${res.body()}" }
+    }
+
+    override fun reject(taskId: String, feedback: String) {
+        val res = post("/runner/api/tasks/$taskId/reject", json.encodeToString(mapOf("feedback" to feedback)))
+        check(res.statusCode() in 200..299) { "거절 실패: HTTP ${res.statusCode()} ${res.body()}" }
     }
 
     override fun result(taskId: String, result: StageResult) {

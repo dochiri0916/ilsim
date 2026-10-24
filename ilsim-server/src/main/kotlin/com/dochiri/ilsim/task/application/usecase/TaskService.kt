@@ -220,7 +220,7 @@ class TaskService(
     }
 
     @Synchronized
-    override fun message(taskId: String, text: String?) {
+    fun message(taskId: String, text: String?) {
         val next = update(taskId) { it.message(text) }
         val stage = checkNotNull(next.current())
         addEvent(taskId, stage.stage.name, "message", stage.messages.last())

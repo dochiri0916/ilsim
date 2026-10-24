@@ -42,7 +42,7 @@ export function TaskDetail({ id }: { id: string }) {
   const waiting = current?.status === 'WAITING_APPROVAL'
   const working = task.status === 'ACTIVE' && (current?.status === 'RUNNING' || current?.status === 'PENDING')
   const done = task.status === 'COMPLETED'
-  const canReply = blocked || waiting
+  const canReply = blocked
   const answeredOnly = done && task.stages.some((s) => s.status !== 'PASSED')
 
   async function act(fn: () => Promise<void>) {
@@ -59,11 +59,10 @@ export function TaskDetail({ id }: { id: string }) {
   function send() {
     const text = chat.trim()
     if (blocked) act(() => api.retry(id, text || undefined))
-    else if (waiting && text) act(() => current?.conversable ? api.sendMessage(id, text) : api.reject(id, text))
   }
 
   const placeholder = blocked ? 'Claude에게 답하기 (비우고 보내면 처음부터 다시 시도)'
-    : waiting ? (current?.conversable ? '요구사항에 대해 말하기 — 같은 세션에서 문서를 고칩니다' : '수정 요청 — 이 단계를 다시 작성합니다')
+    : waiting ? '승인 대기 중입니다. Claude 앱에서 승인하거나 고칠 점을 말하세요'
     : done ? '완료된 작업입니다. 이어서 할 일은 Claude 앱에서 요청하세요'
     : 'Claude가 작업 중입니다'
 
@@ -127,7 +126,7 @@ export function TaskDetail({ id }: { id: string }) {
           {Object.keys(current.artifacts).filter((p) => p.endsWith('.md')).slice(0, 1).map((path) => (
             <button key={path} className="link" onClick={() => setViewing({ kind: 'artifact', stage: current.stage, path })}>문서 보기</button>
           ))}
-          <button onClick={() => act(() => api.approve(id))}>승인</button>
+          <span className="muted small">Claude 앱에서 승인합니다</span>
         </div>
       )}
       {actionError && <p className="err">{actionError}</p>}

@@ -43,6 +43,12 @@ class IlsimMcp(
         McpTool("submit_result", "현재 단계 결과를 제출한다. 일심이 검증하고 통과하면 커밋한 뒤 서버에 보고한다. 실패하면 고칠 점을 돌려준다.", schema(
             """{"type":"object","properties":{"summary":{"type":"string","description":"이 단계에서 한 일 요약"}}}""",
         )) { args -> submit(args.text("summary")) },
+        McpTool("approve_stage", "사용자가 승인한 단계 결과를 승인한다. 사용자가 채팅에서 승인한다고 말했을 때만 호출한다. 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
+            """{"type":"object","properties":{"stage":{"type":"string","description":"승인할 단계(REQUIREMENTS 또는 TEST_CASES)"}},"required":["stage"]}""",
+        )) { args -> approve(args.text("stage") ?: throw IllegalArgumentException("stage 가 필요합니다")) },
+        McpTool("reject_stage", "사용자가 고칠 점을 말한 단계 결과를 거절하고, 그 사유로 같은 단계를 다시 시작한다. 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
+            """{"type":"object","properties":{"stage":{"type":"string","description":"거절할 단계"},"feedback":{"type":"string","description":"사용자가 말한 수정 사항"}},"required":["stage","feedback"]}""",
+        )) { args -> reject(args.text("stage") ?: throw IllegalArgumentException("stage 가 필요합니다"), args.text("feedback") ?: throw IllegalArgumentException("feedback 이 필요합니다")) },
     )
 
     private fun workspace(): Workspace {
@@ -95,10 +101,38 @@ class IlsimMcp(
             }
             state.stageStatus == "WAITING_APPROVAL" -> {
                 active.save(ws.root, task.copy(stage = state.stage, status = "WAITING_APPROVAL"))
-                "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 사용자가 웹에서 승인하거나 거절하면 next_step을 다시 호출하세요"
+                "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 산출물(${artifact(state.stage, task.feature)})을 사용자에게 요약해 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요"
             }
             else -> "단계를 시작하지 못했습니다(작업 ${state.status}, 단계 ${state.stage} ${state.stageStatus})"
         }
+    }
+
+    private fun waiting(stage: String): Pair<Workspace, ActiveTask> {
+        val ws = workspace()
+        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
+        if (state.stageStatus != "WAITING_APPROVAL" || state.stage != stage) {
+            throw IllegalStateException("$stage 단계가 승인 대기 중이 아닙니다(현재 ${state.stage} ${state.stageStatus})")
+        }
+        return ws to task
+    }
+
+    private fun approve(stage: String): String {
+        val (_, task) = waiting(stage)
+        server.approve(task.taskId)
+        return "$stage 단계를 승인했습니다\n\n" + nextStep()
+    }
+
+    private fun reject(stage: String, feedback: String): String {
+        val (_, task) = waiting(stage)
+        server.reject(task.taskId, feedback)
+        return "$stage 단계를 거절했습니다. 사유를 반영해 같은 단계를 다시 합니다\n\n" + nextStep()
+    }
+
+    private fun artifact(stage: String?, feature: String): String = when (stage) {
+        "REQUIREMENTS" -> Gate.requirementsPath(feature)
+        "TEST_CASES" -> Gate.testSpecPath(feature)
+        else -> "변경 diff"
     }
 
     private fun submit(summary: String?): String {

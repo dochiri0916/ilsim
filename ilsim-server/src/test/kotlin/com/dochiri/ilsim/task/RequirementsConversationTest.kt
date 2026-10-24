@@ -1,11 +1,8 @@
 package com.dochiri.ilsim.task
 
-import com.dochiri.ilsim.task.adapter.`in`.web.TaskController
-import com.dochiri.ilsim.task.adapter.`in`.web.TaskExceptionHandler
 import com.dochiri.ilsim.task.adapter.out.persistence.TaskRecord
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
 import com.dochiri.ilsim.task.application.usecase.TaskService
-import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.exception.InvalidTaskRequestException
@@ -16,11 +13,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.springframework.http.MediaType
-import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.KotlinModule
 
@@ -130,15 +123,5 @@ class RequirementsConversationTest {
         assertThat(stage.sessionId).isEqualTo("s1")
         assertThat(stage.messages).containsExactly("수정해 줘")
         assertThat(stage.pendingMessage).isEqualTo("수정해 줘")
-    }
-
-    @Test
-    fun `HTTP 로 메시지를 보내면 200, 잘못된 요청은 400·404 이다`() {
-        waiting()
-        val mvc: MockMvc = MockMvcBuilders.standaloneSetup(TaskController(service, service)).setControllerAdvice(TaskExceptionHandler()).build()
-        fun send(body: String) = mvc.perform(post("/api/tasks/${task.id.value}/messages").contentType(MediaType.APPLICATION_JSON).content(body))
-        send("""{"text":"반영해 줘"}""").andExpect(status().isOk)
-        send("""{"text":""}""").andExpect(status().isBadRequest)
-        mvc.perform(post("/api/tasks/none/messages").contentType(MediaType.APPLICATION_JSON).content("""{"text":"x"}""")).andExpect(status().isNotFound)
     }
 }

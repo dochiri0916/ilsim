@@ -19,6 +19,7 @@ object Hooks {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val editTools = setOf("Edit", "Write", "MultiEdit", "NotebookEdit")
+    private val decisionTools = listOf("approve_stage", "reject_stage")
     private val gitChange = Regex("""\bgit\s+(?:-C\s+\S+\s+)?(commit|push|checkout|switch|reset|rebase|merge|stash|cherry-pick|revert|restore|branch\s+-[dDmM])\b""")
     private val fileWrite = Regex("""(^|[\s;&|(])(rm|mv|cp|touch|mkdir|tee|truncate|chmod|ln|install)\s|>{1,2}\s*(?!/dev/null|&)\S|\bsed\s+(-\w*\s+)*-i|\bperl\s+-\w*i""")
 
@@ -45,6 +46,11 @@ object Hooks {
     private fun preToolUse(ws: Workspace, task: ActiveTask?, payload: JsonObject): Output {
         val tool = payload.text("tool_name") ?: return Output()
         val input = payload["tool_input"] as? JsonObject ?: JsonObject(emptyMap())
+        decisionTools.firstOrNull { tool.endsWith("__$it") }?.let { name ->
+            val stage = input.text("stage") ?: "-"
+            val detail = if (name == "reject_stage") "거절(같은 단계를 다시 작성): ${input.text("feedback") ?: "-"}" else "승인(다음 단계로 진행)"
+            return ask("일심 $stage 단계 $detail. 사용자가 직접 확인해야 반영됩니다")
+        }
         if (tool == "Bash") {
             val command = input.text("command") ?: return Output()
             if (gitChange.containsMatchIn(command)) return deny("Git 커밋·브랜치·되돌리기는 일심이 맡습니다. 단계를 마쳤으면 submit_result를 호출하세요")
@@ -78,10 +84,14 @@ object Hooks {
         return Output(buildJsonObject { put("decision", "block"); put("reason", reason) }.toString())
     }
 
-    private fun deny(reason: String): Output = Output(buildJsonObject {
+    private fun deny(reason: String): Output = decide("deny", reason)
+
+    private fun ask(reason: String): Output = decide("ask", reason)
+
+    private fun decide(decision: String, reason: String): Output = Output(buildJsonObject {
         putJsonObject("hookSpecificOutput") {
             put("hookEventName", "PreToolUse")
-            put("permissionDecision", "deny")
+            put("permissionDecision", decision)
             put("permissionDecisionReason", reason)
         }
     }.toString())

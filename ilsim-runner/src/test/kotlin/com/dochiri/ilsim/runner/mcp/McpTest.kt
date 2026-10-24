@@ -55,7 +55,9 @@ class McpTest {
             status = if (result.stage in setOf("REQUIREMENTS", "TEST_CASES")) "WAITING_APPROVAL" else "PENDING"
             if (status == "PENDING") index++
         }
-        fun approve() { index++; status = "PENDING" }
+        var feedback: String? = null
+        override fun approve(taskId: String) { index++; status = "PENDING" }
+        override fun reject(taskId: String, feedback: String) { this.feedback = feedback; status = "PENDING" }
     }
 
     private lateinit var home: Path
@@ -124,11 +126,18 @@ class McpTest {
         assertEquals(true, server.results.single().passed)
         assertEquals("e1", server.results.single().executionId)
         assertContains(server.events, "text:요구사항 작성")
+        assertContains(submitted, "approve_stage")
         assertContains(edit("specs/slug/requirements.md").stdout, "승인을 기다리는")
         assertEquals("", hook("stop", """{"cwd":"$repo"}""").stdout)
+        assertContains(hook("pre-tool-use", """{"cwd":"$repo","tool_name":"mcp__plugin_ilsim_ilsim__approve_stage","tool_input":{"stage":"REQUIREMENTS"}}""").stdout, "\"permissionDecision\":\"ask\"")
 
-        server.approve()
-        assertContains(call("next_step"), "일심 단계: TEST_CASES")
+        assertContains(runCatching { call("approve_stage", """{"stage":"TEST_CASES"}""") }.exceptionOrNull()!!.message!!, "승인 대기 중이 아닙니다")
+        val rejected = call("reject_stage", """{"stage":"REQUIREMENTS","feedback":"REQ-2 대문자 처리 추가"}""")
+        assertContains(rejected, "일심 단계: REQUIREMENTS")
+        assertEquals("REQ-2 대문자 처리 추가", server.feedback)
+        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\nREQ-1 소문자로 바꾼다\nREQ-2 대문자도 처리한다\n")
+        assertContains(call("submit_result"), "통과(REQUIREMENTS)")
+        assertContains(call("approve_stage", """{"stage":"REQUIREMENTS"}"""), "일심 단계: TEST_CASES")
         assertEquals("", edit("specs/slug/test-spec.md").stdout)
     }
 

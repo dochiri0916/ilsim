@@ -19,10 +19,6 @@ class TaskController(
     private val manage: ManageTaskUseCase,
     private val query: QueryTaskUseCase,
 ) {
-    data class RejectRequest(val feedback: String? = null)
-
-    data class MessageRequest(val text: String? = null)
-
     data class RetryRequest(val instruction: String? = null)
 
     data class QualityFeedbackRequest(val passed: Boolean, val reason: String)
@@ -56,15 +52,6 @@ class TaskController(
         val task = query.find(id) ?: return ResponseEntity.notFound().build()
         return ResponseEntity.ok(TaskDetailResponse(TaskResponse.from(task), query.events(id).map(EventResponse::from)))
     }
-
-    @PostMapping("/tasks/{id}/approve")
-    fun approve(@PathVariable id: String) = manage.approve(id)
-
-    @PostMapping("/tasks/{id}/messages")
-    fun message(@PathVariable id: String, @RequestBody request: MessageRequest) = manage.message(id, request.text)
-
-    @PostMapping("/tasks/{id}/reject")
-    fun reject(@PathVariable id: String, @RequestBody request: RejectRequest) = manage.reject(id, request.feedback)
 
     @PostMapping("/tasks/{id}/retry")
     fun retry(@PathVariable id: String, @RequestBody(required = false) request: RetryRequest?) = manage.retry(id, request?.instruction)

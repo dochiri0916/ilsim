@@ -40,8 +40,8 @@ class TaskHttpFailureTest {
     @Test
     fun `없는 작업은 조회 404, 승인 거절 재시도도 404 이다`() {
         mvc.perform(get("/api/tasks/none")).andExpect(status().isNotFound)
-        mvc.perform(post("/api/tasks/none/approve")).andExpect(status().isNotFound)
-        mvc.perform(json("/api/tasks/none/reject", """{"feedback":"x"}""")).andExpect(status().isNotFound)
+        mvc.perform(post("/runner/api/tasks/none/approve")).andExpect(status().isNotFound)
+        mvc.perform(json("/runner/api/tasks/none/reject", """{"feedback":"x"}""")).andExpect(status().isNotFound)
         mvc.perform(post("/api/tasks/none/retry")).andExpect(status().isNotFound)
         mvc.perform(json("/runner/api/tasks/none/result", """{"passed":true,"retryable":false}""")).andExpect(status().isNotFound)
     }
