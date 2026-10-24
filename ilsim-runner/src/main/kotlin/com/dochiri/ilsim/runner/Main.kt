@@ -18,6 +18,10 @@ import com.dochiri.ilsim.runner.document.DocumentContext
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevRequirementEval
 import com.dochiri.ilsim.runner.jev.JevRiskEval
+import com.dochiri.ilsim.runner.mcp.ActiveTasks
+import com.dochiri.ilsim.runner.mcp.Hooks
+import com.dochiri.ilsim.runner.mcp.IlsimMcp
+import com.dochiri.ilsim.runner.mcp.McpServer
 import com.dochiri.ilsim.runner.jev.JevKey
 import com.dochiri.ilsim.runner.jev.JevRiskScreen
 import com.dochiri.ilsim.runner.memory.NoiseDetector
@@ -80,6 +84,9 @@ private const val USAGE = """사용법:
     ilsim-runner jev-eval [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 사례로 JEV 위험 선별 평가 (코드 발췌가 TypeSafe로 전송, --agent는 Claude 비교)
     ilsim-runner jev-eval --project <경로>... [--limit <n>] [--agent]   실제 코드 후보에서 판단이 갈린 것만 추림 (라벨 없음)
     ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
+  Claude 앱
+    ilsim-runner mcp                             일심 MCP 서버(stdio). Claude 앱 플러그인이 실행한다
+    ilsim-runner hook user-prompt-submit|pre-tool-use|stop   Claude 앱 훅(표준 입력으로 훅 JSON)
   실행
     ilsim-runner run                             서버에 연결해 작업 수행 (토큰: ILSIM_TOKEN 또는 서버가 만든 ~/.ilsim/token)"""
 
@@ -112,6 +119,8 @@ fun main(args: Array<String>) {
         "apply-standards" -> applyStandards(store, args)
         "corpus" -> corpus(args)
         "jev" -> jevCheck()
+        "mcp" -> mcp(store)
+        "hook" -> hook(store, args)
         "jev-eval" -> jevEval(args)
         "run" -> run(store)
         else -> { println(USAGE); exitProcess(1) }
@@ -470,6 +479,30 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
         }
         cost.summary()?.let { out.appendLine(it) }
     }
+}
+
+private fun mcp(store: ConfigStore) {
+    val protocol = System.out
+    System.setOut(System.err)
+    val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
+        ?: run { System.err.println("토큰이 없습니다. 서버를 먼저 실행해 ~/.ilsim/token 을 만들거나 ILSIM_TOKEN 환경변수를 설정하세요"); exitProcess(1) }
+    val client = ServerClient(store.load().serverUrl, token)
+    runCatching { client.jevKey() }.onSuccess { JevKey.fromServer = it }
+    val cwd = Path.of(System.getenv("CLAUDE_PROJECT_DIR")?.takeIf { it.isNotBlank() } ?: System.getProperty("user.dir"))
+    val tools = IlsimMcp(store, client, ActiveTasks(store.location.parent.resolve("active")), cwd).tools()
+    McpServer("ilsim", "0.1.0", IlsimMcp.INSTRUCTIONS, tools).serve(System.`in`.bufferedReader(), protocol)
+}
+
+private fun hook(store: ConfigStore, args: Array<String>) {
+    val event = args.getOrNull(1) ?: exitProcess(0)
+    val output = try {
+        Hooks.handle(event, System.`in`.bufferedReader().readText(), store, ActiveTasks(store.location.parent.resolve("active")))
+    } catch (e: Exception) {
+        System.err.println("일심 훅 오류: ${e.message}")
+        Hooks.Output()
+    }
+    if (output.stdout.isNotEmpty()) println(output.stdout)
+    exitProcess(output.exit)
 }
 
 private fun jevCheck() {

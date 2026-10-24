@@ -1,0 +1,13 @@
+{
+  "name": "ilsim",
+  "owner": {
+    "name": "dochiri0916"
+  },
+  "plugins": [
+    {
+      "name": "ilsim",
+      "source": "./ilsim-plugin",
+      "description": "일심 MCP 서버와 훅: 일심 관리 저장소의 작업을 단계·검증·승인을 거쳐 진행한다"
+    }
+  ]
+}

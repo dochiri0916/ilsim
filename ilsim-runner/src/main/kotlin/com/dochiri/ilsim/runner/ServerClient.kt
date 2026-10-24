@@ -79,6 +79,30 @@ data class AnalysisJob(val projectId: String)
 @Serializable
 data class AnalysisResult(val passed: Boolean, val report: String, val error: String? = null, val usage: List<AiUsage> = emptyList())
 
+@Serializable
+data class AgentTaskRequest(val projectId: String, val feature: String? = null, val requirement: String)
+
+@Serializable
+data class AgentTaskState(
+    val taskId: String,
+    val projectId: String,
+    val feature: String,
+    val status: String,
+    val stage: String? = null,
+    val stageStatus: String? = null,
+    val attempt: Int? = null,
+    val feedback: String? = null,
+    val error: String? = null,
+    val branch: String? = null,
+)
+
+interface AgentTaskServer : TaskSink {
+    fun register(request: PollRequest)
+    fun createAgentTask(request: AgentTaskRequest): AgentTaskState
+    fun claim(taskId: String, runnerId: String): AssignedTask?
+    fun agentTask(taskId: String): AgentTaskState?
+}
+
 interface TaskSink {
     fun event(taskId: String, stage: String, type: String, data: String)
     fun result(taskId: String, result: StageResult)
@@ -87,7 +111,7 @@ interface TaskSink {
     fun shouldStop(taskId: String, executionId: String?): Boolean = shouldStop(taskId)
 }
 
-class ServerClient(private val baseUrl: String, private val token: String) : TaskSink {
+class ServerClient(private val baseUrl: String, private val token: String) : AgentTaskServer {
     private val http = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(5)).build()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -226,6 +250,36 @@ class ServerClient(private val baseUrl: String, private val token: String) : Tas
         )
         if (res.statusCode() != 200) return false
         return json.parseToJsonElement(res.body()).jsonObject["stop"]?.jsonPrimitive?.content == "true"
+    }
+
+    override fun register(request: PollRequest) {
+        val res = post("/runner/api/projects", json.encodeToString(request))
+        check(res.statusCode() in 200..299) { "프로젝트 등록 실패: HTTP ${res.statusCode()} ${res.body()}" }
+    }
+
+    override fun createAgentTask(request: AgentTaskRequest): AgentTaskState {
+        val res = post("/runner/api/tasks", json.encodeToString(request))
+        check(res.statusCode() == 200) { "작업 생성 실패: HTTP ${res.statusCode()} ${res.body()}" }
+        return json.decodeFromString(res.body())
+    }
+
+    override fun claim(taskId: String, runnerId: String): AssignedTask? {
+        val res = post("/runner/api/tasks/$taskId/claim", json.encodeToString(mapOf("runnerId" to runnerId)))
+        return when (res.statusCode()) {
+            200 -> json.decodeFromString<AssignedTask>(res.body())
+            204 -> null
+            else -> error("단계 시작 실패: HTTP ${res.statusCode()} ${res.body()}")
+        }
+    }
+
+    override fun agentTask(taskId: String): AgentTaskState? {
+        val res = http.send(
+            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/tasks/$taskId")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        if (res.statusCode() == 404) return null
+        check(res.statusCode() == 200) { "작업 조회 실패: HTTP ${res.statusCode()} ${res.body()}" }
+        return json.decodeFromString(res.body())
     }
 
     override fun result(taskId: String, result: StageResult) {

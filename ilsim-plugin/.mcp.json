@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ilsim": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/ilsim",
+      "args": ["mcp"]
+    }
+  }
+}
