@@ -145,14 +145,31 @@ class TaskService(
             else -> return null
         }
         val current = checkNotNull(running.current())
+        val sample = if (stage.status == StageStatus.PENDING) grantSample(running, current) else
+            projectSamples[running.projectId.value].orEmpty().firstOrNull { it.executionId == current.executionId }
         val pending = current.pendingMessage
         val prompt = if (pending != null) PromptTemplates.followUp(running, current.stage, pending, current.feedback)
         else PromptTemplates.build(running, current.stage, current.feedback)
         return Assignment(
             running.id.value, running.projectId.value, current.stage.name, current.attempt.value, running.feature.value,
             Task.CLAUDE_APP, AGENT_EFFORT, prompt, executionId = current.executionId, baseBranch = running.baseBranch?.value,
-            reviewPolicy = reviewPolicy(running.projectId.value),
+            reviewPolicy = reviewPolicy(running.projectId.value).copy(sample = sample),
         )
+    }
+
+    private fun grantSample(task: Task, stage: com.dochiri.ilsim.task.domain.StageState): ReviewSampleGrant? {
+        if (stage.stage.name !in setOf("TEST_CODE", "IMPLEMENTATION")) return null
+        val executionId = stage.executionId ?: return null
+        val projectId = task.projectId.value
+        val codeExecutions = tasks.values.filter { it.projectId == task.projectId }.sumOf { t ->
+            t.stages.filter { it.stage.name in setOf("TEST_CODE", "IMPLEMENTATION") }.sumOf { it.executions.size }
+        }
+        val sample = reviewCostPolicy.grant(UUID.randomUUID().toString(), executionId, codeExecutions, projectSamples[projectId].orEmpty()) ?: return null
+        val project = projects.getValue(projectId)
+        val reservations = projectSamples[projectId].orEmpty() + sample
+        store.saveProject(projectId, StoredProject(project.name, project.runnerId, seen[projectId] ?: clock.instant(), projectUsage[projectId].orEmpty(), reservations))
+        projectSamples[projectId] = reservations
+        return sample
     }
 
     private fun register(project: Project, runnerId: String, now: Instant) {

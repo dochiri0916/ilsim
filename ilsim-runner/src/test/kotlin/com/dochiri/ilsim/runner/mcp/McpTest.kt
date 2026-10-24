@@ -89,7 +89,24 @@ class McpTest {
         repo.toFile().deleteRecursively()
     }
 
-    private fun tools(dir: Path = repo) = IlsimMcp(store, server, active, dir, pass).tools().associateBy { it.name }
+    private var jevAnswer: (String) -> Double? = { null }
+
+    private fun jev(): com.dochiri.ilsim.runner.jev.Jev {
+        val answer = jevAnswer
+        val probe = answer("m0") ?: return com.dochiri.ilsim.runner.jev.Jev(null)
+        val transport = object : io.github.gudcks0305.jev.spi.JevTransport {
+            val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+            override fun post(uri: java.net.URI, headers: Map<String, String>, body: com.fasterxml.jackson.databind.JsonNode): java.util.concurrent.CompletableFuture<com.fasterxml.jackson.databind.JsonNode> {
+                val answers = mapper.createObjectNode()
+                body.path("questions").fieldNames().forEach { id -> answers.putObject(id).put("type", "noul").put("noul", answer(id) ?: probe) }
+                return java.util.concurrent.CompletableFuture.completedFuture(mapper.createObjectNode().put("model", "jev").set("answers", answers))
+            }
+            override fun close() {}
+        }
+        return com.dochiri.ilsim.runner.jev.Jev(io.github.gudcks0305.jev.typesafe.TypeSafeJevClient.builder().apiKey("k").transport(transport).build())
+    }
+
+    private fun tools(dir: Path = repo) = IlsimMcp(store, server, active, dir, pass, ::jev).tools().associateBy { it.name }
 
     private fun call(name: String, args: String = "{}", dir: Path = repo): String =
         tools(dir).getValue(name).call(Json.parseToJsonElement(args).jsonObject)
@@ -206,6 +223,40 @@ class McpTest {
         assertEquals(0, Hooks.commit(Files.createTempDirectory("ilsim-other"), store, mapOf("CLAUDECODE" to "1")).exit)
         repo.resolve(".git/hooks/pre-commit").writeText("#!/bin/sh\necho mine\n")
         assertContains(Workspace.of(store.load(), repo)!!.installCommitHook("ilsim-runner")!!, "기존 pre-commit 훅")
+    }
+
+    @Test
+    fun `구현 단계는 JEV가 누락으로 본 요구사항이 있으면 제출을 실패시키고 확실하면 독립 검토를 건너뛴다`() {
+        var audits = 0
+        val counting: (String, String) -> String = { _, _ -> audits++; """{"verdict":"PASS","findings":[]}""" }
+        fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        repo.resolve("specs/slug").createDirectories()
+        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다\n")
+        run("submit_result"); server.approve("t")
+        repo.resolve("specs/slug/test-spec.md").writeText("| TC-1 | REQ-1 |\n| TC-2 | REQ-2 |\n")
+        run("submit_result"); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        run("submit_result")
+        assertEquals("IMPLEMENTATION", server.stages[server.index])
+        val before = audits
+
+        repo.resolve("src/main").createDirectories()
+        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+        jevAnswer = { id -> if (id == "m1") 0.05 else 0.95 }
+        val missing = run("submit_result")
+        assertContains(missing, "요구사항이 빠진 것으로 보입니다")
+        assertContains(missing, "REQ-2")
+        assertEquals(before, audits, "누락이면 검토 전에 실패한다")
+
+        jevAnswer = { 0.95 }
+        val passed = run("submit_result")
+        assertContains(passed, "requirements=PASSED")
+        assertTrue("ai-audit=SKIPPED" in passed || audits == before + 1, "확실하면 생략하거나 표본으로만 검토한다")
+        assertTrue(server.results.last().decisions.any { it.purpose == "CHANGE_AUDIT" && it.handler in setOf("SKIP", "SAMPLE") })
+        assertTrue(server.results.last().decisions.any { it.purpose == "REQUIREMENT_CHECK" && it.handler == "JEV" })
     }
 
     @Test

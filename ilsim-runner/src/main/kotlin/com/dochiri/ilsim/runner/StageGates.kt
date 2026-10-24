@@ -33,6 +33,8 @@ class StageGates(
 ) {
     var failureKind: String? = null
         private set
+    var riskCandidates: Int = 0
+        private set
     private var survivors: List<String> = emptyList()
     private val reviewCache = ReviewCache(configStore.location.parent.resolve("reviews"))
 
@@ -227,7 +229,9 @@ class StageGates(
         if (review) aiReview(task, worktree, findings, config)
         NoiseDetector.proposals(config, findings, memory.load(task.projectId))
             .forEach { log("알림: " + NoiseDetector.message(task.projectId, it)) }
-        findings.filter { it.severity == "REVIEW" && RiskReviewer.fingerprint(worktree, it) !in suppressed }.take(10)
+        val candidates = findings.filter { it.severity == "REVIEW" && RiskReviewer.fingerprint(worktree, it) !in suppressed }
+        riskCandidates = candidates.size
+        candidates.take(10)
             .forEach { log("위험 후보: ${it.file}:${it.line} ${it.message} <${it.ruleId}> 권고: ${RiskScanner.remedy(it.ruleId)}") }
         val blocking = findings.filter { it.severity == "BLOCK" }
         validation["risk"] = if (blocking.isEmpty()) "PASSED" else "FAILED"

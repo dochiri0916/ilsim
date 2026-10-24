@@ -26,8 +26,8 @@ data class RequirementRecord(val id: String, val note: String, val expected: Map
 object JevRequirementEval {
     const val MET = "MET"
     const val MISSING = "MISSING"
-    private const val HIGH = 0.8
-    private const val LOW = 0.2
+    private const val HIGH = RequirementCheck.MET
+    private const val LOW = RequirementCheck.MISSING
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; prettyPrint = true }
 
     class Sample(val id: String, val requirements: List<Requirement>, val diff: String, val expected: Map<String, String>, val note: String)
@@ -63,11 +63,7 @@ object JevRequirementEval {
         else -> "UNSURE"
     }
 
-    internal fun questions(requirements: List<Requirement>): Map<String, NoulQuestion> = requirements.withIndex().flatMap { (i, r) -> listOf(
-        "m$i" to NoulQuestion.of("m$i", "변경(diff)이 요구사항 ${r.id}「${r.text}」를 실행 코드나 설정에서 완전히 구현하는가? 테스트만 있거나 TODO·주석뿐이거나 조건·범위가 요구사항과 다르면 No.")
-            .withCriteria("요구사항의 동작이 구현에서 확인됨", "구현이 없거나 일부만 있거나 조건이 다름"),
-        "d$i" to NoulQuestion.of("d$i", "제공된 diff만으로 요구사항 ${r.id}의 충족 여부를 확정할 수 있는가? 변경 밖의 코드나 설정을 확인해야 하면 No."),
-    ) }.toMap()
+    internal fun questions(requirements: List<Requirement>): Map<String, NoulQuestion> = RequirementCheck.questions(requirements)
 
     fun jev(samples: List<Sample>, jev: Jev, repeat: Int = 1): List<Run> {
         val usage = mutableListOf<AiUsage>()

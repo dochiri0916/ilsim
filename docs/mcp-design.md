@@ -99,6 +99,7 @@ Claude 앱(Claude Code)
   - 테스트 코드 단계: 항상 검토한다. 기록(작업 7건)상 검토가 찾은 문제(테스트 우회·약한 단언·테스트 누락)가 이 단계에 몰렸고 비용이 작다(회당 약 $0.08).
   - 구현 단계: JEV 판정 중 0.2 초과 0.8 미만(불확실)이 있거나, 위험 후보가 있거나, diff가 기준(초기값 300줄)보다 클 때만 검토한다. 셋 다 아니면 검토 없이 통과한다.
   - 표본: 검토를 건너뛴 구현 단계의 일부(초기값 20%)를 검토해 놓친 문제를 찾는다. 결과(건너뜀·표본 검토·지적 내용·이후 사용자 반려·회귀)를 작업 이력에 남기고, 놓친 문제가 나오면 조건과 기준을 조정한다. 표본 비율과 기준은 프로젝트 설정으로 바꾼다.
+- 구현(2026-10-24, 3단계): `RequirementCheck`가 `specs/<기능>/requirements.md`의 `REQ-n` 줄을 요구사항으로 읽어 구현 단계 diff(최대 60,000자)와 함께 JEV에 묻는다. diff가 잘리면 누락 판정을 내리지 않고 불확실로 둔다. JEV가 꺼졌거나 실패하면 판정 없음(`requirements=UNKNOWN`)으로 보고 독립 검토를 한다. 판정·검토 생략·표본 결정은 단계 결정 기록(`REQUIREMENT_CHECK`, `CHANGE_AUDIT`의 `AGENT`·`SKIP`·`SAMPLE`)으로 서버에 남는다. 표본 여부는 실행 ID로 정해 같은 실행은 같은 결과가 난다. 비율과 diff 기준은 Runner 프로젝트 설정 `auditSampleRate`·`auditMaxDiffLines`로 바꾼다. 서버 `claim`은 코드 단계 시작 때 `ReviewCostPolicy.grant`로 검토 모델 비교 표본을 예약한다(기본 예산 0이라 설정 전에는 예약하지 않음).
 
 ## 8. 서버·기존 구성 변경
 
@@ -139,3 +140,4 @@ Claude 앱(Claude Code)
 | 2026-10-24 | 1a단계 완료: Runner `run` 루프 전체(작업 실행·웹 분석 요청 처리·Claude 사용량 보고·작업 정리), 모델·effort 라우팅, DeepSeek, 여러 Claude 계정·공통 설정·스킬 동기화, 웹 작업 생성·라우팅·사용량·Claude 설정 화면을 제거. 분석은 CLI로 하고 2단계에서 MCP 도구로 붙인다 |
 | 2026-10-24 | 승인은 Claude 앱에서 한다. MCP `approve_stage`·`reject_stage`와 PreToolUse `ask`로 매번 사용자 확인. 웹의 승인·거절·대화와 서버 웹 승인 API 제거, 웹은 보기·통계·규칙·설정용으로 유지 |
 | 2026-10-24 | 2단계 완료: `check_change`·`get_rules`·`analyze_project`·`retry_task`, Agent 직접 커밋을 막는 pre-commit 훅. Bash 스크립트로 파일을 쓰는 빈틈은 커밋 단계에서 막는다(작업 트리 변경은 `submit_result` 경로 검사와 Stop 훅이 잡는다) |
+| 2026-10-24 | 3단계 완료: 구현 단계 JEV 요구사항 판정(0.2 이하 누락이면 제출 실패), 조건부 독립 검토와 20% 표본, claim의 검토 표본 예약 |

@@ -16,6 +16,8 @@ data class ProjectEntry(
     val testCommand: String? = null,
     val analysisCommands: List<String> = emptyList(),
     val mutationCommand: String? = null,
+    val auditSampleRate: Double? = null,
+    val auditMaxDiffLines: Int? = null,
 )
 
 @Serializable

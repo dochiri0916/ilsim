@@ -22,6 +22,8 @@ import com.dochiri.ilsim.runner.analyzeConvention
 import com.dochiri.ilsim.runner.architecture.ArchitectureStore
 import com.dochiri.ilsim.runner.brief.RulesBrief
 import com.dochiri.ilsim.runner.convention.ConventionStore
+import com.dochiri.ilsim.runner.jev.Jev
+import com.dochiri.ilsim.runner.jev.RequirementCheck
 import com.dochiri.ilsim.runner.risk.RiskScanner
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -36,6 +38,7 @@ class IlsimMcp(
     private val active: ActiveTasks,
     private val cwd: Path,
     private val ask: (prompt: String, model: String) -> String = { prompt, model -> ReviewRouter.askWithCost(prompt, model).text },
+    private val jev: () -> Jev = Jev::fromEnvironment,
 ) {
     fun tools(): List<McpTool> = listOf(
         McpTool("start_task", "코드·문서를 바꾸는 요청을 일심 작업으로 시작한다. 작업 브랜치로 전환하고 첫 단계 지시를 돌려준다.", schema(
@@ -248,11 +251,60 @@ class IlsimMcp(
         val artifacts = required?.let { mapOf(it to ws.root.resolve(it).readText()) }.orEmpty()
         Shell.gitOk(ws.root, "add", "-A")
         val diff = Shell.gitOk(ws.root, "diff", "--cached", "HEAD")
-        val audit = gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey))
+        val check = if (stage == "IMPLEMENTATION") requirementCheck(ws, task, diff, validation) else null
+        if (check != null && check.missing.isNotEmpty()) {
+            return Outcome("구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
+                check.missing.joinToString("\n") { "- ${it.id} ${it.text} (충족 확률 ${"%.2f".format(check.probabilities[it.id])})" })
+        }
+        val audit = if (auditNeeded(ws, stage, check, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
+            gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey))
+        } else {
+            validation["ai-audit"] = "SKIPPED"
+            StageGates.AuditOutcome(emptyMap(), emptyList())
+        }
         if (audit.fixable.isNotEmpty()) {
             return Outcome("AI 변경 검토가 아래를 지적했습니다. 해당 부분만 고치세요:\n" + audit.fixable.joinToString("\n") { "- [${it.type}] ${it.target} ${it.reason}" })
         }
         return Outcome(diff = diff, artifacts = artifacts + audit.artifacts)
+    }
+
+    private fun requirementCheck(ws: Workspace, task: ActiveTask, diff: String, validation: MutableMap<String, String>): RequirementCheck.Result? {
+        val spec = ws.root.resolve(Gate.requirementsPath(task.feature)).takeIf { it.exists() }?.readText()
+        val requirements = spec?.let(RequirementCheck::parse).orEmpty()
+        val result = runCatching { RequirementCheck.judge(jev(), requirements, diff) }.getOrNull()
+        validation["requirements"] = when {
+            result == null -> "UNKNOWN"
+            result.missing.isNotEmpty() -> "MISSING"
+            result.uncertain.isNotEmpty() -> "UNCERTAIN"
+            else -> "PASSED"
+        }
+        DecisionScope.record("REQUIREMENT_CHECK", if (result == null) "NONE" else "JEV",
+            result?.let { r -> r.probabilities.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } + if (r.truncated) " (diff 일부만 판정)" else "" }
+                ?: "JEV 꺼짐·실패 또는 요구사항 ID 없음", diff)
+        return result
+    }
+
+    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
+        if (stage == "TEST_CODE") return true
+        if (stage != "IMPLEMENTATION") return false
+        val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
+        val lines = diff.lines().count { (it.startsWith("+") || it.startsWith("-")) && !it.startsWith("+++") && !it.startsWith("---") }
+        val reasons = listOfNotNull(
+            "요구사항 판정 없음".takeIf { check == null },
+            "판정이 불확실한 요구사항 ${check?.uncertain?.joinToString { it.id }}".takeIf { check != null && check.uncertain.isNotEmpty() },
+            "위험 후보 ${riskCandidates}건".takeIf { riskCandidates > 0 },
+            "변경 ${lines}줄(기준 ${maxLines}줄 초과)".takeIf { lines > maxLines },
+        )
+        if (reasons.isNotEmpty()) {
+            DecisionScope.record("CHANGE_AUDIT", "AGENT", "조건부 검토: " + reasons.joinToString(", "), diff)
+            return true
+        }
+        val rate = (ws.project.auditSampleRate ?: AUDIT_SAMPLE_RATE).coerceIn(0.0, 1.0)
+        val sampled = Math.floorMod(executionId.hashCode(), 100) < (rate * 100).toInt()
+        DecisionScope.record("CHANGE_AUDIT", if (sampled) "SAMPLE" else "SKIP",
+            if (sampled) "건너뛸 조건이지만 표본(${(rate * 100).toInt()}%)으로 검토" else "요구사항 판정 충족·위험 후보 없음·변경 ${lines}줄로 검토 생략", diff)
+        log(if (sampled) "독립 검토: 표본으로 실행" else "독립 검토: 조건 충족으로 생략")
+        return sampled
     }
 
     private fun gates(log: (String) -> Unit): StageGates =
@@ -270,6 +322,10 @@ class IlsimMcp(
         const val RUNNING = "RUNNING"
 
         private const val MAX_OUTPUT = 12_000
+
+        const val AUDIT_SAMPLE_RATE = 0.2
+
+        const val AUDIT_MAX_DIFF_LINES = 300
 
         private val runnerCommand: String get() = System.getenv("ILSIM_RUNNER_BIN")?.takeIf { it.isNotBlank() } ?: "ilsim-runner"
 

@@ -72,4 +72,20 @@ class AgentTaskTest {
         val legacy = json.replace("\"agent\":\"claude-app\"", "\"agent\":null")
         assertThat(mapper.readValue(legacy, TaskRecord::class.java).toTask().agent).isEqualTo(Task.RUNNER)
     }
+
+    @Test
+    fun `코드 단계를 시작하면 검토 표본을 예약하고 같은 실행에는 같은 표본을 돌려준다`() {
+        val sampling = TaskService(NoStore, MutableClock(), reviewCostPolicy = com.dochiri.ilsim.task.domain.ReviewCostPolicy(sampleEvery = 1, sampleLimit = 5, sampleBudgetUsd = 1.0))
+        sampling.register("r1", listOf(demo))
+        val task = sampling.createForAgent("demo", "slug", "slugify 추가")
+        val requirements = sampling.claim(task.id.value, "r1")!!
+        assertThat(requirements.reviewPolicy.sample).isNull()
+        sampling.report(task.id.value, pass(requirements.executionId, "REQUIREMENTS")); sampling.approve(task.id.value)
+        val cases = sampling.claim(task.id.value, "r1")!!
+        sampling.report(task.id.value, pass(cases.executionId, "TEST_CASES")); sampling.approve(task.id.value)
+        val code = sampling.claim(task.id.value, "r1")!!
+        assertThat(code.stage).isEqualTo("TEST_CODE")
+        assertThat(code.reviewPolicy.sample!!.executionId).isEqualTo(code.executionId)
+        assertThat(sampling.claim(task.id.value, "r1")!!.reviewPolicy.sample).isEqualTo(code.reviewPolicy.sample)
+    }
 }
