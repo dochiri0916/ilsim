@@ -36,6 +36,7 @@ import com.dochiri.ilsim.task.domain.vo.RunnerId
 import com.dochiri.ilsim.task.domain.vo.TaskId
 import com.dochiri.ilsim.task.domain.exception.InvalidTaskRequestException
 import com.dochiri.ilsim.task.domain.exception.TaskNotFoundException
+import com.dochiri.ilsim.task.domain.vo.StageStatus
 import com.dochiri.ilsim.task.domain.vo.TaskStatus
 import com.dochiri.ilsim.task.domain.exception.InvalidTaskStateException
 import java.time.Clock
@@ -164,7 +165,7 @@ class TaskService(
 
         tasks.values.filter { it.hitRunLimit() }.forEach { update(it.id.value) { task -> task.stopForRunLimit() } }
         val chosen = tasks.values
-            .filter { it.projectId.value in ids && it.isRunnable() }
+            .filter { it.projectId.value in ids && it.isRunnable() && it.runsOnRunner() }
             .minByOrNull { it.createdAt } ?: return null
 
         var assigned = chosen.assign(RunnerId.of(runnerId))
@@ -174,7 +175,7 @@ class TaskService(
         val stage = checkNotNull(assigned.current())
         store.saveTask(assigned)
         tasks[assigned.id.value] = assigned
-        selector.learn(tasks.values)
+        selector.learn(tasks.values.filter { it.runsOnRunner() })
         val decision = selector.select(assigned, stage, stage.attempt.value, effort.takeUnless { it == "medium" })
         val execution = ExecutionRecord(
             UUID.randomUUID().toString(), decision.tier.modelId, decision.effort, selector.policy.version,
@@ -206,6 +207,55 @@ class TaskService(
             decision.tier.modelId, decision.effort, prompt, decision.state.sessionId.takeIf { pending != null }, execution.id,
             routed.baseBranch?.value,
             reviewPolicy(routed.projectId.value).copy(sample = sample),
+        )
+    }
+
+    @Synchronized
+    override fun register(runnerId: String, reported: List<Project>) {
+        val now = clock.instant()
+        reported.forEach { register(it, runnerId, now) }
+    }
+
+    @Synchronized
+    override fun createForAgent(projectId: String, feature: String?, requirement: String?): Task {
+        if (!projects.containsKey(projectId)) throw InvalidTaskRequestException("등록되지 않은 프로젝트: $projectId")
+        val task = Task.create(TaskId.of(UUID.randomUUID().toString()), clock.instant(), ProjectId.of(projectId), feature, requirement, agent = Task.CLAUDE_APP)
+        store.saveTask(task)
+        tasks[task.id.value] = task
+        events[task.id.value] = Collections.synchronizedList(ArrayList())
+        return task
+    }
+
+    @Synchronized
+    override fun claim(taskId: String, runnerId: String): Assignment? {
+        val task = tasks[taskId] ?: throw TaskNotFoundException(taskId)
+        if (task.runsOnRunner()) throw InvalidTaskStateException("Runner가 실행하는 작업입니다")
+        val stage = task.current() ?: return null
+        if (task.status != TaskStatus.ACTIVE) return null
+        val running = when (stage.status) {
+            StageStatus.RUNNING -> task
+            StageStatus.PENDING -> {
+                if (task.hitRunLimit()) {
+                    update(taskId) { it.stopForRunLimit() }
+                    return null
+                }
+                val assigned = task.assign(RunnerId.of(runnerId))
+                val execution = ExecutionRecord(UUID.randomUUID().toString(), Task.CLAUDE_APP, AGENT_EFFORT, Task.CLAUDE_APP, workload = "${stage.stage.name}:${Task.CLAUDE_APP}")
+                val next = assigned.updateCurrent(checkNotNull(assigned.current()).recordExecution(execution))
+                store.saveTask(next)
+                tasks[taskId] = next
+                next
+            }
+            else -> return null
+        }
+        val current = checkNotNull(running.current())
+        val pending = current.pendingMessage
+        val prompt = if (pending != null) PromptTemplates.followUp(running, current.stage, pending, current.feedback)
+        else PromptTemplates.build(running, current.stage, current.feedback)
+        return Assignment(
+            running.id.value, running.projectId.value, current.stage.name, current.attempt.value, running.feature.value,
+            Task.CLAUDE_APP, AGENT_EFFORT, prompt, executionId = current.executionId, baseBranch = running.baseBranch?.value,
+            reviewPolicy = reviewPolicy(running.projectId.value),
         )
     }
 
@@ -353,7 +403,7 @@ class TaskService(
     override fun projectReviews(projectId: String): List<AiUsage> = projectUsage[projectId].orEmpty().filter { it.review != null }
 
     override fun routing(projectId: String?): RoutingOverview {
-        val selected = if (projectId == null) tasks.values else tasks.values.filter { it.projectId.value == projectId }
+        val selected = (if (projectId == null) tasks.values else tasks.values.filter { it.projectId.value == projectId }).filter { it.runsOnRunner() }
         return RoutingOverview(RoutingReport.of(selected, selector.policy), selector.adjustments, adjustmentHistory.toList().reversed(), ModelCatalog.all(), modelUpgrades.toList().reversed())
     }
 
@@ -422,6 +472,7 @@ class TaskService(
     private companion object {
         val log = LoggerFactory.getLogger(TaskService::class.java)
         const val ONLINE_SECONDS = 15L
+        const val AGENT_EFFORT = "user"
         const val EVENT_LOAD_LIMIT = 1000
         val PROJECT_SAVE_INTERVAL: Duration = Duration.ofSeconds(30)
     }

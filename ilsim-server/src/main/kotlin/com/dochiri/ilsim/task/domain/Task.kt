@@ -26,6 +26,7 @@ class Task private constructor(
     val runs: RunCount,
     val stages: List<StageState>,
     val baseBranch: Branch? = null,
+    val agent: String = RUNNER,
 ) {
     fun current(): StageState? = stages.firstOrNull { it.status != StageStatus.PASSED }
 
@@ -37,6 +38,8 @@ class Task private constructor(
         stages.flatMap { it.costByModel.entries }.groupBy({ it.key }, { it.value }).mapValues { it.value.sum() }
 
     fun isRunnable(): Boolean = status == TaskStatus.ACTIVE && current()?.status == StageStatus.PENDING
+
+    fun runsOnRunner(): Boolean = agent == RUNNER
 
     fun hitRunLimit(): Boolean = isRunnable() && runs.value >= MAX_TASK_RUNS
 
@@ -172,9 +175,15 @@ class Task private constructor(
         branch: Branch? = this.branch,
         runs: RunCount = this.runs,
         stages: List<StageState> = this.stages,
-    ): Task = Task(id, createdAt, projectId, feature, requirement, status, runnerId, branch, runs, stages, baseBranch)
+    ): Task = Task(id, createdAt, projectId, feature, requirement, status, runnerId, branch, runs, stages, baseBranch, agent)
 
     companion object {
+        const val RUNNER: String = "runner"
+
+        const val CLAUDE_APP: String = "claude-app"
+
+        private val AGENTS = setOf(RUNNER, CLAUDE_APP)
+
         const val MAX_ATTEMPTS: Int = 3
 
         const val MAX_MESSAGES: Int = 10
@@ -187,8 +196,9 @@ class Task private constructor(
 
         const val MAX_TASK_RUNS: Int = 12
 
-        fun create(id: TaskId, now: Instant, projectId: ProjectId, feature: String?, requirement: String?, baseBranch: Branch? = null): Task =
-            Task(
+        fun create(id: TaskId, now: Instant, projectId: ProjectId, feature: String?, requirement: String?, baseBranch: Branch? = null, agent: String = RUNNER): Task {
+            if (agent !in AGENTS) throw InvalidTaskRequestException("알 수 없는 실행 주체: $agent")
+            return Task(
                 id = id,
                 createdAt = now,
                 projectId = projectId,
@@ -200,7 +210,9 @@ class Task private constructor(
                 runs = RunCount.ZERO,
                 stages = Stage.entries.map { StageState.initial(it) },
                 baseBranch = baseBranch,
+                agent = agent,
             )
+        }
 
         fun restore(
             id: TaskId,
@@ -214,6 +226,7 @@ class Task private constructor(
             runs: RunCount,
             stages: List<StageState>,
             baseBranch: Branch? = null,
-        ): Task = Task(id, createdAt, projectId, feature, requirement, status, runnerId, branch, runs, stages, baseBranch)
+            agent: String = RUNNER,
+        ): Task = Task(id, createdAt, projectId, feature, requirement, status, runnerId, branch, runs, stages, baseBranch, agent)
     }
 }

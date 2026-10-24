@@ -30,6 +30,7 @@ data class TaskRecord(
     val runs: Int = 0,
     val stages: List<StageRecord> = emptyList(),
     val baseBranch: String? = null,
+    val agent: String? = null,
 ) {
     data class StageRecord(
         val stage: String,
@@ -95,6 +96,7 @@ data class TaskRecord(
             runs = RunCount.of(runs),
             stages = all,
             baseBranch = baseBranch?.takeIf { it.isNotBlank() }?.let { Branch.of(it) },
+            agent = agent ?: Task.RUNNER,
         )
     }
 
@@ -110,6 +112,7 @@ data class TaskRecord(
                 )
             },
             t.baseBranch?.value,
+            t.agent,
         )
     }
 }

@@ -65,6 +65,20 @@ interface RunnerUseCase {
     fun shouldStop(taskId: String, executionId: String?): Boolean = shouldStop(taskId)
 
     fun reportModels(models: Map<String, String>): Map<String, String> = emptyMap()
+
+    fun register(runnerId: String, reported: List<Project>) {
+        throw UnsupportedOperationException("프로젝트 등록을 지원하지 않습니다")
+    }
+
+    fun createForAgent(projectId: String, feature: String?, requirement: String?): Task {
+        throw UnsupportedOperationException("Claude 앱 작업을 지원하지 않습니다")
+    }
+
+    fun claim(taskId: String, runnerId: String): Assignment? {
+        throw UnsupportedOperationException("Claude 앱 작업을 지원하지 않습니다")
+    }
+
+    fun find(taskId: String): Task? = null
 }
 
 interface RoutingUseCase {
