@@ -17,6 +17,8 @@ object Hooks {
 
     const val MAX_STOP_BLOCKS = 3
 
+    private const val CLAUDE_CODE_ENV = "CLAUDECODE"
+
     private val json = Json { ignoreUnknownKeys = true }
     private val editTools = setOf("Edit", "Write", "MultiEdit", "NotebookEdit")
     private val decisionTools = listOf("approve_stage", "reject_stage")
@@ -34,6 +36,12 @@ object Hooks {
             "stop" -> stop(ws, task, active)
             else -> Output()
         }
+    }
+
+    fun commit(dir: Path, store: ConfigStore, env: Map<String, String>): Output {
+        if (env[CLAUDE_CODE_ENV] != "1") return Output()
+        Workspace.of(store.load(), dir) ?: return Output()
+        return Output("일심 관리 저장소에서는 Agent가 직접 커밋할 수 없습니다. 단계를 마치면 submit_result로 제출하세요(통과하면 일심이 커밋합니다)", 1)
     }
 
     private fun context(ws: Workspace, task: ActiveTask?): String = buildString {

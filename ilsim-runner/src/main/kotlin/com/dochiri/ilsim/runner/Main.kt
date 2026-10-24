@@ -87,6 +87,7 @@ private const val USAGE = """사용법:
   Claude 앱
     ilsim-runner mcp                             일심 MCP 서버(stdio). Claude 앱 플러그인이 실행한다
     ilsim-runner hook user-prompt-submit|pre-tool-use|stop   Claude 앱 훅(표준 입력으로 훅 JSON)
+    ilsim-runner hook commit                     Git pre-commit 훅(start_task가 설치, Agent의 직접 커밋을 막음)
 """
 
 private val AI_MODEL: String get() = ClaudeModels.REVIEW
@@ -495,12 +496,13 @@ private fun hook(store: ConfigStore, args: Array<String>) {
     val event = args.getOrNull(1) ?: exitProcess(0)
     if (System.getenv(Shell.RUNNER_ENV) == "1") exitProcess(0)
     val output = try {
-        Hooks.handle(event, System.`in`.bufferedReader().readText(), store, ActiveTasks(store.location.parent.resolve("active")))
+        if (event == "commit") Hooks.commit(Path.of(System.getProperty("user.dir")), store, System.getenv())
+        else Hooks.handle(event, System.`in`.bufferedReader().readText(), store, ActiveTasks(store.location.parent.resolve("active")))
     } catch (e: Exception) {
         System.err.println("일심 훅 오류: ${e.message}")
         Hooks.Output()
     }
-    if (output.stdout.isNotEmpty()) println(output.stdout)
+    if (output.stdout.isNotEmpty()) (if (event == "commit") System.err else System.out).println(output.stdout)
     exitProcess(output.exit)
 }
 

@@ -141,6 +141,13 @@ class StageGates(
         return null
     }
 
+    fun quickCheck(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): List<String> = listOfNotNull(
+        architecture(task, worktree, validation),
+        convention(task, worktree, validation),
+        risk(task, worktree, validation, review = false),
+        testIntegrity(task, worktree, changedFiles(worktree).toSet(), validation),
+    )
+
     private fun testIntegrity(task: AssignedTask, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>): String? {
         if (task.stage != "TEST_CODE") return null
         val violations = TestIntegrity.scan(worktree, StackDetector.detect(worktree), changed)

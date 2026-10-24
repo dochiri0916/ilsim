@@ -82,6 +82,7 @@ interface AgentTaskServer : TaskSink {
     fun agentTask(taskId: String): AgentTaskState?
     fun approve(taskId: String)
     fun reject(taskId: String, feedback: String)
+    fun retry(taskId: String, instruction: String?)
 }
 
 interface TaskSink {
@@ -162,6 +163,11 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
     override fun reject(taskId: String, feedback: String) {
         val res = post("/runner/api/tasks/$taskId/reject", json.encodeToString(mapOf("feedback" to feedback)))
         check(res.statusCode() in 200..299) { "거절 실패: HTTP ${res.statusCode()} ${res.body()}" }
+    }
+
+    override fun retry(taskId: String, instruction: String?) {
+        val res = post("/runner/api/tasks/$taskId/retry", json.encodeToString(mapOf("instruction" to instruction)))
+        check(res.statusCode() in 200..299) { "재시도 실패: HTTP ${res.statusCode()} ${res.body()}" }
     }
 
     override fun result(taskId: String, result: StageResult) {

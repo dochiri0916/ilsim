@@ -43,11 +43,11 @@ class McpTest {
         override fun register(request: PollRequest) { registered += request }
         override fun createAgentTask(request: AgentTaskRequest) = AgentTaskState("task-1234567890", request.projectId, request.feature ?: "slug", "ACTIVE", "REQUIREMENTS", "PENDING")
         override fun claim(taskId: String, runnerId: String): AssignedTask? {
-            if (index >= stages.size || status == "WAITING_APPROVAL") return null
+            if (blocked || index >= stages.size || status == "WAITING_APPROVAL") return null
             if (status == "PENDING") { status = "RUNNING"; executions++ }
             return AssignedTask(taskId, "p", stages[index], 1, "slug", "claude-app", "user", "${stages[index]} 지시", executionId = "e$executions")
         }
-        override fun agentTask(taskId: String) = AgentTaskState(taskId, "p", "slug", if (index >= stages.size) "COMPLETED" else "ACTIVE",
+        override fun agentTask(taskId: String) = AgentTaskState(taskId, "p", "slug", if (blocked) "BLOCKED" else if (index >= stages.size) "COMPLETED" else "ACTIVE",
             stages.getOrNull(index), if (index >= stages.size) null else status)
         override fun event(taskId: String, stage: String, type: String, data: String) { events += "$type:$data" }
         override fun result(taskId: String, result: StageResult) {
@@ -58,6 +58,9 @@ class McpTest {
         var feedback: String? = null
         override fun approve(taskId: String) { index++; status = "PENDING" }
         override fun reject(taskId: String, feedback: String) { this.feedback = feedback; status = "PENDING" }
+        var blocked = false
+        var instruction: String? = null
+        override fun retry(taskId: String, instruction: String?) { this.instruction = instruction; blocked = false; status = "PENDING" }
     }
 
     private lateinit var home: Path
@@ -173,6 +176,36 @@ class McpTest {
         assertEquals("", hook("stop", """{"cwd":"$repo"}""").stdout)
         assertContains(hook("user-prompt-submit", """{"cwd":"$repo"}""").stdout, "단계 IMPLEMENTATION")
         assertNull(ActiveTasks(home.resolve("none")).load(repo))
+    }
+
+    @Test
+    fun `변경 검사·규칙 조회·차단 작업 재시도와 커밋 차단 훅을 제공한다`() {
+        assertContains(call("get_rules"), "쓰지 말아야 할 위험 패턴")
+        call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        val hook = repo.resolve(".git/hooks/pre-commit")
+        assertContains(hook.toFile().readText(), Workspace.HOOK_MARK)
+        assertContains(hook.toFile().readText(), "hook commit")
+        assertTrue(hook.toFile().canExecute())
+
+        repo.resolve("src").createDirectories()
+        repo.resolve("src/Main.java").writeText("class Main {}\n")
+        assertContains(call("check_change"), "허용되지 않은 변경: src/Main.java")
+        repo.resolve("src/Main.java").deleteExisting()
+        repo.resolve("specs/slug").createDirectories()
+        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\nREQ-1 소문자\n")
+        assertContains(call("check_change"), "문제 없음")
+
+        assertContains(runCatching { call("retry_task") }.exceptionOrNull()!!.message!!, "차단된 작업이 아닙니다")
+        server.blocked = true
+        assertContains(call("next_step"), "retry_task")
+        assertContains(call("retry_task", """{"instruction":"범위를 줄여서"}"""), "일심 단계: REQUIREMENTS")
+        assertEquals("범위를 줄여서", server.instruction)
+
+        assertEquals(1, Hooks.commit(repo, store, mapOf("CLAUDECODE" to "1")).exit)
+        assertEquals(0, Hooks.commit(repo, store, emptyMap()).exit)
+        assertEquals(0, Hooks.commit(Files.createTempDirectory("ilsim-other"), store, mapOf("CLAUDECODE" to "1")).exit)
+        repo.resolve(".git/hooks/pre-commit").writeText("#!/bin/sh\necho mine\n")
+        assertContains(Workspace.of(store.load(), repo)!!.installCommitHook("ilsim-runner")!!, "기존 pre-commit 훅")
     }
 
     @Test

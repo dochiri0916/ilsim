@@ -49,11 +49,13 @@ Claude 앱(Claude Code)
 | `start_task` | 요구사항, 기능 이름(선택) | 작업 ID, 브랜치, 첫 단계 지시 | 커밋하지 않은 변경이 있으면 거절, 작업 브랜치 `ilsim/<기능>-<ID 8자>`로 전환 |
 | `next_step` | 없음(저장소의 활성 작업) | 단계, 지시, 허용 경로, 이전 피드백. 작업이 없거나 승인 대기·완료·차단이면 그 상태 | 상태 조회를 겸한다(별도 `status` 도구 없음, 사용자 결정 2026-10-24) |
 | `find_context` | 질문, 목적(구현·테스트·아키텍처), 개수 | 코드·문서 조각, 경로·줄, 선택 근거 | 6장 |
-| `get_rules` | 경로 목록(선택) | 적용되는 아키텍처·컨벤션·위험 규칙과 승인 상태 | 기존 규칙 저장소 |
-| `check_change` | 없음(작업 트리 기준) | 위반 목록, 위험 후보와 JEV 확률 | 차단하지 않음 |
+| `get_rules` | 없음 | 승인된 아키텍처·컨벤션 규칙과 위험 패턴 요약 | 기존 규칙 저장소 |
+| `check_change` | 없음(작업 트리 기준) | 허용 경로·아키텍처·컨벤션·BLOCK 위험·테스트 무결성 위반, 참고용 위험 후보 | 차단하지 않음. 테스트·변이·독립 검토는 `submit_result` |
 | `submit_result` | 요약(선택) | 통과·실패, 게이트별 결과, 수정 사항 | 7장 게이트. 실패는 서버에 보고하지 않고 수정 사항만 돌려준다(시도 횟수 상한으로 차단되지 않게) |
 | `approve_stage` | 단계 | 승인 결과와 다음 단계 지시 | 사용자가 승인한다고 말했을 때만, 호출마다 사용자 확인 창 |
 | `reject_stage` | 단계, 수정 사항 | 같은 단계의 새 지시(사유 포함) | 호출마다 사용자 확인 창 |
+| `retry_task` | 지시(선택) | 같은 단계의 새 지시 | 차단(BLOCKED)된 작업만, 사용자가 다시 하자고 할 때 |
+| `analyze_project` | 없음 | 아키텍처·컨벤션 분석 보고 | 웹 분석 버튼 대체, AI 검토 포함이라 몇 분 걸림 |
 
 - 승인은 Claude 앱에서 한다(사용자 결정 2026-10-24, 웹 승인 제거). `approve_stage(stage)`·`reject_stage(stage, feedback)`를 두고, Agent는 산출물을 요약해 보여 준 뒤 사용자가 답했을 때만 호출한다. Agent가 스스로 승인하지 못하도록 PreToolUse 훅이 두 도구 호출마다 `ask`를 돌려 앱이 사용자 확인 창을 띄운다(허용 목록에 넣어도 다시 묻는다). `stage`가 현재 승인 대기 단계와 다르면 거절한다.
 - 도구 결과는 짧은 요약과 근거 위치를 주고 원문 전체는 넣지 않는다. 필요한 원문은 Agent가 파일을 직접 읽는다.
@@ -65,6 +67,7 @@ Claude 앱(Claude Code)
 | UserPromptSubmit | 일심 안내와 활성 작업 요약을 컨텍스트에 추가 | 없음 |
 | PreToolUse(Edit·Write·MultiEdit·NotebookEdit) | 활성 작업과 현재 단계에서 허용한 경로인지 확인 | 활성 작업 없음, 승인 대기 중, 단계 범위 밖 경로(예: 요구사항 단계에서 `src/` 수정) |
 | PreToolUse(Bash) | 파일을 바꾸는 명령 패턴 검사 | 활성 작업 없이 쓰기·이동·삭제, `git commit`·`git push` |
+| Git pre-commit(`ilsim-runner hook commit`) | `start_task`가 대상 저장소 `.git/hooks/pre-commit`에 설치(기존 훅이 있으면 설치하지 않고 알림) | Claude Code 환경(`CLAUDECODE=1`)에서 일어난 커밋. 일심 자체 커밋(`ILSIM_RUNNER=1`)과 사람의 터미널 커밋은 통과 |
 | Stop | 활성 작업의 마지막 `submit_result` 상태 확인 | 변경이 있는데 제출하지 않음, 마지막 제출 실패, JEV가 누락으로 판정한 요구사항 있음 |
 
 - 훅은 `ilsim-runner hook <시점>`을 실행한다. 활성 작업 상태는 `~/.ilsim/active/<저장소 경로 해시>.json`에 두고, MCP와 훅이 함께 읽는다. 훅 입력의 `cwd`로 저장소를 찾는다.
@@ -135,3 +138,4 @@ Claude 앱(Claude Code)
 | 2026-10-24 | MCP 도구는 3개(`start_task`·`next_step`·`submit_result`), 상태 조회는 `next_step`이 겸함. 기준: 비용 절감·편의·어떤 환경에서도 실행·버그·누락 차단 |
 | 2026-10-24 | 1a단계 완료: Runner `run` 루프 전체(작업 실행·웹 분석 요청 처리·Claude 사용량 보고·작업 정리), 모델·effort 라우팅, DeepSeek, 여러 Claude 계정·공통 설정·스킬 동기화, 웹 작업 생성·라우팅·사용량·Claude 설정 화면을 제거. 분석은 CLI로 하고 2단계에서 MCP 도구로 붙인다 |
 | 2026-10-24 | 승인은 Claude 앱에서 한다. MCP `approve_stage`·`reject_stage`와 PreToolUse `ask`로 매번 사용자 확인. 웹의 승인·거절·대화와 서버 웹 승인 API 제거, 웹은 보기·통계·규칙·설정용으로 유지 |
+| 2026-10-24 | 2단계 완료: `check_change`·`get_rules`·`analyze_project`·`retry_task`, Agent 직접 커밋을 막는 pre-commit 훅. Bash 스크립트로 파일을 쓰는 빈틈은 커밋 단계에서 막는다(작업 트리 변경은 `submit_result` 경로 검사와 Stop 훅이 잡는다) |

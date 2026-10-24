@@ -17,8 +17,12 @@ import com.dochiri.ilsim.runner.Shell
 import com.dochiri.ilsim.runner.StageGates
 import com.dochiri.ilsim.runner.StageResult
 import com.dochiri.ilsim.runner.UsageScope
+import com.dochiri.ilsim.runner.analyzeArchitecture
+import com.dochiri.ilsim.runner.analyzeConvention
 import com.dochiri.ilsim.runner.architecture.ArchitectureStore
+import com.dochiri.ilsim.runner.brief.RulesBrief
 import com.dochiri.ilsim.runner.convention.ConventionStore
+import com.dochiri.ilsim.runner.risk.RiskScanner
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -43,6 +47,18 @@ class IlsimMcp(
         McpTool("submit_result", "현재 단계 결과를 제출한다. 일심이 검증하고 통과하면 커밋한 뒤 서버에 보고한다. 실패하면 고칠 점을 돌려준다.", schema(
             """{"type":"object","properties":{"summary":{"type":"string","description":"이 단계에서 한 일 요약"}}}""",
         )) { args -> submit(args.text("summary")) },
+        McpTool("check_change", "제출 전에 현재 변경을 빠르게 검사한다(허용 경로·아키텍처·컨벤션·위험·테스트 무결성). 테스트·변이·독립 검토는 submit_result에서 한다. 차단하지 않는다.", schema(
+            """{"type":"object","properties":{}}""",
+        )) { checkChange() },
+        McpTool("get_rules", "이 프로젝트에서 승인된 아키텍처·컨벤션·위험 규칙을 돌려준다.", schema(
+            """{"type":"object","properties":{}}""",
+        )) { rules() },
+        McpTool("analyze_project", "프로젝트 코드에서 아키텍처·컨벤션 규칙을 추출하고 AI 검토로 확실한 규칙을 자동 승인한다. 나머지는 웹 규칙 화면에서 승인한다. 몇 분 걸릴 수 있다.", schema(
+            """{"type":"object","properties":{}}""",
+        )) { analyze() },
+        McpTool("retry_task", "차단된(BLOCKED) 일심 작업을 다시 시도한다. 사용자가 지시를 주면 instruction으로 넘긴다.", schema(
+            """{"type":"object","properties":{"instruction":{"type":"string","description":"다시 시도할 때 반영할 사용자 지시(생략 가능)"}}}""",
+        )) { args -> retry(args.text("instruction")) },
         McpTool("approve_stage", "사용자가 승인한 단계 결과를 승인한다. 사용자가 채팅에서 승인한다고 말했을 때만 호출한다. 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
             """{"type":"object","properties":{"stage":{"type":"string","description":"승인할 단계(REQUIREMENTS 또는 TEST_CASES)"}},"required":["stage"]}""",
         )) { args -> approve(args.text("stage") ?: throw IllegalArgumentException("stage 가 필요합니다")) },
@@ -61,7 +77,7 @@ class IlsimMcp(
         val ws = workspace()
         active.load(ws.root)?.let { current ->
             if (server.agentTask(current.taskId)?.status == "ACTIVE") {
-                throw IllegalStateException("이미 진행 중인 작업이 있습니다: ${current.feature} (${current.taskId.take(8)}). next_step으로 이어서 하거나 웹에서 중지하세요")
+                throw IllegalStateException("이미 진행 중인 작업이 있습니다: ${current.feature} (${current.taskId.take(8)}). next_step으로 이어서 하세요")
             }
             active.clear(ws.root)
         }
@@ -73,7 +89,8 @@ class IlsimMcp(
         val branch = "ilsim/${created.feature}-${created.taskId.take(8)}"
         Shell.gitOk(ws.root, "checkout", "-b", branch)
         active.save(ws.root, ActiveTask(created.taskId, ws.projectId, created.feature, branch))
-        return "작업을 만들었습니다: ${created.feature} (${created.taskId.take(8)}), 브랜치 $branch\n\n" + nextStep()
+        val warning = ws.installCommitHook(runnerCommand)?.let { "\n주의: $it" }.orEmpty()
+        return "작업을 만들었습니다: ${created.feature} (${created.taskId.take(8)}), 브랜치 $branch$warning\n\n" + nextStep()
     }
 
     private fun nextStep(): String {
@@ -97,7 +114,7 @@ class IlsimMcp(
             }
             state.status == "BLOCKED" -> {
                 active.save(ws.root, task.copy(stage = state.stage, status = "BLOCKED"))
-                "작업이 차단됐습니다(${state.stage}): ${state.error ?: "사유 없음"}. 사용자가 웹에서 재시도하거나 중지해야 합니다"
+                "작업이 차단됐습니다(${state.stage}): ${state.error ?: "사유 없음"}. 사용자에게 사유를 알리고, 다시 시도하자고 하면 retry_task(사용자 지시)를 호출하세요"
             }
             state.stageStatus == "WAITING_APPROVAL" -> {
                 active.save(ws.root, task.copy(stage = state.stage, status = "WAITING_APPROVAL"))
@@ -105,6 +122,52 @@ class IlsimMcp(
             }
             else -> "단계를 시작하지 못했습니다(작업 ${state.status}, 단계 ${state.stage} ${state.stageStatus})"
         }
+    }
+
+    private fun checkChange(): String {
+        val ws = workspace()
+        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val stage = task.stage?.takeIf { task.status == RUNNING } ?: throw IllegalStateException("실행 중인 단계가 없습니다(상태 ${task.status ?: "-"}). next_step을 호출하세요")
+        val notes = mutableListOf<String>()
+        val validation = linkedMapOf<String, String>()
+        val assigned = AssignedTask(task.taskId, ws.projectId, stage, 1, task.feature, "claude-app", prompt = "", testCommand = ws.project.testCommand)
+        val changed = ws.changedFiles()
+        val problems = Gate.pathViolations(stage, task.feature, changed).filterNot { changed.isEmpty() } + gates(notes::add).quickCheck(assigned, ws.root, validation)
+        return buildString {
+            appendLine("변경 파일 ${changed.size}개, 검사: ${validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "없음" }}")
+            if (problems.isEmpty()) appendLine("문제 없음. 테스트·변이·독립 검토는 submit_result에서 실행합니다")
+            else { appendLine("고칠 것:"); problems.forEach { appendLine("- $it") } }
+            notes.filter { it.startsWith("위험 후보") }.takeIf { it.isNotEmpty() }?.let { candidates ->
+                appendLine("참고(차단하지 않음):")
+                candidates.forEach { appendLine("- $it") }
+            }
+        }.trimEnd()
+    }
+
+    private fun rules(): String {
+        val ws = workspace()
+        return RulesBrief.build(ArchitectureStore(store).load(ws.projectId), ConventionStore(store).load(ws.projectId), RiskScanner.Store(store).load(ws.projectId))
+            ?: "승인된 규칙이 없습니다. analyze_project로 분석한 뒤 웹 규칙 화면에서 승인하세요"
+    }
+
+    private fun analyze(): String {
+        val ws = workspace()
+        val out = StringBuilder()
+        for ((label, run) in listOf<Pair<String, (ConfigStore, String, Appendable) -> Unit>>("아키텍처" to ::analyzeArchitecture, "컨벤션" to ::analyzeConvention)) {
+            out.appendLine("[$label]")
+            runCatching { run(store, ws.projectId, out) }.onFailure { out.appendLine("$label 분석 실패: ${it.message}") }
+            out.appendLine()
+        }
+        return out.toString().trimEnd().let { if (it.length > MAX_OUTPUT) it.take(MAX_OUTPUT) + "\n…(생략)" else it }
+    }
+
+    private fun retry(instruction: String?): String {
+        val ws = workspace()
+        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
+        if (state.status != "BLOCKED") throw IllegalStateException("차단된 작업이 아닙니다(상태 ${state.status})")
+        server.retry(task.taskId, instruction)
+        return "다시 시도합니다\n\n" + nextStep()
     }
 
     private fun waiting(stage: String): Pair<Workspace, ActiveTask> {
@@ -205,6 +268,10 @@ class IlsimMcp(
 
     companion object {
         const val RUNNING = "RUNNING"
+
+        private const val MAX_OUTPUT = 12_000
+
+        private val runnerCommand: String get() = System.getenv("ILSIM_RUNNER_BIN")?.takeIf { it.isNotBlank() } ?: "ilsim-runner"
 
         const val INSTRUCTIONS = "일심이 관리하는 저장소에서는 코드·문서를 바꾸기 전에 start_task(새 작업) 또는 next_step(진행 중 작업)을 호출하고, 단계를 마치면 submit_result로 제출한다. 질문·설명 요청이면 작업을 만들지 않는다."
 

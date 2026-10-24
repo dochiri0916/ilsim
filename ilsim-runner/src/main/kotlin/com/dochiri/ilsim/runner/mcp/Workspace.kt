@@ -23,7 +23,24 @@ data class Workspace(val root: Path, val projectId: String, val project: Project
 
     fun branch(): String = Shell.gitOk(root, "rev-parse", "--abbrev-ref", "HEAD").trim()
 
+    fun installCommitHook(command: String): String? {
+        val hooks = root.resolve(Shell.gitOk(root, "rev-parse", "--git-path", "hooks").trim()).normalize()
+        val hook = hooks.resolve("pre-commit")
+        val content = "#!/bin/sh\n$HOOK_MARK\nexec \"$command\" hook commit\n"
+        if (hook.exists()) {
+            val text = hook.readText()
+            if (HOOK_MARK !in text) return "기존 pre-commit 훅($hook)이 있어 일심 커밋 차단 훅을 설치하지 않았습니다"
+            if (text == content) return null
+        }
+        hooks.createDirectories()
+        hook.writeText(content)
+        hook.toFile().setExecutable(true)
+        return null
+    }
+
     companion object {
+        const val HOOK_MARK = "ilsim_hook=1"
+
         fun root(dir: Path): Path? = Shell.git(dir, "rev-parse", "--show-toplevel").takeIf { it.exit == 0 }
             ?.output?.trim()?.takeIf { it.isNotEmpty() }?.let { real(Path.of(it)) }
 

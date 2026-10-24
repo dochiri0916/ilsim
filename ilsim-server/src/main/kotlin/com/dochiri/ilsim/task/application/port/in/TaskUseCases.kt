@@ -65,4 +65,6 @@ interface RunnerUseCase {
     fun approve(taskId: String)
 
     fun reject(taskId: String, feedback: String?)
+
+    fun retry(taskId: String, instruction: String?)
 }
