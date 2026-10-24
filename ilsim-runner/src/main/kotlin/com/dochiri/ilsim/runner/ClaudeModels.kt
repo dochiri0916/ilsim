@@ -15,6 +15,10 @@ object ClaudeModels {
 
     val LOCKED = setOf("fable")
 
+    fun allows(model: String, effort: String): Boolean = !(effort == "max" && (model.contains("sonnet") || model.contains("opus")))
+
+    fun clampEffort(model: String, effort: String): String = if (allows(model, effort)) effort else "xhigh"
+
     fun isLocked(model: String?): Boolean = LOCKED.any { model?.lowercase()?.contains(it) == true }
 
     fun all(): Map<String, String> = mapOf("haiku" to HAIKU, "sonnet" to SONNET, "opus" to OPUS)

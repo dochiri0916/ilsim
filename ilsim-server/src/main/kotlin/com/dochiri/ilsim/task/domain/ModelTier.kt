@@ -10,6 +10,8 @@ enum class ModelTier(val label: String, val defaultId: String) {
 
     val modelId: String get() = ModelCatalog.current(this)
 
+    fun allows(effort: String): Boolean = !(this != HAIKU && effort == ReasoningEffort.MAX)
+
     companion object {
         fun parse(raw: String?, default: ModelTier): ModelTier =
             entries.firstOrNull { it.label == raw?.trim()?.lowercase() } ?: default
@@ -55,6 +57,7 @@ object ModelCatalog {
 object ReasoningEffort {
     private val ALLOWED = setOf("low", "medium", "high", "xhigh", "max")
     const val DEFAULT = "medium"
+    const val MAX = "max"
 
     fun parse(raw: String?): String = raw?.trim()?.lowercase()?.takeIf { it in ALLOWED } ?: DEFAULT
 }

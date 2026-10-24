@@ -12,7 +12,7 @@ object ReviewRouter {
         val key get() = "$model/$effort/$POLICY"
     }
     private val options get() = listOf(ClaudeModels.HAIKU, ClaudeModels.SONNET, ClaudeModels.OPUS).flatMap { m ->
-        listOf("low", "medium", "high", "xhigh", "max").map { Choice(m, it) }
+        listOf("low", "medium", "high", "xhigh", "max").filter { ClaudeModels.allows(m, it) }.map { Choice(m, it) }
     }
 
     fun select(prompt: String, jev: Jev = Jev.fromEnvironment(), allowUnverified: Boolean = System.getenv("ILSIM_REVIEW_ALLOW_UNVERIFIED") == "true"): Choice {

@@ -19,7 +19,7 @@ object ClaudeCli {
 
     fun ask(prompt: String, model: String): String = askWithCost(prompt, model).text
 
-    internal fun command(prompt: String, model: String, effort: String, budgetUsd: Double? = null) = listOf("claude", "-p", "--model", model, "--effort", effort,
+    internal fun command(prompt: String, model: String, effort: String, budgetUsd: Double? = null) = listOf("claude", "-p", "--model", model, "--effort", ClaudeModels.clampEffort(model, effort),
         "--output-format", "json", "--tools", "", "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}") +
         (budgetUsd?.let { require(it.isFinite() && it > 0); listOf("--max-budget-usd", it.toString()) } ?: emptyList())
 

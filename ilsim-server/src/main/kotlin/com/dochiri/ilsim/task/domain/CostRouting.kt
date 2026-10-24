@@ -59,7 +59,7 @@ data class CostRoutingPolicy(
     companion object {
         val ENVIRONMENT_FAILURES = setOf("ENVIRONMENT", "NETWORK", "AUTH", "STOPPED", "SESSION_MISSING")
         val efforts = listOf("low", "medium", "high", "xhigh", "max")
-        val options = ModelTier.entries.flatMap { tier -> efforts.map { ModelOption(tier, it) } }
+        val options = ModelTier.entries.flatMap { tier -> efforts.filter(tier::allows).map { ModelOption(tier, it) } }
         const val SUPPORT_VERSION = "claude-5.5-cli-2.1.302-v1"
 
         fun estimate(option: ModelOption, chars: Int): Double {

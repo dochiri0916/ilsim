@@ -48,7 +48,8 @@ object ProviderAccounts {
     }
 
     fun adapt(task: AssignedTask): AssignedTask =
-        config(ClaudeAccountScope.account)?.let { task.copy(model = it.model, effort = it.effort) } ?: task
+        config(ClaudeAccountScope.account)?.let { task.copy(model = it.model, effort = it.effort) }
+            ?: task.copy(effort = ClaudeModels.clampEffort(task.model, task.effort))
 
     fun priced(usage: List<AiUsage>): List<AiUsage> {
         val config = config(ClaudeAccountScope.account) ?: return usage
