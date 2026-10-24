@@ -1,7 +1,6 @@
 package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -14,7 +13,7 @@ import org.junit.jupiter.api.Test
 class TaskDeleteTest {
 
     private val demo = Project("demo", "demo", null)
-    private val service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium").also {
+    private val service = TaskService(NoStore, MutableClock()).also {
         it.poll("r1", listOf(demo))
     }
 
@@ -45,11 +44,7 @@ class TaskDeleteTest {
         service.delete(open.id.value)
         service.delete(done.id.value)
 
-        assertThat(service.claimCleanups(listOf("other"))).isEmpty()
-        val jobs = service.claimCleanups(listOf("demo")).associateBy { it.taskId }
-        assertThat(jobs[open.id.value]!!.keepBranch).isFalse()
-        assertThat(jobs[open.id.value]!!.branch).isEqualTo("ilsim/open-x")
-        assertThat(jobs[done.id.value]!!.keepBranch).isTrue()
-        assertThat(service.claimCleanups(listOf("demo"))).isEmpty()
+        assertThat(service.find(open.id.value)).isNull()
+        assertThat(service.find(done.id.value)).isNull()
     }
 }

@@ -2,7 +2,6 @@ package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.adapter.out.persistence.TaskRecord
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -25,7 +24,7 @@ class AgentTaskTest {
 
     @BeforeEach
     fun setUp() {
-        service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium")
+        service = TaskService(NoStore, MutableClock())
         service.register("r1", listOf(demo))
     }
 
@@ -36,14 +35,12 @@ class AgentTaskTest {
     fun `Claude 앱 작업은 Runner가 가져가지 않고 claim 으로만 시작한다`() {
         val task = service.createForAgent("demo", "slug", "slugify 추가")
         assertThat(task.agent).isEqualTo(Task.CLAUDE_APP)
-        assertThat(service.poll("r1", listOf(demo))).isNull()
 
         val first = service.claim(task.id.value, "r1")!!
         assertThat(first.stage).isEqualTo("REQUIREMENTS")
         assertThat(first.model).isEqualTo(Task.CLAUDE_APP)
         assertThat(first.prompt).contains("slugify 추가")
         assertThat(service.claim(task.id.value, "r1")!!.executionId).isEqualTo(first.executionId)
-        assertThat(service.routing().report.recent).isEmpty()
 
         service.report(task.id.value, pass(first.executionId, "REQUIREMENTS"))
         assertThat(service.latest(task).current()!!.status).isEqualTo(StageStatus.WAITING_APPROVAL)
@@ -57,9 +54,13 @@ class AgentTaskTest {
     }
 
     @Test
-    fun `Runner 작업은 claim 할 수 없다`() {
-        val task = service.create("demo", "slug", "slugify 추가")
-        assertThatThrownBy { service.claim(task.id.value, "r1") }.isInstanceOf(InvalidTaskStateException::class.java)
+    fun `이전 Runner 작업은 claim 할 수 없다`() {
+        val legacy = Task.create(com.dochiri.ilsim.task.domain.vo.TaskId.of("legacy"), MutableClock().now, com.dochiri.ilsim.task.domain.vo.ProjectId.of("demo"), "slug", "x")
+        val store = object : com.dochiri.ilsim.task.application.port.out.TaskStore by NoStore {
+            override fun loadTasks(): List<Task> = listOf(legacy)
+        }
+        val restored = TaskService(store, MutableClock()).also { it.restore() }
+        assertThatThrownBy { restored.claim("legacy", "r1") }.isInstanceOf(InvalidTaskStateException::class.java)
     }
 
     @Test

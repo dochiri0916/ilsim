@@ -4,7 +4,6 @@ import com.dochiri.ilsim.task.adapter.out.persistence.TaskRecord
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
 import com.dochiri.ilsim.task.application.port.out.StoredProject
 import com.dochiri.ilsim.task.application.port.out.TaskStore
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -42,7 +41,7 @@ class PersistenceTest {
     private val clock = MutableClock()
 
     private fun service(store: MemoryStore) =
-        TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), store, clock, "medium").also { it.restore() }
+        TaskService(store, clock).also { it.restore() }
 
     @Test
     fun `작업과 단계 결과 이벤트가 저장되고 서버를 다시 띄워도 되살아난다`() {
@@ -102,17 +101,18 @@ class PersistenceTest {
     }
 
     @Test
-    fun `저장소가 죽으면 새 실행 배정을 보류하고 진행 로그는 메모리에서 유지한다`() {
-        val store = MemoryStore().also { it.down = true }
+    fun `저장소가 죽으면 작업 생성과 단계 시작을 거절하고 진행 로그는 메모리에서 유지한다`() {
+        val store = MemoryStore()
         val service = service(store)
-        assertThat(service.list()).isEmpty()
-        service.poll("r1", listOf(demo))
+        service.register("r1", listOf(demo))
         val task = service.create("demo", "slug", "x")
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) { service.poll("r1", listOf(demo)) }
+        store.down = true
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) { service.create("demo", "other", "y") }
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) { service.claim(task.id.value, "r1") }
         assertThat(service.find(task.id.value)!!.current()!!.status).isEqualTo(StageStatus.PENDING)
+        assertThat(service.list()).hasSize(1)
         service.addEvent(task.id.value, "REQUIREMENTS", "log", "계속")
         assertThat(service.events(task.id.value)).hasSize(1)
-        assertThat(store.tasks).isEmpty()
     }
 
     @Test

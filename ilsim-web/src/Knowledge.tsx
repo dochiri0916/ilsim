@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
-import { api, type Analysis, type MemoryView, type RuleSet, type RuleView } from './api'
-import { Dialog } from './Dialog'
+import { useState } from 'react'
+import { api, type MemoryView, type RuleSet, type RuleView } from './api'
 import { StatusBadge } from './StatusBadge'
 import { usePoll } from './usePoll'
 import { memoryTradeoff, ruleTradeoff, type Tradeoff } from './ruleTradeoffs'
@@ -69,23 +68,19 @@ function upgradeRequest(set: RuleSet, r: RuleView): string {
   ].filter(Boolean).join('\n')
 }
 
-function RuleBody({ r, onUpgrade, busy }: { r: RuleView; onUpgrade: () => void; busy: boolean }) {
+function RuleBody({ r, onCopy, copied }: { r: RuleView; onCopy: () => void; copied: boolean }) {
   return (
     <>
       {r.recommended && (
         <div className="recommend">
           <p className="review"><b>{r.principle}</b> {r.rationale}</p>
           <p className="muted small">현재 준수 {r.compliant}/{r.total}{r.examples.length > 0 && ` · 예: ${r.examples.join(', ')}`}</p>
-          {r.compliant < r.total && <button className="secondary" disabled={busy} onClick={onUpgrade}>업그레이드 작업 만들기</button>}
+          {r.compliant < r.total && <button className="secondary" onClick={onCopy}>{copied ? '복사했습니다. Claude 앱에 붙여 넣으세요' : '업그레이드 요청 복사'}</button>}
         </div>
       )}
       {r.reviewVerdict && <p className="review"><StatusBadge value={r.reviewVerdict} /> {r.reviewReason}</p>}
     </>
   )
-}
-
-const ANALYSIS_LABEL: Record<Analysis['status'], string> = {
-  REQUESTED: 'Runner 대기 중…', RUNNING: '분석 중…', DONE: '분석 완료', FAILED: '분석 실패',
 }
 
 export function Knowledge({ projectId }: { projectId: string }) {
@@ -95,12 +90,7 @@ export function Knowledge({ projectId }: { projectId: string }) {
 
   const knowledge = usePoll(() => (projectId ? api.knowledge(projectId) : Promise.resolve(null)), 8000, [projectId])
   const k = knowledge.data
-  const analysis = usePoll(() => (projectId ? api.analysis(projectId) : Promise.resolve(undefined)), 3000, [projectId])
-  const a = analysis.data
-  const analyzing = a?.status === 'REQUESTED' || a?.status === 'RUNNING'
-  const [showReport, setShowReport] = useState(false)
-
-  useEffect(() => { if (a?.finishedAt) knowledge.reload() }, [a?.finishedAt])
+  const [copied, setCopied] = useState<string | null>(null)
 
   async function run(fn: () => Promise<void>) {
     setBusy(true)
@@ -126,25 +116,7 @@ export function Knowledge({ projectId }: { projectId: string }) {
   return (
     <>
       <h1 className="page-title">규칙·메모리</h1>
-      <div className="row">
-        {projectId && (
-          <button disabled={busy || analyzing} onClick={() => run(async () => { await api.analyze(projectId); analysis.reload() })}>
-            {analyzing ? '분석 중…' : '프로젝트 분석'}
-          </button>
-        )}
-        {a && (
-          <small className="muted">
-            {ANALYSIS_LABEL[a.status]}
-            {a.finishedAt && ` · ${new Date(a.finishedAt).toLocaleString()}`}
-            {a.report && <> · <button className="link" onClick={() => setShowReport(true)}>보고서</button></>}
-          </small>
-        )}
-      </div>
-      <p className="muted small">코드에서 아키텍처(레이어·의존 방향)와 코드 컨벤션 규칙을 추출합니다. AI가 확실한 규칙만 자동 승인하고, 나머지는 아래에서 승인·거절합니다. 헥사고날·DDD·클린 아키텍처·객체지향·생활 체조 기준으로 더 나은 방향은 "추천"으로 제안하며, 승인하면 적용되고 위반은 업그레이드 작업으로 고칩니다.</p>
-      {a?.error && <p className="err">{a.error}</p>}
-      {showReport && a?.report && (
-        <Dialog title="분석 보고서" onClose={() => setShowReport(false)}><pre>{a.report}</pre></Dialog>
-      )}
+      <p className="muted small">코드에서 추출한 아키텍처(레이어·의존 방향)와 코드 컨벤션 규칙입니다. 분석은 <code>ilsim-runner architecture &lt;id&gt;</code>·<code>convention &lt;id&gt;</code>로 실행합니다. AI가 확실한 규칙만 자동 승인하고, 나머지는 아래에서 승인·거절합니다. 헥사고날·DDD·클린 아키텍처·객체지향·생활 체조 기준으로 더 나은 방향은 "추천"으로 제안하며, 위반은 업그레이드 요청을 복사해 Claude 앱에서 고칩니다.</p>
 
       <nav className="tabs" aria-label="종류">
         {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
@@ -172,10 +144,9 @@ export function Knowledge({ projectId }: { projectId: string }) {
             {byState(k[tab], ruleState).map((r) => (
               <Item key={r.id} title={r.description} state={ruleState(r)} busy={busy} tradeoff={ruleTradeoff(r.kind, r.severity)}
                 meta={`${r.recommended ? '추천 · ' : ''}${r.kind}${r.severity ? ` · ${r.severity}` : ''}${r.decidedBy ? ` · ${r.decidedBy === 'auto' ? '프로젝트가 따르지 않아 자동 OFF' : r.decidedBy}` : ''}`}
-                body={<RuleBody r={r} busy={busy} onUpgrade={() => run(async () => {
-                  const task = await api.createTask(projectId, '', upgradeRequest(tab, r))
-                  location.hash = `#/tasks/${task.id}`
-                })} />}
+                body={<RuleBody r={r} copied={copied === r.id} onCopy={() => {
+                  navigator.clipboard.writeText(upgradeRequest(tab, r)).then(() => setCopied(r.id), (e) => setError(String(e)))
+                }} />}
                 onApprove={() => run(() => api.decideRules(projectId, tab, [r.id], 'approve'))}
                 onReject={() => run(() => api.decideRules(projectId, tab, [r.id], 'reject'))} />
             ))}

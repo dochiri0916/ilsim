@@ -83,7 +83,7 @@ data class ReviewCostPolicy(
             codeExecutions % sampleEvery.coerceAtLeast(1) != 0) return null
         val used = previous.filter { it.policyVersion == version }
         if (used.size >= sampleLimit || used.sumOf { it.maxCostUsd } + sampleMaxUsd > sampleBudgetUsd + 1e-9) return null
-        val candidates = CostRoutingPolicy.options.filterNot { it.tier == ModelTier.SONNET && it.effort == "medium" }
+        val candidates = ModelOptions.all.filterNot { it.tier == ModelTier.SONNET && it.effort == "medium" }
         val option = candidates[used.size % candidates.size]
         return ReviewSampleGrant(id, executionId, version, option.tier.modelId, option.effort, sampleMaxUsd)
     }

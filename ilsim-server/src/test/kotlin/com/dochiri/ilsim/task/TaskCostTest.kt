@@ -1,7 +1,6 @@
 package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -19,7 +18,7 @@ class TaskCostTest {
 
     @BeforeEach
     fun setUp() {
-        service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium")
+        service = TaskService(NoStore, MutableClock())
         service.poll("r1", listOf(demo))
         task = service.create("demo", "slug", "slugify 추가")
     }
@@ -102,7 +101,7 @@ class TaskCostTest {
 
     @Test
     fun `작업이 없으면 통계는 비어 있다`() {
-        val empty = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium").stats()
+        val empty = TaskService(NoStore, MutableClock()).stats()
         assertThat(empty.tasks).isZero()
         assertThat(empty.byModel).isEmpty()
         assertThat(empty.byStage).isEmpty()

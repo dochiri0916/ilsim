@@ -13,11 +13,10 @@ object Shell {
             it.environment()[RUNNER_ENV] = "1"
             if (cmd.firstOrNull() == "claude") {
                 cmd.zipWithNext().firstOrNull { (k, v) -> k == "--model" && ClaudeModels.isLocked(v) }?.let { error("잠긴 모델은 실행하지 않습니다: ${it.second}") }
-                ClaudeAccountScope.configure(it.environment())
             }
         }
 
-    fun start(builder: ProcessBuilder): Process = StopSignal.track(builder.start())
+    fun start(builder: ProcessBuilder): Process = builder.start()
 
     fun run(dir: Path, vararg cmd: String, timeoutMinutes: Long = 10, maxChars: Int = 4000, stdin: String? = null): ShellResult {
         val p = start(process(dir, cmd.toList()))

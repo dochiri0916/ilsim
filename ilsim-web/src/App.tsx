@@ -4,10 +4,8 @@ import { Dashboard } from './Dashboard'
 import { Knowledge } from './Knowledge'
 import { ProjectPicker, useSelectedProject } from './ProjectPicker'
 import { Settings } from './Settings'
-import { Routing } from './Routing'
 import { Stats } from './Stats'
 import { TaskDetail } from './TaskDetail'
-import { Usage } from './Usage'
 import { usePoll } from './usePoll'
 
 function useHash() {
@@ -92,9 +90,7 @@ export function App() {
 const TABS = [
   { href: '#/', label: '작업' },
   { href: '#/knowledge', label: '규칙·메모리' },
-  { href: '#/usage', label: '사용량' },
   { href: '#/stats', label: '통계' },
-  { href: '#/routing', label: '모델 선택' },
 ]
 
 function Shell({ hash, onLogout }: { hash: string; onLogout: () => void }) {
@@ -131,14 +127,12 @@ function Shell({ hash, onLogout }: { hash: string; onLogout: () => void }) {
         {tab === '#/settings' ? <Settings />
           : !project ? (projects.data && (
             <p className="muted">
-              Runner가 연결되면 프로젝트가 표시됩니다. <code>ilsim-runner add &lt;id&gt; &lt;path&gt;</code> 후 <code>ilsim-runner run</code>
+              <code>ilsim-runner add &lt;id&gt; &lt;path&gt;</code>로 등록한 뒤 Claude 앱에서 일심 작업을 시작하면 프로젝트가 표시됩니다
             </p>
           ))
           : match ? <TaskDetail id={match[1]} />
           : tab === '#/knowledge' ? <Knowledge projectId={projectId} />
-          : tab === '#/usage' ? <Usage project={project} />
           : tab === '#/stats' ? <Stats projectId={projectId} />
-          : tab === '#/routing' ? <Routing projectId={projectId} />
           : <Dashboard project={project} />}
       </main>
     </div>

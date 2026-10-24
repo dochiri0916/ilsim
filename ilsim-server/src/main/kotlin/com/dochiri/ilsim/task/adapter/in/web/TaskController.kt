@@ -19,8 +19,6 @@ class TaskController(
     private val manage: ManageTaskUseCase,
     private val query: QueryTaskUseCase,
 ) {
-    data class CreateTaskRequest(val projectId: String, val feature: String? = null, val requirement: String? = null, val continueFrom: String? = null)
-
     data class RejectRequest(val feedback: String? = null)
 
     data class MessageRequest(val text: String? = null)
@@ -49,10 +47,6 @@ class TaskController(
 
     @GetMapping("/stats")
     fun stats(@RequestParam(required = false) projectId: String?): Stats = query.stats(projectId?.takeIf { it.isNotBlank() })
-
-    @PostMapping("/tasks")
-    fun create(@RequestBody request: CreateTaskRequest): TaskResponse =
-        TaskResponse.from(manage.create(request.projectId, request.feature, request.requirement, request.continueFrom))
 
     @GetMapping("/tasks")
     fun list(): List<TaskResponse> = query.list().map(TaskResponse::from)

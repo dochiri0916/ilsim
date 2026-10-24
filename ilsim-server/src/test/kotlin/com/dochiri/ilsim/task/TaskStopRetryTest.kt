@@ -1,7 +1,6 @@
 package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -22,7 +21,7 @@ class TaskStopRetryTest {
 
     @BeforeEach
     fun setUp() {
-        service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium")
+        service = TaskService(NoStore, MutableClock())
         service.poll("r1", listOf(demo))
         task = service.create("demo", "slug", "slugify 추가")
     }
@@ -30,9 +29,8 @@ class TaskStopRetryTest {
     private fun poll() = service.poll("r1", listOf(demo))
 
     @Test
-    fun `실행 중인 단계를 중지하면 차단되고 Runner 에 중지를 알린다`() {
+    fun `실행 중인 단계를 중지하면 차단된다`() {
         poll()
-        assertThat(service.shouldStop(task.id.value)).isFalse()
 
         service.stop(task.id.value)
 
@@ -40,7 +38,6 @@ class TaskStopRetryTest {
         assertThat(stopped.status).isEqualTo(TaskStatus.BLOCKED)
         assertThat(stopped.current()!!.status).isEqualTo(StageStatus.FAILED)
         assertThat(stopped.current()!!.error).isEqualTo(Task.STOPPED_MESSAGE)
-        assertThat(service.shouldStop(task.id.value)).isTrue()
         assertThat(service.events(task.id.value).last().data).isEqualTo(Task.STOPPED_MESSAGE)
     }
 
@@ -73,7 +70,6 @@ class TaskStopRetryTest {
 
         assertThat(service.latest(task).status).isEqualTo(TaskStatus.ACTIVE)
         val assignment = poll()!!
-        assertThat(assignment.resumeSessionId).isEqualTo("s-1")
         assertThat(assignment.prompt).contains("null 입력도 처리해").contains("실패한 테스트 1건")
         assertThat(service.events(task.id.value).map { it.type to it.data }).contains("message" to "null 입력도 처리해")
     }

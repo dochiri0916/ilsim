@@ -27,23 +27,6 @@ class StageState private constructor(
     val usage: List<AiUsage> = emptyList(),
     val decisions: List<ProcessingDecision> = emptyList(),
 ) {
-    fun cachedAssessment(): Assessment? {
-        if (routing["source"] != "jev") return null
-        val complexity = routing["complexity"]?.toDoubleOrNull() ?: return null
-        val risk = routing["risk"]?.toDoubleOrNull() ?: return null
-        if (!complexity.isFinite() || complexity !in 0.0..3.0 || !risk.isFinite() || risk !in 0.0..2.0) return null
-        val candidates = routing.filterKeys { it.startsWith("candidate:") }.mapNotNull { (key, value) ->
-            val parts = value.split(',')
-            val option = key.removePrefix("candidate:").split('/')
-            if (parts.size != 2 || option.size != 2) null else {
-                val success = parts[0].toDoubleOrNull() ?: return@mapNotNull null
-                val uncertainty = parts[1].toDoubleOrNull() ?: return@mapNotNull null
-                CandidateAssessment(option[0], option[1], success, uncertainty)
-            }
-        }
-        return Assessment(complexity, risk, candidates)
-    }
-
     internal fun addCost(usd: Double, model: String): StageState = copy(
         costUsd = costUsd + usd,
         costByModel = costByModel + (model to (costByModel[model] ?: 0.0) + usd),
@@ -88,16 +71,6 @@ class StageState private constructor(
             },
         )
     })
-
-    fun recordCostRoute(assessment: Assessment?, route: CostRoute, attempt: Int, hash: String, policy: String): StageState = copy(
-        routing = mapOf(
-            "source" to if (assessment == null) "fallback" else "jev", "contextHash" to hash,
-            "complexity" to (assessment?.complexity?.toString() ?: ""), "risk" to (assessment?.risk?.toString() ?: ""),
-            "model" to route.option.tier.label, "effort" to route.option.effort, "policyVersion" to policy,
-            "expectedCostUsd" to route.expectedCostUsd.toString(), "predictedSuccess" to route.success.toString(),
-        ) + assessment?.candidates.orEmpty().associate { "candidate:${it.model}/${it.effort}" to "${it.success},${it.uncertainty}" },
-        routingLog = routingLog + "시도 $attempt: ${route.option.tier.label}/${route.option.effort} (${if (assessment == null) "규칙 기반 fallback" else "JEV"}, ${route.reason}, 정책 $policy, 예상 $${route.expectedCostUsd})",
-    )
 
     internal fun converse(text: String): StageState = copy(
         messages = messages + text,
@@ -152,21 +125,6 @@ class StageState private constructor(
 
     internal fun recoverInterrupted(): StageState =
         if (status == StageStatus.RUNNING) copy(status = StageStatus.PENDING) else this
-
-    fun recordAssessedRoute(assessment: Assessment, tier: ModelTier, attempt: Int): StageState = copy(
-        routing = linkedMapOf(
-            "source" to "jev",
-            "complexity" to "%.2f".format(java.util.Locale.ROOT, assessment.complexity),
-            "risk" to "%.2f".format(java.util.Locale.ROOT, assessment.risk),
-            "model" to tier.label,
-        ),
-        routingLog = routingLog + "시도 %d: %s (JEV 난이도 %.2f/3, 위험 %.2f/2)".format(
-            java.util.Locale.ROOT, attempt, tier.label, assessment.complexity, assessment.risk,
-        ),
-    )
-
-    fun recordFallbackRoute(tier: ModelTier, attempt: Int, reason: String): StageState =
-        copy(routingLog = routingLog + "시도 $attempt: ${tier.label} (규칙 기반, $reason)")
 
     private fun copy(
         status: StageStatus = this.status,

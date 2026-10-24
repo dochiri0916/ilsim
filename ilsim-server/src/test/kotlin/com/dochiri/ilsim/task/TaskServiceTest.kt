@@ -1,7 +1,6 @@
 package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -29,7 +28,7 @@ class TaskServiceTest {
 
     @BeforeEach
     fun setUp() {
-        service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium")
+        service = TaskService(NoStore, MutableClock())
         service.poll("r1", listOf(demo))
         task = service.create("demo", "slug", "slugify 추가")
     }
@@ -109,22 +108,6 @@ class TaskServiceTest {
     }
 
     @Test
-    fun `같은 사유로 연달아 실패하면 남은 시도를 건너뛰고 상위 모델로 올린다`() {
-        toImplementation()
-        val first = poll()!!
-        assertThat(first.stage).isEqualTo("IMPLEMENTATION")
-        service.report(task.id.value, fail(true, "Foo.kt:12 테스트 실패: expected 3"))
-
-        assertThat(poll()!!.attempt).isEqualTo(2)
-        service.report(task.id.value, fail(true, "Foo.kt:48 테스트 실패: expected 7"))
-
-        val third = poll()!!
-        assertThat(third.attempt).isEqualTo(Task.MAX_ATTEMPTS)
-        assertThat(third.model).isEqualTo("claude-opus-5-5")
-        assertThat(third.effort).isEqualTo("medium")
-    }
-
-    @Test
     fun `사유가 달라지면 차례대로 시도한다`() {
         toImplementation()
         poll(); service.report(task.id.value, fail(true, "테스트 실패"))
@@ -156,11 +139,12 @@ class TaskServiceTest {
             branch = null,
             runs = RunCount.of(Task.MAX_TASK_RUNS),
             stages = Stage.entries.map { StageState.initial(it) },
+            agent = Task.CLAUDE_APP,
         )
         val store = object : com.dochiri.ilsim.task.application.port.out.TaskStore by NoStore {
             override fun loadTasks(): List<Task> = listOf(exhausted)
         }
-        val restored = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), store, MutableClock(), "medium").also { it.restore() }
+        val restored = TaskService(store, MutableClock()).also { it.restore() }
 
         assertThat(restored.poll("r1", listOf(demo))).isNull()
         assertThat(restored.latest(exhausted).status).isEqualTo(TaskStatus.BLOCKED)
@@ -171,11 +155,4 @@ class TaskServiceTest {
         assertThat(restored.poll("r1", listOf(demo))).isNotNull()
     }
 
-    @Test
-    fun `JEV 장애는 시도 횟수만으로 모델을 승격하지 않는다`() {
-        val selector = ModelSelector(NoAssessor, ModelTier.SONNET)
-        val state = service.latest(task).stage(Stage.IMPLEMENTATION)
-        assertThat(selector.select(task, state, 1).tier).isEqualTo(ModelTier.SONNET)
-        assertThat(selector.select(task, state, 3).tier).isEqualTo(ModelTier.SONNET)
-    }
 }

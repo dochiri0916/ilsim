@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { api } from './api'
 import type { Project, Task } from './api'
 import { StageDots } from './StageDots'
@@ -37,10 +36,6 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: 'wa
 export function Dashboard({ project }: { project: Project }) {
   const tasks = usePoll(api.tasks, 3000)
   const settings = usePoll(api.settings, 30000)
-  const [requirement, setRequirement] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
   const all = (tasks.data ?? []).filter((t) => t.projectId === project.id)
   const attention = all.filter((t) => groupOf(t) === 'attention')
   const running = all.filter((t) => groupOf(t) === 'running')
@@ -48,41 +43,15 @@ export function Dashboard({ project }: { project: Project }) {
   const waiting = attention.filter((t) => t.status !== 'BLOCKED').length
   const blocked = attention.length - waiting
 
-  async function submit(e?: React.FormEvent) {
-    e?.preventDefault()
-    if (busy || !requirement.trim()) return
-    setBusy(true)
-    setError(null)
-    try {
-      await api.createTask(project.id, '', requirement.trim())
-      setRequirement('')
-      tasks.reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const jevMissing = settings.data && !settings.data.jev.configured
 
   return (
     <>
       {jevMissing && (
         <p className="notice">
-          JEV 키가 등록되지 않아 모델을 규칙으로 고릅니다. <a href="#/settings">설정에서 등록</a>
+          JEV 키가 등록되지 않아 JEV 판정 없이 검증합니다. <a href="#/settings">설정에서 등록</a>
         </p>
       )}
-
-      <form className="card command" onSubmit={submit}>
-        <textarea rows={3} placeholder="무엇을 할까요? (Enter로 새 작업, Shift+Enter로 줄바꿈)" value={requirement} aria-label="명령"
-          onChange={(e) => setRequirement(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit() }
-          }} />
-        {error && <p className="err">{error}</p>}
-        <button disabled={busy || !requirement.trim()}>확인</button>
-      </form>
 
       <section className="stats">
         <Stat label="승인 대기" value={waiting} tone="warn" />
@@ -105,7 +74,7 @@ export function Dashboard({ project }: { project: Project }) {
         {running.length ? (
           <ul className="plain tasks">{running.map((t) => <TaskRow key={t.id} task={t} />)}</ul>
         ) : (
-          <p className="muted">{all.length ? '진행 중인 작업이 없습니다' : '아직 작업이 없습니다. 위에서 요구사항을 입력하면 시작됩니다'}</p>
+          <p className="muted">{all.length ? '진행 중인 작업이 없습니다' : '아직 작업이 없습니다. Claude 앱에서 요청하면 시작됩니다'}</p>
         )}
       </section>
 

@@ -1,7 +1,6 @@
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { ClaudeAccounts, ClaudeEnvironmentEditor, ClaudeSkillsEditor } from './ClaudeSettings'
 import { usePoll } from './usePoll'
 
 function Account() {
@@ -180,9 +179,6 @@ export function Settings() {
       </form>
       {error && <p className="err">{error}</p>}
     </section>
-    <ClaudeAccounts />
-    <ClaudeEnvironmentEditor />
-    <ClaudeSkillsEditor />
     <Account />
     <TwoFactor />
     </>

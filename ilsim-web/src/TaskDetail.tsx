@@ -42,7 +42,7 @@ export function TaskDetail({ id }: { id: string }) {
   const waiting = current?.status === 'WAITING_APPROVAL'
   const working = task.status === 'ACTIVE' && (current?.status === 'RUNNING' || current?.status === 'PENDING')
   const done = task.status === 'COMPLETED'
-  const canReply = blocked || waiting || done
+  const canReply = blocked || waiting
   const answeredOnly = done && task.stages.some((s) => s.status !== 'PASSED')
 
   async function act(fn: () => Promise<void>) {
@@ -59,16 +59,12 @@ export function TaskDetail({ id }: { id: string }) {
   function send() {
     const text = chat.trim()
     if (blocked) act(() => api.retry(id, text || undefined))
-    else if (done && text) act(async () => {
-      const next = await api.createTask(task.projectId, '', text, id)
-      location.hash = `#/tasks/${next.id}`
-    })
     else if (waiting && text) act(() => current?.conversable ? api.sendMessage(id, text) : api.reject(id, text))
   }
 
   const placeholder = blocked ? 'Claude에게 답하기 (비우고 보내면 처음부터 다시 시도)'
     : waiting ? (current?.conversable ? '요구사항에 대해 말하기 — 같은 세션에서 문서를 고칩니다' : '수정 요청 — 이 단계를 다시 작성합니다')
-    : done ? '이어서 지시하기 — 이 작업의 결과 위에서 새 작업을 시작합니다'
+    : done ? '완료된 작업입니다. 이어서 할 일은 Claude 앱에서 요청하세요'
     : 'Claude가 작업 중입니다'
 
   return (
@@ -83,8 +79,8 @@ export function TaskDetail({ id }: { id: string }) {
         {!working && (
           <button className="secondary stop danger" onClick={() => {
             const msg = done
-              ? '작업과 대화 기록을 삭제할까요? 브랜치(작업 결과)는 남기고 worktree만 지웁니다.'
-              : '작업과 대화 기록을 삭제할까요? worktree와 브랜치도 지웁니다.'
+              ? '작업과 대화 기록을 삭제할까요? 브랜치(작업 결과)는 남깁니다.'
+              : '작업과 대화 기록을 삭제할까요? 작업 브랜치는 저장소에 남습니다.'
             if (confirm(msg)) act(async () => { await api.deleteTask(id); location.hash = '#/' })
           }}>삭제</button>
         )}

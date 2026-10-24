@@ -87,8 +87,7 @@ private const val USAGE = """사용법:
   Claude 앱
     ilsim-runner mcp                             일심 MCP 서버(stdio). Claude 앱 플러그인이 실행한다
     ilsim-runner hook user-prompt-submit|pre-tool-use|stop   Claude 앱 훅(표준 입력으로 훅 JSON)
-  실행
-    ilsim-runner run                             서버에 연결해 작업 수행 (토큰: ILSIM_TOKEN 또는 서버가 만든 ~/.ilsim/token)"""
+"""
 
 private val AI_MODEL: String get() = ClaudeModels.REVIEW
 
@@ -122,7 +121,6 @@ fun main(args: Array<String>) {
         "mcp" -> mcp(store)
         "hook" -> hook(store, args)
         "jev-eval" -> jevEval(args)
-        "run" -> run(store)
         else -> { println(USAGE); exitProcess(1) }
     }
 }
@@ -495,6 +493,7 @@ private fun mcp(store: ConfigStore) {
 
 private fun hook(store: ConfigStore, args: Array<String>) {
     val event = args.getOrNull(1) ?: exitProcess(0)
+    if (System.getenv(Shell.RUNNER_ENV) == "1") exitProcess(0)
     val output = try {
         Hooks.handle(event, System.`in`.bufferedReader().readText(), store, ActiveTasks(store.location.parent.resolve("active")))
     } catch (e: Exception) {
@@ -594,70 +593,3 @@ private fun set(store: ConfigStore, args: Array<String>) {
     println("설정: ${args[1]} ${args[2]} = $command")
 }
 
-private fun analyzeProject(store: ConfigStore, projectId: String, policy: ReviewPolicySnapshot = ReviewPolicySnapshot()): AnalysisResult {
-    val usage = mutableListOf<AiUsage>()
-    return UsageScope.collect(usage, executionId = "analysis:${java.util.UUID.randomUUID()}") {
-        ReviewContext.within(policy, "ANALYSIS") { analyzeProjectWithUsage(store, projectId, usage) }
-    }
-}
-
-private fun analyzeProjectWithUsage(store: ConfigStore, projectId: String, usage: List<AiUsage>): AnalysisResult {
-    val out = StringBuilder()
-    val errors = mutableListOf<String>()
-    for ((label, analyze) in listOf<Pair<String, (ConfigStore, String, Appendable) -> Unit>>(
-        "아키텍처" to ::analyzeArchitecture,
-        "컨벤션" to ::analyzeConvention,
-    )) {
-        out.appendLine("[$label]")
-        try {
-            analyze(store, projectId, out)
-        } catch (e: Exception) {
-            errors += "$label 분석 실패: ${e.message}"
-            out.appendLine(errors.last())
-        }
-        out.appendLine()
-    }
-    return AnalysisResult(errors.isEmpty(), out.toString().trimEnd(), errors.joinToString("\n").ifEmpty { null }, usage.toList())
-}
-
-private fun run(store: ConfigStore) {
-    val tokenFile = store.location.parent.resolve("token")
-    val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), tokenFile)
-        ?: run { println("토큰이 없습니다. 서버를 먼저 실행해 ${tokenFile} 을 만들거나 ILSIM_TOKEN 환경변수를 설정하세요"); exitProcess(1) }
-    val config = store.load()
-    val client = ServerClient(config.serverUrl, token)
-    val durable = DurableTaskSink(client, store.location.parent.resolve("outbox"), client::sendEvents)
-    val executor = TaskExecutor(config, durable, configStore = store)
-    val report = config.projects.map { (id, p) -> ProjectReport(id, p.name) }
-    println("runner ${config.runnerId} -> ${config.serverUrl}, 프로젝트 ${report.map { it.id }}")
-    PlanUsageReporter(client, config.runnerId).start()
-    ClaudeLoginWorker(client, config.runnerId).start()
-    while (true) {
-        try {
-            durable.flushResults()
-            runCatching { client.jevKey() }.onSuccess { JevKey.fromServer = it }
-                .onFailure { System.err.println("JEV 키 갱신 실패, 기존 판단 경로 유지: ${it.message}") }
-            runCatching { client.claimCleanups(report.map { it.id }) }.getOrDefault(emptyList()).forEach {
-                println("작업 정리: ${it.taskId}")
-                executor.cleanup(it)
-            }
-            client.claimAnalysis(AnalysisClaim(config.runnerId, report.map { it.id }))?.let { projectId ->
-                println("분석 수신: $projectId")
-                val policy = runCatching { client.reviewPolicy(projectId) }.getOrDefault(ReviewPolicySnapshot())
-                client.analysisResult(projectId, ClaudeAccountScope.within(ClaudeAccounts.pick()) { analyzeProject(store, projectId, policy) })
-                println("분석 종료: $projectId")
-                continue
-            }
-            val task = client.poll(PollRequest(config.runnerId, report))
-            if (task != null) {
-                println("작업 수신: ${task.taskId} (${task.projectId})")
-                check(task.executionId != null) { "서버가 실행 ID를 지원하지 않습니다. 서버와 Runner를 함께 업데이트하세요" }
-                executor.run(task)
-                println("작업 종료: ${task.taskId}")
-            } else Thread.sleep(2000)
-        } catch (e: Exception) {
-            println("연결 오류: ${e.message}")
-            Thread.sleep(5000)
-        }
-    }
-}

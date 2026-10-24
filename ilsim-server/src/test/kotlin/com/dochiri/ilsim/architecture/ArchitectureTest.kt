@@ -40,7 +40,7 @@ class ArchitectureTest {
         .should().dependOnClassesThat().resideInAnyPackage(
             "com.dochiri.ilsim.task..", "com.dochiri.ilsim.auth..", "com.dochiri.ilsim.secret.domain..",
             "com.dochiri.ilsim.secret.application..", "com.dochiri.ilsim.secret.adapter..",
-        )
+        ).allowEmptyShould(true)
 
     @ArchTest
     val `secret 과 auth 는 다른 컨텍스트를 모른다`: ArchRule = noClasses().that().resideInAnyPackage("com.dochiri.ilsim.secret..", "com.dochiri.ilsim.auth..")

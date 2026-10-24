@@ -56,13 +56,6 @@ object UsageScope {
     }
 }
 
-class UsageJournal(private val file: java.nio.file.Path) {
-    private val json = Json { encodeDefaults = true; ignoreUnknownKeys = true }
-    fun load(): List<AiUsage> = if (!java.nio.file.Files.exists(file)) emptyList() else json.decodeFromString(java.nio.file.Files.readString(file))
-    fun save(calls: List<AiUsage>) = KnowledgeFiles.write(file, json.encodeToString(calls))
-    fun clear() { java.nio.file.Files.deleteIfExists(file) }
-}
-
 object ClaudeUsage {
     private val json = Json { ignoreUnknownKeys = true }
 

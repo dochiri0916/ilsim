@@ -18,9 +18,6 @@ class EffortLimitTest {
 
     @Test
     fun `실행 명령에도 max가 들어가지 않는다`() {
-        val task = AssignedTask("t", "p", "IMPLEMENTATION", 1, "f", "claude-sonnet-5-5", "max", "prompt")
-        val adapted = ProviderAccounts.adapt(task)
-        assertEquals("xhigh", adapted.effort)
         val cli = ClaudeCli.command("p", "claude-opus-5-5", "max")
         assertEquals("xhigh", cli[cli.indexOf("--effort") + 1])
     }

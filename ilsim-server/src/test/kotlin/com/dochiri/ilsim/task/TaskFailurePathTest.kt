@@ -2,7 +2,6 @@ package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
 import com.dochiri.ilsim.task.application.port.out.TaskStore
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -27,7 +26,7 @@ class TaskFailurePathTest {
 
     @BeforeEach
     fun setUp() {
-        service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium")
+        service = TaskService(NoStore, MutableClock())
         service.poll("r1", listOf(demo))
         task = service.create("demo", "slug", "slugify 추가")
     }
@@ -132,7 +131,7 @@ class TaskFailurePathTest {
         val store = object : TaskStore by NoStore {
             override fun loadTasks(): List<Task> = listOf(recovered)
         }
-        val restarted = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), store, MutableClock(), "medium").also { it.restore() }
+        val restarted = TaskService(store, MutableClock()).also { it.restore() }
         assertThat(restarted.latest(task).current()!!.status).isEqualTo(StageStatus.PENDING)
         assertThatThrownBy { restarted.report(task.id.value, pass()) }.isInstanceOf(InvalidTaskStateException::class.java)
         assertThat(restarted.poll("r1", listOf(demo))).isNotNull()

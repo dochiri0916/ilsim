@@ -4,7 +4,6 @@ import com.dochiri.ilsim.task.adapter.`in`.web.TaskController
 import com.dochiri.ilsim.task.adapter.`in`.web.TaskExceptionHandler
 import com.dochiri.ilsim.task.adapter.out.persistence.TaskRecord
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -33,7 +32,7 @@ class RequirementsConversationTest {
 
     @BeforeEach
     fun setUp() {
-        service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium")
+        service = TaskService(NoStore, MutableClock())
         service.poll("r1", listOf(demo))
         task = service.create("demo", "slug", "slugify 추가")
     }
@@ -64,7 +63,6 @@ class RequirementsConversationTest {
 
         val a = poll()!!
         assertThat(a.stage).isEqualTo("REQUIREMENTS")
-        assertThat(a.resumeSessionId).isEqualTo("s1")
         assertThat(a.prompt).contains("미결정 1번은 A 로 해줘").contains("specs/slug/requirements.md")
 
         service.report(task.id.value, pass("s1"))
@@ -92,7 +90,6 @@ class RequirementsConversationTest {
         poll()
         service.report(task.id.value, ReportStageCommand(passed = false, retryable = true, error = "범위 위반", sessionId = "s1"))
         val retry = poll()!!
-        assertThat(retry.resumeSessionId).isEqualTo("s1")
         assertThat(retry.prompt).contains("추가해 줘").contains("범위 위반")
 
         service.report(task.id.value, pass())

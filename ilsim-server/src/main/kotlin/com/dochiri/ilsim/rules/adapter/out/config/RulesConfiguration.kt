@@ -1,12 +1,8 @@
 package com.dochiri.ilsim.rules.adapter.out.config
 
 import com.dochiri.ilsim.rules.adapter.out.file.FileKnowledgeStore
-import com.dochiri.ilsim.rules.adapter.out.memory.InMemoryAnalysisStore
-import com.dochiri.ilsim.rules.application.port.`in`.AnalysisUseCase
 import com.dochiri.ilsim.rules.application.port.`in`.KnowledgeUseCase
-import com.dochiri.ilsim.rules.application.port.out.AnalysisStore
 import com.dochiri.ilsim.rules.application.port.out.KnowledgeStore
-import com.dochiri.ilsim.rules.application.usecase.AnalysisService
 import com.dochiri.ilsim.rules.application.usecase.KnowledgeService
 import java.nio.file.Path
 import org.springframework.beans.factory.annotation.Value
@@ -21,10 +17,4 @@ class RulesConfiguration {
 
     @Bean
     fun knowledgeUseCase(store: KnowledgeStore): KnowledgeUseCase = KnowledgeService(store)
-
-    @Bean
-    fun analysisStore(): AnalysisStore = InMemoryAnalysisStore()
-
-    @Bean
-    fun analysisUseCase(store: AnalysisStore): AnalysisUseCase = AnalysisService(store)
 }

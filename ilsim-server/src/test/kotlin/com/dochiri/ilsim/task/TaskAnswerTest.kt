@@ -1,7 +1,6 @@
 package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
 import com.dochiri.ilsim.task.domain.Project
@@ -15,7 +14,7 @@ import org.junit.jupiter.api.Test
 class TaskAnswerTest {
 
     private val demo = Project("demo", "demo", null)
-    private val service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium").also {
+    private val service = TaskService(NoStore, MutableClock()).also {
         it.poll("r1", listOf(demo))
     }
 

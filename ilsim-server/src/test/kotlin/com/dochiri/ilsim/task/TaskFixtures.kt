@@ -1,13 +1,14 @@
 package com.dochiri.ilsim.task
 
-import com.dochiri.ilsim.task.application.port.out.ComplexityAssessor
 import com.dochiri.ilsim.task.application.port.out.StoredProject
+import com.dochiri.ilsim.task.application.result.Assignment
 import com.dochiri.ilsim.task.application.port.out.TaskStore
 import com.dochiri.ilsim.task.application.usecase.TaskService
-import com.dochiri.ilsim.task.domain.Assessment
-import com.dochiri.ilsim.task.domain.StageState
+import com.dochiri.ilsim.task.domain.Project
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
+import com.dochiri.ilsim.task.domain.vo.StageStatus
+import com.dochiri.ilsim.task.domain.vo.TaskStatus
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -16,20 +17,6 @@ class MutableClock(var now: Instant = Instant.parse("2026-01-01T00:00:00Z")) : C
     override fun getZone() = ZoneOffset.UTC
     override fun withZone(zone: java.time.ZoneId?): Clock = this
     override fun instant(): Instant = now
-}
-
-object NoAssessor : ComplexityAssessor {
-    override fun isAvailable(): Boolean = false
-    override fun assess(task: Task, state: StageState, attempt: Int): Assessment? = null
-}
-
-class FakeAssessor(private val result: Assessment?) : ComplexityAssessor {
-    var calls = 0
-    override fun isAvailable(): Boolean = result != null
-    override fun assess(task: Task, state: StageState, attempt: Int): Assessment? {
-        calls++
-        return result
-    }
 }
 
 object NoStore : TaskStore {
@@ -42,3 +29,12 @@ object NoStore : TaskStore {
 }
 
 fun TaskService.latest(task: Task): Task = checkNotNull(find(task.id.value))
+
+fun TaskService.poll(runnerId: String, reported: List<Project>): Assignment? {
+    register(runnerId, reported)
+    val ids = reported.map { it.id }.toSet()
+    val next = list().filter { it.projectId.value in ids && it.status == TaskStatus.ACTIVE && it.current()?.status == StageStatus.PENDING }.minByOrNull { it.createdAt } ?: return null
+    return claim(next.id.value, runnerId)
+}
+
+fun TaskService.create(projectId: String, feature: String?, requirement: String?): Task = createForAgent(projectId, feature, requirement)

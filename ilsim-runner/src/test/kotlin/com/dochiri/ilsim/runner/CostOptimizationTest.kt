@@ -46,36 +46,6 @@ class CostOptimizationTest {
     }
 
     @Test
-    fun `결과 전송 실패 뒤 새 Runner도 저장한 결과를 재전송하고 진행 로그는 보존한다`() {
-        val dir = Files.createTempDirectory("ilsim-outbox")
-        var reject = true; var sends = 0
-        val sink = object : TaskSink {
-            override fun event(taskId: String, stage: String, type: String, data: String) { sends++ }
-            override fun result(taskId: String, result: StageResult) { sends++; if (reject) error("응답 유실") }
-        }
-        try {
-            DurableTaskSink(sink, dir, startWorker = false).use { durable ->
-                durable.event("task", "REQUIREMENTS", "text", "로그")
-                assertEquals(0, sends)
-                assertFailsWith<IllegalStateException> { durable.result("task", StageResult(true, executionId = "run", stage = "REQUIREMENTS")) }
-            }
-            reject = false
-            DurableTaskSink(sink, dir, startWorker = false).use { durable -> durable.flushResults(); durable.flushEvents() }
-            assertEquals(3, sends)
-            assertEquals(0L, Files.list(dir.resolve("results")).use { it.count() })
-            assertEquals(0L, Files.list(dir.resolve("events")).use { it.count() })
-        } finally { dir.toFile().deleteRecursively() }
-    }
-
-    @Test
-    fun `세션 부재만 새 세션으로 대체할 수 있고 일반 오류와 구분한다`() {
-        assertEquals("SESSION_MISSING", FailureKind.classify("No conversation found with session ID x"))
-        assertEquals("NETWORK", FailureKind.classify("rate limit 429"))
-        assertEquals("AUTH", FailureKind.classify("not logged in"))
-        assertEquals("MODEL", FailureKind.classify("execution failed"))
-    }
-
-    @Test
     fun `큰 검토 입력도 명령행 길이 제한 없이 stdin으로 전달한다`() {
         val dir = Files.createTempDirectory("ilsim-stdin")
         try {

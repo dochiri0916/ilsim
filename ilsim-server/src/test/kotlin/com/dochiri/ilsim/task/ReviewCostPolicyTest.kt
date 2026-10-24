@@ -5,7 +5,6 @@ import com.dochiri.ilsim.task.adapter.out.persistence.TaskRecord
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
 import com.dochiri.ilsim.task.application.port.out.StoredProject
 import com.dochiri.ilsim.task.application.port.out.TaskStore
-import com.dochiri.ilsim.task.application.usecase.ModelSelector
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.*
 import org.assertj.core.api.Assertions.assertThat
@@ -52,7 +51,7 @@ class ReviewCostPolicyTest {
 
     @Test
     fun `검토 피드백과 원문은 저장 복원되며 비용 자체를 바꾸지 않는다`() {
-        val service = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), NoStore, MutableClock(), "medium")
+        val service = TaskService(NoStore, MutableClock())
         val project = Project("demo", "demo", null)
         service.poll("r", listOf(project))
         val task = service.create("demo", "feature", "기능")
@@ -80,35 +79,4 @@ class ReviewCostPolicyTest {
         assertThat(sampling.copy(sampleBudgetUsd = Double.NaN).grant("x", "y", 20, emptyList())).isNull()
     }
 
-    @Test
-    fun `작업 삭제와 서버 재시작 뒤에도 표본 예산 예약을 재사용하지 않는다`() {
-        val store = object : TaskStore by NoStore {
-            val savedTasks = linkedMapOf<String, Task>()
-            val savedProjects = linkedMapOf<String, StoredProject>()
-            override fun saveTask(task: Task) { savedTasks[task.id.value] = task }
-            override fun deleteTask(taskId: String) { savedTasks.remove(taskId) }
-            override fun loadTasks() = savedTasks.values.toList()
-            override fun saveProject(id: String, project: StoredProject) { savedProjects[id] = project }
-            override fun loadProjects() = savedProjects
-        }
-        val sampling = policy.copy(sampleEvery = 1, sampleLimit = 1, sampleBudgetUsd = 0.05)
-        fun service() = TaskService(ModelSelector(NoAssessor, ModelTier.SONNET), store, MutableClock(), "medium", reviewCostPolicy = sampling).also { it.restore(); it.poll("r", listOf(Project("demo", "demo", null))) }
-        fun codeAssignment(s: TaskService): com.dochiri.ilsim.task.application.result.Assignment {
-            val task = s.create("demo", null, "기능")
-            repeat(2) {
-                val assignment = s.poll("r", listOf(Project("demo", "demo", null)))!!
-                s.report(task.id.value, ReportStageCommand(true, false, stage = assignment.stage, executionId = assignment.executionId))
-                s.approve(task.id.value)
-            }
-            return s.poll("r", listOf(Project("demo", "demo", null)))!!
-        }
-        val first = service()
-        val assignment = codeAssignment(first)
-        assertThat(assignment.reviewPolicy.sample).isNotNull()
-        first.stop(assignment.taskId); first.delete(assignment.taskId)
-        assertThat(codeAssignment(service()).reviewPolicy.sample).isNull()
-        val mapper = JsonMapper.builder().addModule(KotlinModule.Builder().build()).build()
-        val accounting = JpaTaskStore.ProjectAccounting(reviewSamples = store.savedProjects.getValue("demo").reviewSamples)
-        assertThat(mapper.readValue(mapper.writeValueAsString(accounting), JpaTaskStore.ProjectAccounting::class.java)).isEqualTo(accounting)
-    }
 }

@@ -1,7 +1,5 @@
 package com.dochiri.ilsim.secret
 
-import com.dochiri.ilsim.jev.adapter.out.secret.SecretApiKeySource
-import com.dochiri.ilsim.jev.adapter.out.typesafe.TypeSafeJevGateway
 import com.dochiri.ilsim.secret.adapter.`in`.web.SettingsController
 import com.dochiri.ilsim.secret.adapter.out.crypto.AesGcmSecretEncryptor
 import com.dochiri.ilsim.secret.api.SecretNames
@@ -100,17 +98,5 @@ class SecretTest {
 
         controller.delete()
         assertThat(controller.settings().jev.configured).isFalse()
-    }
-
-    @Test
-    fun `저장한 키가 있으면 JEV 가 켜지고 지우면 꺼진다`() {
-        val service = service()
-        val gateway = TypeSafeJevGateway(SecretApiKeySource(service) { null })
-        assertThat(gateway.enabled()).isFalse()
-        service.put(SecretNames.JEV_API_KEY, "tsk_live_abcdef123456")
-        assertThat(gateway.enabled()).isTrue()
-        service.delete(SecretNames.JEV_API_KEY)
-        assertThat(gateway.enabled()).isFalse()
-        gateway.close()
     }
 }
