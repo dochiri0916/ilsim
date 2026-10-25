@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
-@RestControllerAdvice(basePackageClasses = [TaskController::class])
+@RestControllerAdvice(basePackageClasses = [RunnerController::class])
 class TaskExceptionHandler {
 
     @ExceptionHandler(InvalidTaskRequestException::class, InvalidTaskStateException::class)

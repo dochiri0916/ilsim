@@ -1,8 +1,6 @@
 package com.dochiri.ilsim.task.application.usecase
 
 import com.dochiri.ilsim.task.application.command.ReportStageCommand
-import com.dochiri.ilsim.task.application.port.`in`.ManageTaskUseCase
-import com.dochiri.ilsim.task.application.port.`in`.QueryTaskUseCase
 import com.dochiri.ilsim.task.application.port.`in`.RunnerUseCase
 import com.dochiri.ilsim.task.application.port.out.StoredProject
 import com.dochiri.ilsim.task.application.port.out.TaskStore
@@ -40,7 +38,7 @@ class TaskService(
     private val clock: Clock,
     private val costAlertUsd: Double = 0.0,
     private val reviewCostPolicy: ReviewCostPolicy = ReviewCostPolicy(),
-) : ManageTaskUseCase, QueryTaskUseCase, RunnerUseCase {
+) : RunnerUseCase {
 
     private val tasks = ConcurrentHashMap<String, Task>()
     private val events = ConcurrentHashMap<String, MutableList<TaskEvent>>()
@@ -71,7 +69,7 @@ class TaskService(
 
     override fun find(taskId: String): Task? = tasks[taskId]
 
-    override fun stats(projectId: String?): Stats {
+    fun stats(projectId: String? = null): Stats {
         val selected = if (projectId == null) tasks.values else tasks.values.filter { it.projectId.value == projectId }
         val analysis = if (projectId == null) projectUsage.values.flatten() else projectUsage[projectId].orEmpty()
         val reservations = (if (projectId == null) projectSamples.values.flatten() else projectSamples[projectId].orEmpty()).filter { it.policyVersion == reviewCostPolicy.version }
@@ -79,9 +77,9 @@ class TaskService(
             reviewSamplesReserved = reservations.size, reviewSampleBudgetReservedUsd = reservations.sumOf { it.maxCostUsd })
     }
 
-    override fun list(): List<Task> = tasks.values.sortedByDescending { it.createdAt }
+    fun list(): List<Task> = tasks.values.sortedByDescending { it.createdAt }
 
-    override fun projects(): List<ProjectStatus> {
+    fun projects(): List<ProjectStatus> {
         val now = clock.instant()
         return projects.values.sortedBy { it.id }.map { p ->
             val last = seen[p.id]
@@ -89,7 +87,7 @@ class TaskService(
         }
     }
 
-    override fun events(taskId: String): List<TaskEvent> {
+    fun events(taskId: String): List<TaskEvent> {
         val list = eventList(taskId) ?: return emptyList()
         return synchronized(list) { ArrayList(list) }
     }
@@ -256,13 +254,13 @@ class TaskService(
     }
 
     @Synchronized
-    override fun stop(taskId: String) {
+    fun stop(taskId: String) {
         val next = update(taskId) { it.stop() }
         addEvent(taskId, next.current()?.stage?.name, "log", Task.STOPPED_MESSAGE)
     }
 
     @Synchronized
-    override fun delete(taskId: String) {
+    fun delete(taskId: String) {
         val task = tasks[taskId] ?: throw TaskNotFoundException(taskId)
         if (task.isRunning()) throw InvalidTaskStateException("실행 중인 작업은 먼저 중지하세요")
         tasks.remove(taskId)
@@ -275,7 +273,7 @@ class TaskService(
     }
 
     @Synchronized
-    override fun qualityFeedback(taskId: String, executionId: String, passed: Boolean, reason: String) {
+    fun qualityFeedback(taskId: String, executionId: String, passed: Boolean, reason: String) {
         val before = tasks[taskId] ?: throw TaskNotFoundException(taskId)
         val next = before.qualityFeedback(executionId, passed, reason)
         store.saveTask(next)
@@ -287,7 +285,7 @@ class TaskService(
         tasks.values.filter { it.projectId.value == projectId }.sortedBy { it.createdAt }.flatMap { task -> task.stages.flatMap { it.usage } } + projectUsage[projectId].orEmpty())
 
     @Synchronized
-    override fun reviewFeedback(taskId: String, usageId: String, quality: ReviewQuality) {
+    fun reviewFeedback(taskId: String, usageId: String, quality: ReviewQuality) {
         val task = tasks[taskId] ?: throw TaskNotFoundException(taskId)
         val next = task.reviewFeedback(usageId, quality)
         store.saveTask(next)
@@ -296,7 +294,7 @@ class TaskService(
     }
 
     @Synchronized
-    override fun projectReviewFeedback(projectId: String, usageId: String, quality: ReviewQuality) {
+    fun projectReviewFeedback(projectId: String, usageId: String, quality: ReviewQuality) {
         quality.validate()
         val project = projects[projectId] ?: throw InvalidTaskRequestException("등록되지 않은 프로젝트: $projectId")
         val calls = projectUsage[projectId].orEmpty()
@@ -306,7 +304,7 @@ class TaskService(
         projectUsage[projectId] = next
     }
 
-    override fun projectReviews(projectId: String): List<AiUsage> = projectUsage[projectId].orEmpty().filter { it.review != null }
+    fun projectReviews(projectId: String): List<AiUsage> = projectUsage[projectId].orEmpty().filter { it.review != null }
 
     private fun update(taskId: String, change: (Task) -> Task): Task {
         val current = tasks[taskId] ?: throw TaskNotFoundException(taskId)

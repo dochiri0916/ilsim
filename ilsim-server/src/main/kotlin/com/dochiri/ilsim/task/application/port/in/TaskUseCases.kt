@@ -8,37 +8,6 @@ import com.dochiri.ilsim.task.domain.Stats
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
 
-interface ManageTaskUseCase {
-    fun retry(taskId: String, instruction: String? = null)
-
-    fun stop(taskId: String)
-
-    fun delete(taskId: String)
-
-    fun qualityFeedback(taskId: String, executionId: String, passed: Boolean, reason: String) {
-        throw UnsupportedOperationException("실행 품질 피드백을 지원하지 않습니다")
-    }
-    fun reviewFeedback(taskId: String, usageId: String, quality: com.dochiri.ilsim.task.domain.ReviewQuality) {
-        throw UnsupportedOperationException("검토 품질 피드백을 지원하지 않습니다")
-    }
-    fun projectReviewFeedback(projectId: String, usageId: String, quality: com.dochiri.ilsim.task.domain.ReviewQuality) {
-        throw UnsupportedOperationException("분석 품질 피드백을 지원하지 않습니다")
-    }
-}
-
-interface QueryTaskUseCase {
-    fun find(taskId: String): Task?
-
-    fun list(): List<Task>
-
-    fun events(taskId: String): List<TaskEvent>
-
-    fun projects(): List<ProjectStatus>
-
-    fun stats(projectId: String? = null): Stats
-    fun projectReviews(projectId: String): List<com.dochiri.ilsim.task.domain.AiUsage> = emptyList()
-}
-
 interface RunnerUseCase {
     fun reviewPolicy(projectId: String): com.dochiri.ilsim.task.domain.ReviewPolicySnapshot = com.dochiri.ilsim.task.domain.ReviewPolicySnapshot()
 
@@ -66,5 +35,5 @@ interface RunnerUseCase {
 
     fun reject(taskId: String, feedback: String?)
 
-    fun retry(taskId: String, instruction: String?)
+    fun retry(taskId: String, instruction: String? = null)
 }

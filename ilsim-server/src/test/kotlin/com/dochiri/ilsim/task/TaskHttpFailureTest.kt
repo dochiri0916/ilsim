@@ -1,7 +1,6 @@
 package com.dochiri.ilsim.task
 
 import com.dochiri.ilsim.task.adapter.`in`.web.RunnerController
-import com.dochiri.ilsim.task.adapter.`in`.web.TaskController
 import com.dochiri.ilsim.task.adapter.`in`.web.TaskExceptionHandler
 import com.dochiri.ilsim.task.application.usecase.TaskService
 import com.dochiri.ilsim.task.domain.ModelTier
@@ -22,7 +21,7 @@ class TaskHttpFailureTest {
     @BeforeEach
     fun setUp() {
         val service = TaskService(NoStore, MutableClock())
-        mvc = MockMvcBuilders.standaloneSetup(TaskController(service, service), RunnerController(service))
+        mvc = MockMvcBuilders.standaloneSetup(RunnerController(service))
             .setControllerAdvice(TaskExceptionHandler())
             .build()
     }
@@ -39,10 +38,10 @@ class TaskHttpFailureTest {
 
     @Test
     fun `없는 작업은 조회 404, 승인 거절 재시도도 404 이다`() {
-        mvc.perform(get("/api/tasks/none")).andExpect(status().isNotFound)
+        mvc.perform(get("/runner/api/tasks/none")).andExpect(status().isNotFound)
         mvc.perform(post("/runner/api/tasks/none/approve")).andExpect(status().isNotFound)
         mvc.perform(json("/runner/api/tasks/none/reject", """{"feedback":"x"}""")).andExpect(status().isNotFound)
-        mvc.perform(post("/api/tasks/none/retry")).andExpect(status().isNotFound)
+        mvc.perform(post("/runner/api/tasks/none/retry")).andExpect(status().isNotFound)
         mvc.perform(json("/runner/api/tasks/none/result", """{"passed":true,"retryable":false}""")).andExpect(status().isNotFound)
     }
 
