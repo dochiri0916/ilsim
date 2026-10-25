@@ -50,6 +50,27 @@ class JevTest {
     }
 
     @Test
+    fun `MCP가 서버보다 먼저 떠서 키를 못 받았으면 서버가 뜬 뒤 다시 받아 온다`() {
+        try {
+            var up = false
+            var calls = 0
+            JevKey.reset()
+            JevKey.loader = { calls++; if (up) "server-key" else throw IllegalStateException("connection refused") }
+            JevKey.refresh(1_000)
+            assertNull(JevKey.fromServer)
+            up = true
+            JevKey.refresh(1_000 + JevKey.RETRY_MILLIS - 1)
+            assertNull(JevKey.fromServer, "서버가 내려가 있을 때 매 판단마다 다시 묻지 않는다")
+            JevKey.refresh(1_000 + JevKey.RETRY_MILLIS)
+            assertEquals("server-key", JevKey.fromServer)
+            JevKey.refresh(1_000 + 10 * JevKey.RETRY_MILLIS)
+            assertEquals(2, calls)
+        } finally {
+            JevKey.reset()
+        }
+    }
+
+    @Test
     fun `동일 판단은 재사용하고 질문 정책 변경은 캐시를 무효화한다`() {
         val dir = Files.createTempDirectory("ilsim-jev-cache")
         try {

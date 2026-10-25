@@ -18,7 +18,26 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 object JevKey {
+    const val RETRY_MILLIS = 30_000L
     @Volatile var fromServer: String? = null
+    @Volatile var loader: (() -> String?)? = null
+    @Volatile private var lastTry = 0L
+
+    @Synchronized
+    fun refresh(now: Long = System.currentTimeMillis()) {
+        if (fromServer != null) return
+        val load = loader ?: return
+        if (lastTry != 0L && now - lastTry < RETRY_MILLIS) return
+        lastTry = now
+        runCatching(load).getOrNull()?.takeIf { it.isNotBlank() }?.let { fromServer = it }
+    }
+
+    @Synchronized
+    fun reset() {
+        fromServer = null
+        loader = null
+        lastTry = 0L
+    }
 }
 
 class Jev(private val client: JevClient?, private val cacheDirectory: Path? = null) {
@@ -75,7 +94,7 @@ class Jev(private val client: JevClient?, private val cacheDirectory: Path? = nu
     companion object {
         private var cachedKey: String? = null
         private var cached: Jev? = null
-        private fun key() = (listOfNotNull(JevKey.fromServer) + listOf("TYPESAFE_API_KEY", "JEV_API_KEY").mapNotNull { System.getenv(it) }).firstOrNull { it.isNotBlank() }?.trim()
+        private fun key() = (listOfNotNull(JevKey.also { it.refresh() }.fromServer) + listOf("TYPESAFE_API_KEY", "JEV_API_KEY").mapNotNull { System.getenv(it) }).firstOrNull { it.isNotBlank() }?.trim()
 
         private fun client(key: String?) = key?.let { TypeSafeJevClient.builder().apiKey(it).timeout(Duration.ofSeconds(15)).maxRetries(1).build() }
 

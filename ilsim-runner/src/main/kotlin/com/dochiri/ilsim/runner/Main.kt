@@ -560,7 +560,8 @@ private fun mcp(store: ConfigStore) {
     val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
         ?: run { System.err.println("토큰이 없습니다. 서버를 먼저 실행해 ~/.ilsim/token 을 만들거나 ILSIM_TOKEN 환경변수를 설정하세요"); exitProcess(1) }
     val client = ServerClient(store.load().serverUrl, token)
-    runCatching { client.jevKey() }.onSuccess { JevKey.fromServer = it }
+    JevKey.loader = { client.jevKey() }
+    JevKey.refresh()
     val cwd = Path.of(System.getenv("CLAUDE_PROJECT_DIR")?.takeIf { it.isNotBlank() } ?: System.getProperty("user.dir"))
     val tools = IlsimMcp(store, client, ActiveTasks(store.location.parent.resolve("active")), cwd).tools()
     McpServer("ilsim", "0.1.0", IlsimMcp.INSTRUCTIONS, tools).serve(System.`in`.bufferedReader(), protocol)

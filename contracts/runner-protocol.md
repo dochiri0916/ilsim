@@ -70,7 +70,7 @@ Claude의 판단이 아니라 일심 MCP 서버가 `submit_result` 때 작업 �
 
 ## JEV
 
-TypeSafe JEV 는 텍스트를 만들지 않고 yes/no·선택·점수 판단의 확률만 돌려주는 결정 모델이다. 매우 저렴하므로 JEV로 할 수 있는 판단은 모두 JEV로 하고 Agent 호출을 줄인다. 키는 `ilsim-runner jev-key set`으로 등록하며 서버가 AES-256-GCM 으로 암호화해 저장한다(마스터 키는 `ILSIM_SECRET_KEY` 또는 `~/.ilsim/server-secret.key`). 일심 MCP 서버는 시작할 때 키를 받아 메모리에만 둔다. 키가 없거나 호출이 실패하면 정적 동작이나 독립 검토로 넘어간다. 판단은 `~/.ilsim/decisions`에 캐시한다.
+TypeSafe JEV 는 텍스트를 만들지 않고 yes/no·선택·점수 판단의 확률만 돌려주는 결정 모델이다. 매우 저렴하므로 JEV로 할 수 있는 판단은 모두 JEV로 하고 Agent 호출을 줄인다. 키는 `ilsim-runner jev-key set`으로 등록하며 서버가 AES-256-GCM 으로 암호화해 저장한다(마스터 키는 `ILSIM_SECRET_KEY` 또는 `~/.ilsim/server-secret.key`). 일심 MCP 서버는 시작할 때 키를 받아 메모리에만 두고, 서버가 아직 안 떠 있어 못 받았으면 JEV가 필요할 때 30초 간격으로 다시 받는다. 키가 없거나 호출이 실패하면 정적 동작이나 독립 검토로 넘어간다. 판단은 `~/.ilsim/decisions`에 캐시한다.
 
 - **문서 지침:** 프로젝트 문서를 문서·구간 단위로 골라 단계 지시에 넣고, 제출마다 준수를 판정한다([MCP 설계 6장](../docs/mcp-design.md)).
 - **요구사항 충족:** 구현 단계 diff가 `REQ-n`마다 충족하는지 판정한다(0.2 이하 누락, 0.8 미만 불확실).
