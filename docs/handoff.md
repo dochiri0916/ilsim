@@ -194,7 +194,7 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
 
 ## 로컬 실행 환경
 
-PC마다 따로 준비한다. 이 PC의 상태는 저장소에 없으므로 다른 PC에서는 아래 순서로 다시 만든다.
+PC마다 따로 준비한다. 이 PC의 상태는 저장소에 없으므로 다른 PC에서는 아래 순서로 다시 만든다. 새 PC 설치 순서(클론·`docker compose up -d`·`scripts/dev-up.sh`·`installDist`·`~/.claude/settings.json`의 `ILSIM_RUNNER_BIN`·`jev-key set`·플러그인 설치·프로젝트 등록·규칙 승인)는 README "새 PC에서 설치하기"에 정리했다(2026-10-25).
 
 - 서버: `./gradlew :ilsim-server:bootRun`. MySQL(도커 `ilsim-mysql`, DB/계정/비밀번호 기본값 `ilsim`)이 필요하다. 처음 띄우면 `~/.ilsim/token`, `~/.ilsim/server-secret.key`가 생긴다.
 - JEV 키: `ilsim-runner jev-key set`(표준 입력)으로 등록하면 DB에 암호화 저장되고, 일심 MCP 서버가 시작할 때 서버에서 받는다. 환경 변수는 필요 없다. 서버 비밀 키(`server-secret.key`)가 PC마다 다르므로 DB를 옮기면 키를 다시 등록한다.

@@ -41,10 +41,57 @@ cd build-convention
 
 진입점은 Claude 앱(Claude Code) 하나다. 작업은 반드시 일심 MCP 서버를 거친다([설계](docs/mcp-design.md)).
 
-1. 서버를 띄우고(`./gradlew :ilsim-server:bootRun`) Runner를 설치한다(`./gradlew :ilsim-runner:installDist`). `ilsim-runner/build/install/ilsim-runner/bin`을 PATH에 넣거나 `ILSIM_RUNNER_BIN`으로 실행 파일을 지정한다.
-2. 프로젝트를 등록한다: `ilsim-runner add <id> <경로>`, 필요하면 `ilsim-runner set <id> test "<명령>"`. JEV를 쓰려면 `ilsim-runner jev-key set`으로 키를 등록한다(표준 입력으로 받아 서버에 암호화 저장).
-3. Claude 앱에서 이 저장소를 마켓플레이스로 추가하고 `ilsim` 플러그인을 설치한다. 플러그인이 MCP 서버(`ilsim-runner mcp`)와 훅(`ilsim-runner hook`)을 등록한다.
-4. 등록한 프로젝트에서 요청하면 Agent가 `start_task` → 단계 작업 → `submit_result`로 진행한다. 요구사항·테스트 케이스 단계는 Claude 앱에서 승인한다(`approve_stage`·`reject_stage`, 매번 사용자 확인 창). 앞 단계 테스트가 틀려 구현을 통과할 수 없으면 `reopen_stage`로 테스트 코드 단계로 되돌린다(사용자 확인 창, 구현 변경은 보관했다가 되살림). 일심 작업 없이 파일을 고치거나 미제출 상태로 끝내려 하면 훅이 막는다.
+### 새 PC에서 설치하기
+
+저장소에는 코드와 설정 방법만 있다. 서버 DB·토큰·JEV 키·등록 프로젝트·승인한 규칙은 PC마다 `~/.ilsim`과 로컬 MySQL에 따로 만든다.
+
+준비물: JDK 25(서버 빌드)와 JDK 21 이상, Docker, Claude Code(Claude 앱).
+
+1. 클론하고 MySQL과 서버를 띄운다. 서버가 처음 뜨면 `~/.ilsim/token`(Runner 토큰)과 `~/.ilsim/server-secret.key`(비밀 암호화 키)가 생긴다. 서버는 앱을 다시 시작해도 꺼지지 않게 터미널에서 띄운다.
+
+   ```bash
+   git clone git@github.com:dochiri0916/ilsim.git && cd ilsim
+   docker compose up -d
+   scripts/dev-up.sh
+   ```
+
+2. Runner를 설치하고 Claude 앱이 찾을 수 있게 경로를 알려 준다. 앱은 셸 PATH를 읽지 않을 수 있으므로 `~/.claude/settings.json`의 `env`에 넣는다.
+
+   ```bash
+   ./gradlew :ilsim-runner:installDist
+   ```
+
+   ```json
+   { "env": { "ILSIM_RUNNER_BIN": "<클론 경로>/ilsim-runner/build/install/ilsim-runner/bin/ilsim-runner" } }
+   ```
+
+3. JEV 키를 등록한다. 키는 서버 비밀 키로 암호화돼 PC마다 다르므로 새 PC에서 다시 입력한다(표준 입력, 화면에 남지 않음).
+
+   ```bash
+   ilsim-runner/build/install/ilsim-runner/bin/ilsim-runner jev-key set
+   ```
+
+4. 플러그인을 설치하고 Claude 앱을 다시 시작한다. 플러그인이 MCP 서버(`ilsim-runner mcp`)와 훅(`ilsim-runner hook`)을 등록한다. 플러그인 버전이 올라가면 같은 두 명령을 `marketplace update ilsim`·`update ilsim@ilsim`으로 바꿔 실행한다.
+
+   ```bash
+   claude plugin marketplace add dochiri0916/ilsim
+   claude plugin install ilsim@ilsim
+   ```
+
+5. 일심으로 관리할 프로젝트를 등록한다.
+
+   ```bash
+   ilsim-runner add <id> <프로젝트 경로>
+   ilsim-runner set <id> test "./gradlew test -q"
+   ```
+
+6. 그 프로젝트 폴더의 Claude 앱 세션에서 `analyze_project`로 아키텍처·컨벤션 규칙을 뽑고, `review_rules`로 본 뒤 BLOCK 후보를 `decide_rules`로 승인한다. 승인한 규칙은 `~/.ilsim/projects/<id>`에 저장돼 PC마다 다시 승인한다. 승인 전에는 정적 검사가 제출을 막지 않는다.
+
+확인: `curl localhost:8080/api/status`가 응답하고, 등록한 프로젝트에서 Claude 앱에 코드 변경을 요청하면 Agent가 `start_task`를 호출해야 한다. 이 저장소 자체는 `.claude/settings.json`이 ilsim 플러그인을 끄므로, 일심으로 일심을 고치려면 별도 복제본의 `.claude/settings.local.json`에서 `"enabledPlugins": {"ilsim@ilsim": true}`로 켠다.
+
+### 작업 흐름
+
+1. 등록한 프로젝트에서 요청하면 Agent가 `start_task` → 단계 작업 → `submit_result`로 진행한다. 요구사항·테스트 케이스 단계는 Claude 앱에서 승인한다(`approve_stage`·`reject_stage`, 매번 사용자 확인 창). 앞 단계 테스트가 틀려 구현을 통과할 수 없으면 `reopen_stage`로 테스트 코드 단계로 되돌린다(사용자 확인 창, 구현 변경은 보관했다가 되살림). 일심 작업 없이 파일을 고치거나 미제출 상태로 끝내려 하면 훅이 막는다.
 
 독립 검토와 분석의 Claude 호출은 PC의 기본 로그인(`~/.claude`)을 쓴다.
 
