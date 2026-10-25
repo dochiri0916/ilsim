@@ -5,7 +5,6 @@ import io.github.gudcks0305.jev.NoulQuestion
 object RequirementCheck {
     const val MET = 0.8
     const val MISSING = 0.2
-    const val MAX_DIFF_CHARS = 60_000
 
     data class Result(val probabilities: Map<String, Double>, val missing: List<Requirement>, val uncertain: List<Requirement>, val truncated: Boolean)
 
@@ -25,12 +24,35 @@ object RequirementCheck {
 
     fun judge(jev: Jev, requirements: List<Requirement>, diff: String): Result? {
         if (!jev.enabled || requirements.isEmpty()) return null
-        val truncated = diff.length > MAX_DIFF_CHARS
-        val state = mapOf("requirements" to requirements.map { mapOf("id" to it.id, "text" to it.text) }, "diff" to diff.take(MAX_DIFF_CHARS))
-        val answers = jev.probabilities(state, questions(requirements)) ?: return null
-        val probabilities = requirements.withIndex().mapNotNull { (i, r) -> answers["m$i"]?.let { r.id to it } }.toMap()
+        val shown = Guidelines.cut(diff, Guidelines.MAX_DIFF_WEIGHT)
+        val truncated = shown.length < diff.length
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(Guidelines.PARALLEL)
+        val probabilities = try {
+            batches(requirements, Guidelines.MAX_STATE_WEIGHT - Guidelines.weight(shown)).map { batch -> pool.submit<Map<String, Double>?> { judgeBatch(jev, batch, shown) } }
+                .map { it.get() ?: return null }.fold(emptyMap<String, Double>()) { a, b -> a + b }
+        } finally {
+            pool.shutdownNow()
+        }
         val missing = if (truncated) emptyList() else requirements.filter { (probabilities[it.id] ?: 1.0) <= MISSING }
         val uncertain = requirements.filter { it !in missing && (probabilities[it.id] ?: 0.0) < MET }
-        return Result(probabilities, missing, uncertain, truncated)
+        return Result(requirements.mapNotNull { r -> probabilities[r.id]?.let { r.id to it } }.toMap(), missing, uncertain, truncated)
+    }
+
+    private fun batches(requirements: List<Requirement>, budget: Int): List<List<Requirement>> {
+        val batches = mutableListOf<MutableList<Requirement>>()
+        var used = 0
+        for (requirement in requirements) {
+            val size = Guidelines.weight(requirement.id) + Guidelines.weight(requirement.text)
+            if (batches.isEmpty() || batches.last().size >= Guidelines.BATCH || used + size > budget) { batches += mutableListOf<Requirement>(); used = 0 }
+            batches.last() += requirement
+            used += size
+        }
+        return batches
+    }
+
+    private fun judgeBatch(jev: Jev, batch: List<Requirement>, diff: String): Map<String, Double>? {
+        val state = mapOf("requirements" to batch.map { mapOf("id" to it.id, "text" to it.text) }, "diff" to diff)
+        val answers = jev.probabilities(state, questions(batch)) ?: return null
+        return batch.withIndex().mapNotNull { (i, r) -> answers["m$i"]?.let { r.id to it } }.toMap()
     }
 }
