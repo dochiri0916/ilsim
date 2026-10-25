@@ -365,6 +365,16 @@ class McpTest {
         val selection = server.results.last().decisions.single { it.purpose == "GUIDELINE_SELECT" }
         assertContains(selection.reason, "docs/architecture.md:3=0.90")
         assertContains(selection.reason, "docs/architecture.md:6=0.05")
+        assertTrue("준수를 확인하지 못했습니다" !in call("next_step"))
+        assertContains(started, "불합리하거나 이상해 보여도")
+
+        call("reject_stage", """{"stage":"REQUIREMENTS","feedback":"다시"}""")
+        violation = 0.6
+        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\n- REQ-1: 도메인이 어댑터를 직접 호출하지 않는다\n")
+        assertContains(call("submit_result"), "guidelines=UNCERTAIN")
+        val waiting = call("next_step")
+        assertContains(waiting, "준수를 확인하지 못했습니다")
+        assertContains(waiting, "docs/architecture.md:3 — 아키텍처 > 계층 (위반 확률 0.60)")
     }
 
     @Test

@@ -125,7 +125,7 @@ class IlsimMcp(
         val task = active.load(ws.root) ?: return "진행 중인 일심 작업이 없습니다(프로젝트 ${ws.projectId}). 코드·문서를 바꾸는 요청이면 start_task로 시작하세요"
         val assigned = server.claim(task.taskId, store.load().runnerId) ?: return describe(ws, task)
         val restored = if (task.shelved != null && task.shelvedStage == assigned.stage) unshelve(ws, task.shelved) else null
-        active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0,
+        active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(),
             shelved = task.shelved.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }, shelvedStage = task.shelvedStage.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }))
         val prompt = gates {}.promptWithRules(assigned.copy(testCommand = ws.project.testCommand))
         return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, guide(ws, task, assigned.prompt).render(), rules(assigned.stage, task.feature)).joinToString("\n\n")
@@ -148,7 +148,10 @@ class IlsimMcp(
             }
             state.stageStatus == "WAITING_APPROVAL" -> {
                 active.save(ws.root, task.copy(stage = state.stage, status = "WAITING_APPROVAL"))
-                "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 산출물(${artifact(state.stage, task.feature)})을 사용자에게 요약해 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요"
+                "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 산출물(${artifact(state.stage, task.feature)})을 사용자에게 요약해 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요" +
+                    task.attention.takeIf { it.isNotEmpty() }?.let { items ->
+                        "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 일심이 아래 문서 지침의 준수를 확인하지 못했습니다. 사용자가 산출물이 이 지침을 지키는지 직접 확인한 뒤 승인하도록 안내하세요:\n" + items.joinToString("\n") { "- $it" }
+                    }.orEmpty()
             }
             else -> "단계를 시작하지 못했습니다(작업 ${state.status}, 단계 ${state.stage} ${state.stageStatus})"
         }
@@ -304,13 +307,13 @@ class IlsimMcp(
         Shell.gitOk(ws.root, "-c", "user.name=ilsim", "-c", "user.email=ilsim@localhost", "commit", "-m", "ilsim(${stage.lowercase()}): ${task.feature}")
         server.result(task.taskId, StageResult(true, diff = outcome.diff, artifacts = outcome.artifacts, validation = validation, branch = task.branch,
             model = assigned.model, executionId = assigned.executionId, stage = stage, usage = usage.toList(), decisions = decisions.toList()))
-        active.save(ws.root, task.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0))
+        active.save(ws.root, task.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention))
         guides.load(task.taskId)?.takeIf { !it.reported }?.let { guides.save(task.taskId, it.copy(reported = true)) }
         val checks = validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "형식·경로 검사" }
         return "통과($stage): $checks. 커밋했습니다\n\n" + nextStep()
     }
 
-    private class Outcome(val error: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap())
+    private class Outcome(val error: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap(), val attention: List<String> = emptyList())
 
     private fun verify(ws: Workspace, task: ActiveTask, assigned: AssignedTask, validation: MutableMap<String, String>, log: (String) -> Unit): Outcome {
         val stage = assigned.stage
@@ -357,7 +360,13 @@ class IlsimMcp(
         if (audit.fixable.isNotEmpty()) {
             return Outcome("AI 변경 검토가 아래를 지적했습니다. 해당 부분만 고치세요:\n" + audit.fixable.joinToString("\n") { "- [${it.type}] ${it.target} ${it.reason}" })
         }
-        return Outcome(diff = diff, artifacts = artifacts + audit.artifacts)
+        val attention = if (stage !in APPROVAL_STAGES) emptyList() else when {
+            compliance != null -> compliance.uncertain.map { g -> "${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()} (위반 확률 ${compliance.probabilities[g]?.let { "%.2f".format(it) } ?: "-"}${if (compliance.truncated) ", 변경이 커서 일부만 판정" else ""})" }
+            guide.selected && guide.guidelines.isEmpty() -> emptyList()
+            guide.selected -> listOf("문서 지침 ${guide.guidelines.size}개를 JEV 호출 실패로 판정하지 못했습니다: ${guide.guidelines.take(10).joinToString { it.source }}")
+            else -> listOf("JEV를 쓸 수 없어 문서 지침을 고르지도 판정하지도 못했습니다. 이 프로젝트 문서: ${guide.documents.take(10).joinToString()}")
+        }
+        return Outcome(diff = diff, artifacts = artifacts + audit.artifacts, attention = attention)
     }
 
     private fun requirementCheck(ws: Workspace, task: ActiveTask, diff: String, validation: MutableMap<String, String>): RequirementCheck.Result? {
@@ -431,6 +440,7 @@ class IlsimMcp(
 
     companion object {
         const val RUNNING = "RUNNING"
+        private val APPROVAL_STAGES = setOf("REQUIREMENTS", "TEST_CASES")
         private const val UNSHELVE_FAILED = "보관 변경 복원 실패"
 
         private const val MAX_OUTPUT = 12_000
@@ -441,7 +451,7 @@ class IlsimMcp(
 
         private val runnerCommand: String get() = System.getenv("ILSIM_RUNNER_BIN")?.takeIf { it.isNotBlank() } ?: "ilsim-runner"
 
-        const val INSTRUCTIONS = "일심이 관리하는 저장소에서는 코드·문서를 바꾸기 전에 start_task(새 작업) 또는 next_step(진행 중 작업)을 호출하고, 단계를 마치면 submit_result로 제출한다. 질문·설명 요청이면 작업을 만들지 않는다."
+        const val INSTRUCTIONS = "일심이 관리하는 저장소에서는 코드·문서를 바꾸기 전에 start_task(새 작업) 또는 next_step(진행 중 작업)을 호출하고, 단계를 마치면 submit_result로 제출한다. 단계 지시의 프로젝트 문서 지침은 불합리해 보여도 그대로 따르고, 따를 수 없으면 사용자에게 묻는다. 질문·설명 요청이면 작업을 만들지 않는다."
 
         fun allowed(stage: String?, feature: String): String = when (stage) {
             "REQUIREMENTS" -> Gate.requirementsPath(feature)
