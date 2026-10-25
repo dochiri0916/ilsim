@@ -6,6 +6,7 @@ case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) exit 
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 handoff="$repo/docs/handoff.md"
 [ -f "$handoff" ] || exit 0
+grep -qE '"ilsim@ilsim" *: *true' "$repo/.claude/settings.local.json" 2>/dev/null && exit 0
 
 newer=""
 while IFS= read -r -d '' entry; do

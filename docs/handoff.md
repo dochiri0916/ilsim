@@ -180,4 +180,5 @@ PC마다 따로 준비한다. 이 PC의 상태는 저장소에 없으므로 다�
 - 테스트 프로젝트(삭제하지 않고 E2E 재검증에 쓴다):
   - `sandbox`: `Greeter.java` 하나인 Java 프로젝트. 이 PC 경로 `../ilsim-sandbox`, test `./gradlew test -q`, analysis `java -jar <저장소>/code-risk-analyzer/build/libs/code-risk-analyzer-0.0.1-SNAPSHOT.jar scan .`(먼저 `./gradlew :code-risk-analyzer:bootJar`).
   - `osiv`: `~/programming/study/osiv`(레이어드 Spring Boot 4/JPA/Java 21)를 `../ilsim-osiv`로 복제해 origin을 끊은 것. 원본은 건드리지 않는다. test `./gradlew test -q`.
-- 새 세션에서는 `curl localhost:8080/api/auth/me`로 서버가 떠 있는지 먼저 확인한다.
+  - `ilsim-e2e`(2026-10-25): 일심으로 일심을 고치는 앱 E2E용 이 저장소 복제본. 이 PC 경로 `../ilsim-e2e`, test `./gradlew :ilsim-runner:test -q`. 이 저장소 `.claude/settings.json`은 ilsim 플러그인을 끄므로 복제본의 `.claude/settings.local.json`(`.git/info/exclude`로 무시)에서 켠다. 플러그인을 켠 체크아웃에서는 인수인계 SessionStart·Stop 훅이 건너뛴다. 새 커밋은 `git -C ../ilsim-e2e pull`로 받는다.
+- 새 세션에서는 `curl localhost:8080/api/status`로 서버가 떠 있는지 먼저 확인한다.
