@@ -88,6 +88,9 @@ class IlsimMcp(
         McpTool("reject_stage", "사용자가 고칠 점을 말한 단계 결과를 거절하고, 그 사유로 같은 단계를 다시 시작한다. 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
             """{"type":"object","properties":{"stage":{"type":"string","description":"거절할 단계"},"feedback":{"type":"string","description":"사용자가 말한 수정 사항"}},"required":["stage","feedback"]}""",
         )) { args -> reject(args.text("stage") ?: throw IllegalArgumentException("stage 가 필요합니다"), args.text("feedback") ?: throw IllegalArgumentException("feedback 이 필요합니다")) },
+        McpTool("reopen_stage", "이미 통과한 코드 단계(TEST_CODE)로 되돌려 그 단계부터 다시 한다. 앞 단계 산출물(예: 테스트 기대값)이 틀려 현재 단계를 통과할 수 없을 때, 사용자가 되돌리자고 했을 때만 호출한다. 현재 단계의 미커밋 변경은 보관했다가 그 단계로 돌아오면 되살린다. 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
+            """{"type":"object","properties":{"stage":{"type":"string","description":"되돌릴 단계(TEST_CODE)"},"feedback":{"type":"string","description":"그 단계에서 고칠 점"}},"required":["stage","feedback"]}""",
+        )) { args -> reopen(args.text("stage") ?: throw IllegalArgumentException("stage 가 필요합니다"), args.text("feedback") ?: throw IllegalArgumentException("feedback 이 필요합니다")) },
     )
 
     private fun workspace(): Workspace {
@@ -121,9 +124,11 @@ class IlsimMcp(
         val ws = workspace()
         val task = active.load(ws.root) ?: return "진행 중인 일심 작업이 없습니다(프로젝트 ${ws.projectId}). 코드·문서를 바꾸는 요청이면 start_task로 시작하세요"
         val assigned = server.claim(task.taskId, store.load().runnerId) ?: return describe(ws, task)
-        active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0))
+        val restored = if (task.shelved != null && task.shelvedStage == assigned.stage) unshelve(ws, task.shelved) else null
+        active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0,
+            shelved = task.shelved.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }, shelvedStage = task.shelvedStage.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }))
         val prompt = gates {}.promptWithRules(assigned.copy(testCommand = ws.project.testCommand))
-        return listOf("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", prompt, guide(ws, task, assigned.prompt).render(), rules(assigned.stage, task.feature)).joinToString("\n\n")
+        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, guide(ws, task, assigned.prompt).render(), rules(assigned.stage, task.feature)).joinToString("\n\n")
     }
 
     private fun describe(ws: Workspace, task: ActiveTask): String {
@@ -212,6 +217,35 @@ class IlsimMcp(
         if (state.status != "BLOCKED") throw IllegalStateException("차단된 작업이 아닙니다(상태 ${state.status})")
         server.retry(task.taskId, instruction)
         return "다시 시도합니다\n\n" + nextStep()
+    }
+
+    private fun reopen(stage: String, feedback: String): String {
+        val ws = workspace()
+        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        if (ws.branch() != task.branch) throw IllegalStateException("작업 브랜치(${task.branch})가 아닙니다. 브랜치를 바꾸지 마세요")
+        val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
+        if (state.status !in setOf("ACTIVE", "BLOCKED") || state.stage == null) throw IllegalStateException("진행 중인 작업이 아닙니다(상태 ${state.status})")
+        val label = "ilsim-reopen-${task.taskId}"
+        val shelved = ws.changedFiles().isNotEmpty()
+        if (shelved) Shell.gitOk(ws.root, "stash", "push", "--include-untracked", "-m", label)
+        try {
+            server.reopen(task.taskId, stage, feedback)
+        } catch (e: Exception) {
+            if (shelved) unshelve(ws, label)
+            throw e
+        }
+        active.save(ws.root, task.copy(stage = stage, status = "PENDING", stopBlocks = 0,
+            shelved = if (shelved) label else task.shelved, shelvedStage = if (shelved) state.stage else task.shelvedStage))
+        val note = if (shelved) "${state.stage} 단계의 미커밋 변경을 보관했습니다. ${state.stage} 단계로 돌아오면 되살립니다" else "보관할 변경이 없습니다"
+        return "$stage 단계로 되돌렸습니다. $note\n\n" + nextStep()
+    }
+
+    private fun unshelve(ws: Workspace, label: String): String {
+        val ref = Shell.gitOk(ws.root, "stash", "list", "--format=%gd %s").lines().firstOrNull { it.endsWith(label) }?.substringBefore(' ')
+            ?: return "$UNSHELVE_FAILED: 보관한 변경($label)을 찾지 못했습니다. 사용자에게 알리세요"
+        val pop = Shell.git(ws.root, "stash", "pop", ref)
+        return if (pop.exit == 0) "보관했던 이 단계의 변경을 되살렸습니다. 이어서 작업하세요"
+        else "$UNSHELVE_FAILED: 보관한 변경($ref)을 되살리다 충돌했습니다. 충돌을 정리하거나 사용자에게 알리세요\n${pop.output.take(1000)}"
     }
 
     private fun waiting(stage: String): Pair<Workspace, ActiveTask> {
@@ -397,6 +431,7 @@ class IlsimMcp(
 
     companion object {
         const val RUNNING = "RUNNING"
+        private const val UNSHELVE_FAILED = "보관 변경 복원 실패"
 
         private const val MAX_OUTPUT = 12_000
 

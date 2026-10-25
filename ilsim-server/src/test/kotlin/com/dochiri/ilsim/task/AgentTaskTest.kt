@@ -54,6 +54,33 @@ class AgentTaskTest {
     }
 
     @Test
+    fun `구현 중에 통과한 테스트 코드 단계로 되돌리면 그 단계부터 시도 횟수를 새로 센다`() {
+        val task = service.createForAgent("demo", "slug", "slugify 추가")
+        for (stage in listOf("REQUIREMENTS", "TEST_CASES")) {
+            service.report(task.id.value, pass(service.claim(task.id.value, "r1")!!.executionId, stage))
+            service.approve(task.id.value)
+        }
+        service.report(task.id.value, pass(service.claim(task.id.value, "r1")!!.executionId, "TEST_CODE"))
+        val implementation = service.claim(task.id.value, "r1")!!
+        service.report(task.id.value, ReportStageCommand(passed = false, retryable = true, error = "TC-4 기대값 오류", executionId = implementation.executionId, stage = "IMPLEMENTATION"))
+        assertThat(service.latest(task).stage(com.dochiri.ilsim.task.domain.vo.Stage.IMPLEMENTATION).attempt.value).isEqualTo(2)
+
+        assertThatThrownBy { service.reopen(task.id.value, "TEST_CASES", "x") }.isInstanceOf(InvalidTaskStateException::class.java)
+        assertThatThrownBy { service.reopen(task.id.value, "IMPLEMENTATION", "x") }.isInstanceOf(InvalidTaskStateException::class.java)
+        assertThatThrownBy { service.reopen(task.id.value, "TEST_CODE", " ") }.isInstanceOf(com.dochiri.ilsim.task.domain.exception.InvalidTaskRequestException::class.java)
+
+        service.reopen(task.id.value, "TEST_CODE", "TC-4 기대값을 Guidelines.cut 결과로 고친다")
+        val reopened = service.claim(task.id.value, "r1")!!
+        assertThat(reopened.stage).isEqualTo("TEST_CODE")
+        assertThat(reopened.attempt).isEqualTo(1)
+        assertThat(reopened.prompt).contains("TC-4 기대값을 Guidelines.cut 결과로 고친다")
+        service.report(task.id.value, pass(reopened.executionId, "TEST_CODE"))
+        val again = service.claim(task.id.value, "r1")!!
+        assertThat(again.stage).isEqualTo("IMPLEMENTATION")
+        assertThat(again.attempt).isEqualTo(1)
+    }
+
+    @Test
     fun `이전 Runner 작업은 claim 할 수 없다`() {
         val legacy = Task.create(com.dochiri.ilsim.task.domain.vo.TaskId.of("legacy"), MutableClock().now, com.dochiri.ilsim.task.domain.vo.ProjectId.of("demo"), "slug", "x")
         val store = object : com.dochiri.ilsim.task.application.port.out.TaskStore by NoStore {

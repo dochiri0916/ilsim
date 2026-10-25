@@ -36,4 +36,6 @@ interface RunnerUseCase {
     fun reject(taskId: String, feedback: String?)
 
     fun retry(taskId: String, instruction: String? = null)
+
+    fun reopen(taskId: String, stage: String?, feedback: String?)
 }

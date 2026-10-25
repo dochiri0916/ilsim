@@ -13,6 +13,8 @@ import com.dochiri.ilsim.runner.StageResult
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
+import kotlin.io.path.readText
 import kotlin.io.path.deleteExisting
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
@@ -61,6 +63,11 @@ class McpTest {
         var blocked = false
         var instruction: String? = null
         override fun retry(taskId: String, instruction: String?) { this.instruction = instruction; blocked = false; status = "PENDING" }
+        var reopened: Pair<String, String>? = null
+        override fun reopen(taskId: String, stage: String, feedback: String) {
+            check(stages.indexOf(stage) in 0 until index) { "통과한 단계가 아닙니다" }
+            reopened = stage to feedback; index = stages.indexOf(stage); status = "PENDING"
+        }
     }
 
     private lateinit var home: Path
@@ -228,6 +235,31 @@ class McpTest {
         assertEquals(0, Hooks.commit(Files.createTempDirectory("ilsim-other"), store, mapOf("CLAUDECODE" to "1")).exit)
         repo.resolve(".git/hooks/pre-commit").writeText("#!/bin/sh\necho mine\n")
         assertContains(Workspace.of(store.load(), repo)!!.installCommitHook("ilsim-runner")!!, "기존 pre-commit 훅")
+    }
+
+    @Test
+    fun `통과한 테스트 코드 단계로 되돌리면 구현 변경을 보관했다가 구현 단계로 돌아올 때 되살린다`() {
+        call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        server.index = server.stages.indexOf("IMPLEMENTATION"); server.status = "PENDING"
+        assertContains(call("next_step"), "일심 단계: IMPLEMENTATION")
+        repo.resolve("src").createDirectories()
+        repo.resolve("src/Main.java").writeText("class Main {}\n")
+
+        assertContains(hook("pre-tool-use", """{"cwd":"$repo","tool_name":"mcp__plugin_ilsim_ilsim__reopen_stage","tool_input":{"stage":"TEST_CODE","feedback":"TC-4"}}""").stdout, "\"permissionDecision\":\"ask\"")
+        assertContains(runCatching { call("reopen_stage", """{"stage":"IMPLEMENTATION","feedback":"x"}""") }.exceptionOrNull()!!.message!!, "통과한 단계가 아닙니다")
+        assertTrue(repo.resolve("src/Main.java").exists(), "되돌리기에 실패하면 변경을 그대로 둔다")
+
+        val reopened = call("reopen_stage", """{"stage":"TEST_CODE","feedback":"TC-4 기대값을 고친다"}""")
+        assertContains(reopened, "일심 단계: TEST_CODE")
+        assertContains(reopened, "보관했습니다")
+        assertEquals("TEST_CODE" to "TC-4 기대값을 고친다", server.reopened)
+        assertTrue(!repo.resolve("src/Main.java").exists())
+        assertEquals("IMPLEMENTATION", active.load(repo)!!.shelvedStage)
+
+        server.index = server.stages.indexOf("IMPLEMENTATION"); server.status = "PENDING"
+        assertContains(call("next_step"), "되살렸습니다")
+        assertEquals("class Main {}\n", repo.resolve("src/Main.java").readText())
+        assertEquals(null, active.load(repo)!!.shelved)
     }
 
     @Test

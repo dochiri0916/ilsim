@@ -135,6 +135,23 @@ class Task private constructor(
         return copy(stages = replaceStage(next), runs = RunCount.ZERO, status = TaskStatus.ACTIVE)
     }
 
+    fun reopen(target: Stage, feedback: String?): Task {
+        if (feedback.isNullOrBlank()) throw InvalidTaskRequestException("되돌리는 사유가 필요합니다")
+        if (target.approval) throw InvalidTaskStateException("승인 단계는 되돌릴 수 없습니다")
+        val stage = current()
+        if (stage == null || target.ordinal >= stage.stage.ordinal || stage(target).status != StageStatus.PASSED) {
+            throw InvalidTaskStateException("진행 중인 단계보다 앞의 통과한 코드 단계만 되돌릴 수 있습니다")
+        }
+        val reopened = stages.map {
+            when {
+                it.stage == target -> it.restart(feedback.trim())
+                it.stage.ordinal > target.ordinal -> it.restart(null)
+                else -> it
+            }
+        }
+        return copy(stages = reopened, runs = RunCount.ZERO, status = TaskStatus.ACTIVE)
+    }
+
     fun stop(): Task {
         val stage = current()
         if (status != TaskStatus.ACTIVE || stage == null || stage.status !in STOPPABLE) {

@@ -44,7 +44,7 @@ cd build-convention
 1. 서버를 띄우고(`./gradlew :ilsim-server:bootRun`) Runner를 설치한다(`./gradlew :ilsim-runner:installDist`). `ilsim-runner/build/install/ilsim-runner/bin`을 PATH에 넣거나 `ILSIM_RUNNER_BIN`으로 실행 파일을 지정한다.
 2. 프로젝트를 등록한다: `ilsim-runner add <id> <경로>`, 필요하면 `ilsim-runner set <id> test "<명령>"`. JEV를 쓰려면 `ilsim-runner jev-key set`으로 키를 등록한다(표준 입력으로 받아 서버에 암호화 저장).
 3. Claude 앱에서 이 저장소를 마켓플레이스로 추가하고 `ilsim` 플러그인을 설치한다. 플러그인이 MCP 서버(`ilsim-runner mcp`)와 훅(`ilsim-runner hook`)을 등록한다.
-4. 등록한 프로젝트에서 요청하면 Agent가 `start_task` → 단계 작업 → `submit_result`로 진행한다. 요구사항·테스트 케이스 단계는 Claude 앱에서 승인한다(`approve_stage`·`reject_stage`, 매번 사용자 확인 창). 일심 작업 없이 파일을 고치거나 미제출 상태로 끝내려 하면 훅이 막는다.
+4. 등록한 프로젝트에서 요청하면 Agent가 `start_task` → 단계 작업 → `submit_result`로 진행한다. 요구사항·테스트 케이스 단계는 Claude 앱에서 승인한다(`approve_stage`·`reject_stage`, 매번 사용자 확인 창). 앞 단계 테스트가 틀려 구현을 통과할 수 없으면 `reopen_stage`로 테스트 코드 단계로 되돌린다(사용자 확인 창, 구현 변경은 보관했다가 되살림). 일심 작업 없이 파일을 고치거나 미제출 상태로 끝내려 하면 훅이 막는다.
 
 독립 검토와 분석의 Claude 호출은 PC의 기본 로그인(`~/.claude`)을 쓴다.
 

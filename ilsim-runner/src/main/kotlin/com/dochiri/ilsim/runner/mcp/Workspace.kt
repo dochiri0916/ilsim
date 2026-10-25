@@ -63,6 +63,8 @@ data class ActiveTask(
     val stage: String? = null,
     val status: String? = null,
     val stopBlocks: Int = 0,
+    val shelved: String? = null,
+    val shelvedStage: String? = null,
 )
 
 class ActiveTasks(private val dir: Path) {

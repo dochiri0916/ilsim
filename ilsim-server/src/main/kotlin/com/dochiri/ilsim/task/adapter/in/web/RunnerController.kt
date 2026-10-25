@@ -74,6 +74,11 @@ class RunnerController(private val runner: RunnerUseCase) {
     @PostMapping("/tasks/{id}/retry")
     fun retry(@PathVariable id: String, @RequestBody(required = false) request: RetryRequest?) = runner.retry(id, request?.instruction)
 
+    data class ReopenRequest(val stage: String? = null, val feedback: String? = null)
+
+    @PostMapping("/tasks/{id}/reopen")
+    fun reopen(@PathVariable id: String, @RequestBody request: ReopenRequest) = runner.reopen(id, request.stage, request.feedback)
+
     @PostMapping("/tasks/{id}/claim")
     fun claim(@PathVariable id: String, @RequestBody request: ClaimRequest): ResponseEntity<Assignment> =
         runner.claim(id, request.runnerId)?.let { ResponseEntity.ok(it) } ?: ResponseEntity.noContent().build()

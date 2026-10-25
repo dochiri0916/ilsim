@@ -21,7 +21,7 @@ object Hooks {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val editTools = setOf("Edit", "Write", "MultiEdit", "NotebookEdit")
-    private val decisionTools = listOf("approve_stage", "reject_stage", "decide_rules")
+    private val decisionTools = listOf("approve_stage", "reject_stage", "reopen_stage", "decide_rules")
     private val gitChange = Regex("""\bgit\s+(?:-C\s+\S+\s+)?(commit|push|checkout|switch|reset|rebase|merge|stash|cherry-pick|revert|restore|branch\s+-[dDmM])\b""")
     private val fileWrite = Regex("""(^|[\s;&|(])(rm|mv|cp|touch|mkdir|tee|truncate|chmod|ln|install)\s|>{1,2}\s*(?!/dev/null|&)\S|\bsed\s+(-\w*\s+)*-i|\bperl\s+-\w*i""")
 
@@ -60,7 +60,11 @@ object Hooks {
                 return ask("일심 규칙 ${if (input.text("decision") == "approve") "승인" else "거절"}: $ids. 사용자가 직접 확인해야 반영됩니다")
             }
             val stage = input.text("stage") ?: "-"
-            val detail = if (name == "reject_stage") "거절(같은 단계를 다시 작성): ${input.text("feedback") ?: "-"}" else "승인(다음 단계로 진행)"
+            val detail = when (name) {
+                "reject_stage" -> "거절(같은 단계를 다시 작성): ${input.text("feedback") ?: "-"}"
+                "reopen_stage" -> "되돌림(통과한 이 단계부터 다시 하고 지금 변경은 보관했다가 원래 단계에서 되살림): ${input.text("feedback") ?: "-"}"
+                else -> "승인(다음 단계로 진행)"
+            }
             return ask("일심 $stage 단계 $detail. 사용자가 직접 확인해야 반영됩니다")
         }
         if (tool == "Bash") {

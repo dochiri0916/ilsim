@@ -19,6 +19,7 @@ import com.dochiri.ilsim.task.domain.ReviewSampleGrant
 import com.dochiri.ilsim.task.domain.ReviewQuality
 import com.dochiri.ilsim.task.domain.vo.ProjectId
 import com.dochiri.ilsim.task.domain.vo.RunnerId
+import com.dochiri.ilsim.task.domain.vo.Stage
 import com.dochiri.ilsim.task.domain.vo.TaskId
 import com.dochiri.ilsim.task.domain.exception.InvalidTaskRequestException
 import com.dochiri.ilsim.task.domain.exception.TaskNotFoundException
@@ -251,6 +252,13 @@ class TaskService(
         val next = update(taskId) { it.retry(instruction) }
         val text = instruction?.trim()?.takeIf { it.isNotEmpty() } ?: return
         addEvent(taskId, next.current()?.stage?.name, "message", text)
+    }
+
+    @Synchronized
+    override fun reopen(taskId: String, stage: String?, feedback: String?) {
+        val target = Stage.entries.firstOrNull { it.name == stage } ?: throw InvalidTaskRequestException("알 수 없는 단계: $stage")
+        update(taskId) { it.reopen(target, feedback) }
+        addEvent(taskId, target.name, "message", "단계를 되돌림: ${feedback.orEmpty().trim()}")
     }
 
     @Synchronized
