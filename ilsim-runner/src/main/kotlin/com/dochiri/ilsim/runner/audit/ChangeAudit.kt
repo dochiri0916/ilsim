@@ -18,12 +18,17 @@ object ChangeAudit {
 
     private val types = setOf("OMISSION", "UNRELATED", "TEST_BYPASS", "RULE", "WEAK_TEST")
 
-    fun fixable(r: Result): List<Finding> = r.findings.filter { it.type != "WEAK_TEST" }
+    fun fixable(r: Result, stage: String = "IMPLEMENTATION"): List<Finding> = r.findings.filter {
+        it.type != "WEAK_TEST" && !(stage == "TEST_CODE" && it.type == "OMISSION" && "TC-" !in it.target)
+    }
 
     fun prompt(stage: String, requirements: String?, testSpec: String?, rulesBrief: String?, validation: Map<String, String>, diff: String, survivors: List<String> = emptyList(), committedTests: Map<String, String> = emptyMap()): String = buildString {
         appendLine("당신은 AI Agent가 만든 변경을 독립적으로 검토하는 리뷰어다. 정적 검사(아키텍처, 컨벤션, 위험, 테스트 무력화)는 이미 통과했다.")
         appendLine("설계가 좋은지 나쁜지는 판단하지 마라. 아래 네 가지만 찾아라. 근거가 diff 에서 확인되는 것만 보고하고, 추측은 하지 마라.")
-        appendLine("- OMISSION: 요구사항(REQ-n)이나 테스트 케이스(TC-n) 중 이 변경에서 다뤄지지 않은 것 (단계: $stage)")
+        if (stage == "TEST_CODE") {
+            appendLine("- OMISSION: 테스트 케이스(TC-n) 중 이 변경의 테스트로 작성되지 않은 것 (단계: $stage)")
+            appendLine("  (이 단계는 테스트만 작성하고 프로덕션 코드는 고치지 않는다. 구현이 없어 테스트가 실패하거나 컴파일되지 않는 것은 정상이니 지적하지 마라)")
+        } else appendLine("- OMISSION: 요구사항(REQ-n)이나 테스트 케이스(TC-n) 중 이 변경에서 다뤄지지 않은 것 (단계: $stage)")
         if (committedTests.isNotEmpty()) appendLine("  (테스트는 이전 단계에서 승인·커밋되어 diff 에 없다. 아래 '기존 테스트'에 있으면 다뤄진 것이다. 이 단계에서는 구현이 요구사항을 만족하는지만 본다)")
         appendLine("- UNRELATED: 요구사항과 무관한 변경(불필요한 수정, 삭제, 포맷만 바꾼 대량 변경)")
         appendLine("- TEST_BYPASS: 테스트를 약화하거나 우회하는 변경(단언 완화, 기대값 변경, 조건부 통과, 목으로 핵심 로직 대체)")

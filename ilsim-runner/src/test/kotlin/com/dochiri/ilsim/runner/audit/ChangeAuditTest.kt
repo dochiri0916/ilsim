@@ -46,6 +46,15 @@ class ChangeAuditTest {
     }
 
     @Test
+    fun `테스트 코드 단계는 구현이 없다는 지적을 고칠 대상으로 보지 않고 빠진 TC 만 본다`() {
+        val p = ChangeAudit.prompt("TEST_CODE", "REQ-1", "TC-1", null, emptyMap(), "diff")
+        assertTrue(p.contains("구현이 없어 테스트가 실패하거나 컴파일되지 않는 것은 정상"))
+        val r = ChangeAudit.parse("""{"verdict":"CONCERN","findings":[{"type":"OMISSION","target":"REQ-1","reason":"Greeter.java 변경이 없음"},{"type":"OMISSION","target":"TC-3","reason":"테스트 없음"},{"type":"TEST_BYPASS","target":"ATest.kt:3","reason":"x"}]}""")
+        assertEquals(listOf("TC-3", "ATest.kt:3"), ChangeAudit.fixable(r, "TEST_CODE").map { it.target })
+        assertEquals(3, ChangeAudit.fixable(r, "IMPLEMENTATION").size)
+    }
+
+    @Test
     fun `커밋된 테스트가 있으면 전체 내용을 포함하고 없으면 넣지 않는다`() {
         val with = ChangeAudit.prompt("IMPLEMENTATION", "REQ-1", "TC-1", null, emptyMap(), "diff", committedTests = mapOf("src/test/A.java" to "x".repeat(20_000)))
         assertTrue(with.contains("기존 테스트") && with.contains("src/test/A.java"))

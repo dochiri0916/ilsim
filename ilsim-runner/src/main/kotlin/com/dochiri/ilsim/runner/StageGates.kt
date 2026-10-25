@@ -65,7 +65,7 @@ class StageGates(
             }
             validation["ai-audit"] = if (result.verdict == "PASS") "PASSED" else "CONCERN"
             result.findings.forEach { log("AI 검토 지적: [${it.type}] ${it.target} ${it.reason}") }
-            AuditOutcome(mapOf("ai-audit.md" to ChangeAudit.render(result)), ChangeAudit.fixable(result))
+            AuditOutcome(mapOf("ai-audit.md" to ChangeAudit.render(result)), ChangeAudit.fixable(result, task.stage))
         } catch (e: Exception) {
             validation["ai-audit"] = "UNKNOWN"
             log("AI 변경 검토를 건너뜀: ${e.message}")
