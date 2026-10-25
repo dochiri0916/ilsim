@@ -21,7 +21,7 @@ object Hooks {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val editTools = setOf("Edit", "Write", "MultiEdit", "NotebookEdit")
-    private val decisionTools = listOf("approve_stage", "reject_stage")
+    private val decisionTools = listOf("approve_stage", "reject_stage", "decide_rules")
     private val gitChange = Regex("""\bgit\s+(?:-C\s+\S+\s+)?(commit|push|checkout|switch|reset|rebase|merge|stash|cherry-pick|revert|restore|branch\s+-[dDmM])\b""")
     private val fileWrite = Regex("""(^|[\s;&|(])(rm|mv|cp|touch|mkdir|tee|truncate|chmod|ln|install)\s|>{1,2}\s*(?!/dev/null|&)\S|\bsed\s+(-\w*\s+)*-i|\bperl\s+-\w*i""")
 
@@ -55,6 +55,10 @@ object Hooks {
         val tool = payload.text("tool_name") ?: return Output()
         val input = payload["tool_input"] as? JsonObject ?: JsonObject(emptyMap())
         decisionTools.firstOrNull { tool.endsWith("__$it") }?.let { name ->
+            if (name == "decide_rules") {
+                val ids = (input["ids"] as? kotlinx.serialization.json.JsonArray)?.joinToString { it.jsonPrimitive.content } ?: "-"
+                return ask("일심 규칙 ${if (input.text("decision") == "approve") "승인" else "거절"}: $ids. 사용자가 직접 확인해야 반영됩니다")
+            }
             val stage = input.text("stage") ?: "-"
             val detail = if (name == "reject_stage") "거절(같은 단계를 다시 작성): ${input.text("feedback") ?: "-"}" else "승인(다음 단계로 진행)"
             return ask("일심 $stage 단계 $detail. 사용자가 직접 확인해야 반영됩니다")

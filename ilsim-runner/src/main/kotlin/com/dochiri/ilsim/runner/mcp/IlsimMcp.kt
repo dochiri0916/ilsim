@@ -19,6 +19,8 @@ import com.dochiri.ilsim.runner.StageResult
 import com.dochiri.ilsim.runner.UsageScope
 import com.dochiri.ilsim.runner.analyzeArchitecture
 import com.dochiri.ilsim.runner.analyzeConvention
+import com.dochiri.ilsim.runner.decideRules
+import com.dochiri.ilsim.runner.rulesReport
 import com.dochiri.ilsim.runner.architecture.ArchitectureStore
 import com.dochiri.ilsim.runner.brief.RulesBrief
 import com.dochiri.ilsim.runner.convention.ConventionStore
@@ -56,9 +58,21 @@ class IlsimMcp(
         McpTool("get_rules", "이 프로젝트에서 승인된 아키텍처·컨벤션·위험 규칙을 돌려준다.", schema(
             """{"type":"object","properties":{}}""",
         )) { rules() },
-        McpTool("analyze_project", "프로젝트 코드에서 아키텍처·컨벤션 규칙을 추출하고 AI 검토로 확실한 규칙을 자동 승인한다. 나머지는 웹 규칙 화면에서 승인한다. 몇 분 걸릴 수 있다.", schema(
+        McpTool("analyze_project", "프로젝트 코드에서 아키텍처·컨벤션 규칙을 추출하고 AI 검토로 확실한 규칙을 자동 승인한다. 나머지는 review_rules로 보여 주고 사용자가 정하면 decide_rules로 반영한다. 몇 분 걸릴 수 있다.", schema(
             """{"type":"object","properties":{}}""",
         )) { analyze() },
+        McpTool("review_rules", "추출된 아키텍처·컨벤션 규칙과 학습 메모리 후보의 상태(승인·거절·후보)와 근거를 돌려준다. 사용자가 규칙을 검토할 때 쓴다.", schema(
+            """{"type":"object","properties":{}}""",
+        )) { rulesReport(store, workspace().projectId) },
+        McpTool("decide_rules", "사용자가 정한 대로 규칙·학습 메모리 후보를 승인하거나 거절한다. 사용자가 말했을 때만 호출하고, 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
+            """{"type":"object","properties":{"ids":{"type":"array","items":{"type":"string"},"description":"규칙·메모리 id 목록"},"decision":{"type":"string","enum":["approve","reject"]}},"required":["ids","decision"]}""",
+        )) { args ->
+            val ids = (args["ids"] as? kotlinx.serialization.json.JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
+            require(ids.isNotEmpty()) { "ids 가 필요합니다" }
+            val decision = args.text("decision") ?: throw IllegalArgumentException("decision 이 필요합니다")
+            require(decision in setOf("approve", "reject")) { "decision 은 approve 또는 reject 입니다" }
+            decideRules(store, workspace().projectId, ids, decision == "approve")
+        },
         McpTool("retry_task", "차단된(BLOCKED) 일심 작업을 다시 시도한다. 사용자가 지시를 주면 instruction으로 넘긴다.", schema(
             """{"type":"object","properties":{"instruction":{"type":"string","description":"다시 시도할 때 반영할 사용자 지시(생략 가능)"}}}""",
         )) { args -> retry(args.text("instruction")) },
@@ -150,7 +164,7 @@ class IlsimMcp(
     private fun rules(): String {
         val ws = workspace()
         return RulesBrief.build(ArchitectureStore(store).load(ws.projectId), ConventionStore(store).load(ws.projectId), RiskScanner.Store(store).load(ws.projectId))
-            ?: "승인된 규칙이 없습니다. analyze_project로 분석한 뒤 웹 규칙 화면에서 승인하세요"
+            ?: "승인된 규칙이 없습니다. analyze_project로 분석한 뒤 review_rules로 확인하고 decide_rules로 승인하세요"
     }
 
     private fun analyze(): String {

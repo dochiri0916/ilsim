@@ -77,10 +77,11 @@ private const val USAGE = """사용법:
     ilsim-runner corpus update [id...]           현재 채굴 결과를 기준으로 저장
     ilsim-runner corpus check [id...]            기준과 비교(변화·라벨 문제·커밋 불일치 시 종료 코드 1)
     ilsim-runner corpus label <id> correct|wrong|expect <규칙id> [메모...]   정답 라벨(expect는 id 접두사로 기대한 규칙)
-    ilsim-runner corpus export <id> <등록한 프로젝트 id>   웹·CLI에서 사용자가 승인/거절한 규칙을 라벨로 가져오기
+    ilsim-runner corpus export <id> <등록한 프로젝트 id>   Claude 앱·CLI에서 사용자가 승인/거절한 규칙을 라벨로 가져오기
                                                  옵션: --base <폴더>(기본 ILSIM_CORPUS_BASE 또는 ~/programming), --data <폴더>(기본 ilsim-runner/corpus)
   JEV
     ilsim-runner jev                            JEV 연결 확인 (환경 변수 TYPESAFE_API_KEY 필요)
+    ilsim-runner jev-key set|delete|status      서버에 JEV 키 등록·삭제·상태 (set 은 키를 표준 입력으로 받음, 명령 인자에 넣지 않음)
     ilsim-runner jev-eval [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 사례로 JEV 위험 선별 평가 (코드 발췌가 TypeSafe로 전송, --agent는 Claude 비교)
     ilsim-runner jev-eval --project <경로>... [--limit <n>] [--agent]   실제 코드 후보에서 판단이 갈린 것만 추림 (라벨 없음)
     ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
@@ -120,6 +121,7 @@ fun main(args: Array<String>) {
         "corpus" -> corpus(args)
         "jev" -> jevCheck()
         "mcp" -> mcp(store)
+        "jev-key" -> jevKey(store, args)
         "hook" -> hook(store, args)
         "jev-eval" -> jevEval(args)
         else -> { println(USAGE); exitProcess(1) }
@@ -279,6 +281,14 @@ private fun decide(store: ConfigStore, args: Array<String>, approve: Boolean) {
     val id = requireProject(store, args)
     val targets = args.drop(2)
     if (targets.isEmpty() || (!approve && targets == listOf("--all"))) { println(USAGE); exitProcess(1) }
+    try {
+        println(decideRules(store, id, targets, approve))
+    } catch (e: IllegalArgumentException) {
+        println(e.message); exitProcess(1)
+    }
+}
+
+fun decideRules(store: ConfigStore, id: String, targets: List<String>, approve: Boolean): String {
     val archStore = ArchitectureStore(store)
     val convStore = ConventionStore(store)
     val arch = archStore.load(id)
@@ -286,12 +296,27 @@ private fun decide(store: ConfigStore, args: Array<String>, approve: Boolean) {
     val all = approve && targets == listOf("--all")
     val archIds = if (all) arch?.let { RuleApproval.undecidedIds(it) }.orEmpty() else targets.filter { t -> arch?.rules?.any { it.id == t } == true }
     val convIds = if (all) conv?.let { ConventionApproval.undecidedIds(it) }.orEmpty() else targets.filter { t -> conv?.rules?.any { it.id == t } == true }
-    val unknown = if (all) emptyList() else targets.filter { it !in archIds && it !in convIds }
-    if (unknown.isNotEmpty()) { println("알 수 없는 규칙 id: ${unknown.joinToString()}"); exitProcess(1) }
+    val memory = ProjectMemory(store)
+    val memoryIds = if (all) memory.pendingIds(id) else targets.filter { t -> memory.load(id).any { it.id == t } }
+    val unknown = if (all) emptyList() else targets.filter { it !in archIds && it !in convIds && it !in memoryIds }
+    require(unknown.isEmpty()) { "알 수 없는 규칙 id: ${unknown.joinToString()}" }
     if (arch != null && archIds.isNotEmpty()) archStore.save(id, if (approve) RuleApproval.approve(arch, archIds) else RuleApproval.reject(arch, archIds))
     if (conv != null && convIds.isNotEmpty()) convStore.save(id, if (approve) ConventionApproval.approve(conv, convIds) else ConventionApproval.reject(conv, convIds))
-    println("${if (approve) "승인" else "거절"}: 아키텍처 ${archIds.size}개 · 컨벤션 ${convIds.size}개")
+    if (memoryIds.isNotEmpty()) if (approve) memory.approve(id, memoryIds) else memory.reject(id, memoryIds)
+    return "${if (approve) "승인" else "거절"}: 아키텍처 ${archIds.size}개 · 컨벤션 ${convIds.size}개 · 학습 메모리 ${memoryIds.size}개"
 }
+
+fun rulesReport(store: ConfigStore, id: String): String = buildString {
+    val arch = ArchitectureStore(store).load(id)
+    val conv = ConventionStore(store).load(id)
+    arch?.let { appendLine("[아키텍처]"); append(ArchitectureReport.rules(it)) }
+    conv?.let { appendLine("[코드 컨벤션]"); append(ConventionReport.rules(it)) }
+    val pending = ProjectMemory(store).load(id).filter { it.status == "CANDIDATE" }
+    if (pending.isNotEmpty()) {
+        appendLine("[학습 메모리 후보]")
+        pending.forEach { appendLine("  ${it.id} ${it.summary}") }
+    }
+}.ifBlank { "저장된 규칙이 없습니다. analyze_project(또는 architecture·convention)로 먼저 분석하세요" }
 
 private fun docs(store: ConfigStore, args: Array<String>) {
     if (args.size < 2) { println(USAGE); exitProcess(1) }
@@ -490,6 +515,27 @@ private fun mcp(store: ConfigStore) {
     val cwd = Path.of(System.getenv("CLAUDE_PROJECT_DIR")?.takeIf { it.isNotBlank() } ?: System.getProperty("user.dir"))
     val tools = IlsimMcp(store, client, ActiveTasks(store.location.parent.resolve("active")), cwd).tools()
     McpServer("ilsim", "0.1.0", IlsimMcp.INSTRUCTIONS, tools).serve(System.`in`.bufferedReader(), protocol)
+}
+
+private fun jevKey(store: ConfigStore, args: Array<String>) {
+    val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
+        ?: run { println("토큰이 없습니다. 서버를 먼저 실행해 ~/.ilsim/token 을 만들거나 ILSIM_TOKEN 환경변수를 설정하세요"); exitProcess(1) }
+    val client = ServerClient(store.load().serverUrl, token)
+    try {
+        when (args.getOrNull(1)) {
+            "set" -> {
+                val key = (System.console()?.readPassword("JEV API 키: ")?.let(::String) ?: readLine()).orEmpty().trim()
+                if (key.isEmpty()) { println("키가 비어 있습니다"); exitProcess(1) }
+                client.saveJevKey(key)
+                println("JEV 키를 저장했습니다(서버에 암호화 저장). 일심 MCP를 다시 연결하면 반영됩니다")
+            }
+            "delete" -> { client.deleteJevKey(); println("JEV 키를 지웠습니다") }
+            "status" -> println(client.jevKeyStatus())
+            else -> { println(USAGE); exitProcess(1) }
+        }
+    } catch (e: IllegalStateException) {
+        println(e.message); exitProcess(1)
+    }
 }
 
 private fun hook(store: ConfigStore, args: Array<String>) {

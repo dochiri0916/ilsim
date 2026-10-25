@@ -116,6 +116,32 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
         return json.parseToJsonElement(res.body()).jsonObject["key"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
     }
 
+    fun jevKeyStatus(): String {
+        val res = http.send(
+            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/secrets/jev/status")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        check(res.statusCode() == 200) { "JEV 키 상태 조회 실패: HTTP ${res.statusCode()} ${res.body()}" }
+        return res.body()
+    }
+
+    fun saveJevKey(key: String) {
+        val res = http.send(
+            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/secrets/jev")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token)
+                .header("Content-Type", "application/json").PUT(HttpRequest.BodyPublishers.ofString(json.encodeToString(mapOf("key" to key)))).build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        check(res.statusCode() == 200) { "JEV 키 저장 실패: HTTP ${res.statusCode()} ${res.body()}" }
+    }
+
+    fun deleteJevKey() {
+        val res = http.send(
+            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/secrets/jev")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).DELETE().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        check(res.statusCode() == 200) { "JEV 키 삭제 실패: HTTP ${res.statusCode()} ${res.body()}" }
+    }
+
     override fun event(taskId: String, stage: String, type: String, data: String) {
         sendEvents(taskId, listOf(EventRequest(stage, type, data)))
     }

@@ -198,6 +198,9 @@ class McpTest {
     @Test
     fun `변경 검사·규칙 조회·차단 작업 재시도와 커밋 차단 훅을 제공한다`() {
         assertContains(call("get_rules"), "쓰지 말아야 할 위험 패턴")
+        assertContains(call("review_rules"), "저장된 규칙이 없습니다")
+        assertContains(runCatching { call("decide_rules", """{"ids":["nope"],"decision":"approve"}""") }.exceptionOrNull()!!.message!!, "알 수 없는 규칙 id")
+        assertContains(hook("pre-tool-use", """{"cwd":"$repo","tool_name":"mcp__plugin_ilsim_ilsim__decide_rules","tool_input":{"ids":["a","b"],"decision":"reject"}}""").stdout, "\"permissionDecision\":\"ask\"")
         call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         val hook = repo.resolve(".git/hooks/pre-commit")
         assertContains(hook.toFile().readText(), Workspace.HOOK_MARK)

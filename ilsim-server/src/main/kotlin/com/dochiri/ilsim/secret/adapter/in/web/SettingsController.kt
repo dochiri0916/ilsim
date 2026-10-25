@@ -27,16 +27,16 @@ class SettingsController(
 
     data class SettingsResponse(val jev: JevSetting)
 
-    @GetMapping("/api/settings")
+    @GetMapping("/runner/api/secrets/jev/status")
     fun settings(): SettingsResponse = SettingsResponse(secrets.status(SecretNames.JEV_API_KEY).toSetting())
 
-    @PutMapping("/api/settings/jev-key")
+    @PutMapping("/runner/api/secrets/jev")
     fun put(@RequestBody request: KeyRequest): SettingsResponse {
         secrets.put(SecretNames.JEV_API_KEY, request.key?.trim())
         return settings()
     }
 
-    @DeleteMapping("/api/settings/jev-key")
+    @DeleteMapping("/runner/api/secrets/jev")
     fun delete(): SettingsResponse {
         secrets.delete(SecretNames.JEV_API_KEY)
         return settings()
