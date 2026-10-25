@@ -254,12 +254,46 @@ class McpTest {
         assertContains(missing, "REQ-2")
         assertEquals(before, audits, "누락이면 검토 전에 실패한다")
 
-        jevAnswer = { 0.95 }
+        jevAnswer = { id -> if (id.startsWith("v")) 0.05 else 0.95 }
         val passed = run("submit_result")
         assertContains(passed, "requirements=PASSED")
         assertTrue("ai-audit=SKIPPED" in passed || audits == before + 1, "확실하면 생략하거나 표본으로만 검토한다")
         assertTrue(server.results.last().decisions.any { it.purpose == "CHANGE_AUDIT" && it.handler in setOf("SKIP", "SAMPLE") })
         assertTrue(server.results.last().decisions.any { it.purpose == "REQUIREMENT_CHECK" && it.handler == "JEV" })
+    }
+
+    @Test
+    fun `그 프로젝트 문서에서 JEV가 고른 지침만 단계 지시에 넣고 어기면 제출을 실패시킨다`() {
+        repo.resolve("docs").createDirectories()
+        repo.resolve("docs/architecture.md").writeText("# 아키텍처\n\n## 계층\n도메인은 어댑터를 의존하지 않는다.\n\n## 설치\nbrew install demo\n")
+        repo.resolve("sub").createDirectories()
+        repo.resolve("sub/GUIDE.md").writeText("# 다른 프로젝트\n\n다른 프로젝트 지침\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "docs")
+        store.save(store.load().let { it.copy(projects = it.projects + ("q" to ProjectEntry(repo.resolve("sub").toString(), "other"))) })
+        var violation = 0.95
+        jevAnswer = { id -> when (id) { "s0", "s2" -> 0.05; "v0" -> violation; else -> 0.9 } }
+
+        val started = call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        assertContains(started, "## 프로젝트 문서 지침")
+        assertContains(started, "docs/architecture.md:3 — 아키텍처 > 계층")
+        assertContains(started, "도메인은 어댑터를 의존하지 않는다")
+        assertTrue("brew install" !in started && "다른 프로젝트 지침" !in started && "demo\n" !in started.substringAfter("## 프로젝트 문서 지침"))
+        assertContains(call("get_guidelines"), "도메인은 어댑터를 의존하지 않는다")
+
+        repo.resolve("specs/slug").createDirectories()
+        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\n- REQ-1: 도메인이 어댑터를 직접 호출한다\n")
+        val failed = call("submit_result")
+        assertContains(failed, "문서 지침을 어긴 것으로 보입니다")
+        assertContains(failed, "docs/architecture.md:3")
+        assertTrue(server.results.isEmpty())
+
+        violation = 0.05
+        assertContains(call("submit_result"), "guidelines=PASSED")
+        assertTrue(server.results.last().decisions.any { it.purpose == "GUIDELINE_CHECK" && it.handler == "JEV" })
+        val selection = server.results.last().decisions.single { it.purpose == "GUIDELINE_SELECT" }
+        assertContains(selection.reason, "docs/architecture.md:3=0.90")
+        assertContains(selection.reason, "docs/architecture.md:6=0.05")
     }
 
     @Test

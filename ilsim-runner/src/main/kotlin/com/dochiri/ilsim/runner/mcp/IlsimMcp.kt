@@ -24,6 +24,8 @@ import com.dochiri.ilsim.runner.rulesReport
 import com.dochiri.ilsim.runner.architecture.ArchitectureStore
 import com.dochiri.ilsim.runner.brief.RulesBrief
 import com.dochiri.ilsim.runner.convention.ConventionStore
+import com.dochiri.ilsim.runner.document.ProjectDocs
+import com.dochiri.ilsim.runner.jev.Guidelines
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.RequirementCheck
 import com.dochiri.ilsim.runner.risk.RiskScanner
@@ -41,6 +43,7 @@ class IlsimMcp(
     private val cwd: Path,
     private val ask: (prompt: String, model: String) -> String = { prompt, model -> ReviewRouter.askWithCost(prompt, model).text },
     private val jev: () -> Jev = Jev::fromEnvironment,
+    private val guides: TaskGuides = TaskGuides(store.location.parent.resolve("guides")),
 ) {
     fun tools(): List<McpTool> = listOf(
         McpTool("start_task", "코드·문서를 바꾸는 요청을 일심 작업으로 시작한다. 작업 브랜치로 전환하고 첫 단계 지시를 돌려준다.", schema(
@@ -55,6 +58,9 @@ class IlsimMcp(
         McpTool("check_change", "제출 전에 현재 변경을 빠르게 검사한다(허용 경로·아키텍처·컨벤션·위험·테스트 무결성). 테스트·변이·독립 검토는 submit_result에서 한다. 차단하지 않는다.", schema(
             """{"type":"object","properties":{}}""",
         )) { checkChange() },
+        McpTool("get_guidelines", "진행 중인 일심 작업에 적용되는 이 프로젝트 문서 지침(원문·출처·관련도)을 돌려준다. next_step에 넣은 것과 같다.", schema(
+            """{"type":"object","properties":{}}""",
+        )) { guidelines() },
         McpTool("get_rules", "이 프로젝트에서 승인된 아키텍처·컨벤션·위험 규칙을 돌려준다.", schema(
             """{"type":"object","properties":{}}""",
         )) { rules() },
@@ -106,6 +112,7 @@ class IlsimMcp(
         val branch = "ilsim/${created.feature}-${created.taskId.take(8)}"
         Shell.gitOk(ws.root, "checkout", "-b", branch)
         active.save(ws.root, ActiveTask(created.taskId, ws.projectId, created.feature, branch))
+        guides.save(created.taskId, buildGuide(ws, created.feature, requirement))
         val warning = ws.installCommitHook(runnerCommand)?.let { "\n주의: $it" }.orEmpty()
         return "작업을 만들었습니다: ${created.feature} (${created.taskId.take(8)}), 브랜치 $branch$warning\n\n" + nextStep()
     }
@@ -116,7 +123,7 @@ class IlsimMcp(
         val assigned = server.claim(task.taskId, store.load().runnerId) ?: return describe(ws, task)
         active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0))
         val prompt = gates {}.promptWithRules(assigned.copy(testCommand = ws.project.testCommand))
-        return listOf("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", prompt, rules(assigned.stage, task.feature)).joinToString("\n\n")
+        return listOf("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", prompt, guide(ws, task, assigned.prompt).render(), rules(assigned.stage, task.feature)).joinToString("\n\n")
     }
 
     private fun describe(ws: Workspace, task: ActiveTask): String {
@@ -127,6 +134,7 @@ class IlsimMcp(
         return when {
             state.status == "COMPLETED" -> {
                 active.clear(ws.root)
+                guides.clear(task.taskId)
                 "작업이 끝났습니다: ${task.feature}. 브랜치 ${task.branch}에 단계별 커밋이 있습니다. 병합 여부는 사용자가 정합니다"
             }
             state.status == "BLOCKED" -> {
@@ -159,6 +167,25 @@ class IlsimMcp(
                 candidates.forEach { appendLine("- $it") }
             }
         }.trimEnd()
+    }
+
+    private fun guidelines(): String {
+        val ws = workspace()
+        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        return guide(ws, task, task.feature).render()
+    }
+
+    private fun guide(ws: Workspace, task: ActiveTask, request: String): TaskGuide =
+        guides.load(task.taskId)?.takeIf { it.projectId == ws.projectId && (it.selected || !jev().enabled) }
+            ?: buildGuide(ws, task.feature, request).also { guides.save(task.taskId, it) }
+
+    private fun buildGuide(ws: Workspace, feature: String, request: String): TaskGuide {
+        val others = store.load().projects.filterKeys { it != ws.projectId }.values.map { Path.of(it.path) }
+        val files = ProjectDocs.files(ws.root, ws.project, others, feature)
+        val sections = ProjectDocs.sections(files)
+        val scored = if (sections.isEmpty()) emptyList() else runCatching { Guidelines.select(jev(), request, sections) }.getOrNull()
+        return TaskGuide(ws.projectId, scored != null, sections.size, scored?.let(Guidelines::relevant).orEmpty(),
+            if (scored == null) files.keys.toList() else emptyList(), scored?.let(Guidelines::scores).orEmpty())
     }
 
     private fun rules(): String {
@@ -244,6 +271,7 @@ class IlsimMcp(
         server.result(task.taskId, StageResult(true, diff = outcome.diff, artifacts = outcome.artifacts, validation = validation, branch = task.branch,
             model = assigned.model, executionId = assigned.executionId, stage = stage, usage = usage.toList(), decisions = decisions.toList()))
         active.save(ws.root, task.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0))
+        guides.load(task.taskId)?.takeIf { !it.reported }?.let { guides.save(task.taskId, it.copy(reported = true)) }
         val checks = validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "형식·경로 검사" }
         return "통과($stage): $checks. 커밋했습니다\n\n" + nextStep()
     }
@@ -270,8 +298,24 @@ class IlsimMcp(
             return Outcome("구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
                 check.missing.joinToString("\n") { "- ${it.id} ${it.text} (충족 확률 ${"%.2f".format(check.probabilities[it.id])})" })
         }
-        val audit = if (auditNeeded(ws, stage, check, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
-            gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey))
+        val guide = guide(ws, task, assigned.prompt)
+        if (!guide.reported) {
+            DecisionScope.record("GUIDELINE_SELECT", if (guide.selected) "JEV" else "NONE",
+                if (guide.selected) "문서 구간 ${guide.sections}개 중 ${guide.guidelines.size}개 선택(${Guidelines.IRRELEVANT} 초과): ${guide.scores.joinToString(", ")}" else "JEV 꺼짐으로 지침 선택 못 함, 문서 ${guide.documents.size}개 안내",
+                guide.scores.joinToString("\n") + guide.documents.joinToString("\n"))
+        }
+        val compliance = guidelineCheck(guide, stage, diff, validation)
+        if (compliance != null && compliance.violated.isNotEmpty()) {
+            return Outcome("이 프로젝트 문서 지침을 어긴 것으로 보입니다. 아래 지침에 맞게 고친 뒤 다시 제출하세요:\n" +
+                compliance.violated.joinToString("\n") { g -> "- ${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()} (위반 확률 ${"%.2f".format(compliance.probabilities[g])})\n  ${g.text.lines().filter { it.isNotBlank() }.take(6).joinToString(" ").take(400)}" })
+        }
+        val unresolved = when {
+            compliance != null -> compliance.uncertain.map { it.source }
+            guide.selected && guide.guidelines.isEmpty() -> emptyList()
+            else -> listOf("판정 없음")
+        }
+        val audit = if (auditNeeded(ws, stage, check, unresolved, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
+            gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey), guide.render().takeIf { guide.guidelines.isNotEmpty() || !guide.selected })
         } else {
             validation["ai-audit"] = "SKIPPED"
             StageGates.AuditOutcome(emptyMap(), emptyList())
@@ -298,7 +342,25 @@ class IlsimMcp(
         return result
     }
 
-    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
+    private fun guidelineCheck(guide: TaskGuide, stage: String, diff: String, validation: MutableMap<String, String>): Guidelines.Check? {
+        if (guide.selected && guide.guidelines.isEmpty()) {
+            validation["guidelines"] = "NONE"
+            return Guidelines.Check(emptyMap(), emptyList(), emptyList(), false)
+        }
+        val result = if (guide.selected) runCatching { Guidelines.check(jev(), stage, guide.guidelines, diff) }.getOrNull() else null
+        validation["guidelines"] = when {
+            result == null -> "UNKNOWN"
+            result.violated.isNotEmpty() -> "VIOLATED"
+            result.uncertain.isNotEmpty() -> "UNCERTAIN"
+            else -> "PASSED"
+        }
+        DecisionScope.record("GUIDELINE_CHECK", if (result == null) "NONE" else "JEV",
+            result?.let { r -> r.probabilities.entries.joinToString(", ") { "${it.key.source}=${"%.2f".format(it.value)}" } + if (r.truncated) " (diff 일부만 판정)" else "" }
+                ?: if (guide.selected) "JEV 실패" else "JEV 꺼짐으로 지침 선택 못 함", diff)
+        return result
+    }
+
+    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, unresolvedGuidelines: List<String>, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
         if (stage == "TEST_CODE") return true
         if (stage != "IMPLEMENTATION") return false
         val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
@@ -306,6 +368,7 @@ class IlsimMcp(
         val reasons = listOfNotNull(
             "요구사항 판정 없음".takeIf { check == null },
             "판정이 불확실한 요구사항 ${check?.uncertain?.joinToString { it.id }}".takeIf { check != null && check.uncertain.isNotEmpty() },
+            "문서 지침 판정 불확실 ${unresolvedGuidelines.joinToString()}".takeIf { unresolvedGuidelines.isNotEmpty() },
             "위험 후보 ${riskCandidates}건".takeIf { riskCandidates > 0 },
             "변경 ${lines}줄(기준 ${maxLines}줄 초과)".takeIf { lines > maxLines },
         )
@@ -316,7 +379,7 @@ class IlsimMcp(
         val rate = (ws.project.auditSampleRate ?: AUDIT_SAMPLE_RATE).coerceIn(0.0, 1.0)
         val sampled = Math.floorMod(executionId.hashCode(), 100) < (rate * 100).toInt()
         DecisionScope.record("CHANGE_AUDIT", if (sampled) "SAMPLE" else "SKIP",
-            if (sampled) "건너뛸 조건이지만 표본(${(rate * 100).toInt()}%)으로 검토" else "요구사항 판정 충족·위험 후보 없음·변경 ${lines}줄로 검토 생략", diff)
+            if (sampled) "건너뛸 조건이지만 표본(${(rate * 100).toInt()}%)으로 검토" else "요구사항·문서 지침 판정 충족·위험 후보 없음·변경 ${lines}줄로 검토 생략", diff)
         log(if (sampled) "독립 검토: 표본으로 실행" else "독립 검토: 조건 충족으로 생략")
         return sampled
     }

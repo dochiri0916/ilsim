@@ -50,14 +50,15 @@ class StageGates(
 
     class AuditOutcome(val artifacts: Map<String, String>, val fixable: List<ChangeAudit.Finding>)
 
-    fun aiAudit(task: AssignedTask, project: ProjectEntry, worktree: Path, diff: String, validation: MutableMap<String, String>, contextHash: String): AuditOutcome {
+    fun aiAudit(task: AssignedTask, project: ProjectEntry, worktree: Path, diff: String, validation: MutableMap<String, String>, contextHash: String, guidelines: String? = null): AuditOutcome {
         val none = AuditOutcome(emptyMap(), emptyList())
         if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return none
         return try {
             fun spec(path: String) = worktree.resolve(path).takeIf { it.exists() }?.readText()
             val prompt = ChangeAudit.prompt(
                 task.stage, spec(Gate.requirementsPath(task.feature)), spec(Gate.testSpecPath(task.feature)),
-                RulesBrief.build(architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId)),
+                listOfNotNull(RulesBrief.build(architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId)), guidelines)
+                    .joinToString("\n\n").ifEmpty { null },
                 validation, diff, survivors.also { survivors = emptyList() }, committedTests(task, worktree),
             )
             val result = reviewCache.get(prompt, "${ClaudeModels.REVIEW}/${ClaudeModels.EFFORT}/${ReviewRouter.policyKey}/$contextHash", ChangeAudit::parse) {

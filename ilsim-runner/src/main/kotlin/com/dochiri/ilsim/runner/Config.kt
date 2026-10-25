@@ -18,6 +18,8 @@ data class ProjectEntry(
     val mutationCommand: String? = null,
     val auditSampleRate: Double? = null,
     val auditMaxDiffLines: Int? = null,
+    val docs: List<String> = emptyList(),
+    val docsExclude: List<String> = emptyList(),
 )
 
 @Serializable

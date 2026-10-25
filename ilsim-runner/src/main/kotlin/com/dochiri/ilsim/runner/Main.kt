@@ -15,6 +15,8 @@ import com.dochiri.ilsim.runner.convention.ConventionReviewer
 import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.document.DocPurpose
 import com.dochiri.ilsim.runner.document.DocumentContext
+import com.dochiri.ilsim.runner.document.ProjectDocs
+import com.dochiri.ilsim.runner.jev.Guidelines
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevRequirementEval
 import com.dochiri.ilsim.runner.jev.JevRiskEval
@@ -42,6 +44,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
+import kotlin.io.path.readText
 import kotlin.io.path.isDirectory
 import kotlin.io.path.writeText
 import kotlin.system.exitProcess
@@ -55,7 +58,11 @@ private const val USAGE = """사용법:
   규칙 만들기 (정적 분석 → AI 1회 검토 → 확실한 것은 자동 승인, 나머지는 사용자 선택)
     ilsim-runner architecture <id>               아키텍처 규칙
     ilsim-runner convention <id>                 코드 컨벤션 규칙
-    ilsim-runner docs <id>                       규칙 검토에 쓰는 프로젝트 문서와 보는 기준
+    ilsim-runner docs <id>                       이 프로젝트의 지침 문서 목록과 규칙 검토에 쓰는 문서
+    ilsim-runner docs add <id> <경로>            지침 문서(파일·폴더, 저장소 밖 가능)를 이 프로젝트에 추가
+    ilsim-runner docs exclude <id> <경로>        지침 문서에서 뺄 경로
+    ilsim-runner docs remove <id> <경로>         추가·제외 목록에서 경로를 지움
+    ilsim-runner guidelines <id> "<요청>" [기준]  JEV가 고르는 지침과 점수, 기준(Git ref)을 주면 작업 트리 diff의 위반 판정
   규칙 관리
     ilsim-runner rules <id>                      규칙 상태(승인/거절/후보)와 AI 의견
     ilsim-runner approve <id> <규칙id...|--all>  승인
@@ -105,6 +112,7 @@ fun main(args: Array<String>) {
         "architecture" -> architecture(store, args)
         "convention" -> convention(store, args)
         "docs" -> docs(store, args)
+        "guidelines" -> guidelines(store, args)
         "rules" -> rulesCmd(store, args)
         "approve" -> decide(store, args, approve = true)
         "reject" -> decide(store, args, approve = false)
@@ -320,6 +328,17 @@ fun rulesReport(store: ConfigStore, id: String): String = buildString {
 
 private fun docs(store: ConfigStore, args: Array<String>) {
     if (args.size < 2) { println(USAGE); exitProcess(1) }
+    if (args[1] in setOf("add", "exclude", "remove")) {
+        if (args.size < 4) { println(USAGE); exitProcess(1) }
+        println(editDocs(store, args[2], args[1], args[3]))
+        return
+    }
+    store.load().projects[args[1]]?.let { project ->
+        val others = store.load().projects.filterKeys { it != args[1] }.values.map { Path.of(it.path) }
+        val files = ProjectDocs.files(Path.of(project.path), project, others, null)
+        println("[지침 문서] ${files.size}개 (추가 ${project.docs.size}, 제외 ${project.docsExclude.size})")
+        files.forEach { (label, path) -> println("  - $label (구간 ${ProjectDocs.split(label, runCatching { path.readText() }.getOrDefault("")).size})") }
+    }
     val path = Path.of(store.load().projects[args[1]]?.path ?: args[1]).toAbsolutePath().normalize()
     val purposes = when (args.getOrNull(2)) {
         null -> DocPurpose.values().toList()
@@ -505,6 +524,31 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
     }
 }
 
+private fun guidelines(store: ConfigStore, args: Array<String>) {
+    if (args.size < 3) { println(USAGE); exitProcess(1) }
+    val config = store.load()
+    val project = config.projects[args[1]] ?: run { println("등록되지 않은 프로젝트: ${args[1]}"); exitProcess(1) }
+    RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
+        ?.let { token -> runCatching { ServerClient(config.serverUrl, token).jevKey() }.onSuccess { JevKey.fromServer = it } }
+    val jev = Jev.fromEnvironment()
+    if (!jev.enabled) { println("JEV 키가 없습니다. ilsim-runner jev-key set 으로 등록하세요"); exitProcess(2) }
+    val root = Path.of(project.path)
+    val files = ProjectDocs.files(root, project, config.projects.filterKeys { it != args[1] }.values.map { Path.of(it.path) }, null)
+    val sections = ProjectDocs.sections(files)
+    val started = System.currentTimeMillis()
+    val scored = Guidelines.select(jev, args[2], sections) ?: run { println("JEV 호출 실패"); exitProcess(2) }
+    val selected = Guidelines.relevant(scored)
+    println("문서 구간 ${sections.size}개 중 ${selected.size}개 선택(${System.currentTimeMillis() - started}ms)")
+    scored.sortedByDescending { it.relevance }.forEach { println("  ${if (it in selected) "+" else "-"} ${"%.2f".format(it.relevance)} ${it.source} ${it.heading}") }
+    val base = args.getOrNull(3) ?: return
+    val diff = Shell.gitOk(root, "diff", base)
+    val check = Guidelines.check(jev, "IMPLEMENTATION", selected, diff) ?: run { println("JEV 호출 실패"); exitProcess(2) }
+    println("위반 판정(diff ${diff.length}자${if (check.truncated) ", 일부만" else ""}): 위반 ${check.violated.size}, 애매 ${check.uncertain.size}")
+    check.probabilities.entries.sortedByDescending { it.value }.forEach { (g, p) ->
+        println("  ${when { g in check.violated -> "위반"; g in check.uncertain -> "애매"; else -> "통과" }} ${"%.2f".format(p)} ${g.source} ${g.heading}")
+    }
+}
+
 private fun mcp(store: ConfigStore) {
     val protocol = System.out
     System.setOut(System.err)
@@ -624,6 +668,25 @@ private fun applyStandards(store: ConfigStore, args: Array<String>) {
     } catch (e: IllegalArgumentException) {
         println(e.message); exitProcess(1)
     }
+}
+
+fun editDocs(store: ConfigStore, id: String, action: String, target: String): String {
+    val config = store.load()
+    val project = config.projects[id] ?: throw IllegalArgumentException("등록되지 않은 프로젝트: $id")
+    val root = Path.of(project.path).toAbsolutePath().normalize()
+    val absolute = Path.of(target).let { if (it.isAbsolute) it else Path.of(System.getProperty("user.dir")).resolve(it) }.normalize()
+    val value = if (absolute.startsWith(root)) root.relativize(absolute).toString().replace('\\', '/') else absolute.toString()
+    val updated = when (action) {
+        "add" -> {
+            require(absolute.exists()) { "경로가 없습니다: $absolute" }
+            project.copy(docs = (project.docs + value).distinct(), docsExclude = project.docsExclude - value)
+        }
+        "exclude" -> project.copy(docsExclude = (project.docsExclude + value).distinct(), docs = project.docs - value)
+        "remove" -> project.copy(docs = project.docs - value, docsExclude = project.docsExclude - value)
+        else -> throw IllegalArgumentException("알 수 없는 동작: $action")
+    }
+    store.save(config.copy(projects = config.projects + (id to updated)))
+    return "지침 문서 $action: $id $value"
 }
 
 private fun set(store: ConfigStore, args: Array<String>) {
