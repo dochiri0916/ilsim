@@ -35,8 +35,9 @@ Build Convention의 모듈·플러그인 ID·검사·보고서 개요는 [프로
 | 주제 | 문서 |
 |---|---|
 | 빌드·검증, Git 이력·원본 저장소·보존 브랜치 | [저장소 개발과 이력](repository.md) |
-| AI 비용·JEV 우선 처리·모델/추론 강도 선택·지속 보정 요구사항 | [AI 비용 분석](ai-cost-analysis.md) |
-| Claude 앱·MCP 경유 실행 구조(설계 초안) | [MCP 전환 설계](mcp-design.md) |
+| Claude 앱·MCP 경유 실행 구조, 문서 지침, JEV 우선 처리 | [MCP 설계](mcp-design.md) |
+| Runner·서버 API, 단계 검증 값 | [Runner 프로토콜](../contracts/runner-protocol.md) |
+| 백엔드 아키텍처·코드 컨벤션 표준(DDD·헥사고날·클린) | [아키텍처·코드 컨벤션 표준](../enterprise_architecture_code_conventions.md) |
 | 저장소 작업 지침 | [루트 AGENTS](../AGENTS.md) |
 | AI 세션 인수인계(진행 상태·로컬 실행 환경) | [세션 인수인계](handoff.md) |
 | 플러그인 개발 지침 | [Build Convention AGENTS](../build-convention/AGENTS.md) |
