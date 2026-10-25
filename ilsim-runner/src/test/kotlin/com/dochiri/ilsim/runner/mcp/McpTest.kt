@@ -265,6 +265,30 @@ class McpTest {
     }
 
     @Test
+    fun `TC-18 구현 단계 diff가 입력 한도로 잘리면 누락 대신 불확실로 기록한다`() {
+        fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        repo.resolve("specs/slug").createDirectories()
+        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n")
+        run("submit_result"); server.approve("t")
+        repo.resolve("specs/slug/test-spec.md").writeText("| TC-1 | REQ-1 |\n")
+        run("submit_result"); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        run("submit_result")
+        assertEquals("IMPLEMENTATION", server.stages[server.index])
+
+        repo.resolve("src/main").createDirectories()
+        repo.resolve("src/main/Slug.java").writeText("class Slug {\n" + "    int value = 1;\n".repeat(2000) + "}\n")
+        jevAnswer = { id -> if (id == "m0") 0.1 else 0.05 }
+        val submitted = run("submit_result")
+        assertTrue("요구사항이 빠진 것으로 보입니다" !in submitted, submitted)
+        assertEquals("UNCERTAIN", server.results.last().validation["requirements"])
+        assertTrue(server.results.last().decisions.any { it.purpose == "REQUIREMENT_CHECK" && "diff 일부만 판정" in it.reason })
+    }
+
+    @Test
     fun `그 프로젝트 문서에서 JEV가 고른 지침만 단계 지시에 넣고 어기면 제출을 실패시킨다`() {
         repo.resolve("docs").createDirectories()
         repo.resolve("docs/architecture.md").writeText("# 아키텍처\n\n## 계층\n도메인은 어댑터를 의존하지 않는다.\n\n## 설치\nbrew install demo\n")
