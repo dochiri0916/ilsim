@@ -90,15 +90,17 @@ class McpTest {
     }
 
     private var jevAnswer: (String) -> Double? = { null }
+    private var jevByBody: (String, String) -> Double? = { _, _ -> null }
 
     private fun jev(): com.dochiri.ilsim.runner.jev.Jev {
         val answer = jevAnswer
+        val byBody = jevByBody
         val probe = answer("m0") ?: return com.dochiri.ilsim.runner.jev.Jev(null)
         val transport = object : io.github.gudcks0305.jev.spi.JevTransport {
             val mapper = com.fasterxml.jackson.databind.ObjectMapper()
             override fun post(uri: java.net.URI, headers: Map<String, String>, body: com.fasterxml.jackson.databind.JsonNode): java.util.concurrent.CompletableFuture<com.fasterxml.jackson.databind.JsonNode> {
                 val answers = mapper.createObjectNode()
-                body.path("questions").fieldNames().forEach { id -> answers.putObject(id).put("type", "noul").put("noul", answer(id) ?: probe) }
+                body.path("questions").fieldNames().forEach { id -> answers.putObject(id).put("type", "noul").put("noul", byBody(id, body.toString()) ?: answer(id) ?: probe) }
                 return java.util.concurrent.CompletableFuture.completedFuture(mapper.createObjectNode().put("model", "jev").set("answers", answers))
             }
             override fun close() {}
@@ -272,7 +274,13 @@ class McpTest {
         Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "docs")
         store.save(store.load().let { it.copy(projects = it.projects + ("q" to ProjectEntry(repo.resolve("sub").toString(), "other"))) })
         var violation = 0.95
-        jevAnswer = { id -> when (id) { "s0", "s2" -> 0.05; "v0" -> violation; else -> 0.9 } }
+        jevAnswer = { 0.9 }
+        jevByBody = { id, body -> when {
+            id.startsWith("v") -> violation
+            id[0] in "km" && "README.md" in body -> 0.05
+            id == "s1" && "brew install" in body -> 0.05
+            else -> null
+        } }
 
         val started = call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         assertContains(started, "## 프로젝트 문서 지침")

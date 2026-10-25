@@ -29,7 +29,7 @@ object Guidelines {
         try {
             val docScores = documents(jev, request, sections, pool) ?: return null
             val kept = sections.filter { (docScores[it.path] ?: 1.0) > IRRELEVANT }
-            val batches = kept.chunked(BATCH).map { batch -> pool.submit<List<Guideline>?> { selectBatch(jev, request, batch) } }
+            val batches = byDocument(kept) { it.path }.map { batch -> pool.submit<List<Guideline>?> { selectBatch(jev, request, batch) } }
             val scored = batches.map { it.get() ?: return null }.flatten().associateBy { it.path to it.line to it.text }
             return sections.map { s ->
                 val document = docScores[s.path] ?: 1.0
@@ -47,7 +47,7 @@ object Guidelines {
     }
 
     private fun documents(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<String, Double>? {
-        val batches = sections.groupBy { it.path }.entries.chunked(BATCH).map { batch -> pool.submit<Map<String, Double>?> { documentBatch(jev, request, batch.map { it.key to it.value }) } }
+        val batches = sections.groupBy { it.path }.entries.map { pool.submit<Map<String, Double>?> { documentBatch(jev, request, listOf(it.key to it.value)) } }
         return batches.map { it.get() ?: return null }.fold(emptyMap()) { a, b -> a + b }
     }
 
@@ -96,22 +96,31 @@ object Guidelines {
     fun check(jev: Jev, stage: String, guidelines: List<Guideline>, diff: String): Check? {
         if (!jev.enabled) return null
         val truncated = diff.length > MAX_DIFF_CHARS
-        val probabilities = linkedMapOf<Guideline, Double>()
-        for (batch in guidelines.chunked(BATCH)) {
-            val state = mapOf(
-                "stage" to stage,
-                "guidelines" to batch.mapIndexed { i, g -> mapOf("id" to "g$i", "source" to g.source, "heading" to g.heading, "text" to g.text) },
-                "diff" to diff.take(MAX_DIFF_CHARS),
-            )
-            val questions = batch.indices.associate { i ->
-                "v$i" to NoulQuestion.of("v$i", "변경(diff)이 지침 g$i 의 text 에 적힌 규칙을 직접 어기는가? g$i 의 text 에 적힌 규칙만 기준으로 하고, 다른 지침의 위반은 g$i 위반으로 보지 않는다. diff 에 g$i 가 정한 것과 다른 구조·이름·문구·동작·의존·테스트 방식이 있으면 Yes. g$i 에 지킬 규칙이 없거나(소개·배경·미결정 사항 등), 규칙이 이 변경 코드에 적용되지 않거나, 지키고 있으면 No. 이 단계(stage)에서 아직 만들 차례가 아닌 코드가 없는 것은 위반이 아니다.")
-                    .withCriteria("변경이 지침을 어김", "변경이 지침을 지키거나 지침과 무관함")
-            }
-            val answers = jev.probabilities(state, questions) ?: return null
-            batch.forEachIndexed { i, g -> answers["v$i"]?.let { probabilities[g] = it } }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
+        val probabilities = try {
+            byDocument(guidelines.sortedBy { it.line }) { it.path }.map { batch -> pool.submit<Map<Guideline, Double>?> { checkBatch(jev, stage, batch, diff) } }
+                .map { it.get() ?: return null }.fold(emptyMap<Guideline, Double>()) { a, b -> a + b }
+        } finally {
+            pool.shutdownNow()
         }
         val violated = guidelines.filter { (probabilities[it] ?: 0.0) >= VIOLATED }
         val uncertain = guidelines.filter { it !in violated && (truncated || (it.relevance >= APPLIES && (probabilities[it] ?: 1.0) > CLEAR)) }
         return Check(probabilities, violated, uncertain, truncated)
+    }
+
+    private fun <T> byDocument(items: List<T>, path: (T) -> String): List<List<T>> = items.groupBy(path).values.flatMap { it.chunked(BATCH) }
+
+    private fun checkBatch(jev: Jev, stage: String, batch: List<Guideline>, diff: String): Map<Guideline, Double>? {
+        val state = mapOf(
+            "stage" to stage,
+            "guidelines" to batch.mapIndexed { i, g -> mapOf("id" to "g$i", "source" to g.source, "heading" to g.heading, "text" to g.text) },
+            "diff" to diff.take(MAX_DIFF_CHARS),
+        )
+        val questions = batch.indices.associate { i ->
+            "v$i" to NoulQuestion.of("v$i", "변경(diff)이 지침 g$i 의 text 에 적힌 규칙을 직접 어기는가? g$i 의 text 에 적힌 규칙만 기준으로 하고, 다른 지침의 위반은 g$i 위반으로 보지 않는다. diff 에 g$i 가 정한 것과 다른 구조·이름·문구·동작·의존·테스트 방식이 있으면 Yes. g$i 에 지킬 규칙이 없거나(소개·배경·미결정 사항 등), 규칙이 이 변경 코드에 적용되지 않거나, 지키고 있으면 No. 이 단계(stage)에서 아직 만들 차례가 아닌 코드가 없는 것은 위반이 아니다.")
+                .withCriteria("변경이 지침을 어김", "변경이 지침을 지키거나 지침과 무관함")
+        }
+        val answers = jev.probabilities(state, questions) ?: return null
+        return batch.withIndex().mapNotNull { (i, g) -> answers["v$i"]?.let { g to it } }.toMap()
     }
 }

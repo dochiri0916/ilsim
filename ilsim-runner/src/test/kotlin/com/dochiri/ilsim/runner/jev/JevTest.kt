@@ -26,12 +26,13 @@ class JevTest {
     private val mapper = ObjectMapper()
 
     private class FakeTransport(val mapper: ObjectMapper, val fail: Boolean = false, val probability: (String) -> Double) : JevTransport {
-        val requests = mutableListOf<JsonNode>()
+        val requests = java.util.Collections.synchronizedList(mutableListOf<JsonNode>())
+        var override: (String, JsonNode) -> Double? = { _, _ -> null }
         override fun post(uri: URI, headers: Map<String, String>, body: JsonNode): CompletableFuture<JsonNode> {
             requests.add(body)
             if (fail) return CompletableFuture.failedFuture(JevException(JevException.Kind.SERVER, "boom", 500))
             val answers = mapper.createObjectNode()
-            body.path("questions").fieldNames().forEach { id -> answers.putObject(id).put("type", "noul").put("noul", probability(id)) }
+            body.path("questions").fieldNames().forEach { id -> answers.putObject(id).put("type", "noul").put("noul", override(id, body) ?: probability(id)) }
             return CompletableFuture.completedFuture(mapper.createObjectNode().put("model", "jev-latest").set("answers", answers))
         }
         override fun close() {}
@@ -122,11 +123,12 @@ class JevTest {
     fun `규칙 문서가 아니거나 다른 모듈 문서는 통째로 빼고 규칙이 없거나 요청에 적용되지 않는 구간도 빼며 관련도가 낮은 구간의 애매는 검토로 넘기지 않는다`() {
         val sections = listOf("배경", "컨벤션", "다른 기능").map { com.dochiri.ilsim.runner.document.DocSection("a.md", 1, it, it) } +
             com.dochiri.ilsim.runner.document.DocSection("other/b.md", 1, "다른 모듈", "다른 모듈 규칙")
-        val select = FakeTransport(mapper) { id -> mapOf("k0" to 0.9, "m0" to 0.9, "k1" to 0.9, "m1" to 0.1, "r0" to 0.1, "s0" to 0.9, "r1" to 0.9, "s1" to 0.8, "r2" to 0.9, "s2" to 0.3)[id]!! }
+        val select = FakeTransport(mapper) { id -> mapOf("k0" to 0.9, "m0" to 0.9, "r0" to 0.1, "s0" to 0.9, "r1" to 0.9, "s1" to 0.8, "r2" to 0.9, "s2" to 0.3)[id]!! }
+        select.override = { id, body -> if (id == "m0" && "other/b.md" in body.toString()) 0.1 else null }
         val scored = Guidelines.select(jev(select), "작별 인사 추가", sections)!!
         assertEquals(listOf(0.1, 0.8, 0.3, 0.1), scored.map { it.relevance })
-        assertEquals(2, select.requests.size, "구간 질문은 남은 문서의 구간만 묻는다")
-        assertEquals(3, select.requests.last().path("questions").size() / 2)
+        assertEquals(3, select.requests.size, "문서마다 따로 묻고 구간 질문은 남은 문서의 구간만 묻는다")
+        assertEquals(3, select.requests.single { it.path("questions").has("r0") }.path("questions").size() / 2)
         assertEquals(listOf("컨벤션", "다른 기능"), Guidelines.relevant(scored).map { it.heading })
         val check = Guidelines.check(jev(FakeTransport(mapper) { 0.6 }), "IMPLEMENTATION", Guidelines.relevant(scored), "diff")!!
         assertEquals(listOf("컨벤션"), check.uncertain.map { it.heading })
