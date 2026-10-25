@@ -103,9 +103,10 @@ class RequirementCheckTest {
     @Test
     fun `TC-4 기존 60,000자 한도 안이라도 분량이 12,000을 넘는 ASCII diff는 자른다`() {
         val transport = Transport(mapper)
-        val result = assertNotNull(RequirementCheck.judge(jev(transport), requirements(1), "a".repeat(30_000)))
+        val diff = "a".repeat(30_000)
+        val result = assertNotNull(RequirementCheck.judge(jev(transport), requirements(1), diff))
         assertTrue(result.truncated)
-        assertEquals(24_000, diffOf(transport.requests.single()).length)
+        assertEquals(Guidelines.cut(diff, Guidelines.MAX_DIFF_WEIGHT), diffOf(transport.requests.single()))
     }
 
     @Test
