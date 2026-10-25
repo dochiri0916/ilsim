@@ -8,7 +8,13 @@ import com.example.coderiskanalyzer.production.parser.ParsedSource;
 import com.example.coderiskanalyzer.testanalysis.CoverageStatus;
 import com.example.coderiskanalyzer.testanalysis.TestAdequacyResult;
 import com.github.javaparser.ast.expr.MethodCallExpr;
-import com.github.javaparser.ast.stmt.*;
+import com.github.javaparser.ast.stmt.DoStmt;
+import com.github.javaparser.ast.stmt.ForEachStmt;
+import com.github.javaparser.ast.stmt.ForStmt;
+import com.github.javaparser.ast.stmt.SwitchStmt;
+import com.github.javaparser.ast.stmt.SynchronizedStmt;
+import com.github.javaparser.ast.stmt.TryStmt;
+import com.github.javaparser.ast.stmt.WhileStmt;
 
 public record AnalysisCompleteness(int filesDiscovered, int filesSelected, int filesParsedAsContext,
         int methodCalls, int unresolvedMethodCalls, double unresolvedCallRatio,

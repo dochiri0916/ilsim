@@ -2,7 +2,14 @@ package com.dochiri.ilsim.runner.jev
 
 import com.dochiri.ilsim.runner.DecisionScope
 import io.github.gudcks0305.jev.NoulQuestion
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 object JevRuleReview {
     data class Answer(val text: String, val reviewer: String)
