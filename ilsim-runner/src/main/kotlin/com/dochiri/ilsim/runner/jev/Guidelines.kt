@@ -18,6 +18,8 @@ object Guidelines {
     const val PARALLEL = 4
     const val MAX_REQUEST_CHARS = 4000
     const val MAX_DIFF_CHARS = 60_000
+    const val MAX_OUTLINE = 60
+    const val MAX_START_CHARS = 1500
 
     data class Check(val probabilities: Map<Guideline, Double>, val violated: List<Guideline>, val uncertain: List<Guideline>, val truncated: Boolean)
 
@@ -25,11 +27,47 @@ object Guidelines {
         if (!jev.enabled) return null
         val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
         try {
-            val batches = sections.chunked(BATCH).map { batch -> pool.submit<List<Guideline>?> { selectBatch(jev, request, batch) } }
-            return batches.map { it.get() ?: return null }.flatten()
+            val docScores = documents(jev, request, sections, pool) ?: return null
+            val kept = sections.filter { (docScores[it.path] ?: 1.0) > IRRELEVANT }
+            val batches = kept.chunked(BATCH).map { batch -> pool.submit<List<Guideline>?> { selectBatch(jev, request, batch) } }
+            val scored = batches.map { it.get() ?: return null }.flatten().associateBy { it.path to it.line to it.text }
+            return sections.map { s ->
+                val document = docScores[s.path] ?: 1.0
+                scored[s.path to s.line to s.text]?.let { it.copy(relevance = minOf(it.relevance, document)) } ?: Guideline(s.path, s.line, s.heading, s.text, document)
+            }
         } finally {
             pool.shutdownNow()
         }
+    }
+
+    fun documents(jev: Jev, request: String, sections: List<DocSection>): Map<String, Double>? {
+        if (!jev.enabled) return null
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
+        try { return documents(jev, request, sections, pool) } finally { pool.shutdownNow() }
+    }
+
+    private fun documents(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<String, Double>? {
+        val batches = sections.groupBy { it.path }.entries.chunked(BATCH).map { batch -> pool.submit<Map<String, Double>?> { documentBatch(jev, request, batch.map { it.key to it.value }) } }
+        return batches.map { it.get() ?: return null }.fold(emptyMap()) { a, b -> a + b }
+    }
+
+    private fun documentBatch(jev: Jev, request: String, batch: List<Pair<String, List<DocSection>>>): Map<String, Double>? {
+        val state = mapOf(
+            "request" to request.take(MAX_REQUEST_CHARS),
+            "documents" to batch.mapIndexed { i, (path, parts) ->
+                mapOf("id" to "d$i", "path" to path, "headings" to parts.map { it.heading }.distinct().take(MAX_OUTLINE), "start" to parts.first().text.take(MAX_START_CHARS))
+            },
+        )
+        val questions = batch.indices.flatMap { i ->
+            listOf(
+                "k$i" to NoulQuestion.of("k$i", "문서 d$i 에 코드를 만들거나 고칠 때 따라야 할 규칙·스펙(정해진 동작, 구조, 의존 방향, 이름, 포맷, 테스트 방식, 작업 원칙, 금지 사항 등)을 담은 구간이 있는가? path, headings, start 로 판단한다. 작업 기록·인수인계 일지, 계획서, 분석·평가 보고서, 회의 메모, 변경 이력, 설치·배포 안내만 있고 따를 규칙 구간이 없으면 No. 그런 문서라도 작업 규칙 같은 규칙 구간이 따로 있으면 Yes.")
+                    .withCriteria("따를 규칙·스펙 구간이 있는 문서", "기록·계획·분석·안내만 있는 문서"),
+                "m$i" to NoulQuestion.of("m$i", "요청(request)이 만들거나 바꾸는 코드의 모듈·디렉터리에 문서 d$i 가 적용되는가? 저장소 전체나 모든 모듈에 적용되는 문서는 Yes. path 나 내용으로 보아 다른 모듈·하위 프로젝트 전용 문서이면 No.")
+                    .withCriteria("요청이 건드리는 모듈에 적용됨", "다른 모듈 전용 문서"),
+            )
+        }.toMap()
+        val answers = jev.probabilities(state, questions) ?: return null
+        return batch.mapIndexed { i, (path, _) -> path to minOf(answers["k$i"] ?: 1.0, answers["m$i"] ?: 1.0) }.toMap()
     }
 
     private fun selectBatch(jev: Jev, request: String, batch: List<DocSection>): List<Guideline>? {
