@@ -540,7 +540,7 @@ private fun guidelines(store: ConfigStore, args: Array<String>) {
     val scored = Guidelines.select(jev, args[2], sections) ?: run { println("JEV 호출 실패"); exitProcess(2) }
     val selected = Guidelines.relevant(scored)
     println("문서 구간 ${sections.size}개 중 ${selected.size}개 선택(${System.currentTimeMillis() - started}ms)")
-    Guidelines.documents(jev, args[2], sections)?.entries?.sortedByDescending { it.value }?.forEach { (path, p) -> println("  문서 ${if (p > Guidelines.IRRELEVANT) "+" else "-"} ${"%.2f".format(p)} $path") }
+    Guidelines.documents(jev, args[2], sections)?.entries?.sortedByDescending { it.value }?.forEach { (path, p) -> println("  문서 거름 ${if (p > Guidelines.IRRELEVANT) "+" else "-"} ${"%.2f".format(p)} $path") }
     scored.sortedByDescending { it.relevance }.forEach { println("  ${if (it in selected) "+" else "-"} ${"%.2f".format(it.relevance)} ${it.source} ${it.heading}") }
     val rendered = TaskGuide(args[1], true, sections.size, selected).render()
     val embedded = rendered.lines().count { it.startsWith("### ") }

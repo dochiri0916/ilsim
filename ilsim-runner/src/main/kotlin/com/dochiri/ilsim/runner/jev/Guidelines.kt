@@ -17,7 +17,8 @@ object Guidelines {
     const val BATCH = 10
     const val PARALLEL = 4
     const val MAX_REQUEST_CHARS = 4000
-    const val MAX_DIFF_CHARS = 60_000
+    const val MAX_STATE_WEIGHT = 22_000
+    const val MAX_DIFF_WEIGHT = 12_000
     const val MAX_OUTLINE = 60
     const val MAX_START_CHARS = 1500
 
@@ -27,17 +28,57 @@ object Guidelines {
         if (!jev.enabled) return null
         val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
         try {
-            val docScores = documents(jev, request, sections, pool) ?: return null
-            val kept = sections.filter { (docScores[it.path] ?: 1.0) > IRRELEVANT }
-            val batches = byDocument(kept) { it.path }.map { batch -> pool.submit<List<Guideline>?> { selectBatch(jev, request, batch) } }
-            val scored = batches.map { it.get() ?: return null }.flatten().associateBy { it.path to it.line to it.text }
-            return sections.map { s ->
-                val document = docScores[s.path] ?: 1.0
-                scored[s.path to s.line to s.text]?.let { it.copy(relevance = minOf(it.relevance, document)) } ?: Guideline(s.path, s.line, s.heading, s.text, document)
-            }
+            val docScores = (documents(jev, request, sections, pool) ?: return null).toMutableMap()
+            val first = score(jev, request, sections.filter { (docScores[it.path] ?: 1.0) > IRRELEVANT }, pool) ?: return null
+            fun capped(g: Guideline) = g.copy(relevance = minOf(g.relevance, docScores[g.path] ?: 1.0))
+            val required = required(jev, request, first.values.map(::capped).filter { it.relevance > IRRELEVANT }, sections.map { it.path }.toSet(), pool) ?: return null
+            required.forEach { (path, p) -> docScores[path] = if (p < 0) 0.0 else maxOf(docScores[path] ?: 0.0, p) }
+            val scored = first + (score(jev, request, sections.filter { (required[it.path] ?: 0.0) > 0 && key(it) !in first }, pool) ?: return null)
+            return sections.map { s -> scored[key(s)]?.let(::capped) ?: Guideline(s.path, s.line, s.heading, s.text, docScores[s.path] ?: 0.0) }
         } finally {
             pool.shutdownNow()
         }
+    }
+
+    private fun key(s: DocSection) = Triple(s.path, s.line, s.text)
+
+    private fun score(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<Triple<String, Int, String>, Guideline>? =
+        byDocument(sections, MAX_STATE_WEIGHT - weight(request.take(MAX_REQUEST_CHARS)), { it.path }, { weight(it.heading) + weight(it.text) }).map { batch -> pool.submit<List<Guideline>?> { selectBatch(jev, request, batch) } }
+            .map { it.get() ?: return null }.flatten().associateBy { Triple(it.path, it.line, it.text) }
+
+    fun links(source: String, text: String, paths: Set<String>): List<String> {
+        val parent = source.substringBeforeLast('/', "")
+        return (MD_LINK.findAll(text).map { it.groupValues[1] } + CODE_PATH.findAll(text).map { it.groupValues[1] })
+            .flatMap { link -> listOf(if (parent.isEmpty()) link else "$parent/$link", link) }
+            .mapNotNull { runCatching { java.nio.file.Path.of(it).normalize().toString().replace('\\', '/') }.getOrNull() }
+            .filter { it in paths && it != source }
+            .distinct().toList()
+    }
+
+    private fun required(jev: Jev, request: String, selected: List<Guideline>, paths: Set<String>, pool: java.util.concurrent.ExecutorService): Map<String, Double>? {
+        val asks = selected.map { it to links(it.path, it.text, paths) }.filter { it.second.isNotEmpty() }
+        val answers = asks.map { (g, targets) -> pool.submit<Map<String, Double>?> { requiredBatch(jev, request, g, targets) } }.map { it.get() ?: return null }
+        val all = answers.flatMap { it.entries }
+        val forbidden = all.filter { it.value < 0 }.map { it.key }.toSet()
+        return all.filter { it.key in forbidden || it.value >= APPLIES }.groupBy({ it.key }, { it.value }).mapValues { (path, ps) -> if (path in forbidden) -1.0 else ps.max() }
+    }
+
+    private fun requiredBatch(jev: Jev, request: String, g: Guideline, targets: List<String>): Map<String, Double>? {
+        val state = mapOf(
+            "request" to request.take(MAX_REQUEST_CHARS),
+            "task" to TASK_CONTEXT,
+            "section" to mapOf("source" to g.source, "heading" to g.heading, "text" to g.text),
+            "targets" to targets.mapIndexed { j, t -> mapOf("id" to "t$j", "path" to t) },
+        )
+        val questions = targets.indices.associate { j ->
+            "q$j" to NoulQuestion.of("q$j", "구간(section)의 text 가 요청(request) 작업을 할 때 문서 t$j 를 읽거나 따르라고 요구하는가? 특정 모듈·작업에만 해당하는 요구는 요청이 그 모듈·작업일 때만 Yes. 요청 작업에서는 읽지 말라고 하거나, 단순 참고·목차·출처 링크이면 No.")
+                .withCriteria("요청 작업에서 그 문서를 읽거나 따라야 함", "요구하지 않거나 단순 참고 링크")
+        } + targets.indices.associate { j ->
+            "n$j" to NoulQuestion.of("n$j", "구간(section)의 text 가 이 작업(task)과 같은 종류의 작업에서는 문서 t$j 를 읽거나 갱신하지 말라고 하는가?")
+                .withCriteria("이 작업에서는 그 문서를 읽지 말라고 함", "그런 금지가 없음")
+        }
+        val answers = jev.probabilities(state, questions) ?: return null
+        return targets.withIndex().associate { (j, t) -> t to if ((answers["n$j"] ?: 0.0) >= VIOLATED) -1.0 else (answers["q$j"] ?: 0.0) }
     }
 
     fun documents(jev: Jev, request: String, sections: List<DocSection>): Map<String, Double>? {
@@ -89,16 +130,21 @@ object Guidelines {
         return selected
     }
 
+    private const val TASK_CONTEXT = "일심(ilsim) MCP가 요구사항·테스트 케이스·테스트 코드·구현 단계로 나눠 Agent에게 맡기는 단계 작업이다. 프롬프트가 일심 단계 지시다."
+    private val MD_LINK = Regex("""\]\(([^)\s#]+\.(?:md|markdown|adoc|rst))(?:#[^)]*)?\)""")
+    private val CODE_PATH = Regex("""`([^`\s]+\.(?:md|markdown|adoc|rst))`""")
+
     fun relevant(scored: List<Guideline>): List<Guideline> = scored.filter { it.relevance > IRRELEVANT }.sortedByDescending { it.relevance }
 
     fun scores(scored: List<Guideline>): List<String> = scored.map { "${it.source}=${"%.2f".format(it.relevance)}" }
 
     fun check(jev: Jev, stage: String, guidelines: List<Guideline>, diff: String): Check? {
         if (!jev.enabled) return null
-        val truncated = diff.length > MAX_DIFF_CHARS
+        val shown = cut(diff, MAX_DIFF_WEIGHT)
+        val truncated = shown.length < diff.length
         val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
         val probabilities = try {
-            byDocument(guidelines.sortedBy { it.line }) { it.path }.map { batch -> pool.submit<Map<Guideline, Double>?> { checkBatch(jev, stage, batch, diff) } }
+            byDocument(guidelines.sortedBy { it.line }, MAX_STATE_WEIGHT - weight(shown), { it.path }, { weight(it.heading) + weight(it.text) }).map { batch -> pool.submit<Map<Guideline, Double>?> { checkBatch(jev, stage, batch, shown) } }
                 .map { it.get() ?: return null }.fold(emptyMap<Guideline, Double>()) { a, b -> a + b }
         } finally {
             pool.shutdownNow()
@@ -108,13 +154,33 @@ object Guidelines {
         return Check(probabilities, violated, uncertain, truncated)
     }
 
-    private fun <T> byDocument(items: List<T>, path: (T) -> String): List<List<T>> = items.groupBy(path).values.flatMap { it.chunked(BATCH) }
+    private fun <T> byDocument(items: List<T>, budget: Int, path: (T) -> String, size: (T) -> Int): List<List<T>> = items.groupBy(path).values.flatMap { group ->
+        val batches = mutableListOf<MutableList<T>>()
+        var used = 0
+        for (item in group) {
+            if (batches.isEmpty() || batches.last().size >= BATCH || used + size(item) > budget) { batches += mutableListOf<T>(); used = 0 }
+            batches.last() += item
+            used += size(item)
+        }
+        batches
+    }
+
+    fun weight(text: String): Int = text.sumOf { if (it.code < 128) 1 else 2 } / 2
+
+    fun cut(text: String, budget: Int): String {
+        var used = 0
+        text.forEachIndexed { i, c ->
+            used += if (c.code < 128) 1 else 2
+            if (used / 2 > budget) return text.take(i)
+        }
+        return text
+    }
 
     private fun checkBatch(jev: Jev, stage: String, batch: List<Guideline>, diff: String): Map<Guideline, Double>? {
         val state = mapOf(
             "stage" to stage,
             "guidelines" to batch.mapIndexed { i, g -> mapOf("id" to "g$i", "source" to g.source, "heading" to g.heading, "text" to g.text) },
-            "diff" to diff.take(MAX_DIFF_CHARS),
+            "diff" to diff,
         )
         val questions = batch.indices.associate { i ->
             "v$i" to NoulQuestion.of("v$i", "변경(diff)이 지침 g$i 의 text 에 적힌 규칙을 직접 어기는가? g$i 의 text 에 적힌 규칙만 기준으로 하고, 다른 지침의 위반은 g$i 위반으로 보지 않는다. diff 에 g$i 가 정한 것과 다른 구조·이름·문구·동작·의존·테스트 방식이 있으면 Yes. g$i 에 지킬 규칙이 없거나(소개·배경·미결정 사항 등), 규칙이 이 변경 코드에 적용되지 않거나, 지키고 있으면 No. 이 단계(stage)에서 아직 만들 차례가 아닌 코드가 없는 것은 위반이 아니다.")

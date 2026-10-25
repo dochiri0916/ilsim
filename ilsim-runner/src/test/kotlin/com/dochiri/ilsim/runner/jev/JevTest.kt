@@ -136,6 +136,49 @@ class JevTest {
     }
 
     @Test
+    fun `고른 구간이 이 작업에서 읽으라고 한 문서는 점수가 낮아도 다시 고르고 읽지 말라고 한 문서는 뺀다`() {
+        val paths = setOf("AGENTS.md", "tool/docs/ref.md", "docs/log.md")
+        assertEquals(listOf("tool/docs/ref.md", "docs/log.md"), Guidelines.links("AGENTS.md", "먼저 [참고서](tool/docs/ref.md#a)를 읽고 `docs/log.md` 갱신, [없음](x.md)", paths))
+        assertEquals(listOf("AGENTS.md"), Guidelines.links("tool/docs/ref.md", "[상위](../../AGENTS.md)", paths))
+        val sections = listOf(
+            com.dochiri.ilsim.runner.document.DocSection("AGENTS.md", 1, "작업 원칙", "tool 작업은 먼저 [참고서](tool/docs/ref.md)를 읽는다. [기록](docs/log.md)은 읽지 않는다."),
+            com.dochiri.ilsim.runner.document.DocSection("docs/log.md", 1, "기록", "기록"),
+            com.dochiri.ilsim.runner.document.DocSection("tool/docs/ref.md", 1, "참고", "명령 규칙"),
+        )
+        val transport = FakeTransport(mapper) { 0.9 }
+        transport.override = { id, body ->
+            val text = body.toString()
+            when {
+                id[0] in "km" && "\"path\":\"AGENTS.md\"" in text -> 0.9
+                id[0] in "km" -> 0.1
+                id == "q0" -> 0.9
+                id == "q1" -> 0.1
+                id == "n0" -> 0.1
+                id == "n1" -> 0.9
+                else -> null
+            }
+        }
+        val all = Guidelines.select(jev(transport), "tool 기능 추가", sections)!!
+        val scored = Guidelines.relevant(all)
+        assertEquals(listOf("AGENTS.md", "tool/docs/ref.md"), scored.map { it.path }.sorted())
+        assertEquals(0.9, scored.single { it.path == "tool/docs/ref.md" }.relevance)
+        assertEquals(0.0, all.single { it.path == "docs/log.md" }.relevance, "이 작업에서 읽지 말라고 한 문서는 뺀다")
+    }
+
+    @Test
+    fun `JEV 입력 한도에 맞춰 diff를 자르고 지침 묶음을 나눈다`() {
+        assertEquals(3, Guidelines.weight("가나다") )
+        assertEquals(2, Guidelines.weight("abcd"))
+        assertEquals("가".repeat(Guidelines.MAX_DIFF_WEIGHT), Guidelines.cut("가".repeat(Guidelines.MAX_DIFF_WEIGHT + 5), Guidelines.MAX_DIFF_WEIGHT))
+        val big = (0 until 4).map { Guideline("a.md", it, "h", "가".repeat(4000), 0.9) }
+        val transport = FakeTransport(mapper) { 0.05 }
+        val check = Guidelines.check(jev(transport), "IMPLEMENTATION", big, "가".repeat(Guidelines.MAX_DIFF_WEIGHT + 1))!!
+        assertTrue(check.truncated)
+        assertTrue(transport.requests.size >= 2, "한 요청에 넣으면 입력 한도를 넘는다")
+        assertTrue(transport.requests.all { it.has("state") && Guidelines.weight(it.path("state").toString()) <= Guidelines.MAX_STATE_WEIGHT + 500 })
+    }
+
+    @Test
     fun `JEV 를 쓸 수 없으면 정적 선택으로 되돌아간다`() {
         val heuristic = com.dochiri.ilsim.runner.document.HeuristicDocumentSelector().select(DocPurpose.ARCHITECTURE, docs).map { it.path }
         assertEquals(heuristic, JevDocumentSelector(Jev(null)).select(DocPurpose.ARCHITECTURE, docs).map { it.path })
