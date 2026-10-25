@@ -67,7 +67,7 @@ Claude 앱(Claude Code)
 |---|---|---|
 | UserPromptSubmit | 일심 안내와 활성 작업 요약을 컨텍스트에 추가 | 없음 |
 | PreToolUse(Edit·Write·MultiEdit·NotebookEdit) | 활성 작업과 현재 단계에서 허용한 경로인지 확인 | 활성 작업 없음, 승인 대기 중, 단계 범위 밖 경로(예: 요구사항 단계에서 `src/` 수정) |
-| PreToolUse(Bash) | 파일을 바꾸는 명령 패턴 검사 | 활성 작업 없이 저장소 안 쓰기·이동·삭제(저장소 밖 절대 경로로의 출력 저장은 허용), 항상 `git commit`·`reset`·`rebase`·`cherry-pick`·`revert`·`restore`·`stash`(`list`·`show` 제외), 활성 작업 중 `git push`·`pull`·`merge`·`checkout`·`switch`·`branch -d` 등(작업이 끝난 뒤 병합·푸시는 허용, 2026-10-25 E2E에서 사용자가 터미널로 병합·푸시해야 했던 문제) |
+| PreToolUse(Bash) | 파일을 바꾸는 명령 패턴 검사 | 활성 작업 없이 저장소 안 쓰기·이동·삭제(저장소 밖 절대 경로로의 출력 저장은 허용, 따옴표 안 글자는 검사하지 않지만 셸 `-c`·`eval`·큰따옴표 안 명령 치환은 검사), 항상 `git commit`·`reset`·`rebase`·`cherry-pick`·`revert`·`restore`·`stash`(`list`·`show` 제외), 활성 작업 중 `git push`·`pull`·`merge`·`checkout`·`switch`·`branch -d` 등(작업이 끝난 뒤 병합·푸시는 허용, 2026-10-25 E2E에서 사용자가 터미널로 병합·푸시해야 했던 문제) |
 | Git pre-commit(`ilsim-runner hook commit`) | `start_task`가 대상 저장소 `.git/hooks/pre-commit`에 설치(기존 훅이 있으면 설치하지 않고 알림) | Claude Code 환경(`CLAUDECODE=1`)에서 일어난 커밋. 일심 자체 커밋(`ILSIM_RUNNER=1`)과 사람의 터미널 커밋은 통과 |
 | Stop | 활성 작업의 마지막 `submit_result` 상태 확인 | 변경이 있는데 제출하지 않음, 마지막 제출 실패, JEV가 누락으로 판정한 요구사항 있음 |
 
