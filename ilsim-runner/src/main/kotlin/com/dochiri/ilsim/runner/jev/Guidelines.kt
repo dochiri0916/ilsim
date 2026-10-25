@@ -24,17 +24,24 @@ object Guidelines {
 
     data class Check(val probabilities: Map<Guideline, Double>, val violated: List<Guideline>, val uncertain: List<Guideline>, val truncated: Boolean)
 
-    fun select(jev: Jev, request: String, sections: List<DocSection>): List<Guideline>? {
+    data class Selection(val guidelines: List<Guideline>, val filtered: Map<String, Double>)
+
+    data class DocumentScore(val path: String, val relevance: Double, val selected: Int, val reinstated: Boolean)
+
+    fun select(jev: Jev, request: String, sections: List<DocSection>): List<Guideline>? = selection(jev, request, sections)?.guidelines
+
+    fun selection(jev: Jev, request: String, sections: List<DocSection>): Selection? {
         if (!jev.enabled) return null
         val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
         try {
-            val docScores = (documents(jev, request, sections, pool) ?: return null).toMutableMap()
+            val filtered = documents(jev, request, sections, pool) ?: return null
+            val docScores = filtered.toMutableMap()
             val first = score(jev, request, sections.filter { (docScores[it.path] ?: 1.0) > IRRELEVANT }, pool) ?: return null
             fun capped(g: Guideline) = g.copy(relevance = minOf(g.relevance, docScores[g.path] ?: 1.0))
             val required = required(jev, request, first.values.map(::capped).filter { it.relevance > IRRELEVANT }, sections.map { it.path }.toSet(), pool) ?: return null
             required.forEach { (path, p) -> docScores[path] = if (p < 0) 0.0 else maxOf(docScores[path] ?: 0.0, p) }
             val scored = first + (score(jev, request, sections.filter { (required[it.path] ?: 0.0) > 0 && key(it) !in first }, pool) ?: return null)
-            return sections.map { s -> scored[key(s)]?.let(::capped) ?: Guideline(s.path, s.line, s.heading, s.text, docScores[s.path] ?: 0.0) }
+            return Selection(sections.map { s -> scored[key(s)]?.let(::capped) ?: Guideline(s.path, s.line, s.heading, s.text, docScores[s.path] ?: 0.0) }, filtered)
         } finally {
             pool.shutdownNow()
         }
@@ -135,6 +142,15 @@ object Guidelines {
     private val CODE_PATH = Regex("""`([^`\s]+\.(?:md|markdown|adoc|rst))`""")
 
     fun relevant(scored: List<Guideline>): List<Guideline> = scored.filter { it.relevance > IRRELEVANT }.sortedByDescending { it.relevance }
+
+    fun documentScores(scored: List<Guideline>, filtered: Map<String, Double>): List<DocumentScore> =
+        scored.groupBy { it.path }.map { (path, parts) ->
+            val selected = parts.count { it.relevance > IRRELEVANT }
+            DocumentScore(path, parts.maxOf { it.relevance }, selected, selected > 0 && (filtered[path] ?: 1.0) <= IRRELEVANT)
+        }.sortedWith(compareByDescending<DocumentScore> { it.relevance }.thenBy { it.path })
+
+    fun documentLine(d: DocumentScore): String =
+        "  ${if (d.selected > 0) "+" else "-"} ${"%.2f".format(d.relevance)} 구간 ${d.selected}개 ${d.path}${if (d.reinstated) " 참조" else ""}"
 
     fun scores(scored: List<Guideline>): List<String> = scored.map { "${it.source}=${"%.2f".format(it.relevance)}" }
 

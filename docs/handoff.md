@@ -142,6 +142,13 @@ AI 작업 세션이 이어받을 상태를 적는다. 새 세션은 이 파일�
 - 요구사항 충족 판정 평가(사용자 지시, 같은 날): `ilsim-runner jev-eval requirements`(`jev/JevRequirementEval.kt`). 시나리오 `corpus/jev-requirement/<시나리오>/case.json`(요구사항, 변형)·`hunks/R*.diff`(요구사항별 diff)·`variants/*.diff`. 전체·요구사항별 제거를 자동으로 만들고, 변형으로 주석만·테스트만·조건 오류·일부 구현(누락)과 간접 구현(어노테이션·설정·enum·DB 제약, 충족)을 넣었다. 5개 시나리오, 변형 34건, 판정 102건(누락 24). JEV 질문은 요구사항별 충족(m)·확정 가능(d) 두 개, 0.8 이상 MET·0.2 이하 MISSING. 운영 제품에는 아직 이 판정이 없다.
 - 결과(3회 반복): d가 최대 0.71이라 "확정 가능할 때만"은 0%. 충족 확률만 쓰면 자동 확정 84%, 정확도 99%, 누락 놓침 0, 오경보 1, AUROC 0.99, 잘못된 완료 0, 흔들림은 경계값(0.8 부근) 4건. Agent(Sonnet 5.5)는 95%·98%, 놓침 0, 오경보 2, 잘못된 완료 0, $0.794, p50 7.5초(JEV 0.17초). 둘 다 `payment-retry/drop-R2`의 R3를 누락으로 봤는데 재시도가 없으면 한 번 실패로 FAILED가 되므로 라벨이 모호하다. `unsaved-R3`(저장 안 됨)은 둘 다 불확실로 넘겼다. 위험 선별보다 훨씬 잘 맞지만 사례가 작고 직접 만든 것이다.
 
+## 2026-10-25 guidelines CLI 문서 최종 점수 (일심 작업 bb013d57, 브랜치 `ilsim/guidelines-final-doc-scores-bb013d57`, main 병합 안 함)
+
+- `ilsim-runner guidelines`의 문서 줄을 참조 반영 뒤 결과로 바꿨다: 문서별 최종 관련도(그 문서 구간의 최고값)와 선택 구간 수를 `  ± 관련도 구간 N개 경로[ 참조]`로, 관련도 내림차순·경로 오름차순으로 출력한다. "참조"는 문서 거름 점수가 0.2 이하였는데 참조로 선택 구간이 생긴 문서다. CLI가 `select`와 따로 문서 거름을 JEV에 다시 묻던 중복 호출을 없앴다.
+- 사용자 결정: 참조 반영 전 거름 점수 자체는 출력하지 않는다.
+- `Guidelines.selection`(구간 점수 + 참조 반영 전 거름 점수)·`documentScores`·`documentLine`을 추가했다. `Guidelines.select`는 `selection`에 위임하며 시그니처와 결과는 그대로다(MCP 영향 없음).
+- 검증: 일심 4단계 통과(구현 단계 tests PASSED, requirements UNCERTAIN), `:ilsim-runner:test` 통과. 실제 JEV로 CLI를 실행해 보지는 않았다.
+
 ## 사용자 확인 대기
 
 - jev-eval 실제 코드 반대 판단 6건 확인(osiv·outbox의 JPA-001·IDEM-001). 2026-10-24 코드 확인: JPA-001 4건은 엔티티에 변경 메서드·setter가 없어(생성자에서만 대입) Lost Update 경로가 없다. Agent(FALSE)가 맞고 JEV가 틀렸으며, 탐지기가 비final 필드만 보고 지적하는 오탐이다. IDEM-001 2건(osiv 댓글 생성 POST)은 사용자 판정으로 위험(재전송 시 중복 댓글)이 정답이다. 6건 합계: JEV 2건·Agent 4건 정답.
