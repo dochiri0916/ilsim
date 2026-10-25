@@ -537,14 +537,15 @@ private fun guidelines(store: ConfigStore, args: Array<String>) {
     val files = ProjectDocs.files(root, project, config.projects.filterKeys { it != args[1] }.values.map { Path.of(it.path) }, null)
     val sections = ProjectDocs.sections(files)
     val started = System.currentTimeMillis()
-    val selection = Guidelines.selection(jev, args[2], sections) ?: run { println("JEV 호출 실패"); exitProcess(2) }
+    val selection = Guidelines.selection(jev, args[2], sections, ProjectDocs.modules(root)) ?: run { println("JEV 호출 실패"); exitProcess(2) }
     val scored = selection.guidelines
     val selected = Guidelines.relevant(scored)
     println("문서 구간 ${sections.size}개 중 ${selected.size}개 선택(${System.currentTimeMillis() - started}ms)")
     Guidelines.documentScores(scored, selection.filtered).forEach { println(Guidelines.documentLine(it)) }
     scored.sortedByDescending { it.relevance }.forEach { println("  ${if (it in selected) "+" else "-"} ${"%.2f".format(it.relevance)} ${it.source} ${it.heading}") }
     val rendered = TaskGuide(args[1], true, sections.size, selected).render()
-    val embedded = rendered.lines().count { it.startsWith("### ") }
+    val sources = selected.map { "### ${it.source} " }.toSet()
+    val embedded = rendered.lines().count { line -> sources.any { line.startsWith(it) } }
     println("지시에 넣는 분량: ${rendered.length}자(원문 ${embedded}개, 출처만 ${selected.size - embedded}개)")
     val base = args.getOrNull(3) ?: return
     val diff = Shell.gitOk(root, "diff", base)

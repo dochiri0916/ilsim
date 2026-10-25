@@ -63,4 +63,13 @@ class ProjectDocsTest {
         assertEquals(3, sections.size)
         assertEquals("구조", ProjectDocs.split("b.adoc", "= 구조\n\n----\n= 아님\n----\n").single().heading)
     }
+
+    @Test
+    fun `빌드 파일이 있는 최상위 디렉터리를 모듈로 본다`() {
+        mapOf("server/build.gradle.kts" to "", "web/package.json" to "{}", "tool/sub/pom.xml" to "", "docs/guide.md" to "# x\n").forEach { (path, text) ->
+            repo.resolve(path).also { it.parent.createDirectories() }.writeText(text)
+        }
+        Shell.gitOk(repo, "add", "-A")
+        assertEquals(setOf("server", "web"), ProjectDocs.modules(repo))
+    }
 }

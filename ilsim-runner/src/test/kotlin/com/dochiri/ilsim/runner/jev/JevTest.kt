@@ -187,6 +187,29 @@ class JevTest {
     }
 
     @Test
+    fun `요청이 바꾸지 않는 모듈 안의 문서는 빼고 참조로 요구되면 다시 넣는다`() {
+        val sections = listOf(
+            com.dochiri.ilsim.runner.document.DocSection("AGENTS.md", 1, "작업 원칙", "tool 작업은 먼저 [참고](tool/docs/ref.md)를 읽는다."),
+            com.dochiri.ilsim.runner.document.DocSection("server/README.md", 1, "서버", "서버 규칙"),
+            com.dochiri.ilsim.runner.document.DocSection("tool/docs/ref.md", 1, "참고", "도구 규칙"),
+        )
+        val transport = FakeTransport(mapper) { 0.9 }
+        transport.override = { id, _ ->
+            when {
+                id == "w0" -> 0.05
+                id == "w1" -> 0.9
+                id[0] in "q" -> 0.9
+                id[0] in "n" -> 0.05
+                else -> null
+            }
+        }
+        val all = Guidelines.select(jev(transport), "tool 기능 추가", sections, setOf("server", "tool"))!!
+        assertEquals(0.05, all.single { it.path == "server/README.md" }.relevance)
+        assertEquals(listOf("AGENTS.md", "tool/docs/ref.md"), Guidelines.relevant(all).map { it.path }.sorted())
+        assertEquals(emptyMap(), Guidelines.touched(jev(transport), "x", setOf("only")))
+    }
+
+    @Test
     fun `JEV 입력 한도에 맞춰 diff를 자르고 지침 묶음을 나눈다`() {
         assertEquals(3, Guidelines.weight("가나다") )
         assertEquals(2, Guidelines.weight("abcd"))

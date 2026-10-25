@@ -38,6 +38,13 @@ object ProjectDocs {
             .toSortedMap()
     }
 
+    val buildFiles = setOf("build.gradle", "build.gradle.kts", "pom.xml", "package.json", "Cargo.toml", "go.mod", "pyproject.toml", "setup.py", "Gemfile", "composer.json")
+
+    fun modules(root: Path): Set<String> =
+        Shell.git(real(root), "-c", "core.quotepath=false", "ls-files").output.lines().map { it.trim() }
+            .filter { it.count { c -> c == '/' } == 1 && it.substringAfter('/') in buildFiles }
+            .map { it.substringBefore('/') }.toSortedSet()
+
     fun sections(files: Map<String, Path>): List<DocSection> = files.flatMap { (label, path) -> split(label, runCatching { path.readText() }.getOrDefault("")) }
 
     fun split(label: String, text: String): List<DocSection> {

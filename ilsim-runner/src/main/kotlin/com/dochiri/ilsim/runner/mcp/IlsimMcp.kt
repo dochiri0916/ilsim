@@ -188,7 +188,7 @@ class IlsimMcp(
         val others = store.load().projects.filterKeys { it != ws.projectId }.values.map { Path.of(it.path) }
         val files = ProjectDocs.files(ws.root, ws.project, others, feature)
         val sections = ProjectDocs.sections(files)
-        val scored = if (sections.isEmpty()) emptyList() else runCatching { Guidelines.select(jev(), request, sections) }.getOrNull()
+        val scored = if (sections.isEmpty()) emptyList() else runCatching { Guidelines.select(jev(), request, sections, ProjectDocs.modules(ws.root)) }.getOrNull()
         return TaskGuide(ws.projectId, scored != null, sections.size, scored?.let(Guidelines::relevant).orEmpty(),
             if (scored == null) files.keys.toList() else emptyList(), scored?.let(Guidelines::scores).orEmpty())
     }

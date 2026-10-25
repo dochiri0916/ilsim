@@ -28,13 +28,16 @@ object Guidelines {
 
     data class DocumentScore(val path: String, val relevance: Double, val selected: Int, val reinstated: Boolean)
 
-    fun select(jev: Jev, request: String, sections: List<DocSection>): List<Guideline>? = selection(jev, request, sections)?.guidelines
+    fun select(jev: Jev, request: String, sections: List<DocSection>, modules: Set<String> = emptySet()): List<Guideline>? = selection(jev, request, sections, modules)?.guidelines
 
-    fun selection(jev: Jev, request: String, sections: List<DocSection>): Selection? {
+    fun selection(jev: Jev, request: String, sections: List<DocSection>, modules: Set<String> = emptySet()): Selection? {
         if (!jev.enabled) return null
         val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
         try {
-            val filtered = documents(jev, request, sections, pool) ?: return null
+            val touched = touched(jev, request, modules) ?: return null
+            val filtered = (documents(jev, request, sections, pool) ?: return null).mapValues { (path, p) ->
+                touched.entries.firstOrNull { path.startsWith("${it.key}/") }?.let { minOf(p, it.value) } ?: p
+            }
             val docScores = filtered.toMutableMap()
             val first = score(jev, request, sections.filter { (docScores[it.path] ?: 1.0) > IRRELEVANT }, pool) ?: return null
             fun capped(g: Guideline) = g.copy(relevance = minOf(g.relevance, docScores[g.path] ?: 1.0))
@@ -48,6 +51,18 @@ object Guidelines {
     }
 
     private fun key(s: DocSection) = Triple(s.path, s.line, s.text)
+
+    fun touched(jev: Jev, request: String, modules: Set<String>): Map<String, Double>? {
+        if (modules.size < 2) return emptyMap()
+        val list = modules.sorted()
+        val state = mapOf("request" to request.take(MAX_REQUEST_CHARS), "modules" to list.mapIndexed { i, m -> mapOf("id" to "m$i", "path" to "$m/") })
+        val questions = list.indices.associate { i ->
+            "w$i" to NoulQuestion.of("w$i", "요청(request)을 처리하려면 모듈 m$i(path 디렉터리) 안의 코드·문서를 만들거나 바꾸는가? 요청이 그 모듈 이름이나 그 모듈의 기능을 다루면 Yes. 다른 모듈만 다루면 No.")
+                .withCriteria("이 모듈을 바꾸는 요청", "다른 모듈을 바꾸는 요청")
+        }
+        val answers = jev.probabilities(state, questions) ?: return null
+        return list.withIndex().associate { (i, m) -> m to (answers["w$i"] ?: 1.0) }
+    }
 
     private fun score(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<Triple<String, Int, String>, Guideline>? =
         byDocument(sections, MAX_STATE_WEIGHT - weight(request.take(MAX_REQUEST_CHARS)), { it.path }, { weight(it.heading) + weight(it.text) }).map { batch -> pool.submit<List<Guideline>?> { selectBatch(jev, request, batch) } }
