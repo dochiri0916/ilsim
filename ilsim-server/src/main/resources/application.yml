@@ -2,7 +2,7 @@ spring:
   application:
     name: ilsim-server
   datasource:
-    url: ${ILSIM_DB_URL:jdbc:mysql://127.0.0.1:3306/ilsim?useUnicode=true&characterEncoding=utf8&connectionTimeZone=Asia/Seoul}
+    url: ${ILSIM_DB_URL:jdbc:mysql://127.0.0.1:3333/ilsim?useUnicode=true&characterEncoding=utf8&connectionTimeZone=Asia/Seoul}
     username: ${ILSIM_DB_USER:ilsim}
     password: ${ILSIM_DB_PASSWORD:ilsim}
     hikari:

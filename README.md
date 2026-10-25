@@ -47,7 +47,7 @@ cd build-convention
 
 준비물: JDK 25(서버 빌드)와 JDK 21 이상, Docker, Claude Code(Claude 앱).
 
-1. 클론하고 MySQL과 서버를 띄운다. 서버가 처음 뜨면 `~/.ilsim/token`(Runner 토큰)과 `~/.ilsim/server-secret.key`(비밀 암호화 키)가 생긴다. 서버는 앱을 다시 시작해도 꺼지지 않게 터미널에서 띄운다.
+1. 클론하고 MySQL과 서버를 띄운다. MySQL은 다른 MySQL과 겹치지 않게 `127.0.0.1:3333`으로 뜨고 서버도 기본으로 그 포트에 붙는다. 3333도 쓰고 있으면 저장소 루트 `.env`에 `MYSQL_PORT=<포트>`를 적고 서버를 띄울 때 `ILSIM_DB_URL`을 같은 포트로 준다. 서버가 처음 뜨면 `~/.ilsim/token`(Runner 토큰)과 `~/.ilsim/server-secret.key`(비밀 암호화 키)가 생긴다. 서버는 앱을 다시 시작해도 꺼지지 않게 터미널에서 띄운다.
 
    ```bash
    git clone git@github.com:dochiri0916/ilsim.git && cd ilsim

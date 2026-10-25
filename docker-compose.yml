@@ -13,7 +13,7 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
     ports:
-      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+      - "127.0.0.1:${MYSQL_PORT:-3333}:3306"
     volumes:
       - ilsim-mysql-data:/var/lib/mysql
     healthcheck:
