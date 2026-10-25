@@ -183,7 +183,7 @@ class McpTest {
     }
 
     @Test
-    fun `Bash 의 Git 상태 변경과 작업 없는 파일 쓰기를 막고 종료 차단은 상한이 있다`() {
+    fun `Bash 의 Git 커밋·되돌리기와 작업 중 병합·푸시, 작업 없는 저장소 안 파일 쓰기를 막고 종료 차단은 상한이 있다`() {
         fun bash(command: String) = hook("pre-tool-use", buildJsonObject {
             put("cwd", repo.toString())
             put("tool_name", "Bash")
@@ -193,10 +193,17 @@ class McpTest {
         assertContains(bash("echo hi > README.md"), "deny")
         assertEquals("", bash("./gradlew test 2>&1 > /dev/null"))
         assertEquals("", bash("git status && git diff"))
+        assertEquals("", bash("git log --oneline -5 > /tmp/ilsim-log.txt && git stash list && git show --stat HEAD"))
+        assertEquals("", bash("git merge --no-ff ilsim/slug-1 && git push origin main && git checkout main && git branch -d ilsim/slug-1"))
+        assertContains(bash("git log > $repo/log.txt"), "deny")
+        assertContains(bash("git stash"), "deny")
+        assertContains(bash("git reset --hard HEAD~1"), "deny")
 
         active.save(repo, ActiveTask("t", "p", "slug", "b", "IMPLEMENTATION", IlsimMcp.RUNNING))
         assertEquals("", bash("echo hi > src/A.java"))
         assertContains(bash("git push"), "deny")
+        assertContains(bash("git merge ilsim/other"), "진행 중인 일심 작업")
+        assertContains(bash("git checkout main"), "deny")
         repo.resolve("README.md").writeText("changed\n")
         repeat(Hooks.MAX_STOP_BLOCKS) { assertContains(hook("stop", """{"cwd":"$repo"}""").stdout, "block") }
         assertEquals("", hook("stop", """{"cwd":"$repo"}""").stdout)
