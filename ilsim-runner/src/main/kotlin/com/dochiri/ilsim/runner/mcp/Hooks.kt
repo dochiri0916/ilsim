@@ -25,6 +25,7 @@ object Hooks {
     private val gitChange = Regex("""\bgit\s+(?:-C\s+\S+\s+)?(commit|reset|rebase|cherry-pick|revert|restore|stash(?!\s+(?:list|show)\b))\b""")
     private val gitIdle = Regex("""\bgit\s+(?:-C\s+\S+\s+)?(push|pull|merge|checkout|switch|branch\s+-[dDmM])\b""")
     private val redirect = Regex(""">{1,2}\s*([^\s;&|()<>]+)""")
+    private val shellRun = Regex("""(^|[\s;&|(])((ba|z|da|k)?sh\s+(-\w+\s+)*-\w*c\b|eval\s)""")
     private val fileWrite = Regex("""(^|[\s;&|(])(rm|mv|cp|touch|mkdir|tee|truncate|chmod|ln|install)\s|>{1,2}\s*(?!/dev/null|&)\S|\bsed\s+(-\w*\s+)*-i|\bperl\s+-\w*i""")
 
     fun handle(event: String, input: String, store: ConfigStore, active: ActiveTasks): Output {
@@ -73,7 +74,7 @@ object Hooks {
             val command = input.text("command") ?: return Output()
             if (gitChange.containsMatchIn(command)) return deny("Git 커밋·되돌리기·변경 보관은 일심이 맡습니다. 단계를 마쳤으면 submit_result를 호출하세요")
             if (task != null && gitIdle.containsMatchIn(command)) return deny("진행 중인 일심 작업(${task.feature})이 있어 브랜치 전환·병합·푸시를 할 수 없습니다. 작업이 끝났다고 next_step이 알린 뒤에 하세요")
-            val writes = redirect.replace(command) { m -> if (outside(ws, m.groupValues[1])) "" else m.value }
+            val writes = redirect.replace(unquoted(command)) { m -> if (outside(ws, m.groupValues[1])) "" else m.value }
             if (fileWrite.containsMatchIn(writes)) blocked(task)?.let { return deny(it) }
             return Output()
         }
@@ -87,6 +88,27 @@ object Hooks {
         val violations = Gate.pathViolations(checkNotNull(task).stage.orEmpty(), task.feature, listOf(relative))
         if (violations.isNotEmpty()) return deny("${violations.first()}. 지금 단계(${task.stage})에서 고칠 수 있는 경로: ${IlsimMcp.allowed(task.stage, task.feature)}")
         return Output()
+    }
+
+    private fun unquoted(command: String): String {
+        if (shellRun.containsMatchIn(command)) return command.replace(Regex("""['"`]"""), " ")
+        val out = StringBuilder()
+        var i = 0
+        while (i < command.length) {
+            val c = command[i]
+            if (c != '\'' && c != '"') { out.append(c); i++; continue }
+            var end = i + 1
+            while (end < command.length && command[end] != c) end += if (c == '"' && command[end] == '\\') 2 else 1
+            if (end >= command.length) return command
+            val inner = command.substring(i + 1, end)
+            out.append(when {
+                out.trimEnd().endsWith(">") -> inner
+                c == '"' && ("$(" in inner || '`' in inner) -> " ${inner.replace('`', ' ')} "
+                else -> "_"
+            })
+            i = end + 1
+        }
+        return out.toString()
     }
 
     private fun outside(ws: Workspace, target: String): Boolean {
