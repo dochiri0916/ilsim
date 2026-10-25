@@ -11,8 +11,6 @@
 ./gradlew :ilsim-server:test        # 모듈 하나만
 ```
 
-웹(`ilsim-web`)은 npm 프로젝트이므로 해당 디렉터리에서 `npm run build`로 검증한다.
-
 상세 실행 방법과 지원 범위는 각 프로젝트 문서를 따른다.
 
 ## 저장소 이전

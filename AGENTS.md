@@ -4,7 +4,6 @@
 
 - `ilsim-server/`: Spring Boot 서버. Kotlin, 헥사고날(`domain → application → adapter`), JPA. 구조 규칙은 `ArchitectureTest`가 강제한다.
 - `ilsim-runner/`: 로컬 Runner. Kotlin, JVM 17 대상.
-- `ilsim-web/`: React 웹. npm 프로젝트라 Gradle 빌드에는 포함하지 않는다.
 - `code-risk-analyzer/`: Java/Spring/JPA 코드 위험과 테스트 적정성 정적 분석기. Java 21 기준.
 - `build-convention/`: 선택적으로 적용하는 Gradle Convention Plugin. 복합 빌드(`includeBuild`)로 연결되어 있고 자체 Wrapper와 해당 디렉터리의 `AGENTS.md`를 우선한다.
 

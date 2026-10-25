@@ -24,7 +24,6 @@ Claude 앱(Claude Code)
 일심 서버(ilsim-server, 개인 PC 또는 사내 중앙 서버)
   ├─ 작업·단계·승인 상태, 비용·판정 이력, JEV 키, 규칙·학습
   ├─ 검색 인덱스 관리(PostgreSQL+pgvector, 임베딩은 Ollama `bge-m3`)
-  └─ 웹(작업 보기·통계·규칙·설정)
 ```
 
 - MCP 서버는 코드가 있는 PC에서 돌아야 하므로 로컬 stdio로 둔다. 기존 Runner의 분석기·검사·서버 클라이언트를 그대로 쓰기 위해 `ilsim-runner`의 하위 명령으로 만든다.
@@ -55,6 +54,8 @@ Claude 앱(Claude Code)
 | `approve_stage` | 단계 | 승인 결과와 다음 단계 지시 | 사용자가 승인한다고 말했을 때만, 호출마다 사용자 확인 창 |
 | `reject_stage` | 단계, 수정 사항 | 같은 단계의 새 지시(사유 포함) | 호출마다 사용자 확인 창 |
 | `retry_task` | 지시(선택) | 같은 단계의 새 지시 | 차단(BLOCKED)된 작업만, 사용자가 다시 하자고 할 때 |
+| `review_rules` | 없음 | 규칙·학습 메모리 후보의 상태와 근거 | 웹 규칙 화면 대체 |
+| `decide_rules` | id 목록, approve·reject | 승인·거절 결과 | 사용자가 말했을 때만, 호출마다 사용자 확인 창 |
 | `analyze_project` | 없음 | 아키텍처·컨벤션 분석 보고 | 웹 분석 버튼 대체, AI 검토 포함이라 몇 분 걸림 |
 
 - 승인은 Claude 앱에서 한다(사용자 결정 2026-10-24, 웹 승인 제거). `approve_stage(stage)`·`reject_stage(stage, feedback)`를 두고, Agent는 산출물을 요약해 보여 준 뒤 사용자가 답했을 때만 호출한다. Agent가 스스로 승인하지 못하도록 PreToolUse 훅이 두 도구 호출마다 `ask`를 돌려 앱이 사용자 확인 창을 띄운다(허용 목록에 넣어도 다시 묻는다). `stage`가 현재 승인 대기 단계와 다르면 거절한다.
@@ -106,7 +107,7 @@ Claude 앱(Claude Code)
 - 진입점은 Claude 앱 하나다(사용자 결정 2026-10-24, Claude 앱 원격 사용 포함). 작업은 MCP `start_task`로만 만든다.
 - MCP용 API는 Runner 토큰으로 인증하는 `/runner/api` 아래에 둔다: `POST /projects`(프로젝트 등록), `POST /tasks`(Claude 앱 작업 생성), `GET /tasks/{id}`(상태), `POST /tasks/{id}/claim`(단계 시작, 실행 중이면 같은 실행 반환), 결과 보고는 기존 `POST /tasks/{id}/result`. 작업에 `agent`(`runner` | `claude-app`)를 두고, Runner `poll`과 라우팅 학습은 `claude-app` 작업을 제외한다.
 - 모델·effort는 Claude 앱에서 사용자가 정한다. 비용은 Claude 앱 사용량을 받을 수 없으므로 MCP·JEV·독립 검토 비용만 집계한다.
-- 웹은 작업 보기·통계·설정·규칙 화면으로 남기고 작업 생성·승인·거절·대화는 뺀다.
+- 웹은 없앴다(사용자 결정 2026-10-25). 규칙·학습 메모리 승인은 MCP `review_rules`·`decide_rules`(매번 사용자 확인), JEV 키는 `ilsim-runner jev-key set|delete|status`(서버 `/runner/api/secrets/jev`)로 한다. 서버의 로그인·세션·계정·2단계 인증과 웹 API, `ilsim-web` 모듈을 지웠고 Runner 토큰 필터만 남겼다.
 - Runner의 `run`(서버 작업을 받아 Claude CLI로 실행)과 이 경로에서만 쓰는 기능을 제거한다: 작업 폴링·실행(`TaskExecutor`), 작업용 Claude CLI 실행, 모델·effort 라우팅(`ModelSelector`·비용 라우팅·`RoutingReview`), DeepSeek 공급자 계정, 여러 Claude 계정 선택. 독립 검토의 Claude 호출(`ReviewRouter`·`ClaudeCli`의 검토용 부분)은 남긴다.
 - 제거 시점은 10장 1단계 E2E가 통과한 뒤다. 그 전에 지우면 작업을 실행할 경로가 없어진다.
 
@@ -141,3 +142,4 @@ Claude 앱(Claude Code)
 | 2026-10-24 | 승인은 Claude 앱에서 한다. MCP `approve_stage`·`reject_stage`와 PreToolUse `ask`로 매번 사용자 확인. 웹의 승인·거절·대화와 서버 웹 승인 API 제거, 웹은 보기·통계·규칙·설정용으로 유지 |
 | 2026-10-24 | 2단계 완료: `check_change`·`get_rules`·`analyze_project`·`retry_task`, Agent 직접 커밋을 막는 pre-commit 훅. Bash 스크립트로 파일을 쓰는 빈틈은 커밋 단계에서 막는다(작업 트리 변경은 `submit_result` 경로 검사와 Stop 훅이 잡는다) |
 | 2026-10-24 | 3단계 완료: 구현 단계 JEV 요구사항 판정(0.2 이하 누락이면 제출 실패), 조건부 독립 검토와 20% 표본, claim의 검토 표본 예약 |
+| 2026-10-25 | 웹 전체 제거. 규칙·메모리 승인은 MCP, JEV 키는 CLI. 서버 로그인·웹 API 제거 |
