@@ -169,4 +169,18 @@ class HookQuotedRedirectTest {
         assertTrue("따옴표" in bashRow, bashRow)
         assertTrue("-c" in bashRow && "eval" in bashRow && "명령 치환" in bashRow, bashRow)
     }
+
+    @Test
+    fun `here-document 본문은 데이터로 보고 셸이 실행하거나 명령 치환이 있으면 검사한다`() {
+        val python = "python3 - <<'EOF'\nopen('a.txt', 'w').write(\"x > y\")\nprint(\"rm -rf it's\")\nEOF\necho done"
+        assertEquals("", bash(python))
+        assertEquals("", bash("cat <<-EOF > /tmp/ilsim-note.txt\n\ta > b\n\tEOF"))
+        assertContains(bash("cat <<'EOF' > notes.txt\nhello\nEOF"), "deny")
+        assertContains(bash("bash <<'EOF'\necho x > a.txt\nEOF"), "deny")
+        assertContains(bash("cat <<'EOF' | sh\nrm a.txt\nEOF"), "deny")
+        assertContains(bash("cat <<EOF\n$(echo x > a.txt)\nEOF"), "deny")
+        assertEquals("", bash("cat <<'EOF'\n$(echo x > a.txt)\nEOF"))
+        assertContains(bash("cat <<'EOF'\nrm a > b\n"), "deny", message = "끝나지 않은 here-document는 전체를 검사한다")
+        assertEquals("", bash("ssh host <<'EOF'\nrm -rf /tmp/x > y\nEOF"))
+    }
 }
