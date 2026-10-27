@@ -32,10 +32,10 @@ class JevGuidelineEvalTest {
     fun `평가 세트의 모든 구간에 정답이 있고 변경·참조·문서 규칙 사례가 실제 구간을 가리킨다`() {
         val projects = JevGuidelineEval.load(corpus)
 
-        assertEquals(listOf("ilsim", "sandbox", "shop", "webapp"), projects.map { it.name })
+        assertEquals(listOf("env-hexagonal", "env-layered", "env-library", "env-mixed", "env-multimodule", "env-sliced", "ilsim", "sandbox", "shop", "webapp"), projects.map { it.name })
         assertEquals(emptyList(), projects.flatMap(JevGuidelineEval::problems))
         assertEquals(63, projects.sumOf { it.corpus.diffs.size })
-        assertEquals(21, projects.sumOf { it.corpus.rules.size })
+        assertEquals(59, projects.sumOf { it.corpus.rules.size })
         assertTrue(projects.all { p -> p.corpus.diffs.all { p.diffs.getValue(it.id).startsWith("diff --git") } })
     }
 
@@ -46,7 +46,8 @@ class JevGuidelineEvalTest {
         val byQuestion = observations.groupBy { it.question }
 
         assertEquals(63, byQuestion.getValue("diff").size)
-        assertEquals(21, byQuestion.getValue("f").size)
+        assertEquals(59, byQuestion.getValue("f").size)
+        assertEquals(59, byQuestion.getValue("f-single").size)
         assertEquals(9, byQuestion.getValue("q").size)
         assertTrue(listOf("w", "k", "m", "r", "s", "sel", "v", "v-e2e", "gate").all { byQuestion[it].orEmpty().isNotEmpty() })
         assertTrue(observations.all { it.p != null })

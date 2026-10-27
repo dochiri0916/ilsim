@@ -1,0 +1,7 @@
+# 모듈
+
+## 의존 방향
+
+- `core`는 다른 모듈(`api`, `batch`)을 의존하지 않는다.
+- `api`와 `batch`는 서로 의존하지 않고 `core`만 쓴다.
+- `core`는 Spring을 import 하지 않는다.

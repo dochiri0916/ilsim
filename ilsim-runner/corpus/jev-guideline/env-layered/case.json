@@ -1,0 +1,217 @@
+{
+  "documents": {
+    "README.md": {
+      "file": "files/README.md.txt"
+    },
+    "docs/conventions.md": {
+      "file": "files/docs/conventions.md.txt"
+    },
+    "docs/release.md": {
+      "file": "files/docs/release.md.txt"
+    }
+  },
+  "sections": {
+    "README.md:1": {
+      "rule": false
+    },
+    "README.md:5": {
+      "rule": false
+    },
+    "docs/conventions.md:3": {
+      "rule": true
+    },
+    "docs/conventions.md:8": {
+      "rule": true
+    },
+    "docs/conventions.md:12": {
+      "rule": true
+    },
+    "docs/conventions.md:17": {
+      "rule": true
+    },
+    "docs/release.md:3": {
+      "rule": false
+    }
+  },
+  "requests": [],
+  "rules": [
+    {
+      "section": "docs/conventions.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/controller/**"
+        ],
+        "import": [
+          "\\.repository\\."
+        ]
+      },
+      "description": "컨트롤러(controller 패키지)는 리포지토리(repository 패키지)를 import 하지 않는다",
+      "quote": "컨트롤러는 서비스만 호출하고 리포지토리를 직접 쓰지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/service/**"
+        ],
+        "import": [
+          "\\.repository\\."
+        ]
+      },
+      "description": "서비스(service 패키지)는 리포지토리(repository 패키지)를 import 하지 않는다",
+      "quote": "컨트롤러는 서비스만 호출하고 리포지토리를 직접 쓰지 않는다.",
+      "faithful": false,
+      "note": "대상을 서비스로 바꿈"
+    },
+    {
+      "section": "docs/conventions.md:3",
+      "kind": "doc-required-annotation",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "target": [
+          "class"
+        ],
+        "name": [
+          ".*Service"
+        ],
+        "annotation": [
+          "Service"
+        ]
+      },
+      "description": "이름이 Service로 끝나는 클래스에는 @Service를 붙인다",
+      "quote": "서비스 클래스는 `@Service`를 붙이고 이름은 `~Service`로 끝낸다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:3",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "target": [
+          "class"
+        ],
+        "when": [
+          "Service"
+        ],
+        "pattern": [
+          ".*Service"
+        ]
+      },
+      "description": "@Service 클래스 이름은 Service로 끝낸다",
+      "quote": "서비스 클래스는 `@Service`를 붙이고 이름은 `~Service`로 끝낸다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:8",
+      "kind": "doc-required-annotation",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "target": [
+          "method"
+        ],
+        "annotation": [
+          "Transactional"
+        ]
+      },
+      "description": "모든 메서드에 @Transactional을 붙인다",
+      "quote": "조회 메서드에는 `@Transactional(readOnly = true)`를 붙인다.",
+      "faithful": false,
+      "note": "조회 메서드를 모든 메서드로 넓힘"
+    },
+    {
+      "section": "docs/conventions.md:12",
+      "kind": "doc-required-annotation",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "target": [
+          "test-method"
+        ],
+        "annotation": [
+          "DisplayName"
+        ]
+      },
+      "description": "모든 테스트 메서드에 @DisplayName을 붙인다",
+      "quote": "테스트 메서드마다 `@DisplayName`으로 한국어 설명을 붙인다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:12",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "import": [
+          "^org\\.junit\\.jupiter\\.api\\.Assertions"
+        ]
+      },
+      "description": "JUnit Assertions를 import 하지 않는다",
+      "quote": "단언은 AssertJ만 쓴다. JUnit `Assertions`는 import 하지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:17",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "import": [
+          "^lombok\\."
+        ]
+      },
+      "description": "Lombok을 import 하지 않는다",
+      "quote": "Lombok을 쓰지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:17",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "pattern": [
+          "System\\.out"
+        ]
+      },
+      "description": "System.out을 쓰지 않는다",
+      "quote": "`System.out`과 `printStackTrace`를 쓰지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:17",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "pattern": [
+          "System\\.out"
+        ]
+      },
+      "description": "프로덕트 코드에서 System.out을 쓰지 않는다",
+      "quote": "`System.out`과 `printStackTrace`를 쓰지 않는다.",
+      "faithful": false,
+      "note": "테스트 코드를 뺌"
+    }
+  ],
+  "structure": "- src/main/java/com/acme/shop (com.acme.shop, 파일 1개): ShopApplication\n- src/main/java/com/acme/shop/config (com.acme.shop.config, 파일 2개): ClockConfig, WebConfig\n- src/main/java/com/acme/shop/controller (com.acme.shop.controller, 파일 6개): CategoryController, CouponController, CustomerController 등\n- src/main/java/com/acme/shop/domain (com.acme.shop.domain, 파일 6개): Category, Coupon, Customer 등\n- src/main/java/com/acme/shop/dto (com.acme.shop.dto, 파일 12개): CategoryRequest, CategoryResponse, CouponRequest 등\n- src/main/java/com/acme/shop/repository (com.acme.shop.repository, 파일 6개): CategoryRepository, CouponRepository, CustomerRepository 등\n- src/main/java/com/acme/shop/service (com.acme.shop.service, 파일 6개): CategoryService, CouponService, CustomerService 등\n- src/test/java/com/acme/shop/service (com.acme.shop.service, 파일 6개): CategoryServiceTest, CouponServiceTest, CustomerServiceTest 등"
+}

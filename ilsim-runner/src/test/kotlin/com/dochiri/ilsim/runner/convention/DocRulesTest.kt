@@ -195,6 +195,7 @@ class DocRulesTest {
 
         assertEquals(1, prompts.size)
         assertTrue("테스트 작성 방법을 소개한다" !in prompts.single() && "JUnit Assertions 는 쓰지 않는다" in prompts.single())
+        assertContains(prompts.single(), "- src/main/kotlin/com/x/domain (com.x.domain, 파일 1개): Order")
         assertEquals(listOf("doc-forbidden-import", "doc-required-annotation"), extracted.rules.map { it.kind }.sorted())
         val annotation = extracted.rules.single { it.kind == "doc-required-annotation" }
         assertTrue(annotation.id.startsWith(DocRules.PREFIX) && annotation.severity == "BLOCK" && !annotation.approved)
@@ -215,6 +216,18 @@ class DocRulesTest {
         assertTrue(DocRules.applicable("gradle-kotlin-dsl", Facts(emptyList())))
         assertTrue(DocRules.applicable("maven", Facts(emptyList())))
         assertTrue(DocRules.applicable("unknown", facts))
+    }
+
+    @Test
+    fun `원문 일치가 애매한 후보만 따로 다시 묻고 두 값을 평균한다`() {
+        val batchJev = jev { _, body -> if (body.path("state").path("candidates").size() > 1) 0.3 else 0.9 }
+        val proposals = listOf(
+            DocRules.Proposal(writing, "doc-forbidden-import", mapOf("scope" to listOf("test"), "import" to listOf("^org\\.junit")), "JUnit 을 import 하지 않는다", "JUnit `Assertions`는 import 하지 않는다"),
+            DocRules.Proposal(writing, "doc-required-annotation", mapOf("scope" to listOf("test"), "target" to listOf("test-method"), "annotation" to listOf("DisplayName")), "@DisplayName 을 붙인다", "모든 테스트 메서드에 @DisplayName 을 붙인다."),
+        )
+        val faith = DocRules.verify(batchJev, proposals)!!
+        assertEquals(listOf(0.6, 0.6), proposals.map { "%.2f".format(faith.getValue(it)).toDouble() })
+        assertEquals(listOf(0.9, 0.9), proposals.map { DocRules.verify(batchJev, proposals, single = true)!!.getValue(it) })
     }
 
     @Test

@@ -1,0 +1,10 @@
+# 기여 규칙
+
+## 오류
+
+- 파서는 잘못된 입력에 `IllegalArgumentException` 대신 `ParseException`을 던진다.
+- `println`으로 디버그 출력을 남기지 않는다.
+
+## 테스트
+
+- 테스트 함수 이름은 백틱 한국어 문장으로 쓴다.

@@ -1,0 +1,199 @@
+{
+  "documents": {
+    "docs/architecture.md": {
+      "file": "files/docs/architecture.md.txt"
+    },
+    "docs/decisions/0001-hexagonal.md": {
+      "file": "files/docs/decisions/0001-hexagonal.md.txt"
+    }
+  },
+  "sections": {
+    "docs/architecture.md:3": {
+      "rule": true
+    },
+    "docs/architecture.md:10": {
+      "rule": true
+    },
+    "docs/decisions/0001-hexagonal.md:3": {
+      "rule": false
+    }
+  },
+  "requests": [],
+  "rules": [
+    {
+      "section": "docs/architecture.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/domain/**"
+        ],
+        "import": [
+          "^org\\.springframework\\.",
+          "^jakarta\\.persistence\\.",
+          "^javax\\.persistence\\.",
+          "^org\\.hibernate\\."
+        ]
+      },
+      "description": "domain 패키지는 Spring·JPA 같은 프레임워크를 import 하지 않는다",
+      "quote": "`domain` 패키지는 Spring·JPA 같은 프레임워크를 import 하지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/architecture.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/application/**"
+        ],
+        "import": [
+          "\\.adapter\\."
+        ]
+      },
+      "description": "application 은 adapter 를 import 하지 않는다",
+      "quote": "`application`은 `domain`과 포트만 쓰고 `adapter`를 import 하지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/architecture.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/adapter/in/web/**"
+        ],
+        "import": [
+          "\\.application\\.service\\."
+        ]
+      },
+      "description": "웹 어댑터(adapter.in.web)는 서비스 구현(application.service)을 import 하지 않는다",
+      "quote": "서비스 구현 클래스를 직접 주입받지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/architecture.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/adapter/in/web/**"
+        ],
+        "import": [
+          "\\.application\\."
+        ]
+      },
+      "description": "웹 어댑터는 application 을 import 하지 않는다",
+      "quote": "웹 어댑터(`adapter.in.web`)는 `application.port.in`의 유스케이스 인터페이스만 호출한다.",
+      "faithful": false,
+      "note": "포트까지 막아 원문과 반대"
+    },
+    {
+      "section": "docs/architecture.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/adapter/**"
+        ],
+        "import": [
+          "\\.domain\\."
+        ]
+      },
+      "description": "어댑터는 domain 을 import 하지 않는다",
+      "quote": "`application`은 `domain`과 포트만 쓰고 `adapter`를 import 하지 않는다.",
+      "faithful": false,
+      "note": "원문에 없는 규칙"
+    },
+    {
+      "section": "docs/architecture.md:10",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/application/port/in/**"
+        ],
+        "target": [
+          "class"
+        ],
+        "pattern": [
+          ".*UseCase"
+        ]
+      },
+      "description": "application.port.in 의 유스케이스 인터페이스 이름은 UseCase 로 끝낸다",
+      "quote": "유스케이스 인터페이스 이름은 `~UseCase`, 구현 서비스는 `~Service`로 끝낸다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/architecture.md:10",
+      "kind": "doc-file-location",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "name": [
+          ".*JpaEntity"
+        ],
+        "location": [
+          "**/adapter/out/persistence/**"
+        ]
+      },
+      "description": "~JpaEntity 로 끝나는 파일은 adapter.out.persistence 에만 둔다",
+      "quote": "JPA 엔티티는 `~JpaEntity`로 끝내고 `adapter.out.persistence`에만 둔다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/architecture.md:10",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "target": [
+          "class"
+        ],
+        "when": [
+          "Entity"
+        ],
+        "pattern": [
+          ".*JpaEntity"
+        ]
+      },
+      "description": "JPA 엔티티(@Entity) 클래스 이름은 JpaEntity로 끝낸다",
+      "quote": "JPA 엔티티는 `~JpaEntity`로 끝내고 `adapter.out.persistence`에만 둔다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/architecture.md:10",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "target": [
+          "class"
+        ],
+        "pattern": [
+          ".*JpaEntity"
+        ]
+      },
+      "description": "모든 클래스 이름은 JpaEntity로 끝낸다",
+      "quote": "JPA 엔티티는 `~JpaEntity`로 끝내고 `adapter.out.persistence`에만 둔다.",
+      "faithful": false,
+      "note": "모든 클래스로 넓힘"
+    }
+  ],
+  "structure": "- src/main/java/com/acme/billing (com.acme.billing, 파일 1개): BillingApplication\n- src/main/java/com/acme/billing/adapter/in/web (com.acme.billing.adapter.in.web, 파일 3개): InvoiceController, PaymentController, RefundController\n- src/main/java/com/acme/billing/adapter/out/persistence (com.acme.billing.adapter.out.persistence, 파일 3개): InvoiceJpaEntity, InvoiceJpaRepository, InvoicePersistenceAdapter\n- src/main/java/com/acme/billing/application/port/in (com.acme.billing.application.port.in, 파일 6개): CancelInvoiceUseCase, FindInvoiceUseCase, IssueInvoiceUseCase 등\n- src/main/java/com/acme/billing/application/port/out (com.acme.billing.application.port.out, 파일 2개): LoadInvoicePort, SaveInvoicePort\n- src/main/java/com/acme/billing/application/service (com.acme.billing.application.service, 파일 6개): CancelInvoiceService, FindInvoiceService, IssueInvoiceService 등\n- src/main/java/com/acme/billing/domain (com.acme.billing.domain, 파일 4개): Invoice, InvoiceId, InvoiceStatus 등\n- src/test/java/com/acme/billing/application/service (com.acme.billing.application.service, 파일 6개): CancelInvoiceServiceTest, FindInvoiceServiceTest, IssueInvoiceServiceTest 등"
+}

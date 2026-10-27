@@ -1,0 +1,20 @@
+# 코드 컨벤션
+
+## 계층
+
+- 컨트롤러는 서비스만 호출하고 리포지토리를 직접 쓰지 않는다.
+- 서비스 클래스는 `@Service`를 붙이고 이름은 `~Service`로 끝낸다.
+
+## 트랜잭션
+
+- 조회 메서드에는 `@Transactional(readOnly = true)`를 붙인다.
+
+## 테스트
+
+- 테스트 메서드마다 `@DisplayName`으로 한국어 설명을 붙인다.
+- 단언은 AssertJ만 쓴다. JUnit `Assertions`는 import 하지 않는다.
+
+## 금지
+
+- `System.out`과 `printStackTrace`를 쓰지 않는다.
+- Lombok을 쓰지 않는다.

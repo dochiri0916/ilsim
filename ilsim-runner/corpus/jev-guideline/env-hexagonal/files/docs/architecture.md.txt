@@ -1,0 +1,13 @@
+# 아키텍처
+
+## 헥사고날
+
+- `domain` 패키지는 Spring·JPA 같은 프레임워크를 import 하지 않는다.
+- `application`은 `domain`과 포트만 쓰고 `adapter`를 import 하지 않는다.
+- 웹 어댑터(`adapter.in.web`)는 `application.port.in`의 유스케이스 인터페이스만 호출한다. 서비스 구현 클래스를 직접 주입받지 않는다.
+- 영속성 어댑터(`adapter.out.persistence`)는 `application.port.out`의 포트를 구현한다.
+
+## 이름
+
+- 유스케이스 인터페이스 이름은 `~UseCase`, 구현 서비스는 `~Service`로 끝낸다.
+- JPA 엔티티는 `~JpaEntity`로 끝내고 `adapter.out.persistence`에만 둔다.

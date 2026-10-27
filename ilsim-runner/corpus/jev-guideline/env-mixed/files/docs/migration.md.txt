@@ -1,0 +1,6 @@
+# Kotlin 전환
+
+## 규칙
+
+- 새 코드는 Kotlin으로 `src/main/kotlin` 아래에 쓴다. `src/main/java`에는 새 파일을 만들지 않는다.
+- `com.acme.legacy` 패키지는 `com.acme.app`을 import 하지 않는다.

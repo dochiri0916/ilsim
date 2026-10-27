@@ -1,0 +1,105 @@
+{
+  "documents": {
+    "CONTRIBUTING.md": {
+      "file": "files/CONTRIBUTING.md.txt"
+    }
+  },
+  "sections": {
+    "CONTRIBUTING.md:3": {
+      "rule": true
+    },
+    "CONTRIBUTING.md:8": {
+      "rule": true
+    }
+  },
+  "requests": [],
+  "rules": [
+    {
+      "section": "CONTRIBUTING.md:3",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "pattern": [
+          "\\bprintln\\s*\\("
+        ]
+      },
+      "description": "println으로 디버그 출력을 남기지 않는다",
+      "quote": "`println`으로 디버그 출력을 남기지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "CONTRIBUTING.md:3",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/parse/**"
+        ],
+        "pattern": [
+          "throw\\s+IllegalArgumentException"
+        ]
+      },
+      "description": "파서(parse 패키지)는 IllegalArgumentException 을 던지지 않는다",
+      "quote": "파서는 잘못된 입력에 `IllegalArgumentException` 대신 `ParseException`을 던진다.",
+      "faithful": true
+    },
+    {
+      "section": "CONTRIBUTING.md:3",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "pattern": [
+          "\\bIllegalArgumentException\\b"
+        ]
+      },
+      "description": "IllegalArgumentException 을 쓰지 않는다",
+      "quote": "파서는 잘못된 입력에 `IllegalArgumentException` 대신 `ParseException`을 던진다.",
+      "faithful": false,
+      "note": "파서 밖과 테스트까지 넓힘"
+    },
+    {
+      "section": "CONTRIBUTING.md:8",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "target": [
+          "test-method"
+        ],
+        "pattern": [
+          "^`.*[가-힣].*`$"
+        ]
+      },
+      "description": "테스트 함수 이름은 백틱으로 감싼 한국어 문장으로 쓴다",
+      "quote": "테스트 함수 이름은 백틱 한국어 문장으로 쓴다.",
+      "faithful": true
+    },
+    {
+      "section": "CONTRIBUTING.md:8",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "target": [
+          "method"
+        ],
+        "pattern": [
+          "^`.*[가-힣].*`$"
+        ]
+      },
+      "description": "모든 함수 이름은 백틱 한국어 문장으로 쓴다",
+      "quote": "테스트 함수 이름은 백틱 한국어 문장으로 쓴다.",
+      "faithful": false,
+      "note": "프로덕트 함수까지 넓힘"
+    }
+  ],
+  "structure": "- src/main/kotlin/com/acme/text/model (com.acme.text.model, 파일 7개): CodeNode, HeadingNode, ListNode 등\n- src/main/kotlin/com/acme/text/parse (com.acme.text.parse, 파일 7개): CodeParser, HeadingParser, ListParser 등\n- src/main/kotlin/com/acme/text/render (com.acme.text.render, 파일 6개): CodeRenderer, HeadingRenderer, ListRenderer 등\n- src/test/kotlin/com/acme/text/parse (com.acme.text.parse, 파일 6개): CodeParserTest, HeadingParserTest, ListParserTest 등"
+}

@@ -1,0 +1,89 @@
+{
+  "documents": {
+    "docs/modules.md": {
+      "file": "files/docs/modules.md.txt"
+    }
+  },
+  "sections": {
+    "docs/modules.md:3": {
+      "rule": true
+    }
+  },
+  "requests": [],
+  "rules": [
+    {
+      "section": "docs/modules.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "core/**"
+        ],
+        "import": [
+          "^org\\.springframework\\."
+        ]
+      },
+      "description": "core 는 Spring 을 import 하지 않는다",
+      "quote": "`core`는 Spring을 import 하지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/modules.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/core/**"
+        ],
+        "import": [
+          "^com\\.acme\\.mm\\.(api|batch)\\."
+        ]
+      },
+      "description": "core 모듈은 api·batch 를 import 하지 않는다",
+      "quote": "`core`는 다른 모듈(`api`, `batch`)을 의존하지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/modules.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "api/**"
+        ],
+        "import": [
+          "^com\\.acme\\.mm\\.batch\\."
+        ]
+      },
+      "description": "api 는 batch 를 import 하지 않는다",
+      "quote": "`api`와 `batch`는 서로 의존하지 않고 `core`만 쓴다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/modules.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "api/**"
+        ],
+        "import": [
+          "^com\\.acme\\.mm\\.core\\."
+        ]
+      },
+      "description": "api 는 core 를 import 하지 않는다",
+      "quote": "`api`와 `batch`는 서로 의존하지 않고 `core`만 쓴다.",
+      "faithful": false,
+      "note": "원문과 반대"
+    }
+  ],
+  "structure": "- api/src/main/java/com/acme/mm/api/delivery (com.acme.mm.api.delivery, 파일 1개): DeliveryController\n- api/src/main/java/com/acme/mm/api/member (com.acme.mm.api.member, 파일 1개): MemberController\n- api/src/main/java/com/acme/mm/api/order (com.acme.mm.api.order, 파일 1개): OrderController\n- api/src/main/java/com/acme/mm/api/payment (com.acme.mm.api.payment, 파일 1개): PaymentController\n- api/src/main/java/com/acme/mm/api/stock (com.acme.mm.api.stock, 파일 1개): StockController\n- batch/src/main/java/com/acme/mm/batch/delivery (com.acme.mm.batch.delivery, 파일 1개): DeliveryJob\n- batch/src/main/java/com/acme/mm/batch/member (com.acme.mm.batch.member, 파일 1개): MemberJob\n- batch/src/main/java/com/acme/mm/batch/order (com.acme.mm.batch.order, 파일 1개): OrderJob\n- batch/src/main/java/com/acme/mm/batch/payment (com.acme.mm.batch.payment, 파일 1개): PaymentJob\n- batch/src/main/java/com/acme/mm/batch/stock (com.acme.mm.batch.stock, 파일 1개): StockJob\n- core/src/main/java/com/acme/mm/core/delivery (com.acme.mm.core.delivery, 파일 2개): Delivery, DeliveryPolicy\n- core/src/main/java/com/acme/mm/core/member (com.acme.mm.core.member, 파일 2개): Member, MemberPolicy\n- core/src/main/java/com/acme/mm/core/order (com.acme.mm.core.order, 파일 2개): Order, OrderPolicy\n- core/src/main/java/com/acme/mm/core/payment (com.acme.mm.core.payment, 파일 2개): Payment, PaymentPolicy\n- core/src/main/java/com/acme/mm/core/stock (com.acme.mm.core.stock, 파일 2개): Stock, StockPolicy\n- core/src/test/java/com/acme/mm/core/delivery (com.acme.mm.core.delivery, 파일 1개): DeliveryPolicyTest\n- core/src/test/java/com/acme/mm/core/member (com.acme.mm.core.member, 파일 1개): MemberPolicyTest\n- core/src/test/java/com/acme/mm/core/order (com.acme.mm.core.order, 파일 1개): OrderPolicyTest\n- core/src/test/java/com/acme/mm/core/payment (com.acme.mm.core.payment, 파일 1개): PaymentPolicyTest\n- core/src/test/java/com/acme/mm/core/stock (com.acme.mm.core.stock, 파일 1개): StockPolicyTest"
+}

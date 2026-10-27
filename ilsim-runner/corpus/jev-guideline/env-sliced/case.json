@@ -1,0 +1,127 @@
+{
+  "documents": {
+    "docs/conventions.md": {
+      "file": "files/docs/conventions.md.txt"
+    }
+  },
+  "sections": {
+    "docs/conventions.md:3": {
+      "rule": true
+    },
+    "docs/conventions.md:8": {
+      "rule": true
+    },
+    "docs/conventions.md:13": {
+      "rule": true
+    }
+  },
+  "requests": [],
+  "rules": [
+    {
+      "section": "docs/conventions.md:3",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "pattern": [
+          "!!"
+        ]
+      },
+      "description": "`!!` 연산자를 쓰지 않는다",
+      "quote": "`!!` 연산자를 쓰지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:3",
+      "kind": "doc-forbidden-annotation",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "annotation": [
+          "JvmInline"
+        ]
+      },
+      "description": "@JvmInline 을 쓰지 않는다",
+      "quote": "도메인 식별자는 `@JvmInline value class`로 감싼다(`PostId` 등).",
+      "faithful": false,
+      "note": "원문과 반대"
+    },
+    {
+      "section": "docs/conventions.md:8",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/common/**"
+        ],
+        "import": [
+          "\\.(post|comment|member|notice|tag)\\."
+        ]
+      },
+      "description": "공용 코드(common)는 슬라이스(post·comment·member·notice·tag)를 import 하지 않는다",
+      "quote": "공용 코드(`common`)는 어떤 슬라이스도 import 하지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:8",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/post/**"
+        ],
+        "import": [
+          "\\.comment\\."
+        ]
+      },
+      "description": "post 슬라이스는 comment 슬라이스를 import 하지 않는다",
+      "quote": "기능 슬라이스(`post`, `comment` 등)는 다른 슬라이스의 `web`·`infra`를 import 하지 않는다.",
+      "faithful": false,
+      "note": "web·infra 만이 아니라 슬라이스 전체를 막음"
+    },
+    {
+      "section": "docs/conventions.md:13",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "target": [
+          "test-method"
+        ],
+        "pattern": [
+          "^`.*[가-힣].*`$"
+        ]
+      },
+      "description": "테스트 함수 이름은 백틱으로 감싼 한국어 문장으로 쓴다",
+      "quote": "테스트 함수 이름은 백틱으로 감싼 한국어 문장으로 쓴다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:13",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "target": [
+          "test-method"
+        ],
+        "pattern": [
+          "^`.*`$"
+        ]
+      },
+      "description": "테스트 함수 이름은 백틱으로 감싼다",
+      "quote": "테스트 함수 이름은 백틱으로 감싼 한국어 문장으로 쓴다.",
+      "faithful": false,
+      "note": "한국어 조건을 뺌"
+    }
+  ],
+  "structure": "- src/main/kotlin/com/acme/board (com.acme.board, 파일 1개): BoardApplication\n- src/main/kotlin/com/acme/board/comment/application (com.acme.board.comment.application, 파일 1개): CommentService\n- src/main/kotlin/com/acme/board/comment/domain (com.acme.board.comment.domain, 파일 2개): Comment, CommentId, CommentRepository\n- src/main/kotlin/com/acme/board/comment/infra (com.acme.board.comment.infra, 파일 1개): MemoryCommentRepository\n- src/main/kotlin/com/acme/board/comment/web (com.acme.board.comment.web, 파일 1개): CommentController\n- src/main/kotlin/com/acme/board/common (com.acme.board.common, 파일 2개): ErrorResponse, TimeProvider\n- src/main/kotlin/com/acme/board/member/application (com.acme.board.member.application, 파일 1개): MemberService\n- src/main/kotlin/com/acme/board/member/domain (com.acme.board.member.domain, 파일 2개): Member, MemberId, MemberRepository\n- src/main/kotlin/com/acme/board/member/infra (com.acme.board.member.infra, 파일 1개): MemoryMemberRepository\n- src/main/kotlin/com/acme/board/member/web (com.acme.board.member.web, 파일 1개): MemberController\n- src/main/kotlin/com/acme/board/notice/application (com.acme.board.notice.application, 파일 1개): NoticeService\n- src/main/kotlin/com/acme/board/notice/domain (com.acme.board.notice.domain, 파일 2개): Notice, NoticeId, NoticeRepository\n- src/main/kotlin/com/acme/board/notice/infra (com.acme.board.notice.infra, 파일 1개): MemoryNoticeRepository\n- src/main/kotlin/com/acme/board/notice/web (com.acme.board.notice.web, 파일 1개): NoticeController\n- src/main/kotlin/com/acme/board/post/application (com.acme.board.post.application, 파일 1개): PostService\n- src/main/kotlin/com/acme/board/post/domain (com.acme.board.post.domain, 파일 2개): Post, PostId, PostRepository\n- src/main/kotlin/com/acme/board/post/infra (com.acme.board.post.infra, 파일 1개): MemoryPostRepository\n- src/main/kotlin/com/acme/board/post/web (com.acme.board.post.web, 파일 1개): PostController\n- src/main/kotlin/com/acme/board/tag/application (com.acme.board.tag.application, 파일 1개): TagService\n- src/main/kotlin/com/acme/board/tag/domain (com.acme.board.tag.domain, 파일 2개): Tag, TagId, TagRepository\n- src/main/kotlin/com/acme/board/tag/infra (com.acme.board.tag.infra, 파일 1개): MemoryTagRepository\n- src/main/kotlin/com/acme/board/tag/web (com.acme.board.tag.web, 파일 1개): TagController\n- src/test/kotlin/com/acme/board/comment/application (com.acme.board.comment.application, 파일 1개): CommentServiceTest\n- src/test/kotlin/com/acme/board/member/application (com.acme.board.member.application, 파일 1개): MemberServiceTest\n- src/test/kotlin/com/acme/board/notice/application (com.acme.board.notice.application, 파일 1개): NoticeServiceTest\n- src/test/kotlin/com/acme/board/post/application (com.acme.board.post.application, 파일 1개): PostServiceTest\n- src/test/kotlin/com/acme/board/tag/application (com.acme.board.tag.application, 파일 1개): TagServiceTest"
+}

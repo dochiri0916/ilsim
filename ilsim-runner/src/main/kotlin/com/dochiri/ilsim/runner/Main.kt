@@ -98,7 +98,7 @@ private const val USAGE = """사용법:
     ilsim-runner jev-eval [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 사례로 JEV 위험 선별 평가 (코드 발췌가 TypeSafe로 전송, --agent는 Claude 비교)
     ilsim-runner jev-eval --project <경로>... [--limit <n>] [--agent]   실제 코드 후보에서 판단이 갈린 것만 추림 (라벨 없음)
     ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
-    ilsim-runner jev-eval guidelines [--data <폴더>] [--repeat <n>] [--out <파일>] [--sections]   정답 있는 문서·요청·변경으로 지침 선택·위반·문서 규칙 판정 평가
+    ilsim-runner jev-eval guidelines [--data <폴더>] [--repeat <n>] [--out <파일>] [--sections] [--rules]   정답 있는 문서·요청·변경으로 지침 선택·위반·문서 규칙 판정 평가(--rules는 문서 규칙 질문만)
   Claude 앱
     ilsim-runner mcp                             일심 MCP 서버(stdio). Claude 앱 플러그인이 실행한다
     ilsim-runner hook user-prompt-submit|pre-tool-use|stop   Claude 앱 훅(표준 입력으로 훅 JSON)
@@ -717,7 +717,7 @@ private fun guidelineEval(store: ConfigStore, rest: List<String>, data: String?,
     if (!Jev.uncached().enabled) { println("JEV 키가 없습니다. ilsim-runner jev-key set 으로 등록하세요"); exitProcess(2) }
     val rounds = repeat?.toIntOrNull()?.coerceIn(1, 5) ?: 1
     val caches = mutableListOf<Path>()
-    val observations = JevGuidelineEval.run(projects, rounds) { Jev.cached(java.nio.file.Files.createTempDirectory("ilsim-jev-eval").also(caches::add)) }
+    val observations = JevGuidelineEval.run(projects, rounds, "--rules" in rest) { Jev.cached(java.nio.file.Files.createTempDirectory("ilsim-jev-eval").also(caches::add)) }
     println(JevGuidelineEval.report(projects, observations))
     println("JEV 호출 ${caches.sumOf { dir -> dir.toFile().listFiles { f -> f.name.endsWith(".json") }?.size ?: 0 }}회")
     caches.forEach { it.toFile().deleteRecursively() }

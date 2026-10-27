@@ -1,0 +1,90 @@
+{
+  "documents": {
+    "docs/migration.md": {
+      "file": "files/docs/migration.md.txt"
+    }
+  },
+  "sections": {
+    "docs/migration.md:3": {
+      "rule": true
+    }
+  },
+  "requests": [],
+  "rules": [
+    {
+      "section": "docs/migration.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/com/acme/legacy/**"
+        ],
+        "import": [
+          "^com\\.acme\\.app(\\.|$)"
+        ]
+      },
+      "description": "com.acme.legacy 패키지는 com.acme.app 을 import 하지 않는다",
+      "quote": "`com.acme.legacy` 패키지는 `com.acme.app`을 import 하지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/migration.md:3",
+      "kind": "doc-file-location",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "name": [
+          ".*"
+        ],
+        "location": [
+          "**/src/main/kotlin/**"
+        ]
+      },
+      "description": "새 코드는 src/main/kotlin 아래에 둔다",
+      "quote": "새 코드는 Kotlin으로 `src/main/kotlin` 아래에 쓴다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/migration.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/com/acme/app/**"
+        ],
+        "import": [
+          "^com\\.acme\\.legacy(\\.|$)"
+        ]
+      },
+      "description": "com.acme.app 은 com.acme.legacy 를 import 하지 않는다",
+      "quote": "`com.acme.legacy` 패키지는 `com.acme.app`을 import 하지 않는다.",
+      "faithful": false,
+      "note": "방향을 뒤집음"
+    },
+    {
+      "section": "docs/migration.md:3",
+      "kind": "doc-file-location",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "name": [
+          ".*"
+        ],
+        "location": [
+          "**/src/main/java/**"
+        ]
+      },
+      "description": "프로덕트 코드는 src/main/java 아래에 둔다",
+      "quote": "`src/main/java`에는 새 파일을 만들지 않는다.",
+      "faithful": false,
+      "note": "원문과 반대"
+    }
+  ],
+  "structure": "- src/main/java/com/acme/legacy (com.acme.legacy, 파일 5개): CouponDao, InvoiceDao, MemberDao 등\n- src/main/kotlin/com/acme/app (com.acme.app, 파일 5개): CouponReader, InvoiceReader, MemberReader 등\n- src/test/kotlin/com/acme/app (com.acme.app, 파일 5개): CouponReaderTest, InvoiceReaderTest, MemberReaderTest 등"
+}

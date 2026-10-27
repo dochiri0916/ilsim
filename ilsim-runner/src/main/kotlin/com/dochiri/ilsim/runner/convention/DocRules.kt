@@ -21,9 +21,12 @@ import kotlinx.serialization.json.jsonObject
 
 object DocRules {
     const val PREFIX = "doc:"
-    const val FAITHFUL = 0.3
+    const val FAITHFUL = 0.4
     const val MAX_PROMPT_CHARS = 24_000
-    private const val VERSION = "doc-rules-v1"
+    private const val MAX_DIRECTORIES = 60
+    private const val RECHECK_FROM = 0.15
+    private const val RECHECK_UNTIL = 0.6
+    private const val VERSION = "doc-rules-v2"
     private const val MAX_REMAINING = 20
 
     class Extracted(val rules: List<ConventionRule>, val documents: List<DocCoverage>, val notes: List<String>)
@@ -48,6 +51,7 @@ object DocRules {
         val rules = linkedMapOf<String, ConventionRule>()
         val coverage = mutableListOf<DocCoverage>()
         val pending = mutableListOf<Pair<DocSection, String>>()
+        val tree = structure(facts)
         for (s in sections.filter { (scores[it] ?: 0.0) >= Guidelines.CLEAR }) {
             val hash = ReviewCache.digest("$VERSION|${s.heading}|${s.text}")
             val cached = known.firstOrNull { it.hash == hash }
@@ -57,13 +61,13 @@ object DocRules {
         }
         val results = batches(pending).flatMap { batch ->
             try {
-                parse(ask(prompt(batch.map { it.first })), batch, notes)
+                parse(ask(prompt(batch.map { it.first }, tree)), batch, notes)
             } catch (e: Exception) {
                 notes += "문서 규칙 추출 실패(구간 ${batch.size}개, 다음 분석 때 다시 시도): ${e.message}"
                 emptyList()
             }
         }
-        val faith = verify(jev, results.flatMap { it.proposals })
+        val faith = verify(jev, results.flatMap { it.proposals }, tree)
         if (faith == null) notes += "JEV 원문 일치 확인에 실패했습니다. 확인하지 못한 규칙은 의견 없이 제안합니다"
         for (result in results) {
             val remaining = result.remaining.toMutableList()
@@ -108,13 +112,25 @@ object DocRules {
         return out
     }
 
-    internal fun prompt(sections: List<DocSection>): String = buildString {
+    internal fun structure(facts: Facts): String {
+        val dirs = facts.files.groupBy { it.path.substringBeforeLast('/', "") }.entries.sortedWith(compareBy({ it.value.first().test }, { it.key }))
+        val lines = dirs.take(MAX_DIRECTORIES).map { (dir, files) ->
+            val names = files.flatMap { f -> f.types.filter { it.topLevel }.map { it.name } }.distinct().sorted()
+            "- $dir (${files.first().pkg.ifEmpty { "기본 패키지" }}, 파일 ${files.size}개): ${names.take(3).joinToString()}${if (names.size > 3) " 등" else ""}"
+        }
+        return (lines + listOfNotNull("- 그 밖의 디렉터리 ${dirs.size - MAX_DIRECTORIES}개".takeIf { dirs.size > MAX_DIRECTORIES })).joinToString("\n")
+    }
+
+    internal fun prompt(sections: List<DocSection>, tree: String = ""): String = buildString {
         appendLine("""
             아래는 한 프로젝트 문서에서 코드를 만들거나 고칠 때 따라야 할 규칙이 적힌 구간들이다. 각 구간에서 정적 분석으로 기계적으로 확인할 수 있는 규칙만 골라 아래 규칙 종류(kind)로 옮겨라.
             - 규칙이 합리적인지는 따지지 말고 적힌 그대로 옮긴다.
-            - 원문에 없는 조건을 더하거나 대상을 넓히거나 좁히지 않는다. 원문이 대상을 경로·이름·애너테이션으로 가릴 방법을 정하지 않았으면 옮기지 않는다.
+            - 원문에 없는 조건을 더하거나 대상을 넓히거나 좁히지 않는다.
+            - 원문이 역할 이름(컨트롤러, 리포지토리, 웹 어댑터, 서비스 구현 등)으로 대상을 가리키면 아래 프로젝트 구조에서 그 역할이 있는 디렉터리·패키지·이름으로 옮긴다. 구조에서도 대상을 가릴 수 없으면 옮기지 않는다.
             - 검사는 Java·Kotlin 소스(src/main, src/test)에만 한다. 다른 언어, 설정 파일, 문서, 커밋, 빌드 규칙은 옮기지 않는다.
             - 한 문장에 규칙이 여럿이면 나눠 옮긴다. 옮기지 못한 규칙 문장은 remaining 에 원문 그대로 넣는다.
+            - params 는 그 kind 에 적힌 이름만 쓴다(doc-forbidden-import·doc-forbidden-code·doc-file-location 에는 target 이 없다).
+            - '새 코드는 ~'처럼 앞으로 만들 코드에 대한 규칙도 옮긴다. 제출 검사는 이번 변경이 새로 만든 위반만 막으므로 기존 코드가 어기고 있어도 된다.
             - quote 는 그 규칙이 적힌 원문 문장을 그대로 복사한다.
             JSON 만 출력하라(설명·코드펜스 금지):
             {"sections":[{"id":"s0","rules":[{"kind":"...","params":{"이름":["값"]},"description":"규칙 한 문장(한국어)","quote":"원문 문장"}],"remaining":["옮기지 못한 규칙 원문 문장"]}]}
@@ -122,6 +138,12 @@ object DocRules {
         """.trimIndent())
         appendLine()
         appendLine(KINDS)
+        appendLine("""예: "컨트롤러는 리포지토리를 쓰지 않는다"(구조에 …/controller 와 …/repository 가 있을 때) → {"kind":"doc-forbidden-import","params":{"scope":["main"],"path":["**/controller/**"],"import":["\\.repository\\."]}}""")
+        if (tree.isNotBlank()) {
+            appendLine()
+            appendLine("프로젝트 구조(디렉터리 (패키지, 파일 수): 대표 타입):")
+            appendLine(tree)
+        }
         appendLine()
         appendLine("구간:")
         sections.forEachIndexed { i, s ->
@@ -185,30 +207,44 @@ object DocRules {
         return q.isNotEmpty() && q in squash(text)
     }
 
-    internal fun verify(jev: Jev, proposals: List<Proposal>): Map<Proposal, Double>? {
+    internal fun verify(jev: Jev, proposals: List<Proposal>, tree: String = "", single: Boolean = false): Map<Proposal, Double>? {
         if (proposals.isEmpty()) return emptyMap()
         if (!jev.enabled) return null
-        val out = mutableMapOf<Proposal, Double>()
-        for (batch in verifyBatches(proposals)) {
-            val sections = batch.map { it.section }.distinct()
-            val state = mapOf(
-                "policy" to VERSION,
-                "kinds" to KINDS,
-                "sections" to sections.mapIndexed { j, s -> mapOf("id" to "s$j", "source" to "${s.path}:${s.line}", "heading" to s.heading, "text" to s.text) },
-                "candidates" to batch.mapIndexed { i, p -> mapOf("id" to "c$i", "section" to "s${sections.indexOf(p.section)}", "kind" to p.kind, "params" to p.params, "description" to p.description, "quote" to p.quote) },
-            )
-            val questions = batch.indices.associate { i ->
-                "f$i" to NoulQuestion.of("f$i", "후보 규칙 c$i 가 그 section 의 text 에 적힌 규칙을 그대로 옮긴 것인가? kinds 의 뜻대로 kind 와 params 를 읽었을 때 검사 대상(scope, path, target, when, name)과 조건(import, annotation, pattern, location, max 등)이 원문 규칙과 같으면 Yes. 원문에 없는 조건을 더했거나, 대상을 넓히거나 좁혔거나, 원문과 다른 규칙이면 No. 규칙이 합리적인지는 따지지 않는다.")
-                    .withCriteria("원문 규칙을 그대로 옮김", "원문과 다르거나 원문에 없는 규칙")
-            }
-            val answers = jev.probabilities(state, questions) ?: return null
-            batch.forEachIndexed { i, p -> answers["f$i"]?.let { out[p] = it } }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(Guidelines.PARALLEL)
+        try {
+            fun ask(batches: List<List<Proposal>>): Map<Proposal, Double>? =
+                batches.map { batch -> pool.submit<Map<Proposal, Double>?> { verifyBatch(jev, batch, tree) } }
+                    .map { it.get() ?: return null }.fold(emptyMap()) { a, b -> a + b }
+            if (single) return ask(proposals.map { listOf(it) })
+            val first = ask(verifyBatches(proposals, Guidelines.weight(tree))) ?: return null
+            val unsure = first.filterValues { it >= RECHECK_FROM && it < RECHECK_UNTIL }.keys
+            if (unsure.isEmpty()) return first
+            val again = ask(unsure.map { listOf(it) }) ?: return first
+            return first + again.mapValues { (p, s) -> (first.getValue(p) + s) / 2 }
+        } finally {
+            pool.shutdownNow()
         }
-        return out
     }
 
-    private fun verifyBatches(proposals: List<Proposal>): List<List<Proposal>> {
-        val budget = Guidelines.MAX_STATE_WEIGHT - Guidelines.weight(KINDS)
+    private fun verifyBatch(jev: Jev, batch: List<Proposal>, tree: String): Map<Proposal, Double>? {
+        val sections = batch.map { it.section }.distinct()
+        val state = buildMap<String, Any> {
+            put("policy", VERSION)
+            put("kinds", KINDS)
+            if (tree.isNotBlank()) put("structure", tree)
+            put("sections", sections.mapIndexed { j, s -> mapOf("id" to "s$j", "source" to "${s.path}:${s.line}", "heading" to s.heading, "text" to s.text) })
+            put("candidates", batch.mapIndexed { i, p -> mapOf("id" to "c$i", "section" to "s${sections.indexOf(p.section)}", "kind" to p.kind, "params" to p.params, "description" to p.description, "quote" to p.quote) })
+        }
+        val questions = batch.indices.associate { i ->
+            "f$i" to NoulQuestion.of("f$i", "후보 규칙 c$i 가 그 section 의 text 에 적힌 규칙을 그대로 옮긴 것인가? kinds 의 뜻대로 kind 와 params 를 읽었을 때 검사 대상(scope, path, target, when, name)과 조건(import, annotation, pattern, location, max 등)이 원문 규칙과 같으면 Yes. 원문에 없는 조건을 더했거나, 대상을 넓히거나 좁혔거나, 원문과 다른 규칙이면 No. 규칙이 합리적인지는 따지지 않는다. scope 와 path 가 원문이 말한 대상과 같은지 따로 확인한다: 원문이 '테스트에서'·'파서는'처럼 대상을 한정했는데 all 이거나 path 없이 전체를 검사하면 넓힌 것이고, 원문에 한정이 없는데 main 이나 test 로 줄였으면 좁힌 것이다. 한 문장에 규칙이 여럿이면 그중 하나만 옮겨도 옮긴 부분이 원문과 같으면 Yes. 원문이 역할 이름(서비스 클래스, JPA 엔티티, 컨트롤러, 리포지토리 등)으로 가리킨 대상을 그 역할의 애너테이션(when)이나 structure 에 있는 경로·패키지·이름으로 가린 것은 대상을 바꾼 것이 아니다. 검사는 이번 변경이 새로 만든 위반만 막으므로 '새 코드는 ~' 규칙을 모든 파일 대상으로 옮긴 것도 같은 규칙이다.")
+                .withCriteria("원문 규칙을 그대로 옮김", "원문과 다르거나 원문에 없는 규칙")
+        }
+        val answers = jev.probabilities(state, questions) ?: return null
+        return batch.withIndex().mapNotNull { (i, p) -> answers["f$i"]?.let { p to it } }.toMap()
+    }
+
+    private fun verifyBatches(proposals: List<Proposal>, reserved: Int): List<List<Proposal>> {
+        val budget = Guidelines.MAX_STATE_WEIGHT - Guidelines.weight(KINDS) - reserved
         val out = mutableListOf<MutableList<Proposal>>()
         var used = 0
         for (p in proposals) {

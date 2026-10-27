@@ -41,6 +41,7 @@ data class GuidelineCorpus(
     val references: List<EvalReference> = emptyList(),
     val diffs: List<EvalDiff> = emptyList(),
     val rules: List<EvalRule> = emptyList(),
+    val structure: String = "",
 )
 
 @Serializable
@@ -89,6 +90,7 @@ object JevGuidelineEval {
         Question("diff", "변경 차단(가장 높은 위반 확률)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("gate", "문서 규칙: 규칙 구간 거름", Guidelines.CLEAR, false, Goal.RECALL),
         Question("f", "문서 규칙: 원문 그대로 옮겼는가", DocRules.FAITHFUL, false, Goal.PRECISION),
+        Question("f-single", "문서 규칙: 원문 일치(후보마다 따로 판정)", DocRules.FAITHFUL, false, Goal.PRECISION),
     )
 
     fun load(dir: Path): List<Project> = dir.listDirectoryEntries().filter { it.resolve("case.json").exists() }.sortedBy { it.fileName.toString() }.map { root ->
@@ -124,18 +126,18 @@ object JevGuidelineEval {
         }
     }
 
-    fun run(projects: List<Project>, rounds: Int, jev: (Int) -> Jev): List<Observation> = (1..rounds).flatMap { round ->
+    fun run(projects: List<Project>, rounds: Int, rulesOnly: Boolean = false, jev: (Int) -> Jev): List<Observation> = (1..rounds).flatMap { round ->
         val client = jev(round)
-        projects.flatMap { observe(it, client, round) }
+        projects.flatMap { observe(it, client, round, rulesOnly) }
     }
 
-    private fun observe(p: Project, jev: Jev, round: Int): List<Observation> {
+    private fun observe(p: Project, jev: Jev, round: Int, rulesOnly: Boolean): List<Observation> {
         val out = mutableListOf<Observation>()
         fun add(question: String, item: String, expected: Boolean, value: Double?) { out += Observation(question, p.name, item, expected, value, round) }
         val pool = Executors.newFixedThreadPool(Guidelines.PARALLEL)
         try {
             val modules = p.corpus.modules.toSet()
-            val selections = p.corpus.requests.associate { r ->
+            val selections = p.corpus.requests.filter { !rulesOnly }.associate { r ->
                 val touched = Guidelines.touched(jev, r.text, modules).orEmpty()
                 modules.forEach { m -> add("w", "${r.id}/$m", m in r.modules, touched[m]) }
                 val documents = Guidelines.documentAnswers(jev, r.text, p.sections, pool).orEmpty()
@@ -158,7 +160,7 @@ object JevGuidelineEval {
                 r.id to selection
             }
             val paths = p.sections.map { it.path }.toSet()
-            p.corpus.references.forEach { ref ->
+            p.corpus.references.filter { !rulesOnly }.forEach { ref ->
                 val section = p.sections.single { p.key(it) == ref.section }
                 val g = Guideline(section.path, section.line, section.heading, section.text, 1.0)
                 val targets = (Guidelines.links(section.path, section.text, paths + ref.target) + ref.target).distinct()
@@ -166,7 +168,7 @@ object JevGuidelineEval {
                 add("q", "${ref.request}/${ref.section}->${ref.target}", ref.required, answer?.first)
                 add("n", "${ref.request}/${ref.section}->${ref.target}", ref.forbidden, answer?.second)
             }
-            p.corpus.diffs.forEach { d ->
+            p.corpus.diffs.filter { !rulesOnly }.forEach { d ->
                 val request = p.request(d.request)
                 val diff = p.diffs.getValue(d.id)
                 val selected = selections[d.request]?.guidelines?.let(Guidelines::relevant).orEmpty()
@@ -201,8 +203,12 @@ object JevGuidelineEval {
                 val section = p.sections.single { p.key(it) == r.section }
                 r to DocRules.Proposal(section, r.kind, DocProbes.normalize(r.kind, r.params), r.description, r.quote)
             }
-            val faith = DocRules.verify(jev, proposals.map { it.second })
-            proposals.forEach { (r, proposal) -> add("f", "${r.section}/${r.description}", r.faithful, faith?.get(proposal)) }
+            val faith = DocRules.verify(jev, proposals.map { it.second }, p.corpus.structure)
+            val single = DocRules.verify(jev, proposals.map { it.second }, p.corpus.structure, single = true)
+            proposals.forEach { (r, proposal) ->
+                add("f", "${r.section}/${r.description}", r.faithful, faith?.get(proposal))
+                add("f-single", "${r.section}/${r.description}", r.faithful, single?.get(proposal))
+            }
         } finally {
             pool.shutdownNow()
         }
