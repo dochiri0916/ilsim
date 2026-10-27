@@ -113,6 +113,12 @@
             "total": 7
         },
         {
+            "id": "cross-slice-targets",
+            "severity": "BLOCK",
+            "compliant": 123,
+            "total": 123
+        },
+        {
             "id": "forbid-edge:application>adapter",
             "severity": "BLOCK",
             "compliant": 18,

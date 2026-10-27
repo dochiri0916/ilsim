@@ -4,6 +4,8 @@ internal data class Loc(val slice: String?, val unit: String, val rolePath: Stri
 
 internal class Locator(val layout: Layout) {
     private val root = layout.rootPrefix.split('.').filter { it.isNotEmpty() }
+    private val known = layout.observed.toSet()
+    private val groups = layout.slices.filter { '.' in it }.map { it.substringBefore('.') }.toSet()
 
     fun locate(pkg: String): Loc {
         val segs = pkg.split('.').filter { it.isNotEmpty() }
@@ -16,7 +18,7 @@ internal class Locator(val layout: Layout) {
             val slice = when {
                 c in layout.slices -> c
                 rel.size > 1 && "$c.${rel[1]}" in layout.slices -> "$c.${rel[1]}"
-                else -> null
+                else -> added(rel)
             }
             if (slice != null) {
                 val depth = slice.count { it == '.' } + 1
@@ -27,6 +29,13 @@ internal class Locator(val layout: Layout) {
             return Loc(null, "shared:$c", rel.joinToString("."))
         }
         return Loc(null, c, rel.joinToString("."))
+    }
+
+    private fun added(rel: List<String>): String? = when {
+        known.isEmpty() -> null
+        rel.size > 2 && rel[0] in groups && "${rel[0]}.${rel[1]}" !in known && rel[2] in layout.layerNames -> "${rel[0]}.${rel[1]}"
+        rel.size > 1 && rel[0] !in known && rel[1] in layout.layerNames -> rel[0]
+        else -> null
     }
 }
 
@@ -47,16 +56,21 @@ internal object LayoutInference {
 
         val rels = all.map { it.drop(lcp.size) }.filter { it.isNotEmpty() }
         strict(rels, grandChildren)?.let { (slices, layers) ->
-            if (coverage(rels, slices.toSet(), layers) >= MIN_COVERAGE) return Layout(root, "SLICED", slices.sorted(), layers.sorted())
+            if (coverage(rels, slices.toSet(), layers) >= MIN_COVERAGE) return Layout(root, "SLICED", slices.sorted(), layers.sorted(), observed = observed(rels, slices))
         }
         val counts = grandChildren.values.flatten().groupingBy { it }.eachCount()
         val layerNames = counts.filterValues { it >= 2 }.keys
         val slices = grandChildren.filter { (_, names) -> names.any { it in layerNames } }.keys
         return if (slices.size >= 2 && coverage(rels, slices, layerNames) >= MIN_COVERAGE) {
-            Layout(root, "SLICED", slices.sorted(), layerNames.sorted())
+            Layout(root, "SLICED", slices.sorted(), layerNames.sorted(), observed = observed(rels, slices))
         } else {
             Layout(root, if (grandChildren.isEmpty()) "UNKNOWN" else "FLAT")
         }
+    }
+
+    private fun observed(rels: List<List<String>>, slices: Collection<String>): List<String> {
+        val groups = slices.filter { '.' in it }.map { it.substringBefore('.') }.toSet()
+        return rels.flatMap { rel -> listOfNotNull(rel[0], rel.getOrNull(1)?.takeIf { rel[0] in groups }?.let { "${rel[0]}.$it" }) }.distinct().sorted()
     }
 
     private fun repeated(parents: Map<String, Set<String>>): Set<String> =
@@ -99,6 +113,8 @@ internal object LayoutInference {
         if (layers.isEmpty()) return anchored(children, candidates)
         val top = qualified(children, layers).keys
         val nested = qualified(grand.filterKeys { it.substringBefore('.') !in top }, layers).keys
+        val siblings = listOf(top) + nested.groupBy { it.substringBefore('.') }.values
+        if (siblings.none { it.size >= 2 }) return null
         val slices = top + nested
         return if (slices.size >= 2) slices.toList() to layers else null
     }

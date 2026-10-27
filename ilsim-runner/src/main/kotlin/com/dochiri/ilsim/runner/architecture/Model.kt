@@ -9,6 +9,7 @@ data class Layout(
     val slices: List<String> = emptyList(),
     val layerNames: List<String> = emptyList(),
     val shared: List<String> = emptyList(),
+    val observed: List<String> = emptyList(),
 )
 
 @Serializable

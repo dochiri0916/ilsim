@@ -55,7 +55,7 @@ object ArchitectureMiner {
         rules += externalRules(unitFiles, externalsByUnit, deps)
         rules += confinementRules(deps, unitFiles.size)
         rules += sharedRules(deps, layout)
-        rules += crossSliceRules(crossDeps)
+        rules += crossSliceRules(crossDeps, layout, files.count { locator.locate(it.pkg).slice != null })
 
         if (layout.mode == "FLAT" && layers.size < 2) notes += "독립된 단위가 하나뿐이라 구조 규칙을 만들 수 없습니다"
         val applicability = ApplicabilityAssessor.assess(
@@ -175,8 +175,16 @@ object ArchitectureMiner {
         )
     }
 
-    private fun crossSliceRules(cross: List<Dep>): List<ArchRule> {
-        if (cross.isEmpty()) return emptyList()
+    private fun crossSliceRules(cross: List<Dep>, layout: Layout, sliceFiles: Int): List<ArchRule> {
+        if (layout.mode != "SLICED") return emptyList()
+        if (cross.isEmpty()) {
+            if (layout.slices.size < 2) return emptyList()
+            return listOf(
+                ArchRule("cross-slice-targets", "cross-slice-targets",
+                    "슬라이스끼리는 서로 의존하지 않는다 (관측: 슬라이스 ${layout.slices.size}개 ${sliceFiles}개 파일, 슬라이스 간 의존 0건)",
+                    mapOf("allowed" to emptyList()), if (sliceFiles >= 5) "BLOCK" else "REVIEW", Evidence(sliceFiles, sliceFiles)),
+            )
+        }
         val pairs = cross.map { "${it.from.unit}>${it.to!!.unit}" }.toSortedSet().toList()
         val files = cross.map { it.file.path }.distinct().size
         return listOf(

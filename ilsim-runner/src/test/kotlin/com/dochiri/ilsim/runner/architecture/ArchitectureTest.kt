@@ -280,4 +280,50 @@ class ArchitectureTest {
         val bad = project(*(base + tangled).toTypedArray(), kt("com.shop.x", "Z", "com.shop.controller.OrderController"))
         assertTrue(check(bad, m).none { it.file.contains("/x/") })
     }
+
+    @Test
+    fun `포트와 어댑터의 in·out 을 슬라이스 레이어로 오인하지 않는다`() {
+        val m = mine(project(
+            kt("com.acme.billing.domain", "Invoice"), kt("com.acme.billing.domain", "Money"),
+            kt("com.acme.billing.application.port.in", "PayUseCase", "com.acme.billing.domain.Invoice"),
+            kt("com.acme.billing.application.port.in", "IssueUseCase", "com.acme.billing.domain.Invoice"),
+            kt("com.acme.billing.application.port.out", "LoadPort", "com.acme.billing.domain.Invoice"),
+            kt("com.acme.billing.application.service", "PayService", "com.acme.billing.application.port.in.PayUseCase", "com.acme.billing.application.port.out.LoadPort"),
+            kt("com.acme.billing.application.service", "IssueService", "com.acme.billing.application.port.in.IssueUseCase", "com.acme.billing.application.port.out.LoadPort"),
+            kt("com.acme.billing.adapter.in.web", "PayController", "com.acme.billing.application.port.in.PayUseCase"),
+            kt("com.acme.billing.adapter.in.web", "IssueController", "com.acme.billing.application.port.in.IssueUseCase"),
+            kt("com.acme.billing.adapter.in.web", "InvoiceController", "com.acme.billing.application.port.in.IssueUseCase"),
+            kt("com.acme.billing.adapter.out.persistence", "LoadAdapter", "com.acme.billing.application.port.out.LoadPort"),
+            kt("com.acme.billing.adapter.out.persistence", "InvoiceEntity", "com.acme.billing.domain.Invoice"),
+        ))
+        assertEquals("FLAT", m.layout.mode)
+        assertTrue("forbid-edge:application>adapter" in m.rules.map { it.id })
+    }
+
+    @Test
+    fun `분석 뒤에 생긴 슬라이스는 공유 단위가 아니라 새 슬라이스로 본다`() {
+        val files = arrayOf(*slicedFiles(), kt("com.acme.common", "Clock"), kt("com.acme.common.web", "ErrorAdvice"))
+        val m = mine(project(*files))
+        val locator = Locator(m.layout)
+        assertEquals("shipping", locator.locate("com.acme.shipping.web").slice)
+        assertEquals("web", locator.locate("com.acme.shipping.web").unit)
+        assertEquals("shared:common", locator.locate("com.acme.common.web").unit)
+        val added = project(*files,
+            kt("com.acme.shipping.domain", "Parcel"),
+            kt("com.acme.shipping.service", "ParcelService", "com.acme.shipping.domain.Parcel", "org.springframework.stereotype.Service"),
+            kt("com.acme.shipping.web", "ParcelController", "com.acme.shipping.service.ParcelService", "org.springframework.web.bind"),
+        )
+        assertEquals(emptyList(), check(added, m))
+    }
+
+    @Test
+    fun `슬라이스끼리 의존한 적이 없으면 슬라이스 간 의존을 막는 규칙을 만든다`() {
+        val files = slicedFiles().filterNot { it.first.endsWith("/Pricing.kt") }.toTypedArray()
+        val m = mine(project(*files))
+        val rule = m.rules.first { it.id == "cross-slice-targets" }
+        assertEquals(emptyList(), rule.params["allowed"])
+        assertEquals("BLOCK", rule.proposedSeverity)
+        val bad = project(*files, kt("com.acme.billing.service", "Pricing", "com.acme.catalog.domain.Item"))
+        assertTrue(check(bad, m).any { it.ruleId == "cross-slice-targets" })
+    }
 }
