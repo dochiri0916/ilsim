@@ -1,0 +1,26 @@
+diff --git a/ilsim-server/src/main/kotlin/com/dochiri/ilsim/task/adapter/in/web/RunnerController.kt b/ilsim-server/src/main/kotlin/com/dochiri/ilsim/task/adapter/in/web/RunnerController.kt
+--- a/ilsim-server/src/main/kotlin/com/dochiri/ilsim/task/adapter/in/web/RunnerController.kt
++++ b/ilsim-server/src/main/kotlin/com/dochiri/ilsim/task/adapter/in/web/RunnerController.kt
+@@ -88,4 +88,10 @@ class RunnerController(
+     fun reopen(@PathVariable id: String, @RequestBody request: ReopenRequest) {
+         tasks.reopen(id, request.stage, request.feedback)
+     }
++
++    @DeleteMapping("/tasks/{id}")
++    @ResponseStatus(HttpStatus.NO_CONTENT)
++    fun delete(@PathVariable id: String) {
++        tasks.delete(id)
++    }
+ }
+diff --git a/ilsim-server/src/main/kotlin/com/dochiri/ilsim/task/application/TaskService.kt b/ilsim-server/src/main/kotlin/com/dochiri/ilsim/task/application/TaskService.kt
+--- a/ilsim-server/src/main/kotlin/com/dochiri/ilsim/task/application/TaskService.kt
++++ b/ilsim-server/src/main/kotlin/com/dochiri/ilsim/task/application/TaskService.kt
+@@ -140,4 +140,9 @@ class TaskService(
+         update(id) { it.reopen(Stage.valueOf(stage), feedback) }
+     }
++
++    override fun delete(id: String) {
++        val task = repository.find(TaskId(id)) ?: throw TaskNotFoundException(id)
++        repository.delete(task.id)
++    }
+ }

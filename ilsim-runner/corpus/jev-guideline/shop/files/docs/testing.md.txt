@@ -1,0 +1,16 @@
+# 테스트
+
+## 작성 방식
+
+- 테스트 메서드마다 `@DisplayName`으로 한국어 설명을 붙인다.
+- 본문은 `// given`, `// when`, `// then` 주석으로 나눈다.
+- 단언은 AssertJ(`assertThat`)만 쓴다.
+
+## 단위·통합
+
+- 단위 테스트는 `@SpringBootTest`를 쓰지 않는다. 통합 테스트 클래스 이름은 `~IntegrationTest`로 끝낸다.
+- 테스트에서 `Thread.sleep`을 쓰지 않는다.
+
+## 픽스처
+
+- 테스트 데이터는 `src/test/java/com/shop/fixture` 아래 `~Fixture` 클래스로 만든다.

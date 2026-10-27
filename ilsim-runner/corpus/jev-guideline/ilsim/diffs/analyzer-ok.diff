@@ -1,0 +1,26 @@
+diff --git a/code-risk-analyzer/src/main/java/com/dochiri/risk/detector/TransactionalHttpCallDetector.java b/code-risk-analyzer/src/main/java/com/dochiri/risk/detector/TransactionalHttpCallDetector.java
+new file mode 100644
+--- /dev/null
++++ b/code-risk-analyzer/src/main/java/com/dochiri/risk/detector/TransactionalHttpCallDetector.java
+@@ -0,0 +1,21 @@
++package com.dochiri.risk.detector;
++
++import com.dochiri.risk.model.Finding;
++import com.dochiri.risk.model.MethodFacts;
++import java.util.List;
++import java.util.Set;
++
++public final class TransactionalHttpCallDetector implements Detector {
++    private static final Set<String> HTTP_CLIENTS = Set.of("RestTemplate", "WebClient", "RestClient", "OkHttpClient");
++
++    @Override
++    public List<Finding> detect(MethodFacts method) {
++        if (!method.transactional()) {
++            return List.of();
++        }
++        return method.calls().stream()
++            .filter(call -> HTTP_CLIENTS.contains(call.receiverType()))
++            .map(call -> Finding.of("TX-HTTP-001", method, call.line(), "트랜잭션 안에서 외부 HTTP를 호출합니다"))
++            .toList();
++    }
++}

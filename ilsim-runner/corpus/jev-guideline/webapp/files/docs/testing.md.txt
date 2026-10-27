@@ -1,0 +1,7 @@
+# 테스트
+
+## 규칙
+
+- 테스트 파일은 컴포넌트 옆에 `<이름>.test.tsx`로 둔다.
+- 요소는 `getByRole`·`getByLabelText`로 찾는다. `getByTestId`는 쓰지 않는다.
+- 스냅샷 테스트는 쓰지 않는다.

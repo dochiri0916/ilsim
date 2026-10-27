@@ -1,0 +1,299 @@
+{
+  "modules": [
+    "build-convention",
+    "code-risk-analyzer",
+    "ilsim-runner",
+    "ilsim-server"
+  ],
+  "documents": {
+    "AGENTS.md": {
+      "file": "files/AGENTS.md.txt"
+    },
+    "build-convention/AGENTS.md": {
+      "file": "files/build-convention/AGENTS.md.txt",
+      "module": "build-convention"
+    },
+    "code-risk-analyzer/README.md": {
+      "file": "files/code-risk-analyzer/README.md.txt",
+      "module": "code-risk-analyzer"
+    },
+    "docs/repository.md": {
+      "file": "files/docs/repository.md.txt"
+    },
+    "specs/hook-quoted-redirect/requirements.md": {
+      "file": "files/specs/hook-quoted-redirect/requirements.md.txt",
+      "module": "ilsim-runner",
+      "feature": "hook-quote"
+    }
+  },
+  "requests": [
+    {
+      "id": "worktree",
+      "text": "Bash 훅이 활성 작업 중에도 `git worktree add`와 `git worktree list`를 허용하게 바꾼다.",
+      "modules": [
+        "ilsim-runner"
+      ]
+    },
+    {
+      "id": "analyzer-rule",
+      "text": "코드 위험 분석기에 트랜잭션 안에서 외부 HTTP를 호출하는 코드를 찾는 규칙을 추가한다.",
+      "modules": [
+        "code-risk-analyzer"
+      ]
+    },
+    {
+      "id": "server-delete",
+      "text": "서버에 작업을 삭제하는 Runner API(DELETE /runner/api/tasks/{id})를 추가한다.",
+      "modules": [
+        "ilsim-server"
+      ]
+    },
+    {
+      "id": "bc-test-names",
+      "text": "build-convention 플러그인에 테스트 메서드 이름 형식을 검사하는 검증 규칙을 추가한다.",
+      "modules": [
+        "build-convention"
+      ]
+    },
+    {
+      "id": "quote-ansi",
+      "text": "Bash 훅의 따옴표 판단에서 $'...'(ANSI-C 따옴표) 안의 글자도 따옴표 안으로 본다.",
+      "modules": [
+        "ilsim-runner"
+      ],
+      "features": [
+        "hook-quote"
+      ]
+    }
+  ],
+  "sections": {
+    "AGENTS.md:1": {
+      "rule": null,
+      "note": "저장소 소개와 모듈 설명(일부 규칙성 문장)"
+    },
+    "AGENTS.md:10": {
+      "rule": true
+    },
+    "AGENTS.md:24": {
+      "rule": null,
+      "note": "응답 형식(코드가 아닌 보고 형식)"
+    },
+    "AGENTS.md:33": {
+      "rule": null,
+      "note": "전체 검증 절차"
+    },
+    "build-convention/AGENTS.md:1": {
+      "rule": null,
+      "note": "적용 범위 소개"
+    },
+    "build-convention/AGENTS.md:14": {
+      "rule": true
+    },
+    "build-convention/AGENTS.md:21": {
+      "rule": true
+    },
+    "build-convention/AGENTS.md:35": {
+      "rule": true
+    },
+    "build-convention/AGENTS.md:53": {
+      "rule": true
+    },
+    "build-convention/AGENTS.md:68": {
+      "rule": true
+    },
+    "build-convention/AGENTS.md:82": {
+      "rule": true
+    },
+    "build-convention/AGENTS.md:96": {
+      "rule": true
+    },
+    "build-convention/AGENTS.md:110": {
+      "rule": true
+    },
+    "build-convention/AGENTS.md:120": {
+      "rule": null,
+      "note": "완료 전 검증 절차"
+    },
+    "code-risk-analyzer/README.md:1": {
+      "rule": false
+    },
+    "docs/repository.md:3": {
+      "rule": false,
+      "note": "빌드 안내"
+    },
+    "docs/repository.md:16": {
+      "rule": null,
+      "note": "푸시·병합 방식 같은 작업 규칙이 섞인 이력 구간"
+    },
+    "specs/hook-quoted-redirect/requirements.md:3": {
+      "rule": false,
+      "note": "배경"
+    },
+    "specs/hook-quoted-redirect/requirements.md:7": {
+      "rule": true
+    },
+    "specs/hook-quoted-redirect/requirements.md:24": {
+      "rule": true
+    },
+    "specs/hook-quoted-redirect/requirements.md:31": {
+      "rule": true
+    },
+    "specs/hook-quoted-redirect/requirements.md:37": {
+      "rule": false,
+      "note": "미결정"
+    }
+  },
+  "references": [
+    {
+      "request": "analyzer-rule",
+      "section": "AGENTS.md:10",
+      "target": "code-risk-analyzer/docs/reference/analysis.md",
+      "required": true,
+      "forbidden": false
+    },
+    {
+      "request": "worktree",
+      "section": "AGENTS.md:10",
+      "target": "code-risk-analyzer/docs/reference/analysis.md",
+      "required": false,
+      "forbidden": false
+    },
+    {
+      "request": "server-delete",
+      "section": "AGENTS.md:10",
+      "target": "code-risk-analyzer/docs/reference/analysis.md",
+      "required": false,
+      "forbidden": false
+    },
+    {
+      "request": "worktree",
+      "section": "AGENTS.md:10",
+      "target": "docs/handoff.md",
+      "required": false,
+      "forbidden": true
+    },
+    {
+      "request": "server-delete",
+      "section": "AGENTS.md:10",
+      "target": "docs/handoff.md",
+      "required": false,
+      "forbidden": true
+    },
+    {
+      "request": "bc-test-names",
+      "section": "AGENTS.md:33",
+      "target": "docs/repository.md",
+      "required": false,
+      "forbidden": false
+    }
+  ],
+  "diffs": [
+    {
+      "id": "worktree-ok",
+      "request": "worktree",
+      "file": "diffs/worktree-ok.diff"
+    },
+    {
+      "id": "worktree-comment",
+      "request": "worktree",
+      "file": "diffs/worktree-comment.diff",
+      "violates": [
+        "AGENTS.md:10"
+      ]
+    },
+    {
+      "id": "worktree-abs-path",
+      "request": "worktree",
+      "file": "diffs/worktree-abs-path.diff",
+      "violates": [
+        "AGENTS.md:10"
+      ]
+    },
+    {
+      "id": "server-ok",
+      "request": "server-delete",
+      "file": "diffs/server-ok.diff"
+    },
+    {
+      "id": "server-handoff",
+      "request": "server-delete",
+      "file": "diffs/server-handoff.diff",
+      "violates": [
+        "AGENTS.md:10"
+      ]
+    },
+    {
+      "id": "analyzer-ok",
+      "request": "analyzer-rule",
+      "file": "diffs/analyzer-ok.diff"
+    },
+    {
+      "id": "analyzer-version",
+      "request": "analyzer-rule",
+      "file": "diffs/analyzer-version.diff",
+      "violates": [
+        "AGENTS.md:10"
+      ]
+    },
+    {
+      "id": "bc-ok",
+      "request": "bc-test-names",
+      "file": "diffs/bc-ok.diff"
+    },
+    {
+      "id": "bc-weaken",
+      "request": "bc-test-names",
+      "file": "diffs/bc-weaken.diff",
+      "violates": [
+        "build-convention/AGENTS.md:35",
+        "build-convention/AGENTS.md:21",
+        "AGENTS.md:10"
+      ]
+    },
+    {
+      "id": "bc-ignore-failures",
+      "request": "bc-test-names",
+      "file": "diffs/bc-ignore-failures.diff",
+      "violates": [
+        "build-convention/AGENTS.md:35",
+        "build-convention/AGENTS.md:53",
+        "build-convention/AGENTS.md:21",
+        "AGENTS.md:10"
+      ]
+    },
+    {
+      "id": "bc-test-positive-only",
+      "request": "bc-test-names",
+      "file": "diffs/bc-test-positive-only.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "build-convention/AGENTS.md:21",
+        "build-convention/AGENTS.md:110"
+      ]
+    },
+    {
+      "id": "quote-ansi-ok",
+      "request": "quote-ansi",
+      "file": "diffs/quote-ansi-ok.diff"
+    },
+    {
+      "id": "quote-ansi-unclosed",
+      "request": "quote-ansi",
+      "file": "diffs/quote-ansi-unclosed.diff",
+      "violates": [
+        "specs/hook-quoted-redirect/requirements.md:7",
+        "AGENTS.md:10"
+      ]
+    },
+    {
+      "id": "quote-ansi-git-change",
+      "request": "quote-ansi",
+      "file": "diffs/quote-ansi-git-change.diff",
+      "violates": [
+        "specs/hook-quoted-redirect/requirements.md:7",
+        "specs/hook-quoted-redirect/requirements.md:31",
+        "AGENTS.md:10"
+      ]
+    }
+  ]
+}

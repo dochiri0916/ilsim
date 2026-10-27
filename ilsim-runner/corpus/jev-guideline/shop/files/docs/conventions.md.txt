@@ -1,0 +1,24 @@
+# 코드 컨벤션
+
+## 의존성 주입
+
+- 생성자 주입만 쓴다. 필드에 `@Autowired`를 붙이지 않는다.
+- 주입받는 필드는 `private final`로 선언한다.
+
+## 이름
+
+- 요청 DTO는 `~Request`, 응답 DTO는 `~Response`로 끝낸다.
+- 서비스 클래스는 `~Service`, 리포지토리는 `~Repository`로 끝낸다.
+
+## 예외
+
+- 비즈니스 예외는 `ShopException`을 상속하거나 그대로 쓰고 `ErrorCode`를 가진다.
+- `RuntimeException`이나 `IllegalStateException`을 직접 던지지 않는다.
+
+## 로깅
+
+- `System.out`·`printStackTrace`를 쓰지 않고 SLF4J 로거를 쓴다.
+
+## Lombok
+
+- Lombok은 쓰지 않는다.

@@ -1,0 +1,210 @@
+{
+  "documents": {
+    "README.md": {
+      "file": "files/README.md.txt"
+    },
+    "CONTRIBUTING.md": {
+      "file": "files/CONTRIBUTING.md.txt"
+    },
+    "docs/architecture.md": {
+      "file": "files/docs/architecture.md.txt"
+    },
+    "docs/testing.md": {
+      "file": "files/docs/testing.md.txt"
+    },
+    "docs/spec/login.md": {
+      "file": "files/docs/spec/login.md.txt",
+      "feature": "login"
+    },
+    "docs/spec/profile.md": {
+      "file": "files/docs/spec/profile.md.txt",
+      "feature": "profile"
+    },
+    "docs/roadmap.md": {
+      "file": "files/docs/roadmap.md.txt"
+    }
+  },
+  "requests": [
+    {
+      "id": "login-lockout",
+      "text": "로그인을 5번 연속 실패하면 잠시 로그인을 막는 기능을 추가한다.",
+      "features": [
+        "login"
+      ]
+    },
+    {
+      "id": "profile-nickname",
+      "text": "프로필 화면에서 닉네임을 수정하는 기능을 추가한다.",
+      "features": [
+        "profile"
+      ]
+    }
+  ],
+  "sections": {
+    "README.md:1": {
+      "rule": false
+    },
+    "README.md:5": {
+      "rule": false
+    },
+    "CONTRIBUTING.md:3": {
+      "rule": true
+    },
+    "CONTRIBUTING.md:9": {
+      "rule": true
+    },
+    "CONTRIBUTING.md:14": {
+      "rule": null,
+      "note": "커밋 규칙이라 코드 diff로 판정할 수 없음"
+    },
+    "docs/architecture.md:3": {
+      "rule": true
+    },
+    "docs/architecture.md:9": {
+      "rule": true
+    },
+    "docs/testing.md:3": {
+      "rule": true
+    },
+    "docs/spec/login.md:3": {
+      "rule": true
+    },
+    "docs/spec/login.md:8": {
+      "rule": false,
+      "note": "결정 대기"
+    },
+    "docs/spec/profile.md:3": {
+      "rule": true
+    },
+    "docs/roadmap.md:3": {
+      "rule": false
+    }
+  },
+  "diffs": [
+    {
+      "id": "lockout-ok",
+      "request": "login-lockout",
+      "file": "diffs/lockout-ok.diff"
+    },
+    {
+      "id": "lockout-fetch",
+      "request": "login-lockout",
+      "file": "diffs/lockout-fetch.diff",
+      "violates": [
+        "CONTRIBUTING.md:9"
+      ]
+    },
+    {
+      "id": "lockout-default-export",
+      "request": "login-lockout",
+      "file": "diffs/lockout-default-export.diff",
+      "violates": [
+        "CONTRIBUTING.md:3"
+      ]
+    },
+    {
+      "id": "lockout-inline-style",
+      "request": "login-lockout",
+      "file": "diffs/lockout-inline-style.diff",
+      "violates": [
+        "CONTRIBUTING.md:3"
+      ]
+    },
+    {
+      "id": "lockout-three",
+      "request": "login-lockout",
+      "file": "diffs/lockout-three.diff",
+      "violates": [
+        "docs/spec/login.md:3"
+      ]
+    },
+    {
+      "id": "lockout-message",
+      "request": "login-lockout",
+      "file": "diffs/lockout-message.diff",
+      "violates": [
+        "docs/spec/login.md:3"
+      ]
+    },
+    {
+      "id": "lockout-feature-import",
+      "request": "login-lockout",
+      "file": "diffs/lockout-feature-import.diff",
+      "violates": [
+        "docs/architecture.md:3"
+      ]
+    },
+    {
+      "id": "lockout-class",
+      "request": "login-lockout",
+      "file": "diffs/lockout-class.diff",
+      "violates": [
+        "CONTRIBUTING.md:3",
+        "docs/architecture.md:9"
+      ]
+    },
+    {
+      "id": "lockout-redux",
+      "request": "login-lockout",
+      "file": "diffs/lockout-redux.diff",
+      "violates": [
+        "docs/architecture.md:9"
+      ]
+    },
+    {
+      "id": "lockout-test-ok",
+      "request": "login-lockout",
+      "file": "diffs/lockout-test-ok.diff",
+      "stage": "TEST_CODE"
+    },
+    {
+      "id": "lockout-test-testid",
+      "request": "login-lockout",
+      "file": "diffs/lockout-test-testid.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "docs/testing.md:3"
+      ]
+    },
+    {
+      "id": "lockout-test-snapshot",
+      "request": "login-lockout",
+      "file": "diffs/lockout-test-snapshot.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "docs/testing.md:3"
+      ]
+    },
+    {
+      "id": "lockout-test-location",
+      "request": "login-lockout",
+      "file": "diffs/lockout-test-location.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "docs/testing.md:3"
+      ]
+    },
+    {
+      "id": "nickname-ok",
+      "request": "profile-nickname",
+      "file": "diffs/nickname-ok.diff"
+    },
+    {
+      "id": "nickname-range",
+      "request": "profile-nickname",
+      "file": "diffs/nickname-range.diff",
+      "violates": [
+        "docs/spec/profile.md:3"
+      ]
+    },
+    {
+      "id": "nickname-axios",
+      "request": "profile-nickname",
+      "file": "diffs/nickname-axios.diff",
+      "violates": [
+        "CONTRIBUTING.md:9",
+        "docs/architecture.md:9"
+      ]
+    }
+  ]
+}

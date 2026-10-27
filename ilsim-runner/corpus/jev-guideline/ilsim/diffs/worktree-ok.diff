@@ -1,0 +1,8 @@
+diff --git a/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt b/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
+--- a/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
++++ b/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
+@@ -27,7 +27,7 @@ object Hooks {
+     private val gitChange = Regex("""(^|[\s;&|(])git\s+(commit|reset|rebase|cherry-pick|revert|restore|stash(?!\s+(list|show)))\b""")
+-    private val gitIdle = Regex("""(^|[\s;&|(])git\s+(push|pull|merge|checkout|switch|worktree|branch\s+-[dDm])\b""")
++    private val gitIdle = Regex("""(^|[\s;&|(])git\s+(push|pull|merge|checkout|switch|worktree(?!\s+(add|list)\b)|branch\s+-[dDm])\b""")
+     private val redirect = Regex(""">{1,2}\s*(\S+)""")

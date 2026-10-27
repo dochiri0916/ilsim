@@ -1,0 +1,14 @@
+diff --git a/src/main/java/demo/Names.java b/src/main/java/demo/Names.java
+index 4c5d6e7..8f9a0b1 100644
+--- a/src/main/java/demo/Names.java
++++ b/src/main/java/demo/Names.java
+@@ -5,6 +5,9 @@ public final class Names {
+         String trimmed = name == null ? "" : name.trim();
+         if (trimmed.isEmpty()) {
+             throw new IllegalArgumentException("name must not be blank");
+         }
++        if (trimmed.length() > 20) {
++            throw new IllegalArgumentException("name must be at most 20 characters");
++        }
+         return trimmed;
+     }

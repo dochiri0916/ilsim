@@ -108,6 +108,7 @@ claude plugin marketplace update ilsim && claude plugin update ilsim@ilsim
 - 제출할 때마다 고른 지침을 어겼는지 JEV로 판정해 어기면 제출이 실패한다. 판정이 애매하거나 JEV를 쓸 수 없으면 구현 단계에서 지침을 넣은 독립 검토를 한다.
 - 문서에 적힌 규칙 중 기계적으로 확인되는 것(이름 형식, 필수·금지 애너테이션, 금지 import·코드, 파일 위치, 크기 제한 등)은 `analyze_project`(`convention <id>`) 때 정적 규칙(`doc:`)으로 옮긴다. Claude가 옮기고 JEV가 원문과 같은지 판정하며, 승인하면 제출 때 바꾼 코드에 새로 생기는 위반을 막는다. 옮기지 못한 문장은 위 JEV 판정으로 확인한다(Java·Kotlin).
 - `ilsim-runner guidelines <id> "<요청>" [기준 Git ref]`로 JEV가 고르는 지침과 점수, 작업 트리 diff의 위반 판정을 미리 볼 수 있다.
+- `ilsim-runner jev-eval guidelines`는 정답이 있는 평가 세트(`ilsim-runner/corpus/jev-guideline`: 실제·가상 프로젝트 4개의 문서·요청·변경·문서 규칙 후보)로 운영과 같은 JEV 질문의 정확도를 재고, 질문별 놓침·오경보와 기준값 제안을 보인다(`--repeat`로 반복 안정성, `--sections`로 구간 정답 확인).
 - 문서 목록은 `ilsim-runner docs <id>`로 보고, `docs add <id> <경로>`(저장소 밖 파일·폴더 가능)·`docs exclude <id> <경로>`·`docs remove <id> <경로>`로 고친다.
 
 ## 아키텍처·컨벤션 추천

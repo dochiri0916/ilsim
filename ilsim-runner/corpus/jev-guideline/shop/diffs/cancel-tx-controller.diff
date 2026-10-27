@@ -1,0 +1,92 @@
+diff --git a/src/main/java/com/shop/order/web/OrderController.java b/src/main/java/com/shop/order/web/OrderController.java
+--- a/src/main/java/com/shop/order/web/OrderController.java
++++ b/src/main/java/com/shop/order/web/OrderController.java
+@@ -14,2 +14,8 @@
+     private final OrderService orderService;
+     private final OrderCancelService orderCancelService;
++    @Transactional
++    @PostMapping("/orders/{orderId}/cancel")
++    public CancelOrderResponse cancel(@PathVariable Long orderId) {
++        Order order = orderCancelService.cancel(orderId);
++        return CancelOrderResponse.from(order);
++    }
+diff --git a/src/main/java/com/shop/order/web/CancelOrderResponse.java b/src/main/java/com/shop/order/web/CancelOrderResponse.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/shop/order/web/CancelOrderResponse.java
+@@ -0,0 +1,10 @@
++package com.shop.order.web;
++
++import com.shop.order.domain.Order;
++
++public record CancelOrderResponse(Long orderId, String status, long refundedAmount) {
++
++    public static CancelOrderResponse from(Order order) {
++        return new CancelOrderResponse(order.getId(), order.getStatus().name(), order.getPaidAmount());
++    }
++}
+diff --git a/src/main/java/com/shop/order/application/OrderCancelService.java b/src/main/java/com/shop/order/application/OrderCancelService.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/shop/order/application/OrderCancelService.java
+@@ -0,0 +1,29 @@
++package com.shop.order.application;
++
++import com.shop.common.ErrorCode;
++import com.shop.common.ShopException;
++import com.shop.order.domain.Order;
++import com.shop.order.domain.OrderRepository;
++import com.shop.order.domain.PaymentPort;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++
++@Service
++public class OrderCancelService {
++    private final OrderRepository orderRepository;
++    private final PaymentPort paymentPort;
++
++    public OrderCancelService(OrderRepository orderRepository, PaymentPort paymentPort) {
++        this.orderRepository = orderRepository;
++        this.paymentPort = paymentPort;
++    }
++
++    @Transactional
++    public Order cancel(Long orderId) {
++        Order order = orderRepository.findById(orderId)
++            .orElseThrow(() -> new ShopException(ErrorCode.ORDER_NOT_FOUND));
++        order.cancel();
++        paymentPort.refund(order.getPaymentId(), order.getPaidAmount());
++        return order;
++    }
++}
+diff --git a/src/main/java/com/shop/order/domain/Order.java b/src/main/java/com/shop/order/domain/Order.java
+--- a/src/main/java/com/shop/order/domain/Order.java
++++ b/src/main/java/com/shop/order/domain/Order.java
+@@ -40,3 +40,9 @@
+     public long getPaidAmount() {
+         return paidAmount;
+     }
++    public void cancel() {
++        if (status != OrderStatus.PAID) {
++            throw new ShopException(ErrorCode.ORDER_NOT_CANCELLABLE);
++        }
++        status = OrderStatus.CANCELLED;
++    }
+diff --git a/src/main/java/com/shop/common/ErrorCode.java b/src/main/java/com/shop/common/ErrorCode.java
+--- a/src/main/java/com/shop/common/ErrorCode.java
++++ b/src/main/java/com/shop/common/ErrorCode.java
+@@ -5,2 +5,3 @@
+     ORDER_NOT_FOUND,
++    ORDER_NOT_CANCELLABLE,
+     COUPON_EXPIRED,
+diff --git a/src/main/java/com/shop/order/domain/PaymentPort.java b/src/main/java/com/shop/order/domain/PaymentPort.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/shop/order/domain/PaymentPort.java
+@@ -0,0 +1,6 @@
++package com.shop.order.domain;
++
++public interface PaymentPort {
++
++    void refund(String paymentId, long amount);
++}

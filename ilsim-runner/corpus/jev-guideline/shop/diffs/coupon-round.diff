@@ -1,0 +1,37 @@
+diff --git a/src/main/java/com/shop/coupon/application/CouponApplyService.java b/src/main/java/com/shop/coupon/application/CouponApplyService.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/shop/coupon/application/CouponApplyService.java
+@@ -0,0 +1,32 @@
++package com.shop.coupon.application;
++
++import com.shop.common.ErrorCode;
++import com.shop.common.ShopException;
++import com.shop.coupon.domain.Coupon;
++import com.shop.coupon.domain.CouponRepository;
++import java.time.Clock;
++import java.time.LocalDate;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++
++@Service
++public class CouponApplyService {
++    private final CouponRepository couponRepository;
++    private final Clock clock;
++
++    public CouponApplyService(CouponRepository couponRepository, Clock clock) {
++        this.couponRepository = couponRepository;
++        this.clock = clock;
++    }
++
++    @Transactional
++    public long apply(Long couponId, Long orderId, long price) {
++        Coupon coupon = couponRepository.findById(couponId)
++            .orElseThrow(() -> new ShopException(ErrorCode.COUPON_NOT_FOUND));
++        if (coupon.getExpiresAt().isBefore(LocalDate.now(clock))) {
++            throw new ShopException(ErrorCode.COUPON_EXPIRED);
++        }
++        coupon.use(orderId);
++        return Math.round(price * coupon.getRatePercent() / 100.0);
++    }
++}

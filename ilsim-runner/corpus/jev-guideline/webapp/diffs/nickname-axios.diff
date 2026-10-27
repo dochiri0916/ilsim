@@ -1,0 +1,23 @@
+diff --git a/src/features/profile/NicknameForm.tsx b/src/features/profile/NicknameForm.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/profile/NicknameForm.tsx
+@@ -0,0 +1,19 @@
++import { useState } from 'react';
++import styles from './NicknameForm.module.css';
++import axios from 'axios';
++
++const MIN = 2;
++const MAX = 12;
++
++export function NicknameForm({ initial }: { initial: string }) {
++  const [nickname, setNickname] = useState(initial);
+++  const valid = nickname.length >= MIN && nickname.length <= MAX;
++
++  return (
++    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); axios.put('/api/me/nickname', { nickname }); }}>
++      <label>닉네임<input value={nickname} onChange={(event) => setNickname(event.target.value)} /></label>
++      <button type="submit" disabled={!valid}>저장</button>
++    </form>
++  );
++}

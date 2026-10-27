@@ -1,0 +1,267 @@
+{
+  "documents": {
+    "README.md": {
+      "file": "files/README.md.txt"
+    },
+    "docs/conventions.md": {
+      "file": "files/docs/conventions.md.txt"
+    },
+    "docs/spec/greetings.md": {
+      "file": "files/docs/spec/greetings.md.txt"
+    },
+    "docs/release.md": {
+      "file": "files/docs/release.md.txt"
+    }
+  },
+  "requests": [
+    {
+      "id": "goodbye",
+      "text": "작별 인사 기능을 추가한다. Greeter에 goodbye(name) 메서드를 만들고 테스트한다.",
+      "features": [
+        "greeting",
+        "name"
+      ]
+    },
+    {
+      "id": "name-length",
+      "text": "이름이 20자를 넘으면 IllegalArgumentException을 던지도록 이름 검증을 바꾼다.",
+      "features": [
+        "name"
+      ]
+    }
+  ],
+  "sections": {
+    "README.md:1": {
+      "rule": false
+    },
+    "README.md:5": {
+      "rule": false
+    },
+    "docs/conventions.md:3": {
+      "rule": true
+    },
+    "docs/conventions.md:7": {
+      "rule": true
+    },
+    "docs/conventions.md:11": {
+      "rule": true
+    },
+    "docs/conventions.md:16": {
+      "rule": true
+    },
+    "docs/spec/greetings.md:3": {
+      "rule": true,
+      "feature": "greeting"
+    },
+    "docs/spec/greetings.md:9": {
+      "rule": true,
+      "feature": "name"
+    },
+    "docs/release.md:3": {
+      "rule": false,
+      "note": "배포 절차 안내"
+    },
+    "docs/release.md:8": {
+      "rule": false
+    }
+  },
+  "diffs": [
+    {
+      "id": "goodbye-ok",
+      "request": "goodbye",
+      "file": "diffs/goodbye-ok.diff"
+    },
+    {
+      "id": "goodbye-literal",
+      "request": "goodbye",
+      "file": "diffs/goodbye-literal.diff",
+      "violates": [
+        "docs/conventions.md:3"
+      ]
+    },
+    {
+      "id": "goodbye-own-trim",
+      "request": "goodbye",
+      "file": "diffs/goodbye-own-trim.diff",
+      "violates": [
+        "docs/conventions.md:7"
+      ]
+    },
+    {
+      "id": "goodbye-println",
+      "request": "goodbye",
+      "file": "diffs/goodbye-println.diff",
+      "violates": [
+        "docs/conventions.md:16"
+      ]
+    },
+    {
+      "id": "goodbye-exclamation",
+      "request": "goodbye",
+      "file": "diffs/goodbye-exclamation.diff",
+      "violates": [
+        "docs/spec/greetings.md:3"
+      ]
+    },
+    {
+      "id": "goodbye-wrong-exception",
+      "request": "goodbye",
+      "file": "diffs/goodbye-wrong-exception.diff",
+      "violates": [
+        "docs/conventions.md:7",
+        "docs/spec/greetings.md:9"
+      ]
+    },
+    {
+      "id": "goodbye-test-ok",
+      "request": "goodbye",
+      "stage": "TEST_CODE",
+      "file": "diffs/goodbye-test-ok.diff"
+    },
+    {
+      "id": "goodbye-test-no-displayname",
+      "request": "goodbye",
+      "stage": "TEST_CODE",
+      "file": "diffs/goodbye-test-no-displayname.diff",
+      "violates": [
+        "docs/conventions.md:11"
+      ]
+    },
+    {
+      "id": "goodbye-test-combined",
+      "request": "goodbye",
+      "stage": "TEST_CODE",
+      "file": "diffs/goodbye-test-combined.diff",
+      "violates": [
+        "docs/conventions.md:11"
+      ]
+    },
+    {
+      "id": "goodbye-test-english",
+      "request": "goodbye",
+      "stage": "TEST_CODE",
+      "file": "diffs/goodbye-test-english.diff",
+      "violates": [
+        "docs/conventions.md:11"
+      ]
+    },
+    {
+      "id": "name-length-ok",
+      "request": "name-length",
+      "file": "diffs/name-length-ok.diff"
+    },
+    {
+      "id": "name-length-in-greeter",
+      "request": "name-length",
+      "file": "diffs/name-length-in-greeter.diff",
+      "violates": [
+        "docs/conventions.md:7"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "section": "docs/conventions.md:11",
+      "kind": "doc-required-annotation",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "target": [
+          "test-method"
+        ],
+        "annotation": [
+          "DisplayName"
+        ]
+      },
+      "description": "테스트 메서드마다 @DisplayName 을 붙인다",
+      "quote": "테스트 메서드마다 `@DisplayName`으로 한국어 설명을 붙인다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:11",
+      "kind": "doc-required-annotation",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "target": [
+          "method"
+        ],
+        "annotation": [
+          "DisplayName"
+        ]
+      },
+      "description": "모든 메서드에 @DisplayName 을 붙인다",
+      "quote": "테스트 메서드마다 `@DisplayName`으로 한국어 설명을 붙인다.",
+      "faithful": false,
+      "note": "대상을 모든 메서드로 넓힘"
+    },
+    {
+      "section": "docs/conventions.md:16",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "pattern": [
+          "System\\.out"
+        ]
+      },
+      "description": "System.out 을 쓰지 않는다",
+      "quote": "`System.out` 출력 금지.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:16",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "pattern": [
+          "System\\.(out|err)"
+        ]
+      },
+      "description": "System.out 과 System.err 를 쓰지 않는다",
+      "quote": "`System.out` 출력 금지.",
+      "faithful": false,
+      "note": "System.err 를 더함"
+    },
+    {
+      "section": "docs/conventions.md:3",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "pattern": [
+          "\"(Hello|Good morning)"
+        ]
+      },
+      "description": "프로덕트 코드에 인사말 문자열을 쓰지 않는다",
+      "quote": "인사말(`Hello`, `Good morning` 등)은 메서드 안에 문자열로 쓰지 않고",
+      "faithful": false,
+      "note": "Messages 상수 선언까지 막음"
+    },
+    {
+      "section": "docs/conventions.md:7",
+      "kind": "doc-required-code",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "target": [
+          "method"
+        ],
+        "pattern": [
+          "Names\\.normalize"
+        ]
+      },
+      "description": "모든 메서드는 Names.normalize 를 호출한다",
+      "quote": "각 인사 메서드는 이 메서드를 호출한다.",
+      "faithful": false,
+      "note": "인사 메서드만이 아니라 모든 메서드로 넓힘"
+    }
+  ]
+}

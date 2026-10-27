@@ -20,7 +20,7 @@ import kotlinx.serialization.json.jsonObject
 
 object DocRules {
     const val PREFIX = "doc:"
-    const val FAITHFUL = 0.5
+    const val FAITHFUL = 0.3
     const val MAX_PROMPT_CHARS = 24_000
     private const val VERSION = "doc-rules-v1"
     private const val MAX_REMAINING = 20
@@ -179,7 +179,7 @@ object DocRules {
         return q.isNotEmpty() && q in squash(text)
     }
 
-    private fun verify(jev: Jev, proposals: List<Proposal>): Map<Proposal, Double>? {
+    internal fun verify(jev: Jev, proposals: List<Proposal>): Map<Proposal, Double>? {
         if (proposals.isEmpty()) return emptyMap()
         if (!jev.enabled) return null
         val out = mutableMapOf<Proposal, Double>()

@@ -21,6 +21,7 @@ import com.dochiri.ilsim.runner.document.DocumentContext
 import com.dochiri.ilsim.runner.document.ProjectDocs
 import com.dochiri.ilsim.runner.jev.Guidelines
 import com.dochiri.ilsim.runner.jev.Jev
+import com.dochiri.ilsim.runner.jev.JevGuidelineEval
 import com.dochiri.ilsim.runner.jev.JevRequirementEval
 import com.dochiri.ilsim.runner.jev.JevRiskEval
 import com.dochiri.ilsim.runner.mcp.ActiveTasks
@@ -96,6 +97,7 @@ private const val USAGE = """사용법:
     ilsim-runner jev-eval [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 사례로 JEV 위험 선별 평가 (코드 발췌가 TypeSafe로 전송, --agent는 Claude 비교)
     ilsim-runner jev-eval --project <경로>... [--limit <n>] [--agent]   실제 코드 후보에서 판단이 갈린 것만 추림 (라벨 없음)
     ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
+    ilsim-runner jev-eval guidelines [--data <폴더>] [--repeat <n>] [--out <파일>] [--sections]   정답 있는 문서·요청·변경으로 지침 선택·위반·문서 규칙 판정 평가
   Claude 앱
     ilsim-runner mcp                             일심 MCP 서버(stdio). Claude 앱 플러그인이 실행한다
     ilsim-runner hook user-prompt-submit|pre-tool-use|stop   Claude 앱 훅(표준 입력으로 훅 JSON)
@@ -135,7 +137,7 @@ fun main(args: Array<String>) {
         "mcp" -> mcp(store)
         "jev-key" -> jevKey(store, args)
         "hook" -> hook(store, args)
-        "jev-eval" -> jevEval(args)
+        "jev-eval" -> jevEval(store, args)
         else -> { println(USAGE); exitProcess(1) }
     }
 }
@@ -638,9 +640,10 @@ private fun jevCheck() {
     println("JEV 연결 확인: 응답 확률 ${"%.2f".format(p)} (1에 가까울수록 정상)")
 }
 
-private fun jevEval(args: Array<String>) {
+private fun jevEval(store: ConfigStore, args: Array<String>) {
     val rest = args.drop(1)
     fun option(name: String) = rest.zipWithNext().firstOrNull { it.first == name }?.second
+    if (rest.firstOrNull() == "guidelines") return guidelineEval(store, rest, option("--data"), option("--repeat"), option("--out"))
     val jev = Jev.uncached()
     if (!jev.enabled) { println("JEV 키가 없습니다. 환경 변수 TYPESAFE_API_KEY 를 설정하세요"); exitProcess(1) }
     val repeat = option("--repeat")?.toIntOrNull()?.coerceIn(1, 5) ?: 1
@@ -666,6 +669,28 @@ private fun jevEval(args: Array<String>) {
     println(if (projects.isEmpty()) JevRiskEval.report(samples, runs) else JevRiskEval.disagreements(samples, runs))
     cost.summary()?.let(::println)
     save(JevRiskEval.toJson(samples, runs))
+}
+
+private fun guidelineEval(store: ConfigStore, rest: List<String>, data: String?, repeat: String?, out: String?) {
+    val dir = Path.of(data ?: "ilsim-runner/corpus/jev-guideline").toAbsolutePath().normalize()
+    val projects = JevGuidelineEval.load(dir)
+    if (projects.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
+    val problems = projects.flatMap(JevGuidelineEval::problems)
+    if ("--sections" in rest) {
+        projects.forEach { print(JevGuidelineEval.sections(it)) }
+        problems.forEach(::println)
+        return
+    }
+    if (problems.isNotEmpty()) { problems.forEach(::println); exitProcess(1) }
+    loadJevKey(store, store.load())
+    if (!Jev.uncached().enabled) { println("JEV 키가 없습니다. ilsim-runner jev-key set 으로 등록하세요"); exitProcess(2) }
+    val rounds = repeat?.toIntOrNull()?.coerceIn(1, 5) ?: 1
+    val caches = mutableListOf<Path>()
+    val observations = JevGuidelineEval.run(projects, rounds) { Jev.cached(java.nio.file.Files.createTempDirectory("ilsim-jev-eval").also(caches::add)) }
+    println(JevGuidelineEval.report(projects, observations))
+    println("JEV 호출 ${caches.sumOf { dir -> dir.toFile().listFiles { f -> f.name.endsWith(".json") }?.size ?: 0 }}회")
+    caches.forEach { it.toFile().deleteRecursively() }
+    out?.let { Path.of(it).also { f -> f.toAbsolutePath().parent.createDirectories() }.writeText(JevGuidelineEval.toJson(observations)); println("저장: $it") }
 }
 
 private fun recommend(store: ConfigStore, args: Array<String>) {

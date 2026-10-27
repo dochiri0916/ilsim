@@ -1,0 +1,75 @@
+diff --git a/src/test/java/com/shop/order/application/OrderCancelServiceTest.java b/src/test/java/com/shop/order/application/OrderCancelServiceTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/com/shop/order/application/OrderCancelServiceTest.java
+@@ -0,0 +1,47 @@
++package com.shop.order.application;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.catchThrowable;
++
++import com.shop.common.ErrorCode;
++import com.shop.common.ShopException;
++import com.shop.fixture.OrderFixture;
++import com.shop.order.domain.Order;
++import com.shop.order.domain.OrderStatus;
++import org.junit.jupiter.api.DisplayName;
++import org.junit.jupiter.api.Test;
++
++class OrderCancelServiceTest {
++    private final FakeOrderRepository orderRepository = new FakeOrderRepository();
++    private final FakePaymentPort paymentPort = new FakePaymentPort();
++    private final OrderCancelService service = new OrderCancelService(orderRepository, paymentPort);
++
++    @Test
++    @DisplayName("결제 완료 주문을 취소하면 취소 상태가 되고 전액 환불된다")
++    void cancelPaidOrder() throws InterruptedException {
++        // given
++        Order order = orderRepository.save(OrderFixture.paid(10_000));
++
++        // when
++        service.cancel(order.getId());
++        Thread.sleep(200);
++
++        // then
++        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
++        assertThat(paymentPort.refundedAmount()).isEqualTo(10_000);
++    }
++
++    @Test
++    @DisplayName("배송된 주문은 취소할 수 없다")
++    void cancelShippedOrder() {
++        // given
++        Order order = orderRepository.save(OrderFixture.shipped());
++
++        // when
++        Throwable thrown = catchThrowable(() -> service.cancel(order.getId()));
++
++        // then
++        assertThat(thrown).isInstanceOf(ShopException.class);
++        assertThat(((ShopException) thrown).getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_CANCELLABLE);
++    }
++}
+diff --git a/src/test/java/com/shop/fixture/OrderFixture.java b/src/test/java/com/shop/fixture/OrderFixture.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/com/shop/fixture/OrderFixture.java
+@@ -0,0 +1,18 @@
++package com.shop.fixture;
++
++import com.shop.order.domain.Order;
++import com.shop.order.domain.OrderStatus;
++
++public final class OrderFixture {
++
++    private OrderFixture() {
++    }
++
++    public static Order paid(long amount) {
++        return new Order(null, OrderStatus.PAID, "pay-1", amount);
++    }
++
++    public static Order shipped() {
++        return new Order(null, OrderStatus.SHIPPED, "pay-2", 5_000);
++    }
++}

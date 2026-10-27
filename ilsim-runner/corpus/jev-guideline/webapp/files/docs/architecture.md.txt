@@ -1,0 +1,11 @@
+# 구조
+
+## 폴더
+
+- `src/pages`는 라우트 화면, `src/features/<기능>`은 기능별 컴포넌트와 훅, `src/shared`는 공용 코드를 둔다.
+- `src/shared`는 `src/features`·`src/pages`를 import 하지 않는다.
+- 기능끼리는 서로 import 하지 않고 `src/shared`를 거친다.
+
+## 상태
+
+- 서버 상태는 TanStack Query(`useQuery`, `useMutation`)로 관리한다. 전역 클라이언트 상태는 `src/shared/store`의 Zustand 스토어만 쓴다.

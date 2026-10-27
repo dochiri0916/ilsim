@@ -1,0 +1,83 @@
+diff --git a/src/features/login/LoginForm.tsx b/src/features/login/LoginForm.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/login/LoginForm.tsx
+@@ -0,0 +1,39 @@
++import { useState } from 'react';
++import styles from './LoginForm.module.css';
++import { useLogin } from './useLogin';
++
++const MAX_FAILURES = 5;
++const LOCK_MS = 10 * 60 * 1000;
++
++export default function LoginForm() {
++  const [failures, setFailures] = useState(0);
++  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
++  const [error, setError] = useState<string | null>(null);
++  const login = useLogin();
++  const locked = lockedUntil !== null && Date.now() < lockedUntil;
++
++  async function submit(form: FormData) {
++    const success = await login.mutateAsync({ email: String(form.get('email')), password: String(form.get('password')) });
++    if (success) {
++      setFailures(0);
++      setError(null);
++      return;
++    }
++    const next = failures + 1;
++    setFailures(next);
++    setError('이메일 또는 비밀번호가 올바르지 않습니다.');
++    if (next >= MAX_FAILURES) {
++      setLockedUntil(Date.now() + LOCK_MS);
++      setError('잠시 후 다시 시도하세요.');
++    }
++  }
++
++  return (
++    <form action={submit} className={styles.form}>
++      <label>이메일<input name="email" type="email" /></label>
++      <label>비밀번호<input name="password" type="password" /></label>
++      {error && <p role="alert" className={styles.error}>{error}</p>}
++      <button type="submit" disabled={locked}>로그인</button>
++    </form>
++  );
++}
+diff --git a/src/features/login/useLogin.ts b/src/features/login/useLogin.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/login/useLogin.ts
+@@ -0,0 +1,10 @@
++import { useMutation } from '@tanstack/react-query';
++import { apiClient } from '../../api/client';
++import type { LoginResponse } from '../../api/types';
++
++export function useLogin() {
++  return useMutation({
++    mutationFn: (body: { email: string; password: string }) =>
++      apiClient.post<LoginResponse>('/auth/login', body).then((response) => response.data.success),
++  });
++}
+diff --git a/src/api/types.ts b/src/api/types.ts
+--- a/src/api/types.ts
++++ b/src/api/types.ts
+@@ -12,3 +12,7 @@ export interface UserResponse {
+   nickname: string;
+   imageUrl: string | null;
+ }
++
++export interface LoginResponse {
++  success: boolean;
++}
+diff --git a/src/features/login/LoginForm.module.css b/src/features/login/LoginForm.module.css
+new file mode 100644
+--- /dev/null
++++ b/src/features/login/LoginForm.module.css
+@@ -0,0 +1,8 @@
++.form {
++  display: grid;
++  gap: 12px;
++}
++
++.error {
++  color: #c62828;
++}

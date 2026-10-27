@@ -1,0 +1,69 @@
+diff --git a/src/features/login/LoginForm.tsx b/src/features/login/LoginForm.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/login/LoginForm.tsx
+@@ -0,0 +1,40 @@
++import { Component } from 'react';
++import styles from './LoginForm.module.css';
++import { apiClient } from '../../api/client';
++import type { LoginResponse } from '../../api/types';
++
++const MAX_FAILURES = 5;
++const LOCK_MS = 10 * 60 * 1000;
++
++type State = { failures: number; lockedUntil: number | null; error: string | null };
++
++export class LoginForm extends Component<object, State> {
++  state: State = { failures: 0, lockedUntil: null, error: null };
++
++  submit = async (form: FormData) => {
++    const response = await apiClient.post<LoginResponse>('/auth/login', { email: form.get('email'), password: form.get('password') });
++    if (response.data.success) {
++      this.setState({ failures: 0, error: null });
++      return;
++    }
++    const failures = this.state.failures + 1;
++    const locked = failures >= MAX_FAILURES;
++    this.setState({
++      failures,
++      lockedUntil: locked ? Date.now() + LOCK_MS : this.state.lockedUntil,
++      error: locked ? '잠시 후 다시 시도하세요.' : '이메일 또는 비밀번호가 올바르지 않습니다.',
++    });
++  };
++
++  render() {
++    const locked = this.state.lockedUntil !== null && Date.now() < this.state.lockedUntil;
++    return (
++      <form action={this.submit} className={styles.form}>
++        <label>이메일<input name="email" type="email" /></label>
++        <label>비밀번호<input name="password" type="password" /></label>
++        {this.state.error && <p role="alert" className={styles.error}>{this.state.error}</p>}
++        <button type="submit" disabled={locked}>로그인</button>
++      </form>
++    );
++  }
++}
+diff --git a/src/api/types.ts b/src/api/types.ts
+--- a/src/api/types.ts
++++ b/src/api/types.ts
+@@ -12,3 +12,7 @@ export interface UserResponse {
+   nickname: string;
+   imageUrl: string | null;
+ }
++
++export interface LoginResponse {
++  success: boolean;
++}
+diff --git a/src/features/login/LoginForm.module.css b/src/features/login/LoginForm.module.css
+new file mode 100644
+--- /dev/null
++++ b/src/features/login/LoginForm.module.css
+@@ -0,0 +1,8 @@
++.form {
++  display: grid;
++  gap: 12px;
++}
++
++.error {
++  color: #c62828;
++}

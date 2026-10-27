@@ -1,0 +1,27 @@
+diff --git a/src/main/java/demo/Messages.java b/src/main/java/demo/Messages.java
+index 3b18e51..9d2c1f0 100644
+--- a/src/main/java/demo/Messages.java
++++ b/src/main/java/demo/Messages.java
+@@ -3,5 +3,6 @@ package demo;
+ public final class Messages {
+     public static final String HELLO = "Hello";
+     public static final String GOOD_MORNING = "Good morning";
++    public static final String GOODBYE = "Goodbye";
+ 
+     private Messages() {
+diff --git a/src/main/java/demo/Greeter.java b/src/main/java/demo/Greeter.java
+index 1f2a3b4..5c6d7e8 100644
+--- a/src/main/java/demo/Greeter.java
++++ b/src/main/java/demo/Greeter.java
+@@ -9,4 +9,11 @@ public class Greeter {
+     public String goodMorning(String name) {
+         return Messages.GOOD_MORNING + ", " + Names.normalize(name) + ".";
+     }
++
++    public String goodbye(String name) {
++        if (name == null || name.isBlank()) {
++            throw new IllegalStateException("blank name");
++        }
++        return Messages.GOODBYE + ", " + Names.normalize(name) + ".";
++    }
+ }

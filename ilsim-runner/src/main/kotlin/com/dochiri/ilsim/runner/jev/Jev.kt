@@ -107,5 +107,7 @@ class Jev(private val client: JevClient?, private val cacheDirectory: Path? = nu
         }
 
         fun uncached(): Jev = Jev(client(key()))
+
+        fun cached(directory: Path): Jev = Jev(client(key()), directory)
     }
 }

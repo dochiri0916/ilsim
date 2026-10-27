@@ -1,0 +1,21 @@
+# 아키텍처
+
+## 계층
+
+- 패키지는 `com.shop.<도메인>.{web,application,domain,infra}`로 나눈다.
+- 의존 방향은 web → application → domain 이고, infra는 domain의 포트를 구현한다.
+- domain 패키지는 Spring·JPA·web 패키지를 import 하지 않는다.
+
+## 컨트롤러
+
+- 컨트롤러는 application 서비스만 호출한다. 리포지토리를 직접 호출하지 않는다.
+- 요청·응답 DTO 변환은 컨트롤러에서 한다. 엔티티를 응답으로 그대로 내보내지 않는다.
+
+## 트랜잭션
+
+- `@Transactional`은 application 서비스의 public 메서드에만 붙인다. 컨트롤러와 리포지토리에는 붙이지 않는다.
+- 조회 전용 메서드는 `@Transactional(readOnly = true)`를 쓴다.
+
+## 배경
+
+이 구조는 2025년 모놀리스 분리 논의에서 정했다. 자세한 경위는 회의록에 있다.

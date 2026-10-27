@@ -1,0 +1,11 @@
+# 주문 취소
+
+## 규칙
+
+- 결제 완료(`PAID`) 상태의 주문만 취소할 수 있다. 다른 상태의 주문을 취소하면 `ErrorCode.ORDER_NOT_CANCELLABLE`로 `ShopException`을 던진다.
+- 취소하면 주문 상태를 `CANCELLED`로 바꾸고 결제 금액 전액을 환불한다.
+- 취소 API는 `POST /orders/{orderId}/cancel`이다.
+
+## 미결정
+
+- 부분 취소를 지원할지 아직 정하지 않았다.

@@ -1,0 +1,35 @@
+diff --git a/src/features/login/LoginForm.test.tsx b/src/features/login/LoginForm.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/login/LoginForm.test.tsx
+@@ -0,0 +1,30 @@
++import { render, screen } from '@testing-library/react';
++import userEvent from '@testing-library/user-event';
++import { LoginForm } from './LoginForm';
++import { mockLogin } from '../../shared/test/mockApi';
++
++describe('LoginForm', () => {
++  it('비밀번호가 틀리면 안내 문구를 보여 준다', async () => {
++    mockLogin({ success: false });
++    render(<LoginForm />);
++    await userEvent.type(screen.getByLabelText('이메일'), 'a@b.c');
++    await userEvent.type(screen.getByLabelText('비밀번호'), 'wrong');
++    await userEvent.click(screen.getByRole('button', { name: '로그인' }));
++    expect(await screen.findByRole('alert')).toHaveTextContent('이메일 또는 비밀번호가 올바르지 않습니다.');
++  });
++
++  it('5번 연속 실패하면 로그인 버튼을 막는다', async () => {
++    mockLogin({ success: false });
++    render(<LoginForm />);
++    for (let i = 0; i < 5; i++) {
++      await userEvent.click(screen.getByRole('button', { name: '로그인' }));
++    }
++    expect(screen.getByRole('button', { name: '로그인' })).toBeDisabled();
++    expect(screen.getByRole('alert')).toHaveTextContent('잠시 후 다시 시도하세요.');
++  });
++
++  it('잠긴 화면이 바뀌지 않는다', () => {
++    const { asFragment } = render(<LoginForm />);
++    expect(asFragment()).toMatchSnapshot();
++  });
++});

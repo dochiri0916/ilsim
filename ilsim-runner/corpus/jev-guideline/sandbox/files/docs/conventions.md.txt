@@ -1,0 +1,18 @@
+# 코드 컨벤션
+
+## 문구 상수
+
+- 인사말(`Hello`, `Good morning` 등)은 메서드 안에 문자열로 쓰지 않고 `demo.Messages` 클래스의 `public static final String` 상수로 둔다.
+
+## 입력 검증
+
+- 이름 검증은 `demo.Names.normalize(String)` 한 곳에서 한다. 각 인사 메서드는 이 메서드를 호출한다.
+
+## 테스트
+
+- 테스트 메서드마다 `@DisplayName`으로 한국어 설명을 붙인다.
+- 정상 문구와 빈 이름 예외를 각각 별도 테스트로 검증한다.
+
+## 금지
+
+- `System.out` 출력 금지.

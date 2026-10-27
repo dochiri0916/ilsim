@@ -65,8 +65,12 @@ object Guidelines {
     }
 
     private fun score(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<Triple<String, Int, String>, Guideline>? =
-        byDocument(sections, MAX_STATE_WEIGHT - weight(request.take(MAX_REQUEST_CHARS)), { it.path }, { weight(it.heading) + weight(it.text) }).map { batch -> pool.submit<List<Guideline>?> { selectBatch(jev, request, batch) } }
-            .map { it.get() ?: return null }.flatten().associateBy { Triple(it.path, it.line, it.text) }
+        sectionAnswers(jev, request, sections, pool)?.entries?.associate { (s, rs) -> key(s) to Guideline(s.path, s.line, s.heading, s.text, minOf(rs.first, rs.second)) }
+
+    internal fun sectionAnswers(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<DocSection, Pair<Double, Double>>? =
+        byDocument(sections, MAX_STATE_WEIGHT - weight(request.take(MAX_REQUEST_CHARS)), { it.path }, { weight(it.heading) + weight(it.text) })
+            .map { batch -> pool.submit<Map<DocSection, Pair<Double, Double>>?> { sectionBatch(jev, request, batch) } }
+            .map { it.get() ?: return null }.fold(emptyMap()) { a, b -> a + b }
 
     fun links(source: String, text: String, paths: Set<String>): List<String> {
         val parent = source.substringBeforeLast('/', "")
@@ -79,13 +83,13 @@ object Guidelines {
 
     private fun required(jev: Jev, request: String, selected: List<Guideline>, paths: Set<String>, pool: java.util.concurrent.ExecutorService): Map<String, Double>? {
         val asks = selected.map { it to links(it.path, it.text, paths) }.filter { it.second.isNotEmpty() }
-        val answers = asks.map { (g, targets) -> pool.submit<Map<String, Double>?> { requiredBatch(jev, request, g, targets) } }.map { it.get() ?: return null }
-        val all = answers.flatMap { it.entries }
-        val forbidden = all.filter { it.value < 0 }.map { it.key }.toSet()
-        return all.filter { it.key in forbidden || it.value >= APPLIES }.groupBy({ it.key }, { it.value }).mapValues { (path, ps) -> if (path in forbidden) -1.0 else ps.max() }
+        val answers = asks.map { (g, targets) -> pool.submit<Map<String, Pair<Double, Double>>?> { referenceAnswers(jev, request, g, targets) } }.map { it.get() ?: return null }
+        val all = answers.flatMap { it.entries }.map { (path, qn) -> path to if (qn.second >= VIOLATED) -1.0 else qn.first }
+        val forbidden = all.filter { it.second < 0 }.map { it.first }.toSet()
+        return all.filter { it.first in forbidden || it.second >= APPLIES }.groupBy({ it.first }, { it.second }).mapValues { (path, ps) -> if (path in forbidden) -1.0 else ps.max() }
     }
 
-    private fun requiredBatch(jev: Jev, request: String, g: Guideline, targets: List<String>): Map<String, Double>? {
+    internal fun referenceAnswers(jev: Jev, request: String, g: Guideline, targets: List<String>): Map<String, Pair<Double, Double>>? {
         val state = mapOf(
             "request" to request.take(MAX_REQUEST_CHARS),
             "task" to TASK_CONTEXT,
@@ -100,7 +104,7 @@ object Guidelines {
                 .withCriteria("이 작업에서는 그 문서를 읽지 말라고 함", "그런 금지가 없음")
         }
         val answers = jev.probabilities(state, questions) ?: return null
-        return targets.withIndex().associate { (j, t) -> t to if ((answers["n$j"] ?: 0.0) >= VIOLATED) -1.0 else (answers["q$j"] ?: 0.0) }
+        return targets.withIndex().associate { (j, t) -> t to ((answers["q$j"] ?: 0.0) to (answers["n$j"] ?: 0.0)) }
     }
 
     fun documents(jev: Jev, request: String, sections: List<DocSection>): Map<String, Double>? {
@@ -109,12 +113,15 @@ object Guidelines {
         try { return documents(jev, request, sections, pool) } finally { pool.shutdownNow() }
     }
 
-    private fun documents(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<String, Double>? {
-        val batches = sections.groupBy { it.path }.entries.map { pool.submit<Map<String, Double>?> { documentBatch(jev, request, listOf(it.key to it.value)) } }
+    private fun documents(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<String, Double>? =
+        documentAnswers(jev, request, sections, pool)?.mapValues { minOf(it.value.first, it.value.second) }
+
+    internal fun documentAnswers(jev: Jev, request: String, sections: List<DocSection>, pool: java.util.concurrent.ExecutorService): Map<String, Pair<Double, Double>>? {
+        val batches = sections.groupBy { it.path }.entries.map { pool.submit<Map<String, Pair<Double, Double>>?> { documentBatch(jev, request, listOf(it.key to it.value)) } }
         return batches.map { it.get() ?: return null }.fold(emptyMap()) { a, b -> a + b }
     }
 
-    private fun documentBatch(jev: Jev, request: String, batch: List<Pair<String, List<DocSection>>>): Map<String, Double>? {
+    private fun documentBatch(jev: Jev, request: String, batch: List<Pair<String, List<DocSection>>>): Map<String, Pair<Double, Double>>? {
         val state = mapOf(
             "request" to request.take(MAX_REQUEST_CHARS),
             "documents" to batch.mapIndexed { i, (path, parts) ->
@@ -129,7 +136,7 @@ object Guidelines {
             )
         }.toMap()
         val answers = jev.probabilities(state, questions) ?: return null
-        return batch.mapIndexed { i, (path, _) -> path to minOf(answers["k$i"] ?: 1.0, answers["m$i"] ?: 1.0) }.toMap()
+        return batch.mapIndexed { i, (path, _) -> path to ((answers["k$i"] ?: 1.0) to (answers["m$i"] ?: 1.0)) }.toMap()
     }
 
     private fun ruleDocument(i: Int): NoulQuestion =
@@ -168,8 +175,7 @@ object Guidelines {
         return batch.withIndex().associate { (i, s) -> s to (answers["r$i"] ?: 1.0) }
     }
 
-    private fun selectBatch(jev: Jev, request: String, batch: List<DocSection>): List<Guideline>? {
-        val selected = mutableListOf<Guideline>()
+    private fun sectionBatch(jev: Jev, request: String, batch: List<DocSection>): Map<DocSection, Pair<Double, Double>>? {
         val state = mapOf(
             "request" to request.take(MAX_REQUEST_CHARS),
             "sections" to batch.mapIndexed { i, s -> mapOf("id" to "s$i", "source" to "${s.path}:${s.line}", "heading" to s.heading, "text" to s.text) },
@@ -182,8 +188,7 @@ object Guidelines {
             )
         }.toMap()
         val answers = jev.probabilities(state, questions) ?: return null
-        batch.forEachIndexed { i, s -> selected += Guideline(s.path, s.line, s.heading, s.text, minOf(answers["r$i"] ?: 1.0, answers["s$i"] ?: 1.0)) }
-        return selected
+        return batch.withIndex().associate { (i, s) -> s to ((answers["r$i"] ?: 1.0) to (answers["s$i"] ?: 1.0)) }
     }
 
     private const val TASK_CONTEXT = "일심(ilsim) MCP가 요구사항·테스트 케이스·테스트 코드·구현 단계로 나눠 Agent에게 맡기는 단계 작업이다. 프롬프트가 일심 단계 지시다."
@@ -248,7 +253,7 @@ object Guidelines {
             "diff" to diff,
         )
         val questions = batch.indices.associate { i ->
-            "v$i" to NoulQuestion.of("v$i", "변경(diff)이 지침 g$i 의 text 에 적힌 규칙을 직접 어기는가? g$i 의 text 에 적힌 규칙만 기준으로 하고, 다른 지침의 위반은 g$i 위반으로 보지 않는다. diff 에 g$i 가 정한 것과 다른 구조·이름·문구·동작·의존·테스트 방식이 있으면 Yes. g$i 에 지킬 규칙이 없거나(소개·배경·미결정 사항 등), 규칙이 이 변경 코드에 적용되지 않거나, 지키고 있으면 No. 이 단계(stage)에서 아직 만들 차례가 아닌 코드가 없는 것은 위반이 아니다. 지침이 합리적인지나 더 나은 방법이 있는지는 따지지 않고 적힌 대로만 판정한다.")
+            "v$i" to NoulQuestion.of("v$i", "변경(diff)이 지침 g$i 의 text 에 적힌 규칙을 직접 어기는가? g$i 의 text 에 적힌 규칙만 기준으로 하고, 다른 지침의 위반은 g$i 위반으로 보지 않는다. diff 에 g$i 가 정한 것과 다른 구조·이름·문구·동작·의존·테스트 방식이 있으면 Yes. g$i 에 지킬 규칙이 없거나(소개·배경·미결정 사항 등), 규칙이 이 변경 코드에 적용되지 않거나, 지키고 있으면 No. 이 단계(stage)에서 아직 만들 차례가 아닌 코드나 앞 단계에서 이미 만든 코드(구현 단계 전에 테스트 코드 단계에서 작성한 테스트 등)가 이 diff에 없는 것은 위반이 아니다. 지침이 합리적인지나 더 나은 방법이 있는지는 따지지 않고 적힌 대로만 판정한다.")
                 .withCriteria("변경이 지침을 어김", "변경이 지침을 지키거나 지침과 무관함")
         }
         val answers = jev.probabilities(state, questions) ?: return null

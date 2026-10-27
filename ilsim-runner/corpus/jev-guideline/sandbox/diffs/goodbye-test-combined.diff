@@ -1,0 +1,17 @@
+diff --git a/src/test/java/demo/GreeterTest.java b/src/test/java/demo/GreeterTest.java
+index 7a1b2c3..8d9e0f1 100644
+--- a/src/test/java/demo/GreeterTest.java
++++ b/src/test/java/demo/GreeterTest.java
+@@ -20,4 +20,12 @@ class GreeterTest {
+     void goodMorning() {
+         assertEquals("Good morning, Kim.", new Greeter().goodMorning("Kim"));
+     }
++
++    @Test
++    @DisplayName("작별 인사 문구와 빈 이름 예외를 확인한다")
++    void goodbye() {
++        assertEquals(Messages.GOODBYE + ", Kim.", new Greeter().goodbye(" Kim "));
++        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> new Greeter().goodbye("  "));
++        assertEquals("name must not be blank", e.getMessage());
++    }
+ }

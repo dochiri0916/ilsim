@@ -1,0 +1,590 @@
+{
+  "documents": {
+    "README.md": {
+      "file": "files/README.md.txt"
+    },
+    "CHANGELOG.md": {
+      "file": "files/CHANGELOG.md.txt"
+    },
+    "docs/architecture.md": {
+      "file": "files/docs/architecture.md.txt"
+    },
+    "docs/conventions.md": {
+      "file": "files/docs/conventions.md.txt"
+    },
+    "docs/testing.md": {
+      "file": "files/docs/testing.md.txt"
+    },
+    "docs/spec/order-cancel.md": {
+      "file": "files/docs/spec/order-cancel.md.txt",
+      "feature": "order-cancel"
+    },
+    "docs/spec/coupon.md": {
+      "file": "files/docs/spec/coupon.md.txt",
+      "feature": "coupon"
+    },
+    "docs/meetings/2026-09-30.md": {
+      "file": "files/docs/meetings/2026-09-30.md.txt"
+    }
+  },
+  "requests": [
+    {
+      "id": "order-cancel",
+      "text": "결제 완료된 주문을 취소하는 API를 추가한다. 취소하면 결제 금액을 환불한다.",
+      "features": [
+        "order-cancel"
+      ]
+    },
+    {
+      "id": "coupon-expiry",
+      "text": "주문에 쿠폰을 적용할 때 만료일을 검사하고 정률 할인 금액을 계산한다.",
+      "features": [
+        "coupon"
+      ]
+    }
+  ],
+  "sections": {
+    "README.md:1": {
+      "rule": false
+    },
+    "README.md:5": {
+      "rule": false
+    },
+    "README.md:12": {
+      "rule": false,
+      "note": "문서 목차"
+    },
+    "CHANGELOG.md:3": {
+      "rule": false
+    },
+    "CHANGELOG.md:8": {
+      "rule": false
+    },
+    "docs/architecture.md:3": {
+      "rule": true
+    },
+    "docs/architecture.md:9": {
+      "rule": true
+    },
+    "docs/architecture.md:14": {
+      "rule": true
+    },
+    "docs/architecture.md:19": {
+      "rule": false,
+      "note": "배경"
+    },
+    "docs/conventions.md:3": {
+      "rule": true
+    },
+    "docs/conventions.md:8": {
+      "rule": true
+    },
+    "docs/conventions.md:13": {
+      "rule": true
+    },
+    "docs/conventions.md:18": {
+      "rule": true
+    },
+    "docs/conventions.md:22": {
+      "rule": true
+    },
+    "docs/testing.md:3": {
+      "rule": true
+    },
+    "docs/testing.md:9": {
+      "rule": true
+    },
+    "docs/testing.md:14": {
+      "rule": true
+    },
+    "docs/spec/order-cancel.md:3": {
+      "rule": true
+    },
+    "docs/spec/order-cancel.md:9": {
+      "rule": false,
+      "note": "미결정"
+    },
+    "docs/spec/coupon.md:3": {
+      "rule": true
+    },
+    "docs/spec/coupon.md:8": {
+      "rule": true
+    },
+    "docs/meetings/2026-09-30.md:3": {
+      "rule": false
+    },
+    "docs/meetings/2026-09-30.md:7": {
+      "rule": false
+    }
+  },
+  "references": [
+    {
+      "request": "order-cancel",
+      "section": "README.md:12",
+      "target": "docs/architecture.md",
+      "required": false,
+      "forbidden": false
+    },
+    {
+      "request": "order-cancel",
+      "section": "README.md:12",
+      "target": "docs/conventions.md",
+      "required": false,
+      "forbidden": false
+    },
+    {
+      "request": "order-cancel",
+      "section": "README.md:12",
+      "target": "docs/testing.md",
+      "required": false,
+      "forbidden": false
+    }
+  ],
+  "diffs": [
+    {
+      "id": "cancel-ok",
+      "request": "order-cancel",
+      "file": "diffs/cancel-ok.diff"
+    },
+    {
+      "id": "cancel-field-injection",
+      "request": "order-cancel",
+      "file": "diffs/cancel-field-injection.diff",
+      "violates": [
+        "docs/conventions.md:3"
+      ]
+    },
+    {
+      "id": "cancel-controller-repository",
+      "request": "order-cancel",
+      "file": "diffs/cancel-controller-repository.diff",
+      "violates": [
+        "docs/architecture.md:9"
+      ]
+    },
+    {
+      "id": "cancel-tx-controller",
+      "request": "order-cancel",
+      "file": "diffs/cancel-tx-controller.diff",
+      "violates": [
+        "docs/architecture.md:14"
+      ]
+    },
+    {
+      "id": "cancel-entity-response",
+      "request": "order-cancel",
+      "file": "diffs/cancel-entity-response.diff",
+      "violates": [
+        "docs/architecture.md:9"
+      ]
+    },
+    {
+      "id": "cancel-dto-name",
+      "request": "order-cancel",
+      "file": "diffs/cancel-dto-name.diff",
+      "violates": [
+        "docs/conventions.md:8"
+      ]
+    },
+    {
+      "id": "cancel-illegal-state",
+      "request": "order-cancel",
+      "file": "diffs/cancel-illegal-state.diff",
+      "violates": [
+        "docs/conventions.md:13",
+        "docs/spec/order-cancel.md:3"
+      ]
+    },
+    {
+      "id": "cancel-shipped-allowed",
+      "request": "order-cancel",
+      "file": "diffs/cancel-shipped-allowed.diff",
+      "violates": [
+        "docs/spec/order-cancel.md:3"
+      ]
+    },
+    {
+      "id": "cancel-no-refund",
+      "request": "order-cancel",
+      "file": "diffs/cancel-no-refund.diff",
+      "violates": [
+        "docs/spec/order-cancel.md:3"
+      ]
+    },
+    {
+      "id": "cancel-lombok",
+      "request": "order-cancel",
+      "file": "diffs/cancel-lombok.diff",
+      "violates": [
+        "docs/conventions.md:22"
+      ]
+    },
+    {
+      "id": "cancel-domain-spring",
+      "request": "order-cancel",
+      "file": "diffs/cancel-domain-spring.diff",
+      "violates": [
+        "docs/architecture.md:3"
+      ]
+    },
+    {
+      "id": "cancel-print-stack",
+      "request": "order-cancel",
+      "file": "diffs/cancel-print-stack.diff",
+      "violates": [
+        "docs/conventions.md:18"
+      ]
+    },
+    {
+      "id": "cancel-test-ok",
+      "request": "order-cancel",
+      "file": "diffs/cancel-test-ok.diff",
+      "stage": "TEST_CODE"
+    },
+    {
+      "id": "cancel-test-junit-assert",
+      "request": "order-cancel",
+      "file": "diffs/cancel-test-junit-assert.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "docs/testing.md:3"
+      ]
+    },
+    {
+      "id": "cancel-test-springboottest",
+      "request": "order-cancel",
+      "file": "diffs/cancel-test-springboottest.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "docs/testing.md:9"
+      ]
+    },
+    {
+      "id": "cancel-test-sleep",
+      "request": "order-cancel",
+      "file": "diffs/cancel-test-sleep.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "docs/testing.md:9"
+      ]
+    },
+    {
+      "id": "cancel-test-no-gwt",
+      "request": "order-cancel",
+      "file": "diffs/cancel-test-no-gwt.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "docs/testing.md:3"
+      ]
+    },
+    {
+      "id": "cancel-test-inline-data",
+      "request": "order-cancel",
+      "file": "diffs/cancel-test-inline-data.diff",
+      "stage": "TEST_CODE",
+      "violates": [
+        "docs/testing.md:14"
+      ]
+    },
+    {
+      "id": "coupon-ok",
+      "request": "coupon-expiry",
+      "file": "diffs/coupon-ok.diff"
+    },
+    {
+      "id": "coupon-expired-code",
+      "request": "coupon-expiry",
+      "file": "diffs/coupon-expired-code.diff",
+      "violates": [
+        "docs/spec/coupon.md:3"
+      ]
+    },
+    {
+      "id": "coupon-round",
+      "request": "coupon-expiry",
+      "file": "diffs/coupon-round.diff",
+      "violates": [
+        "docs/spec/coupon.md:8"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "section": "docs/conventions.md:3",
+      "kind": "doc-forbidden-annotation",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "annotation": [
+          "Autowired"
+        ]
+      },
+      "description": "@Autowired 를 쓰지 않는다",
+      "quote": "필드에 `@Autowired`를 붙이지 않는다.",
+      "faithful": false,
+      "note": "생성자 @Autowired 까지 막음"
+    },
+    {
+      "section": "docs/conventions.md:8",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "target": [
+          "class"
+        ],
+        "when": [
+          "Service"
+        ],
+        "pattern": [
+          ".*Service"
+        ]
+      },
+      "description": "@Service 클래스 이름은 Service 로 끝난다",
+      "quote": "서비스 클래스는 `~Service`",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:8",
+      "kind": "doc-name-pattern",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "target": [
+          "class"
+        ],
+        "pattern": [
+          ".*Service"
+        ]
+      },
+      "description": "모든 클래스 이름은 Service 로 끝난다",
+      "quote": "서비스 클래스는 `~Service`",
+      "faithful": false,
+      "note": "모든 클래스로 넓힘"
+    },
+    {
+      "section": "docs/conventions.md:22",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "import": [
+          "^lombok\\."
+        ]
+      },
+      "description": "Lombok 을 import 하지 않는다",
+      "quote": "Lombok은 쓰지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/conventions.md:22",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "import": [
+          "^lombok\\."
+        ]
+      },
+      "description": "테스트 코드에서 Lombok 을 import 하지 않는다",
+      "quote": "Lombok은 쓰지 않는다.",
+      "faithful": false,
+      "note": "테스트 코드로 좁힘"
+    },
+    {
+      "section": "docs/testing.md:3",
+      "kind": "doc-required-code",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "target": [
+          "test-method"
+        ],
+        "text": [
+          "raw"
+        ],
+        "pattern": [
+          "//\\s*given",
+          "//\\s*when",
+          "//\\s*then"
+        ]
+      },
+      "description": "테스트 본문은 // given, // when, // then 주석으로 순서대로 나눈다",
+      "quote": "본문은 `// given`, `// when`, `// then` 주석으로 나눈다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/testing.md:3",
+      "kind": "doc-required-code",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "target": [
+          "test-method"
+        ],
+        "text": [
+          "raw"
+        ],
+        "pattern": [
+          "//\\s*when",
+          "//\\s*given",
+          "//\\s*then"
+        ]
+      },
+      "description": "테스트 본문은 // when, // given, // then 순서로 쓴다",
+      "quote": "본문은 `// given`, `// when`, `// then` 주석으로 나눈다.",
+      "faithful": false,
+      "note": "순서를 바꿈"
+    },
+    {
+      "section": "docs/testing.md:9",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "pattern": [
+          "Thread\\.sleep"
+        ]
+      },
+      "description": "테스트에서 Thread.sleep 을 쓰지 않는다",
+      "quote": "테스트에서 `Thread.sleep`을 쓰지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/testing.md:9",
+      "kind": "doc-forbidden-code",
+      "params": {
+        "scope": [
+          "all"
+        ],
+        "pattern": [
+          "Thread\\.sleep"
+        ]
+      },
+      "description": "Thread.sleep 을 쓰지 않는다",
+      "quote": "테스트에서 `Thread.sleep`을 쓰지 않는다.",
+      "faithful": false,
+      "note": "프로덕트 코드까지 넓힘"
+    },
+    {
+      "section": "docs/testing.md:14",
+      "kind": "doc-file-location",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "name": [
+          ".*Fixture"
+        ],
+        "location": [
+          "src/test/java/com/shop/fixture/**"
+        ]
+      },
+      "description": "Fixture 클래스는 src/test/java/com/shop/fixture 아래에 둔다",
+      "quote": "테스트 데이터는 `src/test/java/com/shop/fixture` 아래 `~Fixture` 클래스로 만든다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/testing.md:14",
+      "kind": "doc-file-location",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "name": [
+          ".*"
+        ],
+        "location": [
+          "src/test/java/com/shop/fixture/**"
+        ]
+      },
+      "description": "모든 테스트 파일은 fixture 폴더에 둔다",
+      "quote": "테스트 데이터는 `src/test/java/com/shop/fixture` 아래 `~Fixture` 클래스로 만든다.",
+      "faithful": false,
+      "note": "모든 테스트 파일로 넓힘"
+    },
+    {
+      "section": "docs/architecture.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/domain/**"
+        ],
+        "import": [
+          "^org\\.springframework\\.",
+          "^jakarta\\.persistence\\.",
+          "^javax\\.persistence\\.",
+          "\\.web\\."
+        ]
+      },
+      "description": "domain 패키지는 Spring·JPA·web 패키지를 import 하지 않는다",
+      "quote": "domain 패키지는 Spring·JPA·web 패키지를 import 하지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/architecture.md:3",
+      "kind": "doc-forbidden-import",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "import": [
+          "^org\\.springframework\\.",
+          "^jakarta\\.persistence\\.",
+          "^javax\\.persistence\\.",
+          "\\.web\\."
+        ]
+      },
+      "description": "모든 패키지는 Spring·JPA·web 패키지를 import 하지 않는다",
+      "quote": "domain 패키지는 Spring·JPA·web 패키지를 import 하지 않는다.",
+      "faithful": false,
+      "note": "모든 패키지로 넓힘"
+    },
+    {
+      "section": "docs/architecture.md:14",
+      "kind": "doc-forbidden-annotation",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "path": [
+          "**/web/**",
+          "**/infra/**"
+        ],
+        "annotation": [
+          "Transactional"
+        ]
+      },
+      "description": "컨트롤러(web)와 리포지토리(infra)에는 @Transactional 을 붙이지 않는다",
+      "quote": "컨트롤러와 리포지토리에는 붙이지 않는다.",
+      "faithful": true
+    },
+    {
+      "section": "docs/architecture.md:14",
+      "kind": "doc-forbidden-annotation",
+      "params": {
+        "scope": [
+          "main"
+        ],
+        "annotation": [
+          "Transactional"
+        ]
+      },
+      "description": "@Transactional 을 쓰지 않는다",
+      "quote": "컨트롤러와 리포지토리에는 붙이지 않는다.",
+      "faithful": false,
+      "note": "서비스까지 막아 원문과 반대"
+    }
+  ]
+}

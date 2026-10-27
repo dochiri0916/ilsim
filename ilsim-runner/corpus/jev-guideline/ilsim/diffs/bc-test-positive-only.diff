@@ -1,0 +1,27 @@
+diff --git a/build-convention/core/src/test/java/com/dochiri/convention/rule/TestMethodNameRuleTest.java b/build-convention/core/src/test/java/com/dochiri/convention/rule/TestMethodNameRuleTest.java
+new file mode 100644
+--- /dev/null
++++ b/build-convention/core/src/test/java/com/dochiri/convention/rule/TestMethodNameRuleTest.java
+@@ -0,0 +1,22 @@
++package com.dochiri.convention.rule;
++
++import static org.assertj.core.api.Assertions.assertThat;
++
++import com.dochiri.convention.model.SourceFile;
++import org.junit.jupiter.api.Test;
++
++class TestMethodNameRuleTest {
++
++    @Test
++    void passesCamelCaseTestNames() {
++        SourceFile file = SourceFile.test("OrderTest.java", """
++            class OrderTest {
++                @Test
++                void createsOrder() {
++                }
++            }
++            """);
++
++        assertThat(new TestMethodNameRule().check(file)).isEmpty();
++    }
++}
