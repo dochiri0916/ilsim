@@ -5,6 +5,7 @@ import io.github.gudcks0305.jev.NoulQuestion
 object RequirementCheck {
     const val MET = 0.8
     const val MISSING = 0.2
+    private const val STAGE = "구현 단계. diff는 이번 단계에서 바꾼 프로덕트 코드만 담는다. 테스트는 앞 단계(테스트 코드 단계)에서 이미 작성·커밋돼 이 diff에 없다."
 
     data class Result(val probabilities: Map<String, Double>, val missing: List<Requirement>, val uncertain: List<Requirement>, val truncated: Boolean)
 
@@ -44,7 +45,7 @@ object RequirementCheck {
     }.distinctBy { it.id }
 
     fun questions(requirements: List<Requirement>): Map<String, NoulQuestion> = requirements.withIndex().flatMap { (i, r) -> listOf(
-        "m$i" to NoulQuestion.of("m$i", "변경(diff)이 요구사항 ${r.id}「${r.text}」를 실행 코드나 설정에서 완전히 구현하는가? 테스트만 있거나 TODO·주석뿐이거나 조건·범위가 요구사항과 다르면 No.")
+        "m$i" to NoulQuestion.of("m$i", "변경(diff)이 요구사항 ${r.id}「${r.text}」를 실행 코드나 설정에서 완전히 구현하는가? 테스트만 있거나 TODO·주석뿐이거나 조건·범위가 요구사항과 다르면 No. 단, stage 대로 테스트는 앞 단계에서 이미 작성돼 이 diff에 없다. 요구사항 중 테스트 자체에 관한 부분(테스트 작성·이름·애너테이션·테스트 분리·테스트 통과)은 충족된 것으로 보고 나머지 동작만 이 diff로 판정하며, 테스트에 관한 부분뿐이면 Yes.")
             .withCriteria("요구사항의 동작이 구현에서 확인됨", "구현이 없거나 일부만 있거나 조건이 다름"),
         "d$i" to NoulQuestion.of("d$i", "제공된 diff만으로 요구사항 ${r.id}의 충족 여부를 확정할 수 있는가? 변경 밖의 코드나 설정을 확인해야 하면 No."),
     ) }.toMap()
@@ -55,7 +56,7 @@ object RequirementCheck {
         val truncated = shown.length < diff.length
         val pool = java.util.concurrent.Executors.newFixedThreadPool(Guidelines.PARALLEL)
         val probabilities = try {
-            batches(requirements, Guidelines.MAX_STATE_WEIGHT - Guidelines.weight(shown)).map { batch -> pool.submit<Map<String, Double>?> { judgeBatch(jev, batch, shown) } }
+            batches(requirements, Guidelines.MAX_STATE_WEIGHT - Guidelines.weight(shown) - Guidelines.weight(STAGE)).map { batch -> pool.submit<Map<String, Double>?> { judgeBatch(jev, batch, shown) } }
                 .map { it.get() ?: return null }.fold(emptyMap<String, Double>()) { a, b -> a + b }
         } finally {
             pool.shutdownNow()
@@ -77,9 +78,11 @@ object RequirementCheck {
         return batches
     }
 
+    internal fun state(requirements: List<Requirement>, diff: String): Map<String, Any> =
+        mapOf("stage" to STAGE, "requirements" to requirements.map { mapOf("id" to it.id, "text" to it.text) }, "diff" to diff)
+
     private fun judgeBatch(jev: Jev, batch: List<Requirement>, diff: String): Map<String, Double>? {
-        val state = mapOf("requirements" to batch.map { mapOf("id" to it.id, "text" to it.text) }, "diff" to diff)
-        val answers = jev.probabilities(state, questions(batch)) ?: return null
+        val answers = jev.probabilities(state(batch, diff), questions(batch)) ?: return null
         return batch.withIndex().mapNotNull { (i, r) -> answers["m$i"]?.let { r.id to it } }.toMap()
     }
 }

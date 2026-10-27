@@ -18,7 +18,7 @@ data class Requirement(val id: String, val text: String)
 data class RequirementVariant(val id: String, val replace: Map<String, String> = emptyMap(), val expect: Map<String, String> = emptyMap(), val note: String = "")
 
 @Serializable
-data class RequirementScenario(val requirements: List<Requirement>, val variants: List<RequirementVariant> = emptyList())
+data class RequirementScenario(val requirements: List<Requirement>, val variants: List<RequirementVariant> = emptyList(), val tests: List<String> = emptyList())
 
 @Serializable
 data class RequirementRecord(val id: String, val note: String, val expected: Map<String, String>, val runs: Map<String, Map<String, List<Judgment>>>)
@@ -47,12 +47,13 @@ object JevRequirementEval {
 
     fun load(dir: Path): List<Sample> = dir.listDirectoryEntries().filter { it.resolve("case.json").exists() }.sortedBy { it.fileName.toString() }.flatMap { root ->
         val scenario = json.decodeFromString<RequirementScenario>(root.resolve("case.json").readText())
-        val hunks = scenario.requirements.associate { it.id to root.resolve("hunks/${it.id}.diff").readText() }
+        val built = scenario.requirements.filter { it.id !in scenario.tests }
+        val hunks = built.associate { it.id to root.resolve("hunks/${it.id}.diff").readText() }
         val name = root.fileName.toString()
         val all = scenario.requirements.associate { it.id to MET }
         fun diff(parts: Map<String, String>) = scenario.requirements.mapNotNull { parts[it.id] }.joinToString("")
         listOf(Sample("$name/full", scenario.requirements, diff(hunks), all, "전부 구현")) +
-            scenario.requirements.map { r -> Sample("$name/drop-${r.id}", scenario.requirements, diff(hunks - r.id), all + (r.id to MISSING), "${r.id} 변경 제거") } +
+            built.map { r -> Sample("$name/drop-${r.id}", scenario.requirements, diff(hunks - r.id), all + (r.id to MISSING), "${r.id} 변경 제거") } +
             scenario.variants.map { v -> Sample("$name/${v.id}", scenario.requirements, diff(hunks + v.replace.mapValues { root.resolve(it.value).readText() }), all + v.expect, v.note) }
     }
 
@@ -69,8 +70,7 @@ object JevRequirementEval {
         val usage = mutableListOf<AiUsage>()
         val raw = UsageScope.collect(usage) {
             samples.associate { s ->
-                val state = mapOf("requirements" to s.requirements.map { mapOf("id" to it.id, "text" to it.text) }, "diff" to s.diff)
-                s.id to (1..repeat).map { JevRiskEval.timed { jev.probabilities(state, questions(s.requirements)) } }
+                s.id to (1..repeat).map { JevRiskEval.timed { jev.probabilities(RequirementCheck.state(s.requirements, s.diff), questions(s.requirements)) } }
             }
         }
         fun run(mode: String, gated: Boolean) = Run(mode, samples.associate { s ->

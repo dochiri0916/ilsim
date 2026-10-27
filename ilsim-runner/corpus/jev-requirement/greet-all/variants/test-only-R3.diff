@@ -1,0 +1,26 @@
+diff --git a/src/test/java/demo/NamesTest.java b/src/test/java/demo/NamesTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/demo/NamesTest.java
+@@ -0,0 +1,22 @@
++package demo;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++
++import org.junit.jupiter.api.DisplayName;
++import org.junit.jupiter.api.Test;
++
++class NamesTest {
++    @Test
++    @DisplayName("앞뒤 공백을 지운다")
++    void strips() {
++        assertThat(Names.normalize("  Kim ")).isEqualTo("Kim");
++    }
++
++    @Test
++    @DisplayName("공백뿐인 이름은 거부한다")
++    void rejectsBlank() {
++        assertThatThrownBy(() -> Names.normalize("  ")).isInstanceOf(IllegalArgumentException.class).hasMessage("name must not be blank");
++    }
++}

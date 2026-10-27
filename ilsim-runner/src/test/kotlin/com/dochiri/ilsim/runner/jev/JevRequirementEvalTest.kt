@@ -67,6 +67,19 @@ class JevRequirementEvalTest {
     }
 
     @Test
+    fun `테스트에 관한 요구사항은 제거 사례를 만들지 않고 늘 충족으로 둔다`() {
+        val dir = Files.createTempDirectory("ilsim-req-eval")
+        try {
+            val root = dir.resolve("s").also { it.resolve("hunks").createDirectories() }
+            root.resolve("case.json").writeText("""{"requirements": [{"id": "R1", "text": "알파"}, {"id": "R2", "text": "테스트마다 설명을 붙인다"}], "tests": ["R2"]}""")
+            root.resolve("hunks/R1.diff").writeText("+ alpha\n")
+            val samples = JevRequirementEval.load(dir)
+            assertEquals(listOf("s/full", "s/drop-R1"), samples.map { it.id })
+            assertEquals(mapOf("R1" to "MISSING", "R2" to "MET"), samples.single { it.id == "s/drop-R1" }.expected)
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test
     fun `Agent 응답은 허용한 판정만 읽는다`() {
         val parsed = JevRequirementEval.parse("""설명 {"requirements":[{"id":"R1","verdict":"MET"},{"id":"R2","verdict":"maybe"}]}""")
         assertEquals(mapOf("R1" to "MET"), parsed)

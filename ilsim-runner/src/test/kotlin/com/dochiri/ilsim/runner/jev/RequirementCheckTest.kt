@@ -303,4 +303,13 @@ class RequirementCheckTest {
         assertEquals(emptyList(), RequirementCheck.openQuestions("# 인사\n\n## 미결정 사항\n없음\n"))
         assertEquals(emptyList(), RequirementCheck.openQuestions("# 인사\n\n- REQ-1: 인사한다\n"))
     }
+
+    @Test
+    fun `TC-23 구현 단계 판정은 테스트가 앞 단계에서 작성됐다고 알리고 테스트에 관한 부분은 충족으로 보게 묻는다`() {
+        val transport = Transport(mapper)
+        RequirementCheck.judge(jev(transport), requirements(1), "+ x\n")
+        val body = transport.requests.single()
+        assertContains(body.path("state").path("stage").asText(), "테스트 코드 단계")
+        assertContains(body.path("questions").path("m0").toString(), "테스트에 관한 부분뿐이면 Yes")
+    }
 }

@@ -1,0 +1,13 @@
+diff --git a/src/main/java/demo/Messages.java b/src/main/java/demo/Messages.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/demo/Messages.java
+@@ -0,0 +1,8 @@
++package demo;
++
++public final class Messages {
++    public static final String HELLO = "Hello";
++
++    private Messages() {
++    }
++}
