@@ -129,7 +129,7 @@ class IlsimMcp(
         active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(),
             shelved = task.shelved.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }, shelvedStage = task.shelvedStage.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }))
         val prompt = gates {}.promptWithRules(assigned.copy(testCommand = ws.project.testCommand))
-        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, guide(ws, task, assigned.prompt).render(), rules(assigned.stage)).joinToString("\n\n")
+        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, guide(ws, task, assigned.prompt, assigned.stage).render(), rules(assigned.stage)).joinToString("\n\n")
     }
 
     private fun describe(ws: Workspace, task: ActiveTask): String {
@@ -150,6 +150,7 @@ class IlsimMcp(
             state.stageStatus == "WAITING_APPROVAL" -> {
                 active.save(ws.root, task.copy(stage = state.stage, status = "WAITING_APPROVAL"))
                 "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 아래 산출물을 사용자에게 요약해 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요\n\n${artifact(ws, task, state.stage)}" +
+                    openQuestions(ws, task, state.stage) +
                     task.attention.takeIf { it.isNotEmpty() }?.let { items ->
                         "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 일심이 아래 문서 지침의 준수를 확인하지 못했습니다. 사용자가 산출물이 이 지침을 지키는지 직접 확인한 뒤 승인하도록 안내하세요:\n" + items.joinToString("\n") { "- $it" }
                     }.orEmpty()
@@ -181,20 +182,31 @@ class IlsimMcp(
     private fun guidelines(): String {
         val ws = workspace()
         val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
-        return guide(ws, task, task.feature).render()
+        return guide(ws, task, task.feature, task.stage).render()
     }
 
-    private fun guide(ws: Workspace, task: ActiveTask, request: String): TaskGuide =
-        guides.load(task.taskId)?.takeIf { it.projectId == ws.projectId && (it.selected || !jev().enabled) }
-            ?: buildGuide(ws, task.feature, request).also { guides.save(task.taskId, it) }
+    private fun openQuestions(ws: Workspace, task: ActiveTask, stage: String?): String {
+        if (stage != "REQUIREMENTS") return ""
+        val open = Artifacts(store).read(ws.projectId, task.feature, task.taskId, stage)?.let(RequirementCheck::openQuestions).orEmpty()
+        if (open.isEmpty()) return ""
+        return "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 요구사항 문서에 사용자가 정하지 않은 사항이 ${open.size}개 남아 있습니다. 질문마다 답을 받아 reject_stage(답)로 문서에 반영하기를 먼저 권하고, 그대로 승인하면 이 동작은 테스트·구현에서 추측해 만들지 않는다고 알리세요:\n" +
+            open.joinToString("\n") { "- $it" }
+    }
 
-    private fun buildGuide(ws: Workspace, feature: String, request: String): TaskGuide {
+    private fun guide(ws: Workspace, task: ActiveTask, request: String, stage: String?): TaskGuide {
+        val spec = stage?.takeIf { it != "REQUIREMENTS" }?.let { Artifacts(store).read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS") }
+        val basis = spec?.let { ReviewCache.digest(it).take(16) }
+        return guides.load(task.taskId)?.takeIf { it.projectId == ws.projectId && (it.selected || !jev().enabled) && (basis == null || it.basis == basis) }
+            ?: buildGuide(ws, task.feature, spec ?: request, basis).also { guides.save(task.taskId, it) }
+    }
+
+    private fun buildGuide(ws: Workspace, feature: String, request: String, basis: String? = null): TaskGuide {
         val others = store.load().projects.filterKeys { it != ws.projectId }.values.map { Path.of(it.path) }
         val files = ProjectDocs.files(ws.root, ws.project, others, feature)
         val sections = ProjectDocs.sections(files)
         val scored = if (sections.isEmpty()) emptyList() else runCatching { Guidelines.select(jev(), request, sections, ProjectDocs.modules(ws.root)) }.getOrNull()
         return TaskGuide(ws.projectId, scored != null, sections.size, scored?.let(Guidelines::relevant).orEmpty(),
-            if (scored == null) files.keys.toList() else emptyList(), scored?.let(Guidelines::scores).orEmpty())
+            if (scored == null) files.keys.toList() else emptyList(), scored?.let(Guidelines::scores).orEmpty(), basis = basis)
     }
 
     private fun rules(): String {
@@ -342,10 +354,10 @@ class IlsimMcp(
             return Outcome("구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
                 check.missing.joinToString("\n") { "- ${it.id} ${it.text} (충족 확률 ${"%.2f".format(check.probabilities[it.id])})" })
         }
-        val guide = guide(ws, task, assigned.prompt)
+        val guide = guide(ws, task, assigned.prompt, stage)
         if (!guide.reported) {
             DecisionScope.record("GUIDELINE_SELECT", if (guide.selected) "JEV" else "NONE",
-                if (guide.selected) "문서 구간 ${guide.sections}개 중 ${guide.guidelines.size}개 선택(${Guidelines.IRRELEVANT} 초과): ${guide.scores.joinToString(", ")}" else "JEV 꺼짐으로 지침 선택 못 함, 문서 ${guide.documents.size}개 안내",
+                if (guide.selected) "${if (guide.basis != null) "승인된 요구사항 문서 기준, " else ""}문서 구간 ${guide.sections}개 중 ${guide.guidelines.size}개 선택(${Guidelines.IRRELEVANT} 초과): ${guide.scores.joinToString(", ")}" else "JEV 꺼짐으로 지침 선택 못 함, 문서 ${guide.documents.size}개 안내",
                 guide.scores.joinToString("\n") + guide.documents.joinToString("\n"))
         }
         val compliance = guidelineCheck(guide, stage, diff, validation)

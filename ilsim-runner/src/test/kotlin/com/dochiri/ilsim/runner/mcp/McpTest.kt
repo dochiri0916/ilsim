@@ -375,6 +375,37 @@ class McpTest {
     }
 
     @Test
+    fun `요구사항 단계 뒤에는 승인된 요구사항 문서로 지침을 다시 고르고 정하지 않은 사항은 알리고 추측하지 말라고 한다`() {
+        repo.resolve("docs").createDirectories()
+        repo.resolve("docs/guide.md").writeText("# 지침\n\n## 결제\n결제 금액은 Money 로 다룬다.\n\n## 배송\n배송비는 정수 원 단위로 다룬다.\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "docs")
+        jevAnswer = { 0.9 }
+        jevByBody = { id, body -> when {
+            id.startsWith("v") -> 0.05
+            id[0] in "km" && "README.md" in body -> 0.05
+            id == "s1" && "영향 범위: 배송" !in body -> 0.05
+            else -> null
+        } }
+
+        val started = call("start_task", """{"requirement":"결제 금액 계산을 고친다","feature":"slug"}""")
+        assertContains(started, "결제 금액은 Money 로 다룬다")
+        assertTrue("배송비는 정수 원 단위로 다룬다" !in started)
+
+        val spec = "# 결제·배송\n\n영향 범위: 배송\n\n- REQ-1: 배송비를 계산한다\n\n## 미결정 사항\n- Q1: 무료 배송 기준 금액은?\n- Q2: 도서 지역 추가 요금은?\n"
+        val waiting = call("submit_result", doc(spec))
+        assertContains(waiting, "사용자가 정하지 않은 사항이 2개")
+        assertContains(waiting, "- Q1: 무료 배송 기준 금액은?")
+
+        val cases = call("approve_stage", """{"stage":"REQUIREMENTS"}""")
+        assertContains(cases, "일심 단계: TEST_CASES")
+        assertContains(cases, "승인된 요구사항 문서 기준")
+        assertContains(cases, "배송비는 정수 원 단위로 다룬다")
+        assertContains(cases, "## 정하지 않은 사항")
+        assertContains(cases, "- Q2: 도서 지역 추가 요금은?")
+    }
+
+    @Test
     fun `MCP 서버는 초기화·도구 목록·호출·오류를 JSON-RPC 로 답한다`() {
         val mcp = McpServer("ilsim", "0.1.0", "안내", listOf(McpTool("echo", "에코", buildJsonObject { put("type", "object") }) { args ->
             args["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("text 가 필요합니다")

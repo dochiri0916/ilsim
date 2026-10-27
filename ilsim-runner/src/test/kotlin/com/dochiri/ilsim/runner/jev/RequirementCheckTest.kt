@@ -280,4 +280,27 @@ class RequirementCheckTest {
         val limit = design.lines().first { "JEV 입력 한도" in it }
         assertContains(limit, "요구사항 판정")
     }
+
+    @Test
+    fun `요구사항 문서의 미결정 사항만 질문 목록으로 꺼낸다`() {
+        val doc = """
+            # 인사
+
+            ## 요구사항
+            - REQ-1: 인사한다
+
+            ## 미결정 사항
+            - Q1: null 이면 예외인가?
+              (기본 가정: 예외)
+            1. 공백만 있으면?
+            - Q3. 로케일은?
+
+            ## 기존 기능 영향
+            - 바뀌지 않는다
+        """.trimIndent()
+        assertEquals(listOf("Q1: null 이면 예외인가? (기본 가정: 예외)", "공백만 있으면?", "Q3. 로케일은?"), RequirementCheck.openQuestions(doc))
+        assertEquals(emptyList(), RequirementCheck.openQuestions("# 인사\n\n## 미결정 사항\n- 없음\n"))
+        assertEquals(emptyList(), RequirementCheck.openQuestions("# 인사\n\n## 미결정 사항\n없음\n"))
+        assertEquals(emptyList(), RequirementCheck.openQuestions("# 인사\n\n- REQ-1: 인사한다\n"))
+    }
 }

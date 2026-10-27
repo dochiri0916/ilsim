@@ -9,6 +9,33 @@ object RequirementCheck {
     data class Result(val probabilities: Map<String, Double>, val missing: List<Requirement>, val uncertain: List<Requirement>, val truncated: Boolean)
 
     private val item = Regex("""(REQ-\d+)\s*[:：.)\]|-]?\s*(.*)""")
+    private val heading = Regex("""^(#{1,6})\s+(.*)$""")
+    private val listItem = Regex("""^(?:[-*+]|\d+[.)])\s+(.*)$""")
+    private val nothing = Regex("""^\(?\s*(없음|해당\s*없음|none)\s*\)?\.?$""", RegexOption.IGNORE_CASE)
+
+    fun openQuestions(markdown: String): List<String> {
+        val items = mutableListOf<String>()
+        var level = 0
+        for (line in markdown.lines()) {
+            val h = heading.matchEntire(line.trimEnd())
+            if (h != null) {
+                val depth = h.groupValues[1].length
+                when {
+                    "미결정" in h.groupValues[2] -> level = depth
+                    level > 0 && depth <= level -> level = 0
+                    level > 0 -> items += h.groupValues[2].trim()
+                }
+                continue
+            }
+            if (level == 0 || line.isBlank()) continue
+            val item = listItem.matchEntire(line.trimEnd())
+            when {
+                item != null -> items += item.groupValues[1].trim()
+                items.isNotEmpty() -> items[items.lastIndex] = items.last() + " " + line.trim()
+            }
+        }
+        return items.filterNot { nothing.matches(it) }
+    }
 
     fun parse(markdown: String): List<Requirement> = markdown.lines().mapNotNull { line ->
         val m = item.find(line) ?: return@mapNotNull null

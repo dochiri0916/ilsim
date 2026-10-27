@@ -12,6 +12,7 @@ import com.dochiri.ilsim.runner.convention.DocRules
 import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevRiskScreen
+import com.dochiri.ilsim.runner.jev.RequirementCheck
 import com.dochiri.ilsim.runner.memory.NoiseDetector
 import com.dochiri.ilsim.runner.memory.ProjectMemory
 import com.dochiri.ilsim.runner.profile.StackDetector
@@ -63,7 +64,12 @@ class StageGates(
             "IMPLEMENTATION" -> listOf(section("요구사항 문서", "REQUIREMENTS"))
             else -> emptyList()
         }
-        return parts.filterNotNull().joinToString("\n\n").ifEmpty { null }
+        val open = if (task.stage in setOf("TEST_CASES", "TEST_CODE", "IMPLEMENTATION")) document(task, "REQUIREMENTS")?.let(RequirementCheck::openQuestions).orEmpty() else emptyList()
+        val undecided = open.takeIf { it.isNotEmpty() }?.let { items ->
+            "## 정하지 않은 사항\n\n요구사항 문서의 `## 미결정 사항`은 사용자가 아직 정하지 않았다. 이 동작은 추측해 테스트 케이스·테스트·구현으로 만들지 않는다. 이 단계를 끝내려면 꼭 정해야 하면 멈추고 사용자에게 물어본다.\n" +
+                items.joinToString("\n") { "- $it" }
+        }
+        return (parts + undecided).filterNotNull().joinToString("\n\n").ifEmpty { null }
     }
 
 

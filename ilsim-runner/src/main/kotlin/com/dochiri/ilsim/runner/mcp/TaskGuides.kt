@@ -21,6 +21,7 @@ data class TaskGuide(
     val documents: List<String> = emptyList(),
     val scores: List<String> = emptyList(),
     val reported: Boolean = false,
+    val basis: String? = null,
 ) {
     fun render(): String = buildString {
         appendLine("## 프로젝트 문서 지침 (반드시 지킨다)")
@@ -36,7 +37,7 @@ data class TaskGuide(
             append("이 작업에 적용되는 이 프로젝트 문서 지침이 없습니다(문서 구간 ${sections}개 판정).")
             return@buildString
         }
-        appendLine("이 작업에 적용되는 이 프로젝트 문서 구간입니다(문서 구간 ${sections}개 중 ${guidelines.size}개). 제출할 때 일심이 지침마다 준수 여부를 판정하고, 어기면 제출이 실패합니다.")
+        appendLine("이 작업에 적용되는 이 프로젝트 문서 구간입니다(${if (basis != null) "승인된 요구사항 문서 기준, " else ""}문서 구간 ${sections}개 중 ${guidelines.size}개). 제출할 때 일심이 지침마다 준수 여부를 판정하고, 어기면 제출이 실패합니다.")
         var used = 0
         val omitted = mutableListOf<Guideline>()
         for (g in guidelines) {
