@@ -97,7 +97,7 @@ claude plugin marketplace update ilsim && claude plugin update ilsim@ilsim
 
 ### 작업 흐름
 
-1. 등록한 프로젝트에서 요청하면 Agent가 `start_task` → 단계 작업 → `submit_result`로 진행한다. 요구사항·테스트 케이스 단계는 Claude 앱에서 승인한다(`approve_stage`·`reject_stage`, 매번 사용자 확인 창). 앞 단계 테스트가 틀려 구현을 통과할 수 없으면 `reopen_stage`로 테스트 코드 단계로 되돌린다(사용자 확인 창, 구현 변경은 보관했다가 되살림). 일심 작업 없이 파일을 고치거나 미제출 상태로 끝내려 하면 훅이 막는다.
+1. 등록한 프로젝트에서 요청하면 Agent가 `start_task` → 단계 작업 → `submit_result`로 진행한다. 요구사항·테스트 케이스 문서는 프로젝트에 만들지 않고 `~/.ilsim/projects/<id>/specs/`와 서버에 저장하며, Claude 앱에서 승인한다(`approve_stage`·`reject_stage`, 매번 사용자 확인 창). 앞 단계 테스트가 틀려 구현을 통과할 수 없으면 `reopen_stage`로 테스트 코드 단계로 되돌린다(사용자 확인 창, 구현 변경은 보관했다가 되살림). 일심 작업 없이 파일을 고치거나 미제출 상태로 끝내려 하면 훅이 막는다.
 
 독립 검토와 분석의 Claude 호출은 PC의 기본 로그인(`~/.claude`)을 쓴다. 이 저장소 자체는 `.claude/settings.json`이 ilsim 플러그인을 끄므로, 일심으로 일심을 고치려면 별도 복제본의 `.claude/settings.local.json`에서 `"enabledPlugins": {"ilsim@ilsim": true}`로 켠다.
 

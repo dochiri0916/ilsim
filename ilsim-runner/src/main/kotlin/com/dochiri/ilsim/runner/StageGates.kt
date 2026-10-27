@@ -38,14 +38,30 @@ class StageGates(
         private set
     private var survivors: List<String> = emptyList()
     private val reviewCache = ReviewCache(configStore.location.parent.resolve("reviews"))
+    private val artifacts = Artifacts(configStore)
 
     fun promptWithRules(task: AssignedTask): String {
-        if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return task.prompt
+        val documents = documents(task)
+        if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return listOfNotNull(task.prompt, documents).joinToString("\n\n")
         val brief = RulesBrief.build(
             architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId),
         )
         val test = task.testCommand?.let { Gate.selfCheck(task.stage, it) }
-        return listOfNotNull(task.prompt, brief, test).joinToString("\n\n")
+        return listOfNotNull(task.prompt, documents, brief, test).joinToString("\n\n")
+    }
+
+    fun document(task: AssignedTask, stage: String): String? = artifacts.read(task.projectId, task.feature, task.taskId, stage)
+
+    private fun documents(task: AssignedTask): String? {
+        fun section(title: String, stage: String) = document(task, stage)?.let { "## $title\n\n${it.trimEnd()}" }
+        val parts = when (task.stage) {
+            "REQUIREMENTS" -> listOf(section("지금까지 작성한 요구사항 문서(고칠 때 이 문서를 기준으로 한다)", "REQUIREMENTS"))
+            "TEST_CASES" -> listOf(section("요구사항 문서", "REQUIREMENTS"), section("지금까지 작성한 테스트 케이스 문서(고칠 때 이 문서를 기준으로 한다)", "TEST_CASES"))
+            "TEST_CODE" -> listOf(section("요구사항 문서", "REQUIREMENTS"), section("테스트 케이스 문서", "TEST_CASES"))
+            "IMPLEMENTATION" -> listOf(section("요구사항 문서", "REQUIREMENTS"))
+            else -> emptyList()
+        }
+        return parts.filterNotNull().joinToString("\n\n").ifEmpty { null }
     }
 
 
@@ -55,9 +71,8 @@ class StageGates(
         val none = AuditOutcome(emptyMap(), emptyList())
         if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return none
         return try {
-            fun spec(path: String) = worktree.resolve(path).takeIf { it.exists() }?.readText()
             val prompt = ChangeAudit.prompt(
-                task.stage, spec(Gate.requirementsPath(task.feature)), spec(Gate.testSpecPath(task.feature)),
+                task.stage, document(task, "REQUIREMENTS"), document(task, "TEST_CASES"),
                 listOfNotNull(RulesBrief.build(architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId)), guidelines)
                     .joinToString("\n\n").ifEmpty { null },
                 validation, diff, survivors.also { survivors = emptyList() }, committedTests(task, worktree),
@@ -80,7 +95,7 @@ class StageGates(
         val inDiff = changedFiles(worktree).toSet()
         val files = Shell.gitOk(worktree, "ls-files").lines().filter { it.isNotBlank() && Gate.isTestPath(it) && it !in inDiff }
         val evidence = inDiff.joinToString("\n") { path -> worktree.resolve(path).takeIf { it.exists() }?.readText().orEmpty() } +
-            worktree.resolve(Gate.testSpecPath(task.feature)).takeIf { it.exists() }?.readText().orEmpty()
+            document(task, "TEST_CASES").orEmpty()
         val refs = (Regex("(?:REQ|TC)-\\d+").findAll(evidence).map { it.value } + inDiff.map { it.substringAfterLast('/').substringBeforeLast('.') }).toSet()
         val tests = files.associateWith { worktree.resolve(it).readText() }
         val related = tests.filter { (path, text) -> refs.any { it in text || it in path } }
@@ -89,10 +104,8 @@ class StageGates(
 
     fun failure(task: AssignedTask, project: ProjectEntry, worktree: Path, validation: MutableMap<String, String>): String? {
         if (task.stage == "TEST_CASES") {
-            val v = Gate.traceabilityViolations(
-                worktree.resolve(Gate.requirementsPath(task.feature)).readText(),
-                worktree.resolve(Gate.testSpecPath(task.feature)).readText(),
-            )
+            val requirements = document(task, "REQUIREMENTS") ?: return "요구사항 문서가 없습니다. 요구사항 단계부터 다시 해야 합니다"
+            val v = Gate.traceabilityViolations(requirements, document(task, "TEST_CASES").orEmpty())
             validation["traceability"] = if (v.isEmpty()) "PASSED" else "FAILED"
             if (v.isNotEmpty()) return v.joinToString("\n")
         }

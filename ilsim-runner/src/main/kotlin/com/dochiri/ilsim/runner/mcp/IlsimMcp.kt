@@ -6,6 +6,7 @@ import com.dochiri.ilsim.runner.AiUsage
 import com.dochiri.ilsim.runner.AssignedTask
 import com.dochiri.ilsim.runner.ConfigStore
 import com.dochiri.ilsim.runner.DecisionScope
+import com.dochiri.ilsim.runner.Artifacts
 import com.dochiri.ilsim.runner.Gate
 import com.dochiri.ilsim.runner.PollRequest
 import com.dochiri.ilsim.runner.ProcessingDecision
@@ -30,8 +31,6 @@ import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.RequirementCheck
 import com.dochiri.ilsim.runner.risk.RiskScanner
 import java.nio.file.Path
-import kotlin.io.path.exists
-import kotlin.io.path.readText
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -52,9 +51,9 @@ class IlsimMcp(
         McpTool("next_step", "진행 중인 일심 작업의 상태와 현재 단계 지시를 돌려준다. 작업이 없으면 그 사실을 알린다.", schema(
             """{"type":"object","properties":{}}""",
         )) { nextStep() },
-        McpTool("submit_result", "현재 단계 결과를 제출한다. 일심이 검증하고 통과하면 커밋한 뒤 서버에 보고한다. 실패하면 고칠 점을 돌려준다.", schema(
-            """{"type":"object","properties":{"summary":{"type":"string","description":"이 단계에서 한 일 요약"}}}""",
-        )) { args -> submit(args.text("summary")) },
+        McpTool("submit_result", "현재 단계 결과를 제출한다. 요구사항·테스트 케이스 단계는 문서 전체를 document로 넣는다. 일심이 검증하고 통과하면 코드 단계는 커밋하고 문서 단계는 일심 저장소(~/.ilsim)에 저장한 뒤 서버에 보고한다. 실패하면 고칠 점을 돌려준다.", schema(
+            """{"type":"object","properties":{"summary":{"type":"string","description":"이 단계에서 한 일 요약"},"document":{"type":"string","description":"요구사항·테스트 케이스 단계에서 작성한 문서 전체(마크다운). 프로젝트에 파일로 만들지 않고 여기에 넣는다"}}}""",
+        )) { args -> submit(args.text("summary"), args.text("document")) },
         McpTool("check_change", "제출 전에 현재 변경을 빠르게 검사한다(허용 경로·아키텍처·컨벤션·위험·테스트 무결성). 테스트·변이·독립 검토는 submit_result에서 한다. 차단하지 않는다.", schema(
             """{"type":"object","properties":{}}""",
         )) { checkChange() },
@@ -128,7 +127,7 @@ class IlsimMcp(
         active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(),
             shelved = task.shelved.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }, shelvedStage = task.shelvedStage.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }))
         val prompt = gates {}.promptWithRules(assigned.copy(testCommand = ws.project.testCommand))
-        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, guide(ws, task, assigned.prompt).render(), rules(assigned.stage, task.feature)).joinToString("\n\n")
+        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, guide(ws, task, assigned.prompt).render(), rules(assigned.stage)).joinToString("\n\n")
     }
 
     private fun describe(ws: Workspace, task: ActiveTask): String {
@@ -148,7 +147,7 @@ class IlsimMcp(
             }
             state.stageStatus == "WAITING_APPROVAL" -> {
                 active.save(ws.root, task.copy(stage = state.stage, status = "WAITING_APPROVAL"))
-                "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 산출물(${artifact(state.stage, task.feature)})을 사용자에게 요약해 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요" +
+                "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 아래 산출물을 사용자에게 요약해 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요\n\n${artifact(ws, task, state.stage)}" +
                     task.attention.takeIf { it.isNotEmpty() }?.let { items ->
                         "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 일심이 아래 문서 지침의 준수를 확인하지 못했습니다. 사용자가 산출물이 이 지침을 지키는지 직접 확인한 뒤 승인하도록 안내하세요:\n" + items.joinToString("\n") { "- $it" }
                     }.orEmpty()
@@ -165,7 +164,7 @@ class IlsimMcp(
         val validation = linkedMapOf<String, String>()
         val assigned = AssignedTask(task.taskId, ws.projectId, stage, 1, task.feature, "claude-app", prompt = "", testCommand = ws.project.testCommand)
         val changed = ws.changedFiles()
-        val problems = Gate.pathViolations(stage, task.feature, changed).filterNot { changed.isEmpty() } + gates(notes::add).quickCheck(assigned, ws.root, validation)
+        val problems = Gate.pathViolations(stage, changed).filterNot { changed.isEmpty() } + gates(notes::add).quickCheck(assigned, ws.root, validation)
         return buildString {
             appendLine("변경 파일 ${changed.size}개, 검사: ${validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "없음" }}")
             if (problems.isEmpty()) appendLine("문제 없음. 테스트·변이·독립 검토는 submit_result에서 실행합니다")
@@ -273,13 +272,14 @@ class IlsimMcp(
         return "$stage 단계를 거절했습니다. 사유를 반영해 같은 단계를 다시 합니다\n\n" + nextStep()
     }
 
-    private fun artifact(stage: String?, feature: String): String = when (stage) {
-        "REQUIREMENTS" -> Gate.requirementsPath(feature)
-        "TEST_CASES" -> Gate.testSpecPath(feature)
-        else -> "변경 diff"
+    private fun artifact(ws: Workspace, task: ActiveTask, stage: String?): String {
+        val artifacts = Artifacts(store)
+        val text = stage?.let { artifacts.read(ws.projectId, task.feature, task.taskId, it) } ?: return "산출물: 브랜치 ${task.branch}의 변경"
+        val shown = if (text.length > MAX_DOCUMENT) text.take(MAX_DOCUMENT) + "\n…(생략)" else text
+        return "## 산출물 (${artifacts.path(ws.projectId, task.feature, task.taskId, stage)})\n\n$shown"
     }
 
-    private fun submit(summary: String?): String {
+    private fun submit(summary: String?, document: String?): String {
         val ws = workspace()
         val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다. start_task로 시작하세요")
         val branch = ws.branch()
@@ -296,7 +296,7 @@ class IlsimMcp(
         val validation = linkedMapOf<String, String>()
         val outcome = UsageScope.collect(usage, {}, assigned.executionId) {
             ReviewContext.within(assigned.reviewPolicy, stage) {
-                DecisionScope.collect(decisions) { verify(ws, task, assigned.copy(testCommand = ws.project.testCommand), validation, ::log) }
+                DecisionScope.collect(decisions) { verify(ws, task, assigned.copy(testCommand = ws.project.testCommand), validation, document, ::log) }
             }
         }
         if (outcome.error != null) {
@@ -304,32 +304,37 @@ class IlsimMcp(
             log("제출 실패: ${outcome.error.lines().first()}")
             return "제출 실패($stage):\n${outcome.error}\n\n지적된 부분을 고친 뒤 submit_result를 다시 호출하세요"
         }
-        Shell.gitOk(ws.root, "-c", "user.name=ilsim", "-c", "user.email=ilsim@localhost", "commit", "-m", "ilsim(${stage.lowercase()}): ${task.feature}")
+        val saved = Artifacts(store).path(ws.projectId, task.feature, task.taskId, stage)
+        if (saved == null) Shell.gitOk(ws.root, "-c", "user.name=ilsim", "-c", "user.email=ilsim@localhost", "commit", "-m", "ilsim(${stage.lowercase()}): ${task.feature}")
         server.result(task.taskId, StageResult(true, diff = outcome.diff, artifacts = outcome.artifacts, validation = validation, branch = task.branch,
             model = assigned.model, executionId = assigned.executionId, stage = stage, usage = usage.toList(), decisions = decisions.toList()))
         active.save(ws.root, task.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention))
         guides.load(task.taskId)?.takeIf { !it.reported }?.let { guides.save(task.taskId, it.copy(reported = true)) }
         val checks = validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "형식·경로 검사" }
-        return "통과($stage): $checks. 커밋했습니다\n\n" + nextStep()
+        return "통과($stage): $checks. ${if (saved == null) "커밋했습니다" else "문서를 저장했습니다($saved)"}\n\n" + nextStep()
     }
 
     private class Outcome(val error: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap(), val attention: List<String> = emptyList())
 
-    private fun verify(ws: Workspace, task: ActiveTask, assigned: AssignedTask, validation: MutableMap<String, String>, log: (String) -> Unit): Outcome {
+    private fun verify(ws: Workspace, task: ActiveTask, assigned: AssignedTask, validation: MutableMap<String, String>, document: String?, log: (String) -> Unit): Outcome {
         val stage = assigned.stage
-        val violations = Gate.pathViolations(stage, task.feature, ws.changedFiles())
+        val violations = Gate.pathViolations(stage, ws.changedFiles())
         if (violations.isNotEmpty()) return Outcome(violations.joinToString("\n"))
-        val required = when (stage) {
+        val key = when (stage) {
             "REQUIREMENTS" -> Gate.requirementsPath(task.feature)
             "TEST_CASES" -> Gate.testSpecPath(task.feature)
             else -> null
         }
-        if (required != null && !ws.root.resolve(required).exists()) return Outcome("산출물이 없습니다: $required")
+        val text = document?.trim()?.takeIf { it.isNotEmpty() }
+        if (key != null && text == null) return Outcome("이 단계는 완성한 문서 전체를 submit_result 의 document 에 넣어 제출합니다. 프로젝트에 파일로 만들지 않습니다")
+        if (key != null && text != null) Artifacts(store).write(ws.projectId, task.feature, task.taskId, stage, text)
         val gates = gates(log)
         gates.failure(assigned, ws.project, ws.root, validation)?.let { return Outcome(it) }
-        val artifacts = required?.let { mapOf(it to ws.root.resolve(it).readText()) }.orEmpty()
-        Shell.gitOk(ws.root, "add", "-A")
-        val diff = Shell.gitOk(ws.root, "diff", "--cached", "HEAD")
+        val artifacts = if (key != null && text != null) mapOf(key to text) else emptyMap()
+        val diff = if (text != null && key != null) "+++ ${key.substringAfterLast('/')}\n" + text.lines().joinToString("\n") { "+$it" } else {
+            Shell.gitOk(ws.root, "add", "-A")
+            Shell.gitOk(ws.root, "diff", "--cached", "HEAD")
+        }
         val check = if (stage == "IMPLEMENTATION") requirementCheck(ws, task, diff, validation) else null
         if (check != null && check.missing.isNotEmpty()) {
             return Outcome("구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
@@ -370,7 +375,7 @@ class IlsimMcp(
     }
 
     private fun requirementCheck(ws: Workspace, task: ActiveTask, diff: String, validation: MutableMap<String, String>): RequirementCheck.Result? {
-        val spec = ws.root.resolve(Gate.requirementsPath(task.feature)).takeIf { it.exists() }?.readText()
+        val spec = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS")
         val requirements = spec?.let(RequirementCheck::parse).orEmpty()
         val result = runCatching { RequirementCheck.judge(jev(), requirements, diff) }.getOrNull()
         validation["requirements"] = when {
@@ -430,11 +435,11 @@ class IlsimMcp(
     private fun gates(log: (String) -> Unit): StageGates =
         StageGates(store, ArchitectureStore(store), ConventionStore(store), ask, log)
 
-    private fun rules(stage: String, feature: String): String = """
+    private fun rules(stage: String): String = """
         ## 일심 진행 규칙
-        - 이 단계에서 고칠 수 있는 경로: ${allowed(stage, feature)}
+        - 이 단계에서 고칠 수 있는 경로: ${allowed(stage)}
         - git commit·push·브랜치 변경은 하지 않는다. 커밋은 일심이 한다.
-        - 단계를 마치면 submit_result를 호출한다. 실패하면 지적된 부분만 고치고 다시 호출한다.
+        - 단계를 마치면 submit_result를 호출한다${if (stage in Artifacts.DOCUMENT_STAGES) "(완성한 문서 전체를 document 에 넣는다)" else ""}. 실패하면 지적된 부분만 고치고 다시 호출한다.
         - 사용자에게 보고할 때 submit_result 결과를 함께 알린다.
         """.trimIndent()
 
@@ -445,6 +450,8 @@ class IlsimMcp(
 
         private const val MAX_OUTPUT = 12_000
 
+        private const val MAX_DOCUMENT = 8_000
+
         const val AUDIT_SAMPLE_RATE = 0.2
 
         const val AUDIT_MAX_DIFF_LINES = 300
@@ -453,11 +460,10 @@ class IlsimMcp(
 
         const val INSTRUCTIONS = "일심이 관리하는 저장소에서는 코드·문서를 바꾸기 전에 start_task(새 작업) 또는 next_step(진행 중 작업)을 호출하고, 단계를 마치면 submit_result로 제출한다. 단계 지시의 프로젝트 문서 지침은 불합리해 보여도 그대로 따르고, 따를 수 없으면 사용자에게 묻는다. 질문·설명 요청이면 작업을 만들지 않는다."
 
-        fun allowed(stage: String?, feature: String): String = when (stage) {
-            "REQUIREMENTS" -> Gate.requirementsPath(feature)
-            "TEST_CASES" -> Gate.testSpecPath(feature)
+        fun allowed(stage: String?): String = when (stage) {
+            "REQUIREMENTS", "TEST_CASES" -> "없음(문서는 프로젝트에 파일로 만들지 않고 submit_result 의 document 로 제출)"
             "TEST_CODE" -> "테스트 경로(src/test 등)만"
-            "IMPLEMENTATION" -> "테스트와 specs/ 를 뺀 프로덕션 코드"
+            "IMPLEMENTATION" -> "테스트를 뺀 프로덕션 코드"
             else -> "없음"
         }
 

@@ -23,17 +23,14 @@ object Gate {
 
     fun isArtifact(path: String): Boolean = artifactPath.matches(path)
 
-    fun pathViolations(stage: String, feature: String, changed: List<String>): List<String> {
+    fun pathViolations(stage: String, changed: List<String>): List<String> {
+        if (stage in Artifacts.DOCUMENT_STAGES) return changed.map { "허용되지 않은 변경: $it (이 단계는 프로젝트 파일을 바꾸지 않습니다. 문서는 submit_result 의 document 로 제출합니다)" }
         if (changed.isEmpty()) return listOf("변경된 파일이 없습니다")
         return when (stage) {
-            "REQUIREMENTS" -> changed.filter { it != requirementsPath(feature) }
-                .map { "허용되지 않은 변경: $it (${requirementsPath(feature)}만 수정 가능)" }
-            "TEST_CASES" -> changed.filter { it != testSpecPath(feature) }
-                .map { "허용되지 않은 변경: $it (${testSpecPath(feature)}만 수정 가능)" }
             "TEST_CODE" -> changed.filterNot(::isTestPath)
                 .map { "테스트 경로가 아닌 변경: $it" }
-            "IMPLEMENTATION" -> changed.filter { isTestPath(it) || it.startsWith("specs/") }
-                .map { "수정 금지 경로 변경: $it (테스트와 specs는 구현 단계에서 수정할 수 없음)" }
+            "IMPLEMENTATION" -> changed.filter(::isTestPath)
+                .map { "수정 금지 경로 변경: $it (테스트는 구현 단계에서 수정할 수 없음)" }
             else -> listOf("알 수 없는 단계: $stage")
         }
     }

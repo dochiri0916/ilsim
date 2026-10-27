@@ -124,6 +124,8 @@ class McpTest {
 
     private fun edit(path: String) = hook("pre-tool-use", """{"cwd":"$repo","tool_name":"Write","tool_input":{"file_path":"$repo/$path"}}""")
 
+    private fun doc(text: String, summary: String? = null) = buildJsonObject { put("document", text); summary?.let { put("summary", it) } }.toString()
+
     @Test
     fun `작업을 시작하면 브랜치를 만들고 단계를 통과해야 커밋·보고한다`() {
         assertContains(call("next_step"), "진행 중인 일심 작업이 없습니다")
@@ -131,27 +133,30 @@ class McpTest {
 
         val started = call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         assertContains(started, "일심 단계: REQUIREMENTS")
-        assertContains(started, "specs/slug/requirements.md")
+        assertContains(started, "submit_result 의 document")
         assertEquals("ilsim/slug-task-123", Shell.gitOk(repo, "rev-parse", "--abbrev-ref", "HEAD").trim())
         assertEquals("p", server.registered.single().projects.single().id)
 
-        assertContains(call("submit_result"), "변경된 파일이 없습니다")
+        assertContains(call("submit_result"), "document 에 넣어 제출합니다")
         assertContains(edit("src/Main.java").stdout, "deny")
-        assertEquals("", edit("specs/slug/requirements.md").stdout)
+        assertContains(edit("specs/slug/requirements.md").stdout, "deny")
 
         repo.resolve("src").createDirectories()
         repo.resolve("src/Main.java").writeText("class Main {}\n")
-        assertContains(call("submit_result"), "허용되지 않은 변경: src/Main.java")
+        assertContains(call("submit_result", doc("# 슬러그\n\nREQ-1 소문자로 바꾼다")), "허용되지 않은 변경: src/Main.java")
         assertTrue(Shell.gitOk(repo, "diff", "--cached", "--name-only").isBlank(), "실패한 제출은 스테이징을 남기지 않는다")
         assertContains(hook("stop", """{"cwd":"$repo"}""").stdout, "\"decision\":\"block\"")
 
         repo.resolve("src/Main.java").deleteExisting()
-        repo.resolve("specs/slug").createDirectories()
-        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\nREQ-1 소문자로 바꾼다\n")
-        val submitted = call("submit_result", """{"summary":"요구사항 작성"}""")
+        val submitted = call("submit_result", doc("# 슬러그\n\nREQ-1 소문자로 바꾼다", "요구사항 작성"))
         assertContains(submitted, "통과(REQUIREMENTS)")
+        assertContains(submitted, "문서를 저장했습니다")
         assertContains(submitted, "사용자 승인을 기다립니다")
-        assertEquals("ilsim(requirements): slug", Shell.gitOk(repo, "log", "-1", "--format=%s").trim())
+        assertContains(submitted, "REQ-1 소문자로 바꾼다")
+        assertEquals("init", Shell.gitOk(repo, "log", "-1", "--format=%s").trim(), "문서 단계는 프로젝트에 커밋하지 않는다")
+        assertTrue(Shell.gitOk(repo, "status", "--porcelain").isBlank())
+        assertEquals("# 슬러그\n\nREQ-1 소문자로 바꾼다\n", home.resolve(".ilsim/projects/p/specs/slug-task-123/requirements.md").readText())
+        assertEquals("# 슬러그\n\nREQ-1 소문자로 바꾼다", server.results.single().artifacts["specs/slug/requirements.md"])
         assertEquals(true, server.results.single().passed)
         assertEquals("e1", server.results.single().executionId)
         assertContains(server.events, "text:요구사항 작성")
@@ -163,11 +168,14 @@ class McpTest {
         assertContains(runCatching { call("approve_stage", """{"stage":"TEST_CASES"}""") }.exceptionOrNull()!!.message!!, "승인 대기 중이 아닙니다")
         val rejected = call("reject_stage", """{"stage":"REQUIREMENTS","feedback":"REQ-2 대문자 처리 추가"}""")
         assertContains(rejected, "일심 단계: REQUIREMENTS")
+        assertContains(rejected, "지금까지 작성한 요구사항 문서")
         assertEquals("REQ-2 대문자 처리 추가", server.feedback)
-        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\nREQ-1 소문자로 바꾼다\nREQ-2 대문자도 처리한다\n")
-        assertContains(call("submit_result"), "통과(REQUIREMENTS)")
-        assertContains(call("approve_stage", """{"stage":"REQUIREMENTS"}"""), "일심 단계: TEST_CASES")
-        assertEquals("", edit("specs/slug/test-spec.md").stdout)
+        assertContains(call("submit_result", doc("# 슬러그\n\nREQ-1 소문자로 바꾼다\nREQ-2 대문자도 처리한다")), "통과(REQUIREMENTS)")
+        val cases = call("approve_stage", """{"stage":"REQUIREMENTS"}""")
+        assertContains(cases, "일심 단계: TEST_CASES")
+        assertContains(cases, "REQ-2 대문자도 처리한다")
+        assertContains(edit("specs/slug/test-spec.md").stdout, "deny")
+        assertTrue(!repo.resolve("specs").toFile().exists(), "프로젝트 안에 일심 산출물을 만들지 않는다")
     }
 
     @Test
@@ -227,8 +235,6 @@ class McpTest {
         repo.resolve("src/Main.java").writeText("class Main {}\n")
         assertContains(call("check_change"), "허용되지 않은 변경: src/Main.java")
         repo.resolve("src/Main.java").deleteExisting()
-        repo.resolve("specs/slug").createDirectories()
-        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\nREQ-1 소문자\n")
         assertContains(call("check_change"), "문제 없음")
 
         assertContains(runCatching { call("retry_task") }.exceptionOrNull()!!.message!!, "차단된 작업이 아닙니다")
@@ -276,11 +282,8 @@ class McpTest {
         fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
-        repo.resolve("specs/slug").createDirectories()
-        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다\n")
-        run("submit_result"); server.approve("t")
-        repo.resolve("specs/slug/test-spec.md").writeText("| TC-1 | REQ-1 |\n| TC-2 | REQ-2 |\n")
-        run("submit_result"); server.approve("t")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 |\n| TC-2 | REQ-2 |")); server.approve("t")
         repo.resolve("src/test").createDirectories()
         repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
         run("submit_result")
@@ -308,11 +311,8 @@ class McpTest {
         fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
-        repo.resolve("specs/slug").createDirectories()
-        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n")
-        run("submit_result"); server.approve("t")
-        repo.resolve("specs/slug/test-spec.md").writeText("| TC-1 | REQ-1 |\n")
-        run("submit_result"); server.approve("t")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
         repo.resolve("src/test").createDirectories()
         repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
         run("submit_result")
@@ -352,15 +352,13 @@ class McpTest {
         assertTrue("brew install" !in started && "다른 프로젝트 지침" !in started && "demo\n" !in started.substringAfter("## 프로젝트 문서 지침"))
         assertContains(call("get_guidelines"), "도메인은 어댑터를 의존하지 않는다")
 
-        repo.resolve("specs/slug").createDirectories()
-        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\n- REQ-1: 도메인이 어댑터를 직접 호출한다\n")
-        val failed = call("submit_result")
+        val failed = call("submit_result", doc("# 슬러그\n\n- REQ-1: 도메인이 어댑터를 직접 호출한다"))
         assertContains(failed, "문서 지침을 어긴 것으로 보입니다")
         assertContains(failed, "docs/architecture.md:3")
         assertTrue(server.results.isEmpty())
 
         violation = 0.05
-        assertContains(call("submit_result"), "guidelines=PASSED")
+        assertContains(call("submit_result", doc("# 슬러그\n\n- REQ-1: 도메인이 어댑터를 직접 호출한다")), "guidelines=PASSED")
         assertTrue(server.results.last().decisions.any { it.purpose == "GUIDELINE_CHECK" && it.handler == "JEV" })
         val selection = server.results.last().decisions.single { it.purpose == "GUIDELINE_SELECT" }
         assertContains(selection.reason, "docs/architecture.md:3=0.90")
@@ -370,8 +368,7 @@ class McpTest {
 
         call("reject_stage", """{"stage":"REQUIREMENTS","feedback":"다시"}""")
         violation = 0.6
-        repo.resolve("specs/slug/requirements.md").writeText("# 슬러그\n\n- REQ-1: 도메인이 어댑터를 직접 호출하지 않는다\n")
-        assertContains(call("submit_result"), "guidelines=UNCERTAIN")
+        assertContains(call("submit_result", doc("# 슬러그\n\n- REQ-1: 도메인이 어댑터를 직접 호출하지 않는다")), "guidelines=UNCERTAIN")
         val waiting = call("next_step")
         assertContains(waiting, "준수를 확인하지 못했습니다")
         assertContains(waiting, "docs/architecture.md:3 — 아키텍처 > 계층 (위반 확률 0.60)")

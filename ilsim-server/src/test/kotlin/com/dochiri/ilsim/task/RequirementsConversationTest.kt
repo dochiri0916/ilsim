@@ -56,7 +56,7 @@ class RequirementsConversationTest {
 
         val a = poll()!!
         assertThat(a.stage).isEqualTo("REQUIREMENTS")
-        assertThat(a.prompt).contains("미결정 1번은 A 로 해줘").contains("specs/slug/requirements.md")
+        assertThat(a.prompt).contains("미결정 1번은 A 로 해줘").contains("submit_result 의 document").doesNotContain("specs/")
 
         service.report(task.id.value, pass("s1"))
         assertThat(requirements().status).isEqualTo(StageStatus.WAITING_APPROVAL)

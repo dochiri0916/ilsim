@@ -15,22 +15,24 @@ class GateTest {
     }
 
     @Test
-    fun `요구사항 단계는 요구사항 문서만 수정할 수 있다`() {
-        assertEquals(emptyList(), Gate.pathViolations("REQUIREMENTS", "f", listOf("specs/f/requirements.md")))
-        assertEquals(1, Gate.pathViolations("REQUIREMENTS", "f", listOf("specs/f/requirements.md", "src/A.java")).size)
-        assertEquals(1, Gate.pathViolations("REQUIREMENTS", "f", emptyList()).size)
+    fun `문서 단계는 프로젝트 파일을 바꾸지 않는다`() {
+        assertEquals(emptyList(), Gate.pathViolations("REQUIREMENTS", emptyList()))
+        assertEquals(emptyList(), Gate.pathViolations("TEST_CASES", emptyList()))
+        assertEquals(2, Gate.pathViolations("REQUIREMENTS", listOf("specs/f/requirements.md", "src/A.java")).size)
+        assertEquals(1, Gate.pathViolations("TEST_CASES", listOf("docs/test-spec.md")).size)
     }
 
     @Test
     fun `테스트 작성 단계는 테스트 경로 밖을 수정할 수 없다`() {
-        assertEquals(emptyList(), Gate.pathViolations("TEST_CODE", "f", listOf("src/test/A.java")))
-        assertEquals(1, Gate.pathViolations("TEST_CODE", "f", listOf("src/test/A.java", "src/main/A.java")).size)
+        assertEquals(emptyList(), Gate.pathViolations("TEST_CODE", listOf("src/test/A.java")))
+        assertEquals(1, Gate.pathViolations("TEST_CODE", listOf("src/test/A.java", "src/main/A.java")).size)
+        assertEquals(1, Gate.pathViolations("TEST_CODE", emptyList()).size)
     }
 
     @Test
-    fun `구현 단계는 테스트와 specs를 수정할 수 없다`() {
-        assertEquals(emptyList(), Gate.pathViolations("IMPLEMENTATION", "f", listOf("src/main/A.java")))
-        assertEquals(2, Gate.pathViolations("IMPLEMENTATION", "f", listOf("src/test/A.java", "specs/f/test-spec.md", "src/main/A.java")).size)
+    fun `구현 단계는 테스트를 수정할 수 없다`() {
+        assertEquals(emptyList(), Gate.pathViolations("IMPLEMENTATION", listOf("src/main/A.java", "docs/guide.md")))
+        assertEquals(1, Gate.pathViolations("IMPLEMENTATION", listOf("src/test/A.java", "src/main/A.java")).size)
     }
 
     @Test

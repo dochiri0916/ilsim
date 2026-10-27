@@ -87,8 +87,8 @@ object Hooks {
         val relative = ws.root.relativize(absolute).toString().replace('\\', '/')
         if (Gate.isIgnored(relative)) return Output()
         blocked(task)?.let { return deny(it) }
-        val violations = Gate.pathViolations(checkNotNull(task).stage.orEmpty(), task.feature, listOf(relative))
-        if (violations.isNotEmpty()) return deny("${violations.first()}. 지금 단계(${task.stage})에서 고칠 수 있는 경로: ${IlsimMcp.allowed(task.stage, task.feature)}")
+        val violations = Gate.pathViolations(checkNotNull(task).stage.orEmpty(), listOf(relative))
+        if (violations.isNotEmpty()) return deny("${violations.first()}. 지금 단계(${task.stage})에서 고칠 수 있는 경로: ${IlsimMcp.allowed(task.stage)}")
         return Output()
     }
 
