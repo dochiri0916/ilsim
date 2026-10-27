@@ -64,7 +64,7 @@ class IlsimMcp(
         McpTool("get_rules", "이 프로젝트에서 승인된 아키텍처·컨벤션·위험 규칙을 돌려준다.", schema(
             """{"type":"object","properties":{}}""",
         )) { rules() },
-        McpTool("analyze_project", "프로젝트 코드에서 아키텍처·컨벤션 규칙을 추출하고 AI 검토로 확실한 규칙을 자동 승인한다. 나머지는 review_rules로 보여 주고 사용자가 정하면 decide_rules로 반영한다. 몇 분 걸릴 수 있다.", schema(
+        McpTool("analyze_project", "프로젝트 코드에서 아키텍처·컨벤션 규칙을 추출하고 AI 검토로 확실한 규칙을 자동 승인한다. 프로젝트 문서에 적힌 규칙 중 기계적으로 확인되는 것은 정적 규칙(doc:)으로 옮긴다. 나머지는 review_rules로 보여 주고 사용자가 정하면 decide_rules로 반영한다. 몇 분 걸릴 수 있다.", schema(
             """{"type":"object","properties":{}}""",
         )) { analyze() },
         McpTool("review_rules", "추출된 아키텍처·컨벤션 규칙과 학습 메모리 후보의 상태(승인·거절·후보)와 근거를 돌려준다. 사용자가 규칙을 검토할 때 쓴다.", schema(

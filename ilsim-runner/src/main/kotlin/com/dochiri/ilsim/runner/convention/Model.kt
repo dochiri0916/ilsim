@@ -19,6 +19,20 @@ data class ConventionRule(
     val decidedBy: String? = null,
     val review: RuleReview? = null,
     val recommendation: Recommendation? = null,
+    val origin: DocOrigin? = null,
+)
+
+@Serializable
+data class DocOrigin(val path: String, val line: Int, val heading: String, val quote: String, val hash: String)
+
+@Serializable
+data class DocCoverage(
+    val path: String,
+    val line: Int,
+    val heading: String,
+    val hash: String,
+    val rules: List<String> = emptyList(),
+    val remaining: List<String> = emptyList(),
 )
 
 @Serializable
@@ -32,4 +46,5 @@ data class ConventionModel(
     val source: String = "MINED",
     val review: ModelReview? = null,
     val inventory: List<String> = emptyList(),
+    val documents: List<DocCoverage> = emptyList(),
 )

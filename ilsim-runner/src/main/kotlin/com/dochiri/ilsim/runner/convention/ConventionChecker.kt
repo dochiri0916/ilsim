@@ -14,7 +14,7 @@ object ConventionChecker {
         for (rule in model.rules.filter { !it.rejected && (!approvedOnly || it.approved) }) {
             val probe = Probes.byKind(rule.kind) ?: continue
             probe.samples(facts, rule.params).filter { !it.ok && (onlyFiles == null || it.file in onlyFiles) }
-                .mapTo(out) { Violation(rule.id, rule.severity, it.file, it.line, it.message) }
+                .mapTo(out) { Violation(rule.id, rule.severity, it.file, it.line, rule.origin?.let { o -> "${rule.description}: ${it.message} (${o.path}:${o.line})" } ?: it.message) }
         }
         return out.sortedWith(compareBy({ it.file }, { it.line }, { it.ruleId }))
     }

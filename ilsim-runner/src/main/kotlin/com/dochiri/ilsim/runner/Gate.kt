@@ -19,6 +19,10 @@ object Gate {
 
     fun testSpecPath(feature: String) = "specs/$feature/test-spec.md"
 
+    private val artifactPath = Regex("""^specs/[^/]+/(requirements|test-spec)\.md$""")
+
+    fun isArtifact(path: String): Boolean = artifactPath.matches(path)
+
     fun pathViolations(stage: String, feature: String, changed: List<String>): List<String> {
         if (changed.isEmpty()) return listOf("변경된 파일이 없습니다")
         return when (stage) {

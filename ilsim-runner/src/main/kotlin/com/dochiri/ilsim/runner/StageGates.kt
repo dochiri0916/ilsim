@@ -7,6 +7,7 @@ import com.dochiri.ilsim.runner.architecture.Violation
 import com.dochiri.ilsim.runner.audit.ChangeAudit
 import com.dochiri.ilsim.runner.brief.RulesBrief
 import com.dochiri.ilsim.runner.convention.ConventionChecker
+import com.dochiri.ilsim.runner.convention.DocRules
 import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevRiskScreen
@@ -211,8 +212,10 @@ class StageGates(
             return null
         }
         val changed = changedFiles(worktree).toSet()
-        val blocking = ConventionChecker.check(worktree, StackDetector.detect(worktree), model, approvedOnly = true, onlyFiles = changed)
+        val found = ConventionChecker.check(worktree, StackDetector.detect(worktree), model, approvedOnly = true, onlyFiles = changed)
             .filter { it.severity == "BLOCK" }
+        val blocking = DocRules.introduced(worktree, model, found) { path -> Shell.git(worktree, "show", "HEAD:$path").takeIf { it.exit == 0 }?.output?.lines() }
+        (found.size - blocking.size).takeIf { it > 0 }?.let { log("문서 규칙의 기존 위반 ${it}건은 이번 변경이 만든 것이 아니라서 막지 않습니다") }
         validation["convention"] = if (blocking.isEmpty()) "PASSED" else "FAILED"
         if (blocking.isEmpty()) return null
         return "컨벤션 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }

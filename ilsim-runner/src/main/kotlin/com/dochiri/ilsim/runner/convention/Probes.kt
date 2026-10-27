@@ -28,7 +28,7 @@ internal object Probes {
         PackageMethod, ReadOnlyTransactions, IdentifierTyped,
     )
 
-    fun byKind(kind: String): Probe? = all.firstOrNull { it.kind == kind }
+    fun byKind(kind: String): Probe? = all.firstOrNull { it.kind == kind } ?: DocProbes.byKind(kind)
 
     internal fun lastWord(name: String): String =
         Regex("""[A-Z][a-z0-9]*$""").find(name)?.value?.takeIf { it.length < name.length } ?: ""

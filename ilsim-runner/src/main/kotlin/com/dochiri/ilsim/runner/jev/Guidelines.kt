@@ -123,14 +123,49 @@ object Guidelines {
         )
         val questions = batch.indices.flatMap { i ->
             listOf(
-                "k$i" to NoulQuestion.of("k$i", "문서 d$i 에 코드를 만들거나 고칠 때 따라야 할 규칙·스펙(정해진 동작, 구조, 의존 방향, 이름, 포맷, 테스트 방식, 작업 원칙, 금지 사항 등)을 담은 구간이 있는가? path, headings, start 로 판단한다. 작업 기록·인수인계 일지, 계획서, 분석·평가 보고서, 회의 메모, 변경 이력, 설치·배포 안내만 있고 따를 규칙 구간이 없으면 No. 그런 문서라도 작업 규칙 같은 규칙 구간이 따로 있으면 Yes.")
-                    .withCriteria("따를 규칙·스펙 구간이 있는 문서", "기록·계획·분석·안내만 있는 문서"),
+                "k$i" to ruleDocument(i),
                 "m$i" to NoulQuestion.of("m$i", "요청(request)이 만들거나 바꾸는 코드의 모듈·디렉터리에 문서 d$i 가 적용되는가? 저장소 전체나 모든 모듈에 적용되는 문서는 Yes. path 나 내용으로 보아 다른 모듈·하위 프로젝트 전용 문서이면 No.")
                     .withCriteria("요청이 건드리는 모듈에 적용됨", "다른 모듈 전용 문서"),
             )
         }.toMap()
         val answers = jev.probabilities(state, questions) ?: return null
         return batch.mapIndexed { i, (path, _) -> path to minOf(answers["k$i"] ?: 1.0, answers["m$i"] ?: 1.0) }.toMap()
+    }
+
+    private fun ruleDocument(i: Int): NoulQuestion =
+        NoulQuestion.of("k$i", "문서 d$i 에 코드를 만들거나 고칠 때 따라야 할 규칙·스펙(정해진 동작, 구조, 의존 방향, 이름, 포맷, 테스트 방식, 작업 원칙, 금지 사항 등)을 담은 구간이 있는가? path, headings, start 로 판단한다. 작업 기록·인수인계 일지, 계획서, 분석·평가 보고서, 회의 메모, 변경 이력, 설치·배포 안내만 있고 따를 규칙 구간이 없으면 No. 그런 문서라도 작업 규칙 같은 규칙 구간이 따로 있으면 Yes.")
+            .withCriteria("따를 규칙·스펙 구간이 있는 문서", "기록·계획·분석·안내만 있는 문서")
+
+    private fun ruleSection(i: Int): NoulQuestion =
+        NoulQuestion.of("r$i", "문서 구간 s$i 의 text 자체에 코드를 만들거나 고칠 때 따라야 할 구체적인 규칙·스펙(정해진 동작, 문구, 구조, 의존 방향, 이름, 포맷, 테스트 방식, 금지 사항 등)이 문장이나 표로 적혀 있는가? 소개, 배경, 목적, 개요, 미결정 사항·질문, 제외 목록, 일정, 변경 이력, 연락처, 설치·빌드·실행·배포 안내처럼 지킬 규칙이 없는 구간이면 No. 규칙이 합리적인지는 따지지 않는다.")
+            .withCriteria("따라야 할 구체적 규칙이 적혀 있음", "지킬 규칙이 없는 설명·안내 구간")
+
+    fun ruleScores(jev: Jev, sections: List<DocSection>): Map<DocSection, Double>? {
+        if (!jev.enabled) return null
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
+        try {
+            val documents = sections.groupBy { it.path }.entries.map { (path, parts) -> pool.submit<Pair<String, Double>?> { ruleDocumentScore(jev, path, parts) } }
+                .map { it.get() ?: return null }.toMap()
+            val candidates = sections.filter { (documents[it.path] ?: 1.0) > IRRELEVANT }
+            val scored = byDocument(candidates, MAX_STATE_WEIGHT, { it.path }, { weight(it.heading) + weight(it.text) })
+                .map { batch -> pool.submit<Map<DocSection, Double>?> { ruleSectionScores(jev, batch) } }
+                .map { it.get() ?: return null }.fold(emptyMap<DocSection, Double>()) { a, b -> a + b }
+            return sections.associateWith { minOf(documents[it.path] ?: 1.0, scored[it] ?: 0.0) }
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    private fun ruleDocumentScore(jev: Jev, path: String, parts: List<DocSection>): Pair<String, Double>? {
+        val state = mapOf("documents" to listOf(mapOf("id" to "d0", "path" to path, "headings" to parts.map { it.heading }.distinct().take(MAX_OUTLINE), "start" to parts.first().text.take(MAX_START_CHARS))))
+        val answers = jev.probabilities(state, mapOf("k0" to ruleDocument(0))) ?: return null
+        return path to (answers["k0"] ?: 1.0)
+    }
+
+    private fun ruleSectionScores(jev: Jev, batch: List<DocSection>): Map<DocSection, Double>? {
+        val state = mapOf("sections" to batch.mapIndexed { i, s -> mapOf("id" to "s$i", "source" to "${s.path}:${s.line}", "heading" to s.heading, "text" to s.text) })
+        val answers = jev.probabilities(state, batch.indices.associate { "r$it" to ruleSection(it) }) ?: return null
+        return batch.withIndex().associate { (i, s) -> s to (answers["r$i"] ?: 1.0) }
     }
 
     private fun selectBatch(jev: Jev, request: String, batch: List<DocSection>): List<Guideline>? {
@@ -141,8 +176,7 @@ object Guidelines {
         )
         val questions = batch.indices.flatMap { i ->
             listOf(
-                "r$i" to NoulQuestion.of("r$i", "문서 구간 s$i 의 text 자체에 코드를 만들거나 고칠 때 따라야 할 구체적인 규칙·스펙(정해진 동작, 문구, 구조, 의존 방향, 이름, 포맷, 테스트 방식, 금지 사항 등)이 문장이나 표로 적혀 있는가? 소개, 배경, 목적, 개요, 미결정 사항·질문, 제외 목록, 일정, 변경 이력, 연락처, 설치·빌드·실행·배포 안내처럼 지킬 규칙이 없는 구간이면 No. 규칙이 합리적인지는 따지지 않는다.")
-                    .withCriteria("따라야 할 구체적 규칙이 적혀 있음", "지킬 규칙이 없는 설명·안내 구간"),
+                "r$i" to ruleSection(i),
                 "s$i" to NoulQuestion.of("s$i", "요청(request)을 이 프로젝트에서 구현하거나 테스트할 때 새로 만들거나 바꾸는 코드에 문서 구간 s$i 의 규칙이 적용되는가? 프로젝트 전체에 적용되는 규칙은 Yes. 특정 기능 하나만의 요구사항·테스트 케이스는 요청이 그 기능 자체를 바꿀 때만 Yes이고, 다른 기능을 새로 추가하는 요청이면 No.")
                     .withCriteria("요청 작업 코드에 적용됨", "요청 작업 코드에 적용되지 않음"),
             )

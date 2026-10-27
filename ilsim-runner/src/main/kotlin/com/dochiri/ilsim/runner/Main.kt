@@ -12,7 +12,10 @@ import com.dochiri.ilsim.runner.convention.ConventionChecker
 import com.dochiri.ilsim.runner.convention.ConventionMiner
 import com.dochiri.ilsim.runner.convention.ConventionReport
 import com.dochiri.ilsim.runner.convention.ConventionReviewer
+import com.dochiri.ilsim.runner.convention.ConventionModel
 import com.dochiri.ilsim.runner.convention.ConventionStore
+import com.dochiri.ilsim.runner.convention.DocRules
+import com.dochiri.ilsim.runner.convention.FactScanner
 import com.dochiri.ilsim.runner.document.DocPurpose
 import com.dochiri.ilsim.runner.document.DocumentContext
 import com.dochiri.ilsim.runner.document.ProjectDocs
@@ -484,29 +487,45 @@ private fun riskSet(store: ConfigStore, args: Array<String>) {
 
 private fun convention(store: ConfigStore, args: Array<String>) {
     if (args.size < 2) { println(USAGE); exitProcess(1) }
+    loadJevKey(store, store.load())
     analyzeConvention(store, args[1], System.out)
 }
 
 fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
-    val registered = store.load().projects[id]
+    val config = store.load()
+    val registered = config.projects[id]
     val path = Path.of(registered?.path ?: id).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
     val previous = registered?.let { ConventionStore(store).load(id) }
-    val mined = ConventionMiner.mine(path, profile)
+    val facts = FactScanner.scan(path, profile.modules)
+    val mined = ConventionMiner.mine(facts, profile.name)
     val recommended = ConventionRecommender.recommend(path, profile, mined)
-    var model = ConventionApproval.carryOver(previous, mined.copy(rules = mined.rules + recommended))
-    val self = if (mined.rules.isEmpty()) null else ConventionChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
+    val docCost = CostTally("DOC_RULES")
+    val documented = registered?.let { project ->
+        val others = config.projects.filterKeys { it != id }.values.map { Path.of(it.path) }
+        val sections = ProjectDocs.sections(ProjectDocs.files(path, project, others, null)).filterNot { Gate.isArtifact(it.path) }
+        DocRules.extract(sections, facts, previous, Jev.fromEnvironment()) { docCost.ask(it, AI_MODEL) }
+    }
+    var model = ConventionApproval.carryOver(previous, mined.copy(
+        rules = mined.rules + recommended + documented?.rules.orEmpty(),
+        documents = documented?.documents ?: previous?.documents.orEmpty(),
+    ))
+    fun observed(m: ConventionModel) = m.copy(rules = m.rules.filterNot { Recommendations.isRecommended(it.id) || DocRules.isDocRule(it.id) })
+    val self = if (mined.rules.isEmpty()) null else ConventionChecker.check(facts, observed(model))
     if (registered != null) {
         out.appendLine("저장: ${ConventionStore(store).save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
-    out.append(ConventionReport.summary(model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }), self))
+    out.append(ConventionReport.summary(observed(model), self))
     out.append(RecommendationReport.convention(model.rules))
+    out.append(DocRules.report(model))
+    documented?.notes?.forEach { out.appendLine("  ! $it") }
+    docCost.summary()?.let { out.appendLine("문서 규칙 $it") }
     if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("CONVENTION_REVIEW")
         try {
             val docs = DocumentContext.build(path, DocPurpose.CONVENTION)
             if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
-            val (proposed, reviewable) = model.rules.partition { Recommendations.isRecommended(it.id) }
+            val (proposed, reviewable) = model.rules.partition { Recommendations.isRecommended(it.id) || DocRules.isDocRule(it.id) }
             model = ConventionReviewer.review(model.copy(rules = reviewable), AI_MODEL, docs = docs) { prompt ->
                 val answer = com.dochiri.ilsim.runner.jev.JevRuleReview.review(prompt, reviewable.map { it.id to "${it.description} (관측 ${it.evidence.compliant}/${it.evidence.total})" }) { cost.ask(it, AI_MODEL) }
                 if (answer.reviewer == "jev") cost.lastReviewer = "jev"
@@ -525,12 +544,16 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
     }
 }
 
+private fun loadJevKey(store: ConfigStore, config: RunnerConfig) {
+    RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
+        ?.let { token -> runCatching { ServerClient(config.serverUrl, token).jevKey() }.onSuccess { JevKey.fromServer = it } }
+}
+
 private fun guidelines(store: ConfigStore, args: Array<String>) {
     if (args.size < 3) { println(USAGE); exitProcess(1) }
     val config = store.load()
     val project = config.projects[args[1]] ?: run { println("등록되지 않은 프로젝트: ${args[1]}"); exitProcess(1) }
-    RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
-        ?.let { token -> runCatching { ServerClient(config.serverUrl, token).jevKey() }.onSuccess { JevKey.fromServer = it } }
+    loadJevKey(store, config)
     val jev = Jev.fromEnvironment()
     if (!jev.enabled) { println("JEV 키가 없습니다. ilsim-runner jev-key set 으로 등록하세요"); exitProcess(2) }
     val root = Path.of(project.path)
