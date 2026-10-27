@@ -5,7 +5,10 @@ import java.nio.file.Path
 import java.nio.file.PathMatcher
 import kotlin.math.abs
 
-internal class DocTarget(val file: ConvFile, val name: String, val line: Int, val annotations: List<String>, val body: IntRange?, val nesting: Int?)
+internal class DocTarget(val file: ConvFile, val name: String, val line: Int, val annotations: List<String>, val body: IntRange?, val nesting: Int?) {
+    val forms: List<String>
+        get() = if (file.lines.getOrNull(line - 1)?.contains("`$name`") == true) listOf(name, "`$name`") else listOf(name)
+}
 
 internal abstract class DocProbe(kind: String, val targets: Set<String>, val required: Set<String>, val optional: Set<String>) : Probe(kind, minSamples = 1) {
     override fun candidates(f: Facts): List<Candidate> = emptyList()
@@ -30,7 +33,9 @@ internal object DocProbes {
         val probe = byKind(kind) ?: throw IllegalArgumentException("알 수 없는 규칙 종류: $kind")
         val params = raw.mapValues { (key, values) ->
             values.map { it.trim() }.filter { it.isNotEmpty() }.map { if (key in annotationKeys) it.removePrefix("@").substringAfterLast('.') else it }
-        }.filterValues { it.isNotEmpty() }
+        }.filterValues { it.isNotEmpty() }.filterNot { (key, values) ->
+            (key == "text" && values == listOf("code")) || (key == "target" && probe.targets.isEmpty() && values == listOf("file"))
+        }
         val unknown = params.keys - (setOf("scope", "path") + probe.required + probe.optional)
         require(unknown.isEmpty()) { "$kind 에 쓸 수 없는 값: ${unknown.joinToString()}" }
         val missing = (probe.required + "scope") - params.keys
@@ -47,7 +52,11 @@ internal object DocProbes {
         return params.toSortedMap()
     }
 
-    fun glob(pattern: String): PathMatcher = FileSystems.getDefault().getPathMatcher("glob:$pattern")
+    fun glob(pattern: String): PathMatcher {
+        val matchers = listOfNotNull(pattern, pattern.removePrefix("**/").takeIf { it != pattern })
+            .map { FileSystems.getDefault().getPathMatcher("glob:$it") }
+        return PathMatcher { path -> matchers.any { it.matches(path) } }
+    }
 
     fun baseName(path: String) = path.substringAfterLast('/').substringBeforeLast('.')
 
@@ -65,7 +74,7 @@ internal object DocProbes {
         val names = params["name"].orEmpty().map(::Regex)
         val marks = params["when"].orEmpty().toSet()
         return files(f, params).flatMap { targetsOf(it, kind) }
-            .filter { t -> (names.isEmpty() || names.any { it.matches(t.name) }) && (marks.isEmpty() || t.annotations.any { it in marks }) }
+            .filter { t -> (names.isEmpty() || names.any { r -> t.forms.any(r::matches) }) && (marks.isEmpty() || t.annotations.any { it in marks }) }
     }
 
     private fun targetsOf(file: ConvFile, kind: String): List<DocTarget> = when (kind) {
@@ -138,7 +147,7 @@ internal object NamePattern : DocProbe(
 ) {
     override fun samples(f: Facts, params: Map<String, List<String>>): List<Sample> {
         val patterns = params.getValue("pattern").map(::Regex)
-        return DocProbes.targets(f, params).map { t -> Sample(t.file.path, t.line, patterns.any { it.matches(t.name) }, "이름 `${t.name}` 이 정해진 형식과 다릅니다") }
+        return DocProbes.targets(f, params).map { t -> Sample(t.file.path, t.line, patterns.any { p -> t.forms.any(p::matches) }, "이름 `${t.name}` 이 정해진 형식과 다릅니다") }
     }
 }
 

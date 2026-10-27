@@ -558,7 +558,12 @@ fun analyzeDocRules(store: ConfigStore, id: String, out: Appendable) {
     val config = store.load()
     val project = config.projects[id] ?: run { out.appendLine("등록되지 않은 프로젝트라 문서 지침 검증기를 만들지 않았습니다: $id (먼저 add 로 등록)"); return }
     val path = Path.of(project.path).toAbsolutePath().normalize()
-    val facts = FactScanner.scan(path, StackDetector.detect(path).modules)
+    val profile = StackDetector.detect(path)
+    val facts = FactScanner.scan(path, profile.modules)
+    if (!DocRules.applicable(profile.buildTool, facts)) {
+        out.appendLine("Java·Kotlin 소스와 빌드 파일이 없어 문서 지침 검증기를 만들지 않았습니다: $id (문서 지침은 제출 때 JEV 판정으로 확인)")
+        return
+    }
     val others = config.projects.filterKeys { it != id }.values.map { Path.of(it.path) }
     val sections = ProjectDocs.sections(ProjectDocs.files(path, project, others, null)).filterNot { Gate.isArtifact(it.path) }
     val cost = CostTally("DOC_RULES")

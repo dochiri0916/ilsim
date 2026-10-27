@@ -23,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DocRulesTest {
@@ -162,6 +163,32 @@ class DocRulesTest {
     }
 
     @Test
+    fun `코틀린 백틱 이름과 저장소 루트의 경로를 문서 규칙대로 판정한다`() {
+        val kotlin = Facts(listOf(FactScanner.parse("src/test/kotlin/com/x/NameTest.kt", "kt", true, """
+            package com.x
+
+            import org.junit.jupiter.api.Test
+
+            class NameTest {
+                @Test
+                fun `주문을 만든다`() {
+                }
+
+                @Test
+                fun createsOrder() {
+                }
+            }
+        """.trimIndent().lines())!!))
+        val named = DocProbes.normalize("doc-name-pattern", mapOf("scope" to listOf("test"), "target" to listOf("test-method"), "pattern" to listOf("^`.*[가-힣].*`$")))
+        assertEquals(listOf("이름 `createsOrder` 이 정해진 형식과 다릅니다"), DocProbes.byKind("doc-name-pattern")!!.samples(kotlin, named).filter { !it.ok }.map { it.message })
+        val located = DocProbes.normalize("doc-file-location", mapOf("scope" to listOf("test"), "name" to listOf(".*Test"), "location" to listOf("**/src/test/kotlin/**")))
+        assertTrue(DocProbes.byKind("doc-file-location")!!.samples(kotlin, located).all { it.ok })
+        assertEquals(null, DocProbes.normalize("doc-forbidden-code", mapOf("scope" to listOf("all"), "pattern" to listOf("!!"), "text" to listOf("code")))["text"])
+        assertEquals(null, DocProbes.normalize("doc-forbidden-code", mapOf("scope" to listOf("main"), "pattern" to listOf("x"), "target" to listOf("file")))["target"])
+        assertFailsWith<IllegalArgumentException> { DocProbes.normalize("doc-forbidden-code", mapOf("scope" to listOf("all"), "pattern" to listOf("x"), "target" to listOf("test-method"))) }
+    }
+
+    @Test
     fun `규칙 구간만 Claude가 옮기고 JEV가 원문과 다르다고 본 규칙과 지어낸 인용은 뺀다`() {
         val prompts = mutableListOf<String>()
         val extracted = DocRules.extract(listOf(intro, writing), facts, null, documentJev) { prompts += it; answer }
@@ -179,6 +206,15 @@ class DocRulesTest {
         assertEquals(extracted.rules.map { it.id }.toSet(), coverage.rules.toSet())
         assertEquals(setOf("한 테스트는 한 행위만 검증한다.", "단언은 AssertJ 만 쓴다."), coverage.remaining.toSet())
         assertTrue(extracted.notes.any { "원문과 다르다고" in it } && extracted.notes.any { "찾을 수 없는 인용" in it } && extracted.notes.any { "형식이 맞지 않아" in it })
+    }
+
+    @Test
+    fun `Java·Kotlin 소스와 빌드 파일이 모두 없는 프로젝트에는 문서 지침 검증기를 만들지 않는다`() {
+        assertFalse(DocRules.applicable("npm", Facts(emptyList())))
+        assertFalse(DocRules.applicable("unknown", Facts(emptyList())))
+        assertTrue(DocRules.applicable("gradle-kotlin-dsl", Facts(emptyList())))
+        assertTrue(DocRules.applicable("maven", Facts(emptyList())))
+        assertTrue(DocRules.applicable("unknown", facts))
     }
 
     @Test

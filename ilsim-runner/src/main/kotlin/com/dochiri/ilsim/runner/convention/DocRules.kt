@@ -37,6 +37,8 @@ object DocRules {
 
     fun isDocRule(id: String) = id.startsWith(PREFIX)
 
+    internal fun applicable(buildTool: String, facts: Facts): Boolean = facts.files.isNotEmpty() || buildTool == "maven" || buildTool.startsWith("gradle")
+
     internal fun extract(sections: List<DocSection>, facts: Facts, previous: DocRuleModel?, jev: Jev, ask: (String) -> String): Extracted {
         val kept = previous?.rules.orEmpty()
         val known = previous?.documents.orEmpty()
