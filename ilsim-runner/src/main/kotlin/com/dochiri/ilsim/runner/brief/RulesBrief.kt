@@ -10,12 +10,12 @@ object RulesBrief {
     private const val LIMIT = 30
     private val evidenceSuffix = Regex("""\s*\((관측|허용|근거)[^)]*\)\s*$""")
 
-    fun build(architecture: ArchitectureModel?, convention: ConventionModel?, risk: RiskConfig = RiskConfig()): String? {
+    fun build(architecture: ArchitectureModel?, convention: ConventionModel?, risk: RiskConfig = RiskConfig(), documented: DocRules.DocRuleModel? = null): String? {
         val arch = architecture?.rules.orEmpty().filter { it.approved && !it.rejected }
             .sortedBy { if (it.proposedSeverity == "BLOCK") 0 else 1 }.take(LIMIT).map { clean(it.description) }
-        val (documented, observed) = convention?.rules.orEmpty().filter { it.approved && !it.rejected }.partition { DocRules.isDocRule(it.id) }
-        val conv = observed.sortedBy { if (it.severity == "BLOCK") 0 else 1 }.take(LIMIT).map { clean(it.description) }
-        val docs = documented.take(LIMIT).map { r -> r.description + r.origin?.let { " (${it.path}:${it.line})" }.orEmpty() }
+        val conv = convention?.rules.orEmpty().filter { it.approved && !it.rejected }
+            .sortedBy { if (it.severity == "BLOCK") 0 else 1 }.take(LIMIT).map { clean(it.description) }
+        val docs = documented?.rules.orEmpty().filter { it.approved && !it.rejected }.take(LIMIT).map { r -> r.description + r.origin?.let { " (${it.path}:${it.line})" }.orEmpty() }
         val risks = RiskRules.all.filter { (risk.overrides[it.id] ?: it.defaultSeverity) == "BLOCK" }.map { "${it.id} ${it.title}" }
         if (arch.isEmpty() && conv.isEmpty() && docs.isEmpty() && risks.isEmpty()) return null
         return buildString {
@@ -23,7 +23,7 @@ object RulesBrief {
             appendLine("새 구조나 새 관행을 만들지 말고 기존 코드의 방식을 따르라. 아래를 어기면 검증에서 실패해 다시 작성해야 한다.")
             section("아키텍처", arch)
             section("코드 컨벤션", conv)
-            section("문서 규칙", docs)
+            section("이 프로젝트 문서에 적힌 규칙", docs)
             section("쓰지 말아야 할 위험 패턴", risks)
         }.trimEnd()
     }

@@ -12,8 +12,8 @@ import com.dochiri.ilsim.runner.convention.ConventionChecker
 import com.dochiri.ilsim.runner.convention.ConventionMiner
 import com.dochiri.ilsim.runner.convention.ConventionReport
 import com.dochiri.ilsim.runner.convention.ConventionReviewer
-import com.dochiri.ilsim.runner.convention.ConventionModel
 import com.dochiri.ilsim.runner.convention.ConventionStore
+import com.dochiri.ilsim.runner.convention.DocRuleStore
 import com.dochiri.ilsim.runner.convention.DocRules
 import com.dochiri.ilsim.runner.convention.FactScanner
 import com.dochiri.ilsim.runner.document.DocPurpose
@@ -63,6 +63,7 @@ private const val USAGE = """사용법:
   규칙 만들기 (정적 분석 → AI 1회 검토 → 확실한 것은 자동 승인, 나머지는 사용자 선택)
     ilsim-runner architecture <id>               아키텍처 규칙
     ilsim-runner convention <id>                 코드 컨벤션 규칙
+    ilsim-runner doc-rules <id>                  그 프로젝트 문서에 적힌 규칙으로 문서 지침 검증기(doc: 규칙)를 만든다(JEV·Claude)
     ilsim-runner docs <id>                       이 프로젝트의 지침 문서 목록과 규칙 검토에 쓰는 문서
     ilsim-runner docs add <id> <경로>            지침 문서(파일·폴더, 저장소 밖 가능)를 이 프로젝트에 추가
     ilsim-runner docs exclude <id> <경로>        지침 문서에서 뺄 경로
@@ -117,6 +118,7 @@ fun main(args: Array<String>) {
         "detect" -> detect(args)
         "architecture" -> architecture(store, args)
         "convention" -> convention(store, args)
+        "doc-rules" -> docRules(store, args)
         "docs" -> docs(store, args)
         "guidelines" -> guidelines(store, args)
         "rules" -> rulesCmd(store, args)
@@ -264,7 +266,7 @@ private fun check(store: ConfigStore, args: Array<String>) {
         }
         else -> try {
             val v = ArchitectureChecker.check(path, profile, arch)
-            print(ArchitectureReport.violations(v).prependIndent("  "))
+            println(ArchitectureReport.violations(v).trimEnd().prependIndent("  "))
             if (v.isNotEmpty()) failed = true
         } catch (e: IllegalArgumentException) {
             println("  ${e.message}")
@@ -276,7 +278,16 @@ private fun check(store: ConfigStore, args: Array<String>) {
     if (conv == null) println("  규칙 없음 (convention $id 를 먼저 실행)")
     else {
         val v = ConventionChecker.check(path, profile, conv)
-        print(ArchitectureReport.violations(v).prependIndent("  "))
+        println(ArchitectureReport.violations(v).trimEnd().prependIndent("  "))
+        if (v.isNotEmpty()) failed = true
+    }
+
+    println("[문서 지침 검증기]")
+    val docs = DocRuleStore(store).load(id)
+    if (docs == null) println("  규칙 없음 (doc-rules $id 를 먼저 실행)")
+    else {
+        val v = ConventionChecker.check(path, profile, DocRules.asConvention(docs))
+        println(ArchitectureReport.violations(v).trimEnd().prependIndent("  "))
         if (v.isNotEmpty()) failed = true
     }
     if (failed) exitProcess(1)
@@ -286,9 +297,11 @@ private fun rulesCmd(store: ConfigStore, args: Array<String>) {
     val id = requireProject(store, args)
     val arch = ArchitectureStore(store).load(id)
     val conv = ConventionStore(store).load(id)
-    if (arch == null && conv == null) { println("저장된 규칙이 없습니다. architecture $id, convention $id 를 먼저 실행하세요"); exitProcess(2) }
+    val docs = DocRuleStore(store).load(id)
+    if (arch == null && conv == null && docs == null) { println("저장된 규칙이 없습니다. architecture $id, convention $id, doc-rules $id 를 먼저 실행하세요"); exitProcess(2) }
     arch?.let { println("[아키텍처]"); print(ArchitectureReport.rules(it)) }
     conv?.let { println("[코드 컨벤션]"); print(ConventionReport.rules(it)) }
+    docs?.let { println("[문서 지침 검증기]"); print(DocRules.report(it).trimStart('\n')) }
 }
 
 private fun decide(store: ConfigStore, args: Array<String>, approve: Boolean) {
@@ -310,14 +323,18 @@ fun decideRules(store: ConfigStore, id: String, targets: List<String>, approve: 
     val all = approve && targets == listOf("--all")
     val archIds = if (all) arch?.let { RuleApproval.undecidedIds(it) }.orEmpty() else targets.filter { t -> arch?.rules?.any { it.id == t } == true }
     val convIds = if (all) conv?.let { ConventionApproval.undecidedIds(it) }.orEmpty() else targets.filter { t -> conv?.rules?.any { it.id == t } == true }
+    val docStore = DocRuleStore(store)
+    val docModel = docStore.load(id)
+    val docIds = if (all) docModel?.let { DocRules.undecidedIds(it) }.orEmpty() else targets.filter { t -> docModel?.rules?.any { it.id == t } == true }
     val memory = ProjectMemory(store)
     val memoryIds = if (all) memory.pendingIds(id) else targets.filter { t -> memory.load(id).any { it.id == t } }
-    val unknown = if (all) emptyList() else targets.filter { it !in archIds && it !in convIds && it !in memoryIds }
+    val unknown = if (all) emptyList() else targets.filter { it !in archIds && it !in convIds && it !in docIds && it !in memoryIds }
     require(unknown.isEmpty()) { "알 수 없는 규칙 id: ${unknown.joinToString()}" }
     if (arch != null && archIds.isNotEmpty()) archStore.save(id, if (approve) RuleApproval.approve(arch, archIds) else RuleApproval.reject(arch, archIds))
     if (conv != null && convIds.isNotEmpty()) convStore.save(id, if (approve) ConventionApproval.approve(conv, convIds) else ConventionApproval.reject(conv, convIds))
+    if (docIds.isNotEmpty()) docStore.update(id) { DocRules.decide(checkNotNull(it), docIds, approve) }
     if (memoryIds.isNotEmpty()) if (approve) memory.approve(id, memoryIds) else memory.reject(id, memoryIds)
-    return "${if (approve) "승인" else "거절"}: 아키텍처 ${archIds.size}개 · 컨벤션 ${convIds.size}개 · 학습 메모리 ${memoryIds.size}개"
+    return "${if (approve) "승인" else "거절"}: 아키텍처 ${archIds.size}개 · 컨벤션 ${convIds.size}개 · 문서 규칙 ${docIds.size}개 · 학습 메모리 ${memoryIds.size}개"
 }
 
 fun rulesReport(store: ConfigStore, id: String): String = buildString {
@@ -325,6 +342,7 @@ fun rulesReport(store: ConfigStore, id: String): String = buildString {
     val conv = ConventionStore(store).load(id)
     arch?.let { appendLine("[아키텍처]"); append(ArchitectureReport.rules(it)) }
     conv?.let { appendLine("[코드 컨벤션]"); append(ConventionReport.rules(it)) }
+    DocRuleStore(store).load(id)?.let { appendLine("[문서 지침 검증기]"); append(DocRules.report(it).trimStart('\n')) }
     val pending = ProjectMemory(store).load(id).filter { it.status == "CANDIDATE" }
     if (pending.isNotEmpty()) {
         appendLine("[학습 메모리 후보]")
@@ -489,45 +507,35 @@ private fun riskSet(store: ConfigStore, args: Array<String>) {
 
 private fun convention(store: ConfigStore, args: Array<String>) {
     if (args.size < 2) { println(USAGE); exitProcess(1) }
-    loadJevKey(store, store.load())
     analyzeConvention(store, args[1], System.out)
 }
 
+private fun docRules(store: ConfigStore, args: Array<String>) {
+    if (args.size < 2) { println(USAGE); exitProcess(1) }
+    loadJevKey(store, store.load())
+    analyzeDocRules(store, args[1], System.out)
+}
+
 fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
-    val config = store.load()
-    val registered = config.projects[id]
+    val registered = store.load().projects[id]
     val path = Path.of(registered?.path ?: id).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
     val previous = registered?.let { ConventionStore(store).load(id) }
-    val facts = FactScanner.scan(path, profile.modules)
-    val mined = ConventionMiner.mine(facts, profile.name)
+    val mined = ConventionMiner.mine(path, profile)
     val recommended = ConventionRecommender.recommend(path, profile, mined)
-    val docCost = CostTally("DOC_RULES")
-    val documented = registered?.let { project ->
-        val others = config.projects.filterKeys { it != id }.values.map { Path.of(it.path) }
-        val sections = ProjectDocs.sections(ProjectDocs.files(path, project, others, null)).filterNot { Gate.isArtifact(it.path) }
-        DocRules.extract(sections, facts, previous, Jev.fromEnvironment()) { docCost.ask(it, AI_MODEL) }
-    }
-    var model = ConventionApproval.carryOver(previous, mined.copy(
-        rules = mined.rules + recommended + documented?.rules.orEmpty(),
-        documents = documented?.documents ?: previous?.documents.orEmpty(),
-    ))
-    fun observed(m: ConventionModel) = m.copy(rules = m.rules.filterNot { Recommendations.isRecommended(it.id) || DocRules.isDocRule(it.id) })
-    val self = if (mined.rules.isEmpty()) null else ConventionChecker.check(facts, observed(model))
+    var model = ConventionApproval.carryOver(previous, mined.copy(rules = mined.rules + recommended))
+    val self = if (mined.rules.isEmpty()) null else ConventionChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
     if (registered != null) {
         out.appendLine("저장: ${ConventionStore(store).save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
-    out.append(ConventionReport.summary(observed(model), self))
+    out.append(ConventionReport.summary(model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }), self))
     out.append(RecommendationReport.convention(model.rules))
-    out.append(DocRules.report(model))
-    documented?.notes?.forEach { out.appendLine("  ! $it") }
-    docCost.summary()?.let { out.appendLine("문서 규칙 $it") }
     if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("CONVENTION_REVIEW")
         try {
             val docs = DocumentContext.build(path, DocPurpose.CONVENTION)
             if (!docs.isEmpty) out.appendLine("\n참고 문서(${docs.purpose.label}): ${docs.refs.joinToString { it.path }}")
-            val (proposed, reviewable) = model.rules.partition { Recommendations.isRecommended(it.id) || DocRules.isDocRule(it.id) }
+            val (proposed, reviewable) = model.rules.partition { Recommendations.isRecommended(it.id) }
             model = ConventionReviewer.review(model.copy(rules = reviewable), AI_MODEL, docs = docs) { prompt ->
                 val answer = com.dochiri.ilsim.runner.jev.JevRuleReview.review(prompt, reviewable.map { it.id to "${it.description} (관측 ${it.evidence.compliant}/${it.evidence.total})" }) { cost.ask(it, AI_MODEL) }
                 if (answer.reviewer == "jev") cost.lastReviewer = "jev"
@@ -544,6 +552,24 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
         }
         cost.summary()?.let { out.appendLine(it) }
     }
+}
+
+fun analyzeDocRules(store: ConfigStore, id: String, out: Appendable) {
+    val config = store.load()
+    val project = config.projects[id] ?: run { out.appendLine("등록되지 않은 프로젝트라 문서 지침 검증기를 만들지 않았습니다: $id (먼저 add 로 등록)"); return }
+    val path = Path.of(project.path).toAbsolutePath().normalize()
+    val facts = FactScanner.scan(path, StackDetector.detect(path).modules)
+    val others = config.projects.filterKeys { it != id }.values.map { Path.of(it.path) }
+    val sections = ProjectDocs.sections(ProjectDocs.files(path, project, others, null)).filterNot { Gate.isArtifact(it.path) }
+    val cost = CostTally("DOC_RULES")
+    val rules = DocRuleStore(store)
+    val extracted = DocRules.extract(sections, facts, rules.load(id), Jev.fromEnvironment()) { cost.ask(it, AI_MODEL) }
+    var model: DocRules.DocRuleModel? = null
+    val file = rules.update(id) { latest -> DocRules.carryOver(latest, extracted).also { model = it } }
+    out.appendLine("저장: $file (프로젝트 $id 문서 지침 검증기, 문서 구간 ${sections.size}개)")
+    out.append(DocRules.report(checkNotNull(model)))
+    extracted.notes.forEach { out.appendLine("  ! $it") }
+    cost.summary()?.let { out.appendLine("문서 규칙 $it") }
 }
 
 private fun loadJevKey(store: ConfigStore, config: RunnerConfig) {

@@ -35,7 +35,7 @@ Claude의 판단이 아니라 일심 MCP 서버가 `submit_result` 때 작업 �
 
 1. 허용 경로: 단계별로 변경 가능한 파일 범위를 diff로 검사한다. 벗어나면 `git reset --hard`로 되돌리고 재시도한다.
 2. `TEST_CASES`: 요구사항 ID와 테스트 케이스의 추적성(`traceability`)을 검사한다.
-3. `TEST_CODE`, `IMPLEMENTATION`: 정적 분석 명령(`analysis`) → 아키텍처 규칙(`architecture`) → 코드 컨벤션(`convention`) → 트랜잭션·동시성 위험(`risk`) → 테스트 무력화 검사(`test-integrity`, `TEST_CODE`만) → 테스트(`tests`) → 변이 테스트(`mutation`, `IMPLEMENTATION`만) 순으로 실행한다.
+3. `TEST_CODE`, `IMPLEMENTATION`: 정적 분석 명령(`analysis`) → 아키텍처 규칙(`architecture`) → 코드 컨벤션(`convention`) → 프로젝트 문서 규칙(`doc-rules`) → 트랜잭션·동시성 위험(`risk`) → 테스트 무력화 검사(`test-integrity`, `TEST_CODE`만) → 테스트(`tests`) → 변이 테스트(`mutation`, `IMPLEMENTATION`만) 순으로 실행한다.
    - `TEST_CODE`에서 테스트가 모두 통과하면 실패다(구현이 없는데 통과). 실패해야 `RED`다.
    - `IMPLEMENTATION`에서는 테스트가 통과해야 한다.
 
@@ -56,7 +56,7 @@ Claude의 판단이 아니라 일심 MCP 서버가 `submit_result` 때 작업 �
 `architecture`는 사용자가 승인한 규칙만 적용하며 `BLOCK` 심각도 위반만 실패로 본다. `REVIEW` 위반은 막지 않는다.
 적용 가능성이 `PARTIAL`이면 일관된 영역만 검사하고 로그에 제외 사유를 남긴다.
 
-`convention`과 `risk`는 이번 작업에서 바뀐 파일에만 적용한다(기존 코드의 예외는 막지 않는다).
+`convention`·`doc-rules`·`risk`는 이번 작업에서 바뀐 파일에만 적용한다(기존 코드의 예외는 막지 않는다). `doc-rules`는 그 프로젝트 문서에서 만든 규칙(`~/.ilsim/projects/<id>/doc-rules.json`) 중 승인된 것의 위반 가운데 커밋된 코드에 없던 것만 실패로 본다.
 `convention`은 승인된 규칙의 `BLOCK` 위반만, `risk`는 프로젝트 설정으로 `BLOCK`인 규칙(기본: TX-003, CON-002, CON-003)의 위반만 실패로 본다.
 `risk`의 `REVIEW` 후보는 로그에 권고와 함께 남기며, 사용자가 승인한 프로젝트 메모리의 오탐 학습에 해당하는 후보는 제외한다.
 

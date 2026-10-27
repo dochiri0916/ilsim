@@ -185,7 +185,7 @@ class DocRulesTest {
     fun `바뀌지 않은 구간은 다시 옮기지 않고 승인 상태와 함께 유지한다`() {
         val first = DocRules.extract(listOf(intro, writing), facts, null, documentJev) { answer }
         val approved = first.rules.map { it.copy(approved = true, decidedBy = "user") }
-        val previous = ConventionModel("p", 0, 0, emptyMap(), approved, documents = first.documents)
+        val previous = DocRules.DocRuleModel(approved, first.documents)
         val moved = writing.copy(line = 9)
 
         val again = DocRules.extract(listOf(intro, moved), facts, previous, documentJev) { error("Claude를 다시 부르면 안 된다") }
@@ -198,7 +198,7 @@ class DocRulesTest {
     @Test
     fun `JEV를 쓸 수 없으면 이전 문서 규칙을 그대로 둔다`() {
         val first = DocRules.extract(listOf(writing), facts, null, documentJev) { answer }
-        val previous = ConventionModel("p", 0, 0, emptyMap(), first.rules, documents = first.documents)
+        val previous = DocRules.DocRuleModel(first.rules, first.documents)
 
         val kept = DocRules.extract(listOf(writing), facts, previous, Jev(null)) { error("호출하면 안 된다") }
 
@@ -215,9 +215,9 @@ class DocRulesTest {
         root.resolve(path).also { it.parent.createDirectories() }.writeText(after)
         val rule = ConventionRule("doc:sleep", "doc-forbidden-code", "테스트에서 Thread.sleep 을 쓰지 않는다", DocProbes.normalize("doc-forbidden-code", mapOf("scope" to listOf("test"), "pattern" to listOf("""Thread\.sleep"""))),
             approved = true, origin = DocOrigin("docs/testing.md", 7, "테스트", "Thread.sleep 을 쓰지 않는다", "h"))
-        val model = ConventionModel("p", 0, 0, emptyMap(), listOf(rule))
+        val model = DocRules.DocRuleModel(listOf(rule))
         val current = Facts(listOf(FactScanner.parse(path, "kt", true, after.lines())!!))
-        val violations = ConventionChecker.check(current, model, approvedOnly = true)
+        val violations = ConventionChecker.check(current, DocRules.asConvention(model), approvedOnly = true)
 
         val introduced = DocRules.introduced(root, model, violations) { if (it == path) before.lines() else null }
 
@@ -245,17 +245,18 @@ class DocRulesTest {
         store.save(RunnerConfig(runnerId = "r1", projects = mapOf("p" to ProjectEntry(repo.toString(), "demo"))))
         val rule = ConventionRule("doc:sleep", "doc-forbidden-code", "테스트에서 Thread.sleep 을 쓰지 않는다", DocProbes.normalize("doc-forbidden-code", mapOf("scope" to listOf("test"), "pattern" to listOf("""Thread\.sleep"""))),
             approved = true, origin = DocOrigin("docs/testing.md", 7, "테스트", "q", "h"))
-        ConventionStore(store).save("p", ConventionModel("p", 0, 0, emptyMap(), listOf(rule)))
+        DocRuleStore(store).save("p", DocRules.DocRuleModel(listOf(rule)))
         val logs = mutableListOf<String>()
         val gates = StageGates(store, ArchitectureStore(store), ConventionStore(store), { _, _ -> "" }, logs::add)
         val validation = linkedMapOf<String, String>()
 
         val problems = gates.quickCheck(AssignedTask("t", "p", "IMPLEMENTATION", 1, "f", "m", prompt = ""), repo, validation)
 
-        assertEquals("FAILED", validation["convention"])
-        val convention = problems.single { it.startsWith("컨벤션 위반") }
-        assertContains(convention, "컨벤션 위반 1건")
-        assertContains(convention, "SleepTest.kt:9 ")
+        assertEquals("FAILED", validation["doc-rules"])
+        assertEquals("UNKNOWN", validation["convention"])
+        val documented = problems.single { it.startsWith("이 프로젝트 문서에 적힌 규칙 위반") }
+        assertContains(documented, "규칙 위반 1건")
+        assertContains(documented, "SleepTest.kt:9 ")
         assertTrue(logs.any { "기존 위반 1건" in it }, logs.toString())
     }
 
@@ -263,9 +264,9 @@ class DocRulesTest {
     fun `승인한 문서 규칙은 단계 지시 규칙 요약에 출처와 함께 나온다`() {
         val rule = ConventionRule("doc:a", "doc-forbidden-code", "테스트에서 Thread.sleep 을 쓰지 않는다", mapOf("scope" to listOf("test"), "pattern" to listOf("x")),
             approved = true, origin = DocOrigin("docs/testing.md", 7, "테스트", "q", "h"))
-        val brief = RulesBrief.build(null, ConventionModel("p", 0, 0, emptyMap(), listOf(rule)))!!
+        val brief = RulesBrief.build(null, null, documented = DocRules.DocRuleModel(listOf(rule)))!!
 
-        assertContains(brief, "### 문서 규칙")
+        assertContains(brief, "### 이 프로젝트 문서에 적힌 규칙")
         assertContains(brief, "테스트에서 Thread.sleep 을 쓰지 않는다 (docs/testing.md:7)")
     }
 }

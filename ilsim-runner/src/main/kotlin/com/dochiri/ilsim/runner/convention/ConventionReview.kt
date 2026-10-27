@@ -125,7 +125,7 @@ object ConventionReport {
 
     fun rules(m: ConventionModel): String = buildString {
         appendLine("규칙 ${m.rules.size}개 · 승인 ${m.rules.count { it.approved }} · 거절 ${m.rules.count { it.rejected }} · 미결정 ${m.rules.count { !it.approved && !it.rejected }}")
-        m.rules.filterNot { DocRules.isDocRule(it.id) }.forEach {
+        m.rules.forEach {
             val state = if (it.approved) "승인" else if (it.rejected) "거절" else "후보"
             val ai = it.review?.let { r -> " AI:${r.verdict}${if (r.reason.isBlank()) "" else " - ${r.reason}"}" }.orEmpty()
             appendLine("  [$state] ${it.id} (${it.severity})$ai")
@@ -134,6 +134,5 @@ object ConventionReport {
             r.applicabilityOpinion?.let { appendLine("AI 의견(제외 항목): $it") }
             if (r.missingRules.isNotEmpty()) { appendLine("AI 제안(추가하면 좋을 컨벤션):"); r.missingRules.forEach { appendLine("  ? $it") } }
         }
-        append(DocRules.report(m))
     }
 }

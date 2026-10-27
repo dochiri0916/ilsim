@@ -46,5 +46,4 @@ data class ConventionModel(
     val source: String = "MINED",
     val review: ModelReview? = null,
     val inventory: List<String> = emptyList(),
-    val documents: List<DocCoverage> = emptyList(),
 )

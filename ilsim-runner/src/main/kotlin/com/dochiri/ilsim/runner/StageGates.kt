@@ -7,6 +7,7 @@ import com.dochiri.ilsim.runner.architecture.Violation
 import com.dochiri.ilsim.runner.audit.ChangeAudit
 import com.dochiri.ilsim.runner.brief.RulesBrief
 import com.dochiri.ilsim.runner.convention.ConventionChecker
+import com.dochiri.ilsim.runner.convention.DocRuleStore
 import com.dochiri.ilsim.runner.convention.DocRules
 import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.jev.Jev
@@ -39,12 +40,13 @@ class StageGates(
     private var survivors: List<String> = emptyList()
     private val reviewCache = ReviewCache(configStore.location.parent.resolve("reviews"))
     private val artifacts = Artifacts(configStore)
+    private val docRuleStore = DocRuleStore(configStore)
 
     fun promptWithRules(task: AssignedTask): String {
         val documents = documents(task)
         if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return listOfNotNull(task.prompt, documents).joinToString("\n\n")
         val brief = RulesBrief.build(
-            architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId),
+            architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId), docRuleStore.load(task.projectId),
         )
         val test = task.testCommand?.let { Gate.selfCheck(task.stage, it) }
         return listOfNotNull(task.prompt, documents, brief, test).joinToString("\n\n")
@@ -73,7 +75,7 @@ class StageGates(
         return try {
             val prompt = ChangeAudit.prompt(
                 task.stage, document(task, "REQUIREMENTS"), document(task, "TEST_CASES"),
-                listOfNotNull(RulesBrief.build(architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId)), guidelines)
+                listOfNotNull(RulesBrief.build(architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId), docRuleStore.load(task.projectId)), guidelines)
                     .joinToString("\n\n").ifEmpty { null },
                 validation, diff, survivors.also { survivors = emptyList() }, committedTests(task, worktree),
             )
@@ -115,6 +117,7 @@ class StageGates(
         if (analysis != null) return analysis
         architecture(task, worktree, validation)?.let { return it }
         convention(task, worktree, validation)?.let { return it }
+        docRules(task, worktree, validation)?.let { return it }
         risk(task, worktree, validation, review = false)?.let { return it }
 
         val changed = changedFiles(worktree).toSet()
@@ -161,6 +164,7 @@ class StageGates(
     fun quickCheck(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): List<String> = listOfNotNull(
         architecture(task, worktree, validation),
         convention(task, worktree, validation),
+        docRules(task, worktree, validation),
         risk(task, worktree, validation, review = false),
         testIntegrity(task, worktree, changedFiles(worktree).toSet(), validation),
     )
@@ -225,13 +229,26 @@ class StageGates(
             return null
         }
         val changed = changedFiles(worktree).toSet()
-        val found = ConventionChecker.check(worktree, StackDetector.detect(worktree), model, approvedOnly = true, onlyFiles = changed)
+        val blocking = ConventionChecker.check(worktree, StackDetector.detect(worktree), model, approvedOnly = true, onlyFiles = changed)
             .filter { it.severity == "BLOCK" }
-        val blocking = DocRules.introduced(worktree, model, found) { path -> Shell.git(worktree, "show", "HEAD:$path").takeIf { it.exit == 0 }?.output?.lines() }
-        (found.size - blocking.size).takeIf { it > 0 }?.let { log("문서 규칙의 기존 위반 ${it}건은 이번 변경이 만든 것이 아니라서 막지 않습니다") }
         validation["convention"] = if (blocking.isEmpty()) "PASSED" else "FAILED"
         if (blocking.isEmpty()) return null
         return "컨벤션 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
+    }
+
+    private fun docRules(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {
+        val model = docRuleStore.load(task.projectId)
+        if (model == null || model.rules.none { it.approved && !it.rejected }) {
+            validation["doc-rules"] = "UNKNOWN"
+            return null
+        }
+        val found = ConventionChecker.check(worktree, StackDetector.detect(worktree), DocRules.asConvention(model), approvedOnly = true, onlyFiles = changedFiles(worktree).toSet())
+            .filter { it.severity == "BLOCK" }
+        val blocking = DocRules.introduced(worktree, model, found) { path -> Shell.git(worktree, "show", "HEAD:$path").takeIf { it.exit == 0 }?.output?.lines() }
+        (found.size - blocking.size).takeIf { it > 0 }?.let { log("문서 규칙의 기존 위반 ${it}건은 이번 변경이 만든 것이 아니라서 막지 않습니다") }
+        validation["doc-rules"] = if (blocking.isEmpty()) "PASSED" else "FAILED"
+        if (blocking.isEmpty()) return null
+        return "이 프로젝트 문서에 적힌 규칙 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
     }
 
     private fun risk(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>, review: Boolean): String? {

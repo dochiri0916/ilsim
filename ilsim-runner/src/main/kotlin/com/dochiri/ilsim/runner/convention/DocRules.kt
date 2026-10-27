@@ -10,6 +10,7 @@ import com.dochiri.ilsim.runner.jev.Jev
 import io.github.gudcks0305.jev.NoulQuestion
 import java.nio.file.Path
 import kotlin.io.path.readLines
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -27,14 +28,17 @@ object DocRules {
 
     class Extracted(val rules: List<ConventionRule>, val documents: List<DocCoverage>, val notes: List<String>)
 
+    @Serializable
+    data class DocRuleModel(val rules: List<ConventionRule> = emptyList(), val documents: List<DocCoverage> = emptyList(), val notes: List<String> = emptyList())
+
     internal class Proposal(val section: DocSection, val kind: String, val params: Map<String, List<String>>, val description: String, val quote: String)
 
     internal class SectionResult(val section: DocSection, val hash: String, val proposals: List<Proposal>, val remaining: List<String>)
 
     fun isDocRule(id: String) = id.startsWith(PREFIX)
 
-    internal fun extract(sections: List<DocSection>, facts: Facts, previous: ConventionModel?, jev: Jev, ask: (String) -> String): Extracted {
-        val kept = previous?.rules.orEmpty().filter { isDocRule(it.id) }
+    internal fun extract(sections: List<DocSection>, facts: Facts, previous: DocRuleModel?, jev: Jev, ask: (String) -> String): Extracted {
+        val kept = previous?.rules.orEmpty()
         val known = previous?.documents.orEmpty()
         val scores = Guidelines.ruleScores(jev, sections)
             ?: return Extracted(kept.map { evidence(it, facts) }, known, listOf("JEV를 쓸 수 없어 문서 규칙을 새로 뽑지 않았습니다. 이전 문서 규칙을 그대로 둡니다"))
@@ -216,13 +220,31 @@ object DocRules {
         return out
     }
 
-    fun introduced(worktree: Path, model: ConventionModel, violations: List<Violation>, base: (String) -> List<String>?): List<Violation> {
+    fun asConvention(model: DocRuleModel): ConventionModel = ConventionModel(null, 0, 0, emptyMap(), model.rules)
+
+    fun carryOver(previous: DocRuleModel?, extracted: Extracted): DocRuleModel {
+        val decided = previous?.rules.orEmpty().filter { it.decidedBy != null }
+        val rules = extracted.rules.map { r ->
+            decided.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }?.let { r.copy(approved = it.approved, rejected = it.rejected, decidedBy = it.decidedBy) } ?: r
+        }
+        return DocRuleModel(rules, extracted.documents, extracted.notes)
+    }
+
+    fun decide(model: DocRuleModel, ids: Collection<String>, approve: Boolean): DocRuleModel {
+        val unknown = ids.filterNot { id -> model.rules.any { it.id == id } }
+        require(unknown.isEmpty()) { "알 수 없는 문서 규칙 id: ${unknown.joinToString()}" }
+        return model.copy(rules = model.rules.map { if (it.id in ids) it.copy(approved = approve, rejected = !approve, decidedBy = "user") else it })
+    }
+
+    fun undecidedIds(model: DocRuleModel): List<String> = model.rules.filter { !it.approved && !it.rejected }.map { it.id }
+
+    fun introduced(worktree: Path, model: DocRuleModel, violations: List<Violation>, base: (String) -> List<String>?): List<Violation> {
         val (doc, other) = violations.partition { isDocRule(it.ruleId) }
         if (doc.isEmpty()) return violations
         val paths = doc.map { it.file }.distinct()
         val before = paths.mapNotNull { path -> base(path)?.let { FactScanner.parse(path, path.substringAfterLast('.'), "src/test/" in path, it) } }
         val after = paths.associateWith { runCatching { worktree.resolve(it).readLines() }.getOrNull() }
-        val old = ConventionChecker.check(Facts(before), model.copy(rules = model.rules.filter { isDocRule(it.id) }), approvedOnly = true)
+        val old = ConventionChecker.check(Facts(before), asConvention(model), approvedOnly = true)
         fun key(v: Violation, lines: List<String>?) = Triple(v.ruleId, v.file, lines?.getOrNull(v.line - 1)?.trim())
         val left = old.groupingBy { v -> key(v, before.firstOrNull { it.path == v.file }?.lines) }.eachCount().toMutableMap()
         return other + doc.filter { v ->
@@ -233,8 +255,8 @@ object DocRules {
         }
     }
 
-    fun report(model: ConventionModel): String = buildString {
-        val rules = model.rules.filter { isDocRule(it.id) }
+    fun report(model: DocRuleModel): String = buildString {
+        val rules = model.rules
         val remaining = model.documents.flatMap { d -> d.remaining.map { "${d.path}:${d.line} $it" } }
         if (rules.isEmpty() && remaining.isEmpty()) return@buildString
         appendLine()
