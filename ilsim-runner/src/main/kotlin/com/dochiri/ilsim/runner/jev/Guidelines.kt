@@ -22,7 +22,11 @@ object Guidelines {
     const val MAX_OUTLINE = 60
     const val MAX_START_CHARS = 1500
 
-    data class Check(val probabilities: Map<Guideline, Double>, val violated: List<Guideline>, val uncertain: List<Guideline>, val truncated: Boolean)
+    data class Check(val probabilities: Map<Guideline, Double>, val violated: List<Guideline>, val uncertain: List<Guideline>, val truncated: Boolean, val parts: List<Part> = emptyList())
+
+    data class Part(val guideline: Guideline, val text: String, val batch: Double?, val single: Double?) {
+        val probability: Double? get() = single ?: batch
+    }
 
     data class Selection(val guidelines: List<Guideline>, val filtered: Map<String, Double>)
 
@@ -192,6 +196,12 @@ object Guidelines {
     }
 
     private const val TASK_CONTEXT = "일심(ilsim) MCP가 요구사항·테스트 케이스·테스트 코드·구현 단계로 나눠 Agent에게 맡기는 단계 작업이다. 프롬프트가 일심 단계 지시다."
+    private val STAGES = mapOf(
+        "REQUIREMENTS" to "요구사항 문서를 쓰는 단계. diff는 요구사항 문서이고 코드는 아직 없다.",
+        "TEST_CASES" to "테스트 케이스 문서를 쓰는 단계. diff는 테스트 케이스 문서이고 코드는 아직 없다.",
+        "TEST_CODE" to "테스트 코드를 쓰는 단계. diff는 테스트 코드만 담고 프로덕트 코드는 다음 구현 단계에서 만든다.",
+        "IMPLEMENTATION" to "구현 단계. diff는 프로덕트 코드만 담는다. 테스트는 앞 단계(테스트 코드 단계)에서 이미 작성돼 이 diff에 없다.",
+    )
     private val MD_LINK = Regex("""\]\(([^)\s#]+\.(?:md|markdown|adoc|rst))(?:#[^)]*)?\)""")
     private val CODE_PATH = Regex("""`([^`\s]+\.(?:md|markdown|adoc|rst))`""")
 
@@ -212,16 +222,80 @@ object Guidelines {
         if (!jev.enabled) return null
         val shown = cut(diff, MAX_DIFF_WEIGHT)
         val truncated = shown.length < diff.length
+        val units = guidelines.sortedBy { it.line }.flatMap { g -> items(g.text).map { g to it } }
         val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
-        val probabilities = try {
-            byDocument(guidelines.sortedBy { it.line }, MAX_STATE_WEIGHT - weight(shown), { it.path }, { weight(it.heading) + weight(it.text) }).map { batch -> pool.submit<Map<Guideline, Double>?> { checkBatch(jev, stage, batch, shown) } }
-                .map { it.get() ?: return null }.fold(emptyMap<Guideline, Double>()) { a, b -> a + b }
+        val parts = try {
+            val first = byDocument(units, MAX_STATE_WEIGHT - weight(shown), { it.first.path }, { weight(it.first.heading) + weight(it.second) })
+                .map { batch -> batch to pool.submit<List<Double?>?> { checkBatch(jev, stage, batch, shown) } }
+                .flatMap { (batch, answers) -> batch.zip(answers.get() ?: return null) }
+            val again = first.map { (unit, p) -> if (p != null && p >= IRRELEVANT && p < VIOLATED) pool.submit<Double?> { checkBatch(jev, stage, listOf(unit), shown)?.single() } else null }
+            first.zip(again).map { (scored, single) -> Part(scored.first.first, scored.first.second, scored.second, single?.get()) }
         } finally {
             pool.shutdownNow()
         }
+        val probabilities = guidelines.mapNotNull { g -> parts.filter { it.guideline == g }.mapNotNull { it.probability }.maxOrNull()?.let { g to it } }.toMap()
         val violated = guidelines.filter { (probabilities[it] ?: 0.0) >= VIOLATED }
         val uncertain = guidelines.filter { it !in violated && (truncated || (it.relevance >= APPLIES && (probabilities[it] ?: 1.0) > CLEAR)) }
-        return Check(probabilities, violated, uncertain, truncated)
+        return Check(probabilities, violated, uncertain, truncated, parts)
+    }
+
+    private val bullet = Regex("""^([-*+]|\d+[.)])\s+""")
+    private val headingLine = Regex("""^(#{1,6}|={1,6})\s+""")
+    private val tableRule = Regex("""^\|?\s*:?-{3,}""")
+
+    private class Block(val kind: Char, val lines: MutableList<String>) {
+        val text: String get() = lines.joinToString("\n").trim()
+    }
+
+    internal fun items(text: String): List<String> {
+        val blocks = blocks(text)
+        val out = mutableListOf<String>()
+        var lead: String? = null
+        blocks.forEachIndexed { i, b ->
+            when {
+                b.kind == 'L' -> out += listOfNotNull(lead, b.text).joinToString("\n")
+                b.kind == 'T' -> {
+                    val rows = b.lines
+                    val data = if (rows.size > 2 && tableRule.containsMatchIn(rows[1])) rows.drop(2).map { rows[0] + "\n" + it } else rows
+                    data.forEach { out += listOfNotNull(lead, it).joinToString("\n") }
+                }
+                blocks.getOrNull(i + 1)?.kind in setOf('L', 'T') -> lead = b.text
+                else -> { lead = null; out += b.text }
+            }
+        }
+        return out.takeIf { it.size >= 2 } ?: listOf(text)
+    }
+
+    private fun blocks(text: String): List<Block> {
+        val lines = text.lines().let { if (it.isNotEmpty() && headingLine.containsMatchIn(it.first().trim())) it.drop(1) else it }
+        val out = mutableListOf<Block>()
+        var current: Block? = null
+        var fenced = false
+        for (line in lines) {
+            val trimmed = line.trim()
+            val fence = trimmed.startsWith("```") || trimmed.startsWith("~~~")
+            if (fenced || fence) {
+                if (fence) fenced = !fenced
+                val target = current ?: out.lastOrNull() ?: Block('P', mutableListOf()).also(out::add)
+                target.lines += line
+                current = target
+                continue
+            }
+            if (trimmed.isEmpty()) { current = null; continue }
+            val indent = line.length - line.trimStart().length
+            val parent = current ?: out.lastOrNull()?.takeIf { it.kind == 'L' }
+            when {
+                bullet.containsMatchIn(trimmed) && indent >= 2 && parent?.kind == 'L' -> { parent.lines += line; current = parent }
+                bullet.containsMatchIn(trimmed) -> current = Block('L', mutableListOf(line)).also(out::add)
+                trimmed.startsWith("|") -> {
+                    if (current?.kind != 'T') current = Block('T', mutableListOf()).also(out::add)
+                    current!!.lines += trimmed
+                }
+                current != null && current.kind != 'T' -> current.lines += line
+                else -> current = Block('P', mutableListOf(line)).also(out::add)
+            }
+        }
+        return out.filter { it.text.isNotEmpty() }
     }
 
     private fun <T> byDocument(items: List<T>, budget: Int, path: (T) -> String, size: (T) -> Int): List<List<T>> = items.groupBy(path).values.flatMap { group ->
@@ -246,10 +320,11 @@ object Guidelines {
         return text
     }
 
-    private fun checkBatch(jev: Jev, stage: String, batch: List<Guideline>, diff: String): Map<Guideline, Double>? {
+    private fun checkBatch(jev: Jev, stage: String, batch: List<Pair<Guideline, String>>, diff: String): List<Double?>? {
         val state = mapOf(
-            "stage" to stage,
-            "guidelines" to batch.mapIndexed { i, g -> mapOf("id" to "g$i", "source" to g.source, "heading" to g.heading, "text" to g.text) },
+            "task" to TASK_CONTEXT,
+            "stage" to "$stage: ${STAGES[stage].orEmpty()}",
+            "guidelines" to batch.mapIndexed { i, (g, text) -> mapOf("id" to "g$i", "source" to g.source, "heading" to g.heading, "text" to text) },
             "diff" to diff,
         )
         val questions = batch.indices.associate { i ->
@@ -257,6 +332,6 @@ object Guidelines {
                 .withCriteria("변경이 지침을 어김", "변경이 지침을 지키거나 지침과 무관함")
         }
         val answers = jev.probabilities(state, questions) ?: return null
-        return batch.withIndex().mapNotNull { (i, g) -> answers["v$i"]?.let { g to it } }.toMap()
+        return batch.indices.map { answers["v$it"] }
     }
 }

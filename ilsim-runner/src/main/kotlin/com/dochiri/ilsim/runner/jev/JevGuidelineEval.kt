@@ -85,6 +85,7 @@ object JevGuidelineEval {
         Question("n", "참조: 읽지 말라고 하는가", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("v", "위반 판정(정답 구간)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("v-e2e", "위반 판정(실제 선택 구간)", Guidelines.VIOLATED, false, Goal.PRECISION),
+        Question("v-first", "위반 판정(재질문 전, 항목 최댓값)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("diff", "변경 차단(가장 높은 위반 확률)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("gate", "문서 규칙: 규칙 구간 거름", Guidelines.CLEAR, false, Goal.RECALL),
         Question("f", "문서 규칙: 원문 그대로 옮겼는가", DocRules.FAITHFUL, false, Goal.PRECISION),
@@ -178,7 +179,16 @@ object JevGuidelineEval {
                 d.violates.filter { v -> selected.none { it.source == v } }.forEach { add("missed-selection", "${d.id}/$it", true, 0.0) }
                 val gold = p.sections.filter { p.relevant(it, request) == true }.map { Guideline(it.path, it.line, it.heading, it.text, 1.0) }
                 val check = Guidelines.check(jev, d.stage, gold, diff)
-                gold.forEach { g -> add("v", "${d.id}/${g.source}", g.source in d.violates, check?.probabilities?.get(g)) }
+                gold.forEach { g ->
+                    val expected = g.source in d.violates
+                    add("v", "${d.id}/${g.source}", expected, check?.probabilities?.get(g))
+                    val parts = check?.parts.orEmpty().filter { it.guideline == g }
+                    add("v-first", "${d.id}/${g.source}", expected, parts.mapNotNull { it.batch }.maxOrNull())
+                    parts.forEachIndexed { i, part ->
+                        add("part-batch", "${d.id}/${g.source}#$i", expected, part.batch)
+                        part.single?.let { add("part-single", "${d.id}/${g.source}#$i", expected, it) }
+                    }
+                }
             }
             if (p.corpus.rules.isNotEmpty() || p.sections.isNotEmpty()) {
                 val gate = Guidelines.ruleScores(jev, p.sections).orEmpty()
