@@ -1,0 +1,48 @@
+diff --git a/src/test/java/com/x/attachment/AttachmentControllerTest.java b/src/test/java/com/x/attachment/AttachmentControllerTest.java
+--- a/src/test/java/com/x/attachment/AttachmentControllerTest.java
++++ b/src/test/java/com/x/attachment/AttachmentControllerTest.java
+@@ -1,3 +1,44 @@
++package com.x.attachment;
++
++@SpringBootTest
++@AutoConfigureMockMvc
++class AttachmentControllerTest {
++
++    @Autowired
++    MockMvc mockMvc;
++
++    @Test
++    @WithUserDetails("writer")
++    void 작성자가_올리면_첨부_정보를_돌려준다() throws Exception {
++        MockMultipartFile file = new MockMultipartFile("file", "a.png", "image/png", new byte[100]);
++        mockMvc.perform(multipart("/posts/1/attachments").file(file))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.originalName").value("a.png"))
++                .andExpect(jsonPath("$.size").value(100))
++                .andExpect(jsonPath("$.url").exists());
++    }
++
++    @Test
++    @WithUserDetails("other")
++    void 작성자가_아니면_403() throws Exception {
++        MockMultipartFile file = new MockMultipartFile("file", "a.png", "image/png", new byte[100]);
++        mockMvc.perform(multipart("/posts/1/attachments").file(file))
++                .andExpect(status().isForbidden());
++    }
++
++    @Test
++    @WithUserDetails("writer")
++    void 10MB를_넘으면_413() throws Exception {
++        MockMultipartFile file = new MockMultipartFile("file", "big.png", "image/png", new byte[10 * 1024 * 1024 + 1]);
++        mockMvc.perform(multipart("/posts/1/attachments").file(file))
++                .andExpect(status().isPayloadTooLarge());
++    }
++
++    @Test
++    @WithUserDetails("writer")
++    void 실행_파일은_거절한다() throws Exception {
++        MockMultipartFile file = new MockMultipartFile("file", "run.exe", "application/octet-stream", new byte[10]);
++        mockMvc.perform(multipart("/posts/1/attachments").file(file))
++                .andExpect(status().isBadRequest());
++    }
+ }

@@ -1,0 +1,68 @@
+diff --git a/src/test/java/com/x/coupon/CouponServiceTest.java b/src/test/java/com/x/coupon/CouponServiceTest.java
+--- a/src/test/java/com/x/coupon/CouponServiceTest.java
++++ b/src/test/java/com/x/coupon/CouponServiceTest.java
+@@ -1,3 +1,74 @@
++package com.x.coupon;
++
++class CouponServiceTest {
++
++    private final CouponRepository couponRepository = mock(CouponRepository.class);
++    private final LocalDateTime expiresAt = LocalDateTime.of(2026, 5, 1, 0, 0);
++
++    private CouponService serviceAt(LocalDateTime now) {
++        return new CouponService(couponRepository, Clock.fixed(now.toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
++    }
++
++    private Coupon coupon(long memberId) {
++        Coupon coupon = new Coupon(memberId, 3_000L, expiresAt);
++        given(couponRepository.findById(1L)).willReturn(Optional.of(coupon));
++        return coupon;
++    }
++
++    @Test
++    void 사용할_수_있는_쿠폰이면_사용_처리하고_할인_금액을_돌려준다() {
++        Coupon coupon = coupon(7L);
++        long discount = serviceAt(expiresAt.minusDays(1)).use(1L, 7L, 50_000L);
++        assertThat(discount).isEqualTo(3_000L);
++        assertThat(coupon.isUsed()).isTrue();
++    }
++
++    @Test
++    void 다른_회원의_쿠폰이면_예외() {
++        coupon(7L);
++        assertThatThrownBy(() -> serviceAt(expiresAt.minusDays(1)).use(1L, 8L, 50_000L))
++                .isInstanceOf(CouponOwnerMismatchException.class);
++    }
++
++    @Test
++    void 이미_사용한_쿠폰이면_예외() {
++        coupon(7L).use();
++        assertThatThrownBy(() -> serviceAt(expiresAt.minusDays(1)).use(1L, 7L, 50_000L))
++                .isInstanceOf(CouponAlreadyUsedException.class);
++    }
++
++    @Test
++    void 만료된_쿠폰이면_예외() {
++        coupon(7L);
++        assertThatThrownBy(() -> serviceAt(expiresAt.plusSeconds(1)).use(1L, 7L, 50_000L))
++                .isInstanceOf(CouponExpiredException.class);
++    }
++
++    @Test
++    void 할인_금액이_주문_금액보다_크면_주문_금액만큼만_할인한다() {
++        coupon(7L);
++        assertThat(serviceAt(expiresAt.minusDays(1)).use(1L, 7L, 2_000L)).isEqualTo(2_000L);
++    }
++
++    @Test
++    void 같은_쿠폰을_동시에_쓰면_한_번만_성공한다() throws Exception {
++        coupon(7L);
++        CouponService service = serviceAt(expiresAt.minusDays(1));
++        ExecutorService pool = Executors.newFixedThreadPool(2);
++        List<Future<Long>> results = pool.invokeAll(List.of(() -> service.use(1L, 7L, 50_000L), () -> service.use(1L, 7L, 50_000L)));
++        long failed = results.stream().filter(f -> {
++            try { f.get(); return false; } catch (ExecutionException e) { return e.getCause() instanceof ObjectOptimisticLockingFailureException; }
++        }).count();
++        assertThat(failed).isEqualTo(1);
++    }
+ }

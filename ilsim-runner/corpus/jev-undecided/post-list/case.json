@@ -1,0 +1,165 @@
+{
+  "spec": "spec.md",
+  "changes": [
+    {
+      "id": "impl-guess-all",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-guess-all.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": true,
+        "Q3": true,
+        "Q4": true
+      },
+      "note": "정렬·크기·삭제 제외·비로그인 허용을 모두 추측"
+    },
+    {
+      "id": "impl-size-only",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-size-only.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": true,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "크기 20만 정함(구현에 꼭 필요)"
+    },
+    {
+      "id": "impl-ok",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-ok.diff",
+      "expect": {
+        "Q1": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "페이지 크기는 20으로 고정하고 size 파라미터는 받지 않는다"
+        }
+      ],
+      "note": "정렬·삭제·보안은 건드리지 않음"
+    },
+    {
+      "id": "impl-sorted",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-sorted.diff",
+      "expect": {
+        "Q1": true,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "페이지 크기는 20으로 고정하고 size 파라미터는 받지 않는다"
+        }
+      ],
+      "note": "최신순 정렬 추측"
+    },
+    {
+      "id": "impl-soft-delete",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-soft-delete.diff",
+      "expect": {
+        "Q1": false,
+        "Q3": true,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "페이지 크기는 20으로 고정하고 size 파라미터는 받지 않는다"
+        }
+      ],
+      "note": "삭제 글 제외 추측"
+    },
+    {
+      "id": "impl-public",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-public.diff",
+      "expect": {
+        "Q1": false,
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "페이지 크기는 20으로 고정하고 size 파라미터는 받지 않는다"
+        }
+      ],
+      "note": "비로그인 허용 추측"
+    },
+    {
+      "id": "test-ok",
+      "stage": "TEST_CODE",
+      "file": "changes/test-ok.diff",
+      "expect": {
+        "Q1": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "페이지 크기는 20으로 고정하고 size 파라미터는 받지 않는다"
+        }
+      ],
+      "note": "로그인 사용자로만 확인하고 정렬·삭제·비로그인은 단정하지 않음"
+    },
+    {
+      "id": "test-guess",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess.diff",
+      "expect": {
+        "Q1": true,
+        "Q3": true,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "페이지 크기는 20으로 고정하고 size 파라미터는 받지 않는다"
+        }
+      ],
+      "note": "정렬·삭제 제외·비로그인 허용을 추측해 단정"
+    },
+    {
+      "id": "tc-ok",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-ok.md",
+      "expect": {
+        "Q1": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "페이지 크기는 20으로 고정하고 size 파라미터는 받지 않는다"
+        }
+      ],
+      "note": "로그인 사용자 전제만 두고 미결정은 제외"
+    },
+    {
+      "id": "tc-guess",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-guess.md",
+      "expect": {
+        "Q1": false,
+        "Q3": true,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "페이지 크기는 20으로 고정하고 size 파라미터는 받지 않는다"
+        }
+      ],
+      "note": "삭제 글 제외를 추측해 TC로 만듦"
+    }
+  ]
+}

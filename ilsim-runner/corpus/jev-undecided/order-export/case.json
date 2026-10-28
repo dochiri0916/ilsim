@@ -1,0 +1,80 @@
+{
+  "spec": "spec.md",
+  "changes": [
+    {
+      "id": "impl-guess",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-guess.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": true,
+        "Q3": true,
+        "Q4": true
+      },
+      "note": "형식·상한·취소 제외·BOM을 모두 추측"
+    },
+    {
+      "id": "impl-minimal",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-minimal.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "주문일시를 ISO·UTC로 정함(구현에 꼭 필요), 나머지는 다루지 않음"
+    },
+    {
+      "id": "impl-ok",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-ok.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "ISO-8601, UTC로 쓴다"
+        }
+      ],
+      "note": "상한·취소·BOM은 다루지 않음"
+    },
+    {
+      "id": "test-ok",
+      "stage": "TEST_CODE",
+      "file": "changes/test-ok.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "ISO-8601, UTC로 쓴다"
+        }
+      ],
+      "note": "정한 형식만 단정"
+    },
+    {
+      "id": "test-guess",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": true,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "ISO-8601, UTC로 쓴다"
+        }
+      ],
+      "note": "취소 제외·BOM을 추측해 단정"
+    }
+  ]
+}

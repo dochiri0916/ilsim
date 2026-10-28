@@ -16,13 +16,13 @@ object ChangeAudit {
     @Serializable
     data class Result(val verdict: String, val findings: List<Finding>)
 
-    private val types = setOf("OMISSION", "UNRELATED", "TEST_BYPASS", "RULE", "WEAK_TEST")
+    private val types = setOf("OMISSION", "UNRELATED", "TEST_BYPASS", "RULE", "WEAK_TEST", "GUESS")
 
     fun fixable(r: Result, stage: String = "IMPLEMENTATION"): List<Finding> = r.findings.filter {
         it.type != "WEAK_TEST" && !(stage == "TEST_CODE" && it.type == "OMISSION" && "TC-" !in it.target)
     }
 
-    fun prompt(stage: String, requirements: String?, testSpec: String?, rulesBrief: String?, validation: Map<String, String>, diff: String, survivors: List<String> = emptyList(), committedTests: Map<String, String> = emptyMap()): String = buildString {
+    fun prompt(stage: String, requirements: String?, testSpec: String?, rulesBrief: String?, validation: Map<String, String>, diff: String, survivors: List<String> = emptyList(), committedTests: Map<String, String> = emptyMap(), undecided: List<String> = emptyList()): String = buildString {
         appendLine("당신은 AI Agent가 만든 변경을 독립적으로 검토하는 리뷰어다. 정적 검사(아키텍처, 컨벤션, 위험, 테스트 무력화)는 이미 통과했다.")
         appendLine("설계가 좋은지 나쁜지는 판단하지 마라. 아래 네 가지만 찾아라. 근거가 diff 에서 확인되는 것만 보고하고, 추측은 하지 마라.")
         if (stage == "TEST_CODE") {
@@ -34,10 +34,15 @@ object ChangeAudit {
         appendLine("- TEST_BYPASS: 테스트를 약화하거나 우회하는 변경(단언 완화, 기대값 변경, 조건부 통과, 목으로 핵심 로직 대체)")
         appendLine("- RULE: 아래 프로젝트 규칙을 어겼지만 정적 검사가 못 잡았을 것으로 보이는 변경")
         if (survivors.isNotEmpty()) appendLine("- WEAK_TEST: 아래 '살아남은 변이' 중 요구사항상 중요한 동작인데 테스트가 검증하지 못하는 것 (등가 변이는 보고하지 마라)")
-        appendLine("JSON 만 출력하라(설명·코드펜스 금지): {\"verdict\":\"PASS|CONCERN\",\"findings\":[{\"type\":\"OMISSION|UNRELATED|TEST_BYPASS|RULE|WEAK_TEST\",\"target\":\"REQ-1 또는 파일:줄\",\"reason\":\"한 문장\"}]}")
+        if (undecided.isNotEmpty()) appendLine("- GUESS: 아래 '정하지 않은 사항'(사용자가 아직 답하지 않은 질문)의 답을 이 변경이 정해 버린 것. 그 상황만을 위한 분기·검증·예외·값, 질문이 고르라는 선택지를 쓴 코드, 그 상황의 결과를 단정하는 테스트가 있을 때만 보고하고 다른 요구사항 구현의 결과로만 동작하는 것은 보고하지 마라. target 은 질문 ID")
+        appendLine("JSON 만 출력하라(설명·코드펜스 금지): {\"verdict\":\"PASS|CONCERN\",\"findings\":[{\"type\":\"OMISSION|UNRELATED|TEST_BYPASS|RULE|WEAK_TEST${if (undecided.isNotEmpty()) "|GUESS" else ""}\",\"target\":\"REQ-1 또는 파일:줄\",\"reason\":\"한 문장\"}]}")
         appendLine("문제가 없으면 {\"verdict\":\"PASS\",\"findings\":[]} 로 답하라.")
         requirements?.let { appendLine(); appendLine("## 요구사항"); appendLine(it) }
         testSpec?.let { appendLine(); appendLine("## 테스트 케이스"); appendLine(it) }
+        if (undecided.isNotEmpty()) {
+            appendLine(); appendLine("## 정하지 않은 사항")
+            undecided.forEach { appendLine("- $it") }
+        }
         if (committedTests.isNotEmpty()) {
             appendLine(); appendLine("## 기존 테스트 (이전 단계에서 커밋됨, 이 변경에 포함되지 않음)")
             committedTests.forEach { (path, text) ->

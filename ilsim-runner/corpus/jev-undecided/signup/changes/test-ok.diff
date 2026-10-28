@@ -1,0 +1,35 @@
+diff --git a/src/test/kotlin/com/x/member/MemberServiceTest.kt b/src/test/kotlin/com/x/member/MemberServiceTest.kt
+--- a/src/test/kotlin/com/x/member/MemberServiceTest.kt
++++ b/src/test/kotlin/com/x/member/MemberServiceTest.kt
+@@ -1,3 +1,32 @@
++package com.x.member
++
++@SpringBootTest
++@RecordApplicationEvents
++class MemberServiceTest(
++    @Autowired private val memberService: MemberService,
++    @Autowired private val memberRepository: MemberRepository,
++    @Autowired private val passwordEncoder: PasswordEncoder,
++    @Autowired private val events: ApplicationEvents,
++) {
++
++    @Test
++    fun `가입하면 회원을 만들고 비밀번호를 해시해 저장한다`() {
++        val id = memberService.join(JoinCommand("a@x.com", "pw123456", "kim"))
++        val saved = memberRepository.findById(id).orElseThrow()
++        assertThat(saved.password).isNotEqualTo("pw123456")
++        assertThat(passwordEncoder.matches("pw123456", saved.password)).isTrue()
++    }
++
++    @Test
++    fun `가입하면 MemberJoinedEvent를 발행한다`() {
++        memberService.join(JoinCommand("b@x.com", "pw123456", "lee"))
++        assertThat(events.stream(MemberJoinedEvent::class.java).count()).isEqualTo(1)
++    }
++
++    @Test
++    fun `같은 이메일로 다시 가입하면 거절한다`() {
++        memberService.join(JoinCommand("c@x.com", "pw123456", "park"))
++        assertThrows<DuplicateEmailException> { memberService.join(JoinCommand("c@x.com", "pw654321", "choi")) }
++    }
+ }

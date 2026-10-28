@@ -1,0 +1,58 @@
+diff --git a/src/main/kotlin/com/x/member/MemberService.kt b/src/main/kotlin/com/x/member/MemberService.kt
+new file mode 100644
+--- /dev/null
++++ b/src/main/kotlin/com/x/member/MemberService.kt
+@@ -0,0 +1,17 @@
++package com.x.member
++
++@Service
++class MemberService(
++    private val memberRepository: MemberRepository,
++    private val passwordEncoder: PasswordEncoder,
++    private val events: ApplicationEventPublisher,
++) {
++
++    @Transactional
++    fun join(command: JoinCommand): Long {
++        if (memberRepository.existsByEmail(command.email)) throw DuplicateEmailException(command.email)
++        val member = memberRepository.save(Member(command.email, passwordEncoder.encode(command.password), command.nickname))
++        events.publishEvent(MemberJoinedEvent(member.id!!))
++        return member.id!!
++    }
++}
+diff --git a/src/main/kotlin/com/x/member/DuplicateEmailException.kt b/src/main/kotlin/com/x/member/DuplicateEmailException.kt
+new file mode 100644
+--- /dev/null
++++ b/src/main/kotlin/com/x/member/DuplicateEmailException.kt
+@@ -0,0 +1,3 @@
++package com.x.member
++
++class DuplicateEmailException(email: String) : RuntimeException("이미 가입한 이메일입니다: $email")
+diff --git a/src/main/kotlin/com/x/member/JoinRequest.kt b/src/main/kotlin/com/x/member/JoinRequest.kt
+new file mode 100644
+--- /dev/null
++++ b/src/main/kotlin/com/x/member/JoinRequest.kt
+@@ -0,0 +1,9 @@
++package com.x.member
++
++data class JoinRequest(
++    val email: String,
++    val password: String,
++    val nickname: String,
++) {
++    fun toCommand() = JoinCommand(email, password, nickname)
++}
+diff --git a/src/main/kotlin/com/x/member/MemberController.kt b/src/main/kotlin/com/x/member/MemberController.kt
+new file mode 100644
+--- /dev/null
++++ b/src/main/kotlin/com/x/member/MemberController.kt
+@@ -0,0 +1,9 @@
++package com.x.member
++
++@RestController
++class MemberController(private val memberService: MemberService) {
++
++    @PostMapping("/members")
++    fun join(@RequestBody @Valid request: JoinRequest): ResponseEntity<JoinResponse> =
++        ResponseEntity.status(HttpStatus.CREATED).body(JoinResponse(memberService.join(request.toCommand())))
++}

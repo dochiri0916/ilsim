@@ -1,0 +1,33 @@
+diff --git a/src/main/kotlin/com/x/mail/OrderMailListener.kt b/src/main/kotlin/com/x/mail/OrderMailListener.kt
+new file mode 100644
+--- /dev/null
++++ b/src/main/kotlin/com/x/mail/OrderMailListener.kt
+@@ -0,0 +1,28 @@
++package com.x.mail
++
++@Component
++class OrderMailListener(
++    private val memberRepository: MemberRepository,
++    private val mailSender: MailSender,
++    private val mailLogRepository: MailLogRepository,
++) {
++
++    @Async
++    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
++    fun onPaid(event: OrderPaidEvent) {
++        val member = memberRepository.findById(event.memberId).orElseThrow()
++        if (member.marketingOptOut) return
++        val content = OrderMailContent.of(event.order)
++        val subject = "[shop] 주문 완료 안내 (#${event.order.no})"
++        var attempt = 0
++        while (true) {
++            try {
++                mailSender.send(member.email, subject, content.body())
++                break
++            } catch (e: MailSendException) {
++                if (++attempt >= 3) throw e
++            }
++        }
++        mailLogRepository.save(MailLog(member.id, subject))
++    }
++}

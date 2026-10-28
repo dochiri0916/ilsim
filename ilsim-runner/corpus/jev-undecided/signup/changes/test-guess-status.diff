@@ -1,0 +1,31 @@
+diff --git a/src/test/kotlin/com/x/member/MemberControllerTest.kt b/src/test/kotlin/com/x/member/MemberControllerTest.kt
+new file mode 100644
+--- /dev/null
++++ b/src/test/kotlin/com/x/member/MemberControllerTest.kt
+@@ -0,0 +1,26 @@
++package com.x.member
++
++@SpringBootTest
++@AutoConfigureMockMvc
++class MemberControllerTest(@Autowired private val mockMvc: MockMvc, @Autowired private val memberRepository: MemberRepository) {
++
++    @Test
++    fun `가입하면 201과 회원 id를 돌려준다`() {
++        mockMvc.post("/members") {
++            contentType = MediaType.APPLICATION_JSON
++            content = """{"email":"e@x.com","password":"pw123456","nickname":"kim"}"""
++        }.andExpect {
++            status { isCreated() }
++            jsonPath("$.id") { exists() }
++        }
++    }
++
++    @Test
++    fun `이미 가입한 이메일이면 409를 돌려준다`() {
++        memberRepository.save(Member("f@x.com", "hash", "kim"))
++        mockMvc.post("/members") {
++            contentType = MediaType.APPLICATION_JSON
++            content = """{"email":"f@x.com","password":"pw123456","nickname":"lee"}"""
++        }.andExpect { status { isConflict() } }
++    }
++}

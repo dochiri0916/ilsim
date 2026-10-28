@@ -1,0 +1,53 @@
+diff --git a/src/orders/orders-export.controller.ts b/src/orders/orders-export.controller.ts
+new file mode 100644
+--- /dev/null
++++ b/src/orders/orders-export.controller.ts
+@@ -0,0 +1,19 @@
++import { Controller, Get, Header, Query, Res, UseGuards } from '@nestjs/common';
++import { Response } from 'express';
++import { Roles } from '../auth/roles.decorator';
++import { RolesGuard } from '../auth/roles.guard';
++import { OrdersExportService } from './orders-export.service';
++
++@Controller('admin/orders')
++@UseGuards(RolesGuard)
++export class OrdersExportController {
++  constructor(private readonly exportService: OrdersExportService) {}
++
++  @Get('export')
++  @Roles('ADMIN')
++  @Header('Content-Type', 'text/csv; charset=utf-8')
++  async export(@Query('from') from: string, @Query('to') to: string, @Res() res: Response): Promise<void> {
++    res.setHeader('Content-Disposition', `attachment; filename="orders-${from}-${to}.csv"`);
++    res.send(await this.exportService.exportCsv(from, to));
++  }
++}
+diff --git a/src/orders/orders-export.service.ts b/src/orders/orders-export.service.ts
+new file mode 100644
+--- /dev/null
++++ b/src/orders/orders-export.service.ts
+@@ -0,0 +1,24 @@
++import { BadRequestException, Injectable } from '@nestjs/common';
++import { InjectRepository } from '@nestjs/typeorm';
++import dayjs from 'dayjs';
++import { Between, Not, Repository } from 'typeorm';
++import { Order, OrderStatus } from './order.entity';
++
++@Injectable()
++export class OrdersExportService {
++  constructor(@InjectRepository(Order) private readonly orders: Repository<Order>) {}
++
++  async exportCsv(from: string, to: string): Promise<string> {
++    const start = dayjs.tz(from, 'Asia/Seoul').startOf('day');
++    const end = dayjs.tz(to, 'Asia/Seoul').endOf('day');
++    if (end.diff(start, 'day') > 31) {
++      throw new BadRequestException('export range must be 31 days or less');
++    }
++    const rows = await this.orders.find({
++      where: { orderedAt: Between(start.toDate(), end.toDate()), status: Not(OrderStatus.CANCELLED) },
++      order: { orderedAt: 'ASC' },
++    });
++    const lines = rows.map((o) => [o.orderNo, dayjs(o.orderedAt).tz('Asia/Seoul').format('YYYY-MM-DD HH:mm'), o.amount, o.status].join(','));
++    return '﻿' + ['주문번호,주문일시,금액,상태', ...lines].join('\n');
++  }
++}

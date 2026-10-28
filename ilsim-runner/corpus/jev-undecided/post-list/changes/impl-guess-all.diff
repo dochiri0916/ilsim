@@ -1,0 +1,51 @@
+diff --git a/src/main/java/com/x/post/PostQueryService.java b/src/main/java/com/x/post/PostQueryService.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/post/PostQueryService.java
+@@ -0,0 +1,16 @@
++package com.x.post;
++
++@Service
++@Transactional(readOnly = true)
++@RequiredArgsConstructor
++public class PostQueryService {
++
++    private static final int PAGE_SIZE = 20;
++
++    private final PostRepository postRepository;
++
++    public PostPageResponse list(int page) {
++        Page<Post> posts = postRepository.findAllByDeletedFalse(PageRequest.of(page, PAGE_SIZE, Sort.by(Sort.Direction.DESC, "createdAt")));
++        return PostPageResponse.from(posts);
++    }
++}
+diff --git a/src/main/java/com/x/post/PostController.java b/src/main/java/com/x/post/PostController.java
+--- a/src/main/java/com/x/post/PostController.java
++++ b/src/main/java/com/x/post/PostController.java
+@@ -14,4 +14,10 @@ public class PostController {
+     private final PostCommandService postCommandService;
++    private final PostQueryService postQueryService;
++
++    @GetMapping("/posts")
++    public PostPageResponse list(@RequestParam int page) {
++        return postQueryService.list(page);
++    }
+ }
+diff --git a/src/main/java/com/x/post/PostRepository.java b/src/main/java/com/x/post/PostRepository.java
+--- a/src/main/java/com/x/post/PostRepository.java
++++ b/src/main/java/com/x/post/PostRepository.java
+@@ -5,4 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
+
+ public interface PostRepository extends JpaRepository<Post, Long> {
++
++    Page<Post> findAllByDeletedFalse(Pageable pageable);
+ }
+diff --git a/src/main/java/com/x/config/SecurityConfig.java b/src/main/java/com/x/config/SecurityConfig.java
+--- a/src/main/java/com/x/config/SecurityConfig.java
++++ b/src/main/java/com/x/config/SecurityConfig.java
+@@ -21,6 +21,7 @@ public class SecurityConfig {
+         return http
+                 .authorizeHttpRequests(auth -> auth
++                        .requestMatchers(HttpMethod.GET, "/posts").permitAll()
+                         .anyRequest().authenticated())
+                 .build();

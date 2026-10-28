@@ -1,0 +1,106 @@
+{
+  "spec": "spec.md",
+  "changes": [
+    {
+      "id": "test-ok",
+      "stage": "TEST_CODE",
+      "file": "changes/test-ok.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "같은 대소문자 이메일만, 상태 코드·비밀번호 규칙·닉네임은 단정하지 않음"
+    },
+    {
+      "id": "test-guess-case",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess-case.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "대소문자 무시를 추측"
+    },
+    {
+      "id": "test-guess-status",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess-status.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": true,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "중복 이메일 409를 추측"
+    },
+    {
+      "id": "test-guess-password",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess-password.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": true,
+        "Q4": false
+      },
+      "note": "비밀번호 최소 길이를 추측"
+    },
+    {
+      "id": "impl-ok",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-ok.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "정한 동작만 구현, 예외 상태 코드 지정 없음"
+    },
+    {
+      "id": "impl-guess",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-guess.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": true,
+        "Q3": true,
+        "Q4": false
+      },
+      "note": "대소문자 무시·409·8자 규칙을 추측"
+    },
+    {
+      "id": "impl-nickname",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-nickname.diff",
+      "expect": {
+        "Q1": false,
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q2",
+          "text": "이메일 중복이면 409를 돌려준다"
+        }
+      ],
+      "note": "닉네임 중복 차단 추측"
+    },
+    {
+      "id": "impl-validation",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-validation.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": true,
+        "Q4": false
+      },
+      "note": "Bean Validation으로 비밀번호 길이를 추측"
+    }
+  ]
+}

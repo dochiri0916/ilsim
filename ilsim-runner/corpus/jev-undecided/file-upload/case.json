@@ -1,0 +1,77 @@
+{
+  "spec": "spec.md",
+  "changes": [
+    {
+      "id": "impl-guess",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-guess.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": true,
+        "Q3": true,
+        "Q4": false
+      },
+      "note": "크기·확장자·새 이름 저장을 추측"
+    },
+    {
+      "id": "impl-ok",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-ok.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "기존 저장 포트에 맡기고 제한은 두지 않음"
+    },
+    {
+      "id": "impl-count",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-count.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": true
+      },
+      "note": "첨부 5개 상한을 추측"
+    },
+    {
+      "id": "test-ok",
+      "stage": "TEST_CODE",
+      "file": "changes/test-ok.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "정한 동작만 테스트"
+    },
+    {
+      "id": "test-guess",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": true,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "크기 상한과 확장자 제한을 추측해 단정"
+    },
+    {
+      "id": "tc-ok",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-ok.md",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "미결정은 모두 제외"
+    }
+  ]
+}

@@ -12,7 +12,7 @@ import com.dochiri.ilsim.runner.convention.DocRules
 import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevRiskScreen
-import com.dochiri.ilsim.runner.jev.RequirementCheck
+import com.dochiri.ilsim.runner.jev.UndecidedCheck
 import com.dochiri.ilsim.runner.memory.NoiseDetector
 import com.dochiri.ilsim.runner.memory.ProjectMemory
 import com.dochiri.ilsim.runner.profile.StackDetector
@@ -64,26 +64,34 @@ class StageGates(
             "IMPLEMENTATION" -> listOf(section("요구사항 문서", "REQUIREMENTS"))
             else -> emptyList()
         }
-        val open = if (task.stage in setOf("TEST_CASES", "TEST_CODE", "IMPLEMENTATION")) document(task, "REQUIREMENTS")?.let(RequirementCheck::openQuestions).orEmpty() else emptyList()
+        if (task.stage !in UNDECIDED_STAGES) return parts.filterNotNull().joinToString("\n\n").ifEmpty { null }
+        val recorded = artifacts.decisions(task.projectId, task.feature, task.taskId)
+        val open = document(task, "REQUIREMENTS")?.let { spec -> UndecidedCheck.open(spec, recorded.map { UndecidedCheck.Decision(it.question, it.text) }) }.orEmpty()
         val undecided = open.takeIf { it.isNotEmpty() }?.let { items ->
-            "## 정하지 않은 사항\n\n요구사항 문서의 `## 미결정 사항`은 사용자가 아직 정하지 않았다. 이 동작은 추측해 테스트 케이스·테스트·구현으로 만들지 않는다. 이 단계를 끝내려면 꼭 정해야 하면 멈추고 사용자에게 물어본다.\n" +
-                items.joinToString("\n") { "- $it" }
+            "## 정하지 않은 사항\n\n요구사항 문서의 `## 미결정 사항` 중 아래는 사용자가 아직 정하지 않았다. 이 동작은 추측해 테스트 케이스·테스트·구현으로 만들지 않는다. 이 단계를 끝내려면 꼭 정해야 하면 멈추고 사용자에게 묻고, 사용자가 답하면 record_decision(질문 ID, 답)으로 기록한 뒤 이어서 한다. 제출 때 일심이 정하지 않은 동작을 만들었는지 확인한다.\n" +
+                items.joinToString("\n") { "- ${it.label}" }
         }
-        return (parts + undecided).filterNotNull().joinToString("\n\n").ifEmpty { null }
+        return (parts + Artifacts.render(recorded) + undecided).filterNotNull().joinToString("\n\n").ifEmpty { null }
     }
+
+    fun decisions(task: AssignedTask): List<UndecidedCheck.Decision> =
+        artifacts.decisions(task.projectId, task.feature, task.taskId).map { UndecidedCheck.Decision(it.question, it.text) }
+
+    fun requirements(task: AssignedTask): String? =
+        document(task, "REQUIREMENTS")?.let { spec -> listOfNotNull(spec.trimEnd(), Artifacts.render(artifacts.decisions(task.projectId, task.feature, task.taskId))).joinToString("\n\n") }
 
 
     class AuditOutcome(val artifacts: Map<String, String>, val fixable: List<ChangeAudit.Finding>)
 
-    fun aiAudit(task: AssignedTask, project: ProjectEntry, worktree: Path, diff: String, validation: MutableMap<String, String>, contextHash: String, guidelines: String? = null): AuditOutcome {
+    fun aiAudit(task: AssignedTask, project: ProjectEntry, worktree: Path, diff: String, validation: MutableMap<String, String>, contextHash: String, guidelines: String? = null, undecided: List<String> = emptyList()): AuditOutcome {
         val none = AuditOutcome(emptyMap(), emptyList())
         if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return none
         return try {
             val prompt = ChangeAudit.prompt(
-                task.stage, document(task, "REQUIREMENTS"), document(task, "TEST_CASES"),
+                task.stage, requirements(task), document(task, "TEST_CASES"),
                 listOfNotNull(RulesBrief.build(architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId), docRuleStore.load(task.projectId)), guidelines)
                     .joinToString("\n\n").ifEmpty { null },
-                validation, diff, survivors.also { survivors = emptyList() }, committedTests(task, worktree),
+                validation, diff, survivors.also { survivors = emptyList() }, committedTests(task, worktree), undecided,
             )
             val result = reviewCache.get(prompt, "${ClaudeModels.REVIEW}/${ClaudeModels.EFFORT}/${ReviewRouter.policyKey}/$contextHash", ChangeAudit::parse) {
                 ReviewContext.forPurpose("CHANGE_AUDIT") { ask(prompt, ClaudeModels.REVIEW) }
@@ -319,4 +327,8 @@ class StageGates(
             .lines().filter { it.length > 3 }
             .map { it.substring(3).trim().removeSurrounding("\"") }
             .filterNot(Gate::isIgnored)
+
+    companion object {
+        val UNDECIDED_STAGES = setOf("TEST_CASES", "TEST_CODE", "IMPLEMENTATION")
+    }
 }

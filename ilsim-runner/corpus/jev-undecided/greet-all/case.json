@@ -1,0 +1,241 @@
+{
+  "spec": "spec.md",
+  "changes": [
+    {
+      "id": "tc-excluded",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-excluded.md",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "미결정 사항을 제외한 케이스로만 적음"
+    },
+    {
+      "id": "tc-guess",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-guess.md",
+      "expect": {
+        "Q2": true,
+        "Q3": true,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "빈 목록·null 원소 기대 결과를 추측해 TC로 만듦"
+    },
+    {
+      "id": "tc-guess-greet",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-guess-greet.md",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "기존 greet를 새 형식으로 바꾸는 TC"
+    },
+    {
+      "id": "test-ok",
+      "stage": "TEST_CODE",
+      "file": "changes/test-ok.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "정한 동작만 테스트"
+    },
+    {
+      "id": "test-guess",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess.diff",
+      "expect": {
+        "Q2": true,
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "빈 목록 결과와 기존 greet 새 형식을 추측해 테스트"
+    },
+    {
+      "id": "impl-ok",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-ok.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "빈 목록·null은 따로 다루지 않음(스트림의 자연스러운 결과)"
+    },
+    {
+      "id": "impl-null-empty",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-null-empty.diff",
+      "expect": {
+        "Q2": true,
+        "Q3": true,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "null·빈 목록을 빈 결과로, null 원소는 건너뜀"
+    },
+    {
+      "id": "impl-greet-changed",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-greet-changed.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "기존 greet를 새 형식으로 바꿈"
+    },
+    {
+      "id": "impl-no-decisions",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-no-decisions.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false,
+        "Q5": true
+      },
+      "note": "반환 형태·인자 타입을 사용자 결정 없이 List<String>으로 정함"
+    },
+    {
+      "id": "impl-varargs-joined",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-varargs-joined.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false,
+        "Q5": true
+      },
+      "note": "가변 인자와 공백으로 합친 문자열을 추측"
+    },
+    {
+      "id": "impl-require-non-null",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-require-non-null.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": true,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "null을 NullPointerException 메시지로 정함"
+    },
+    {
+      "id": "tc-claimed",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-claimed.md",
+      "expect": {
+        "Q2": true,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "이름별 문구 목록 List<String>으로 반환한다"
+        },
+        {
+          "question": "Q5",
+          "text": "인자 타입은 List<String>이다"
+        }
+      ],
+      "note": "기록되지 않은 사용자 결정을 문서에만 적고 빈 목록 TC를 만듦"
+    }
+  ]
+}

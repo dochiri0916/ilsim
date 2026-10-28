@@ -1,0 +1,32 @@
+diff --git a/src/main/java/com/x/payment/PaymentService.java b/src/main/java/com/x/payment/PaymentService.java
+--- a/src/main/java/com/x/payment/PaymentService.java
++++ b/src/main/java/com/x/payment/PaymentService.java
+@@ -15,6 +15,30 @@ public class PaymentService {
+     private final PaymentRepository paymentRepository;
+     private final PgClient pgClient;
+     private final Sleeper sleeper;
++    private static final int MAX_ATTEMPTS = 3;
++    private static final Duration BACKOFF = Duration.ofMillis(200);
++
+
++    @Transactional
++    public void approve(Long orderId) {
++        Order order = orderRepository.findById(orderId).orElseThrow();
++        for (int attempt = 1; ; attempt++) {
++            log.info("payment.retry orderId={} attempt={}", orderId, attempt);
++            try {
++                PgApproval approval = pgClient.approve(order.getPaymentKey(), order.getAmount());
++                paymentRepository.save(Payment.approved(order, approval));
++                return;
++            } catch (PgRejectedException e) {
++                throw new PaymentFailedException(e);
++            } catch (PgTemporaryException e) {
++                if (attempt >= MAX_ATTEMPTS) {
++                    order.markPaymentFailed();
++                    throw new PaymentFailedException(e);
++                }
++                sleeper.sleep(BACKOFF);
++            }
++        }
++    }
+ }

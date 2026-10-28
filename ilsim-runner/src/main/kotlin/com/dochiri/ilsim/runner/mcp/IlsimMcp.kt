@@ -18,6 +18,7 @@ import com.dochiri.ilsim.runner.Shell
 import com.dochiri.ilsim.runner.StageGates
 import com.dochiri.ilsim.runner.StageResult
 import com.dochiri.ilsim.runner.UsageScope
+import com.dochiri.ilsim.runner.UserDecision
 import com.dochiri.ilsim.runner.analyzeArchitecture
 import com.dochiri.ilsim.runner.analyzeConvention
 import com.dochiri.ilsim.runner.analyzeDocRules
@@ -32,8 +33,10 @@ import com.dochiri.ilsim.runner.jev.Guidelines
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.RequirementCheck
 import com.dochiri.ilsim.runner.jev.ScopeCheck
+import com.dochiri.ilsim.runner.jev.UndecidedCheck
 import com.dochiri.ilsim.runner.risk.RiskScanner
 import java.nio.file.Path
+import java.time.Instant
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -93,6 +96,9 @@ class IlsimMcp(
         McpTool("reopen_stage", "이미 통과한 코드 단계(TEST_CODE)로 되돌려 그 단계부터 다시 한다. 앞 단계 산출물(예: 테스트 기대값)이 틀려 현재 단계를 통과할 수 없을 때, 사용자가 되돌리자고 했을 때만 호출한다. 현재 단계의 미커밋 변경은 보관했다가 그 단계로 돌아오면 되살린다. 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
             """{"type":"object","properties":{"stage":{"type":"string","description":"되돌릴 단계(TEST_CODE)"},"feedback":{"type":"string","description":"그 단계에서 고칠 점"}},"required":["stage","feedback"]}""",
         )) { args -> reopen(args.text("stage") ?: throw IllegalArgumentException("stage 가 필요합니다"), args.text("feedback") ?: throw IllegalArgumentException("feedback 이 필요합니다")) },
+        McpTool("record_decision", "요구사항 승인 뒤 사용자가 요구사항 문서의 미결정 질문에 답하거나 영향 범위 밖 변경을 허락하면 그 결정을 기록한다. 사용자가 채팅에서 말했을 때만 호출하고, 호출하면 앱이 사용자에게 다시 확인받는다. 기록한 결정은 이후 단계 지시와 일심 검사가 요구사항 문서처럼 따른다.", schema(
+            """{"type":"object","properties":{"question":{"type":"string","description":"답한 미결정 질문 ID(예: Q2). 영향 범위 허락처럼 질문에 대한 답이 아니면 생략"},"decision":{"type":"string","description":"사용자가 정한 내용(사용자 말 그대로, 영향 범위 허락이면 파일 경로 포함)"}},"required":["decision"]}""",
+        )) { args -> recordDecision(args.text("question"), args.text("decision") ?: throw IllegalArgumentException("decision 이 필요합니다")) },
     )
 
     private fun workspace(): Workspace {
@@ -127,7 +133,7 @@ class IlsimMcp(
         val task = active.load(ws.root) ?: return "진행 중인 일심 작업이 없습니다(프로젝트 ${ws.projectId}). 코드·문서를 바꾸는 요청이면 start_task로 시작하세요"
         val assigned = server.claim(task.taskId, store.load().runnerId) ?: return describe(ws, task)
         val restored = if (task.shelved != null && task.shelvedStage == assigned.stage) unshelve(ws, task.shelved) else null
-        active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(),
+        active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(), undecided = emptyList(),
             shelved = task.shelved.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }, shelvedStage = task.shelvedStage.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }))
         val prompt = gates {}.promptWithRules(assigned.copy(testCommand = ws.project.testCommand))
         return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, guide(ws, task, assigned.prompt, assigned.stage).render(), rules(assigned.stage)).joinToString("\n\n")
@@ -154,6 +160,9 @@ class IlsimMcp(
                     openQuestions(ws, task, state.stage) +
                     task.attention.takeIf { it.isNotEmpty() }?.let { items ->
                         "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 일심이 아래 문서 지침의 준수를 확인하지 못했습니다. 사용자가 산출물이 이 지침을 지키는지 직접 확인한 뒤 승인하도록 안내하세요:\n" + items.joinToString("\n") { "- $it" }
+                    }.orEmpty() +
+                    task.undecided.takeIf { it.isNotEmpty() }?.let { items ->
+                        "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 산출물이 아래 미결정 사항을 사용자 결정 없이 정했는지 일심이 확신하지 못했습니다. 사용자가 확인해 정한 답이면 record_decision으로 기록하고, 아니면 그 부분을 빼도록 reject_stage(사유)를 권하세요:\n" + items.joinToString("\n") { "- $it" }
                     }.orEmpty()
             }
             else -> "단계를 시작하지 못했습니다(작업 ${state.status}, 단계 ${state.stage} ${state.stageStatus})"
@@ -188,10 +197,10 @@ class IlsimMcp(
 
     private fun openQuestions(ws: Workspace, task: ActiveTask, stage: String?): String {
         if (stage != "REQUIREMENTS") return ""
-        val open = Artifacts(store).read(ws.projectId, task.feature, task.taskId, stage)?.let(RequirementCheck::openQuestions).orEmpty()
+        val open = Artifacts(store).read(ws.projectId, task.feature, task.taskId, stage)?.let(UndecidedCheck::questions).orEmpty()
         if (open.isEmpty()) return ""
-        return "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 요구사항 문서에 사용자가 정하지 않은 사항이 ${open.size}개 남아 있습니다. 질문마다 답을 받아 reject_stage(답)로 문서에 반영하기를 먼저 권하고, 그대로 승인하면 이 동작은 테스트·구현에서 추측해 만들지 않는다고 알리세요:\n" +
-            open.joinToString("\n") { "- $it" }
+        return "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 요구사항 문서에 사용자가 정하지 않은 사항이 ${open.size}개 남아 있습니다. 질문마다 답을 받아 reject_stage(답)로 문서에 반영하기를 먼저 권하고, 그대로 승인하면 이 동작은 테스트·구현에서 추측해 만들지 않으며(일심이 제출 때 확인) 나중에 답하면 record_decision으로 기록한다고 알리세요:\n" +
+            open.joinToString("\n") { "- ${it.label}" }
     }
 
     private fun guide(ws: Workspace, task: ActiveTask, request: String, stage: String?): TaskGuide {
@@ -287,6 +296,26 @@ class IlsimMcp(
         return "$stage 단계를 거절했습니다. 사유를 반영해 같은 단계를 다시 합니다\n\n" + nextStep()
     }
 
+    private fun recordDecision(question: String?, decision: String): String {
+        val ws = workspace()
+        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
+        val stage = state.stage?.takeIf { state.status == "ACTIVE" } ?: throw IllegalStateException("진행 중인 작업이 아닙니다(상태 ${state.status})")
+        if (stage == "REQUIREMENTS") throw IllegalStateException("요구사항 단계에서는 사용자의 답을 reject_stage(답)로 요구사항 문서에 반영하세요")
+        val artifacts = Artifacts(store)
+        val spec = artifacts.read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS") ?: throw IllegalStateException("요구사항 문서가 없습니다")
+        val id = question?.trim()?.uppercase()
+        if (id != null) {
+            val questions = UndecidedCheck.questions(spec)
+            require(questions.any { it.id == id }) { "요구사항 문서의 미결정 질문에 $id 가 없습니다(질문: ${questions.joinToString { it.id }.ifEmpty { "없음" }}). 질문에 대한 답이 아니면 question 을 비우세요" }
+        }
+        val recorded = artifacts.addDecision(ws.projectId, task.feature, task.taskId, UserDecision(id, decision.trim(), stage, Instant.now().toString()))
+        runCatching { server.event(task.taskId, stage, "log", "사용자 결정 기록: ${id?.let { "$it: " }.orEmpty()}${decision.trim()}") }
+        val open = UndecidedCheck.open(spec, recorded.map { UndecidedCheck.Decision(it.question, it.text) })
+        val untested = if (stage == "IMPLEMENTATION") ". 구현 단계에서 정한 동작은 앞 단계 테스트가 다루지 않습니다. 테스트가 필요하면 사용자에게 reopen_stage(TEST_CODE)로 테스트를 더할지 물어보세요" else ""
+        return "사용자 결정을 기록했습니다(모두 ${recorded.size}개). 이후 단계 지시와 일심 검사가 요구사항 문서처럼 따릅니다. 남은 미결정 질문: ${open.joinToString { it.id }.ifEmpty { "없음" }}$untested"
+    }
+
     private fun artifact(ws: Workspace, task: ActiveTask, stage: String?): String {
         val artifacts = Artifacts(store)
         val text = stage?.let { artifacts.read(ws.projectId, task.feature, task.taskId, it) } ?: return "산출물: 브랜치 ${task.branch}의 변경"
@@ -323,13 +352,13 @@ class IlsimMcp(
         if (saved == null) Shell.gitOk(ws.root, "-c", "user.name=ilsim", "-c", "user.email=ilsim@localhost", "commit", "-m", "ilsim(${stage.lowercase()}): ${task.feature}")
         server.result(task.taskId, StageResult(true, diff = outcome.diff, artifacts = outcome.artifacts, validation = validation, branch = task.branch,
             model = assigned.model, executionId = assigned.executionId, stage = stage, usage = usage.toList(), decisions = decisions.toList()))
-        active.save(ws.root, task.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention))
+        active.save(ws.root, task.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention, undecided = outcome.undecided))
         guides.load(task.taskId)?.takeIf { !it.reported }?.let { guides.save(task.taskId, it.copy(reported = true)) }
         val checks = validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "형식·경로 검사" }
         return "통과($stage): $checks. ${if (saved == null) "커밋했습니다" else "문서를 저장했습니다($saved)"}\n\n" + nextStep()
     }
 
-    private class Outcome(val error: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap(), val attention: List<String> = emptyList())
+    private class Outcome(val error: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap(), val attention: List<String> = emptyList(), val undecided: List<String> = emptyList())
 
     private fun verify(ws: Workspace, task: ActiveTask, assigned: AssignedTask, validation: MutableMap<String, String>, document: String?, log: (String) -> Unit): Outcome {
         val stage = assigned.stage
@@ -357,8 +386,14 @@ class IlsimMcp(
         }
         val scope = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") scopeCheck(ws, task, stage, diff, validation) else null
         if (scope != null && scope.outside.isNotEmpty()) {
-            return Outcome("요구사항 문서의 영향 범위 밖 변경으로 보입니다. 아래 파일의 변경을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 물어보세요(사용자가 원하면 reopen_stage로 요구사항 단계로 되돌려 영향 범위에 넣습니다):\n" +
+            return Outcome("요구사항 문서의 영향 범위 밖 변경으로 보입니다. 아래 파일의 변경을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용과 파일 경로)으로 기록한 뒤 다시 제출하세요:\n" +
                 scope.outside.joinToString("\n") { "- $it (범위 안 확률 ${"%.2f".format(scope.probabilities[it])})" })
+        }
+        val undecided = if (stage in StageGates.UNDECIDED_STAGES) undecidedCheck(ws, task, stage, if (key != null) text.orEmpty() else diff, validation) else null
+        val judged = undecided?.result
+        if (judged != null && judged.decided.isNotEmpty()) {
+            return Outcome("요구사항 문서의 미결정 사항을 사용자 결정 없이 정한 것으로 보입니다. 아래 질문의 답을 정한 부분(그 상황만을 위한 코드·값이나 그 상황의 기대 결과)을 빼세요. 이 단계를 끝내는 데 꼭 정해야 하면 멈추고 사용자에게 묻고, 사용자가 답하면 record_decision(질문 ID, 답)으로 기록한 뒤 다시 제출하세요:\n" +
+                judged.decided.joinToString("\n") { "- ${it.label} (정함 확률 ${"%.2f".format(judged.probabilities[it.id])})" })
         }
         val guide = guide(ws, task, assigned.prompt, stage)
         if (!guide.reported) {
@@ -376,8 +411,9 @@ class IlsimMcp(
             guide.selected && guide.guidelines.isEmpty() -> emptyList()
             else -> listOf("판정 없음")
         }
-        val audit = if (auditNeeded(ws, stage, check, scope, unresolved, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
-            gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey), guide.render().takeIf { guide.guidelines.isNotEmpty() || !guide.selected })
+        val unsettled = undecided?.unresolved.orEmpty()
+        val audit = if (auditNeeded(ws, stage, check, scope, unsettled, unresolved, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
+            gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey), guide.render().takeIf { guide.guidelines.isNotEmpty() || !guide.selected }, unsettled.map { it.label })
         } else {
             validation["ai-audit"] = "SKIPPED"
             StageGates.AuditOutcome(emptyMap(), emptyList())
@@ -391,7 +427,41 @@ class IlsimMcp(
             guide.selected -> listOf("문서 지침 ${guide.guidelines.size}개를 JEV 호출 실패로 판정하지 못했습니다: ${guide.guidelines.take(10).joinToString { it.source }}")
             else -> listOf("JEV를 쓸 수 없어 문서 지침을 고르지도 판정하지도 못했습니다. 이 프로젝트 문서: ${guide.documents.take(10).joinToString()}")
         }
-        return Outcome(diff = diff, artifacts = artifacts + audit.artifacts, attention = attention)
+        val unsure = if (stage !in APPROVAL_STAGES) emptyList() else unsettled.map { q -> "${q.label} (정함 확률 ${judged?.probabilities?.get(q.id)?.let { "%.2f".format(it) } ?: "판정 못 함"})" }
+        return Outcome(diff = diff, artifacts = artifacts + audit.artifacts, attention = attention, undecided = unsure)
+    }
+
+    private class Undecided(val open: List<UndecidedCheck.Question>, val result: UndecidedCheck.Result?) {
+        val unresolved: List<UndecidedCheck.Question> get() = when {
+            result == null -> open
+            result.truncated -> open.filter { it !in result.decided }
+            else -> result.uncertain
+        }
+    }
+
+    private fun undecidedCheck(ws: Workspace, task: ActiveTask, stage: String, change: String, validation: MutableMap<String, String>): Undecided? {
+        val artifacts = Artifacts(store)
+        val spec = artifacts.read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS") ?: return null
+        val decisions = artifacts.decisions(ws.projectId, task.feature, task.taskId).map { UndecidedCheck.Decision(it.question, it.text) }
+        val open = UndecidedCheck.open(spec, decisions)
+        if (open.isEmpty()) return null
+        val result = runCatching { UndecidedCheck.judge(jev(), spec, stage, open, decisions, change) }.getOrNull()
+        validation["undecided"] = when {
+            result == null -> "UNKNOWN"
+            result.decided.isNotEmpty() -> "DECIDED"
+            result.uncertain.isNotEmpty() || result.truncated -> "UNCERTAIN"
+            else -> "PASSED"
+        }
+        DecisionScope.record("UNDECIDED_CHECK", if (result == null) "NONE" else "JEV",
+            result?.let { r -> "남은 미결정 질문 ${open.size}개: " + r.probabilities.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } + if (r.truncated) " (변경 일부만 판정)" else "" }
+                ?: "JEV 꺼짐·실패, 남은 미결정 질문 ${open.joinToString { it.id }}", change)
+        return Undecided(open, result)
+    }
+
+    private fun requirements(ws: Workspace, task: ActiveTask): String? {
+        val artifacts = Artifacts(store)
+        val spec = artifacts.read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS") ?: return null
+        return listOfNotNull(spec.trimEnd(), Artifacts.render(artifacts.decisions(ws.projectId, task.feature, task.taskId))).joinToString("\n\n")
     }
 
     private fun requirementCheck(ws: Workspace, task: ActiveTask, diff: String, validation: MutableMap<String, String>): RequirementCheck.Result? {
@@ -411,7 +481,7 @@ class IlsimMcp(
     }
 
     private fun scopeCheck(ws: Workspace, task: ActiveTask, stage: String, diff: String, validation: MutableMap<String, String>): ScopeCheck.Result? {
-        val spec = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS")
+        val spec = requirements(ws, task)
         val result = spec?.let { runCatching { ScopeCheck.judge(jev(), it, stage, diff) }.getOrNull() }
         validation["scope"] = when {
             result == null -> "UNKNOWN"
@@ -443,7 +513,7 @@ class IlsimMcp(
         return result
     }
 
-    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, unresolvedGuidelines: List<String>, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
+    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
         if (stage == "TEST_CODE") return true
         if (stage != "IMPLEMENTATION") return false
         val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
@@ -452,6 +522,7 @@ class IlsimMcp(
             "요구사항 판정 없음".takeIf { check == null },
             "판정이 불확실한 요구사항 ${check?.uncertain?.joinToString { it.id }}".takeIf { check != null && check.uncertain.isNotEmpty() },
             "영향 범위 판정 불확실 ${scope?.uncertain?.joinToString()}".takeIf { scope != null && scope.uncertain.isNotEmpty() },
+            "미결정 판정 불확실 ${undecided.joinToString { it.id }}".takeIf { undecided.isNotEmpty() },
             "문서 지침 판정 불확실 ${unresolvedGuidelines.joinToString()}".takeIf { unresolvedGuidelines.isNotEmpty() },
             "위험 후보 ${riskCandidates}건".takeIf { riskCandidates > 0 },
             "변경 ${lines}줄(기준 ${maxLines}줄 초과)".takeIf { lines > maxLines },
@@ -474,7 +545,7 @@ class IlsimMcp(
     private fun rules(stage: String): String = """
         ## 일심 진행 규칙
         - 이 단계에서 고칠 수 있는 경로: ${allowed(stage)}
-        - git commit·push·브랜치 변경은 하지 않는다. 커밋은 일심이 한다.${if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") "\n        - 요구사항 문서의 영향 범위와 관계없는 파일은 고치지 않는다. 제출 때 일심이 범위 밖 변경을 확인한다. 꼭 필요하면 멈추고 사용자에게 묻는다." else ""}
+        - git commit·push·브랜치 변경은 하지 않는다. 커밋은 일심이 한다.${if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") "\n        - 요구사항 문서의 영향 범위와 관계없는 파일은 고치지 않는다. 제출 때 일심이 범위 밖 변경을 확인한다. 꼭 필요하면 멈추고 사용자에게 묻고, 허락하면 record_decision으로 기록한다." else ""}
         - 단계를 마치면 submit_result를 호출한다${if (stage in Artifacts.DOCUMENT_STAGES) "(완성한 문서 전체를 document 에 넣는다)" else ""}. 실패하면 지적된 부분만 고치고 다시 호출한다.
         - 사용자에게 보고할 때 submit_result 결과를 함께 알린다.
         """.trimIndent()

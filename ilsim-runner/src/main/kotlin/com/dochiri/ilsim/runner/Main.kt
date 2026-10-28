@@ -24,6 +24,7 @@ import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevGuidelineEval
 import com.dochiri.ilsim.runner.jev.JevRequirementEval
 import com.dochiri.ilsim.runner.jev.JevScopeEval
+import com.dochiri.ilsim.runner.jev.JevUndecidedEval
 import com.dochiri.ilsim.runner.jev.JevRiskEval
 import com.dochiri.ilsim.runner.mcp.ActiveTasks
 import com.dochiri.ilsim.runner.mcp.Hooks
@@ -100,6 +101,7 @@ private const val USAGE = """사용법:
     ilsim-runner jev-eval --project <경로>... [--limit <n>] [--agent]   실제 코드 후보에서 판단이 갈린 것만 추림 (라벨 없음)
     ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
     ilsim-runner jev-eval scope [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항 문서의 영향 범위 밖 변경 판정 평가
+    ilsim-runner jev-eval undecided [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항 문서의 미결정 사항을 추측해 정했는지 판정 평가
     ilsim-runner jev-eval guidelines [--data <폴더>] [--repeat <n>] [--out <파일>] [--sections] [--rules]   정답 있는 문서·요청·변경으로 지침 선택·위반·문서 규칙 판정 평가(--rules는 문서 규칙 질문만)
   Claude 앱
     ilsim-runner mcp                             일심 MCP 서버(stdio). Claude 앱 플러그인이 실행한다
@@ -689,6 +691,15 @@ private fun jevEval(store: ConfigStore, args: Array<String>) {
         val records = JevScopeEval.run(samples, jev, repeat)
         println(JevScopeEval.report(records))
         save(JevScopeEval.toJson(records))
+        return
+    }
+    if (rest.firstOrNull() == "undecided") {
+        val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-undecided").toAbsolutePath().normalize()
+        val samples = JevUndecidedEval.load(dir)
+        if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
+        val records = JevUndecidedEval.run(samples, jev, repeat)
+        println(JevUndecidedEval.report(records))
+        save(JevUndecidedEval.toJson(records))
         return
     }
     if (rest.firstOrNull() == "requirements") {

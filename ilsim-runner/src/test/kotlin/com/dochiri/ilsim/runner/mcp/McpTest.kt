@@ -328,10 +328,76 @@ class McpTest {
         assertContains(outside, "src/main/Other.java (범위 안 확률 0.05)")
         assertTrue("src/main/Slug.java" !in outside.substringAfter("영향 범위 밖"), outside)
 
-        repo.resolve("src/main/Other.java").deleteExisting()
+        assertContains(outside, "record_decision")
+        assertContains(run("record_decision", """{"decision":"Other 클래스도 고쳐도 된다: src/main/Other.java"}"""), "사용자 결정을 기록했습니다")
         val passed = run("submit_result")
         assertContains(passed, "scope=PASSED")
         assertTrue(server.results.last().decisions.any { it.purpose == "SCOPE_CHECK" && it.handler == "STATIC" })
+    }
+
+    @Test
+    fun `승인 뒤 단계는 미결정 사항을 추측해 정하면 제출을 실패시키고 사용자가 답을 기록하면 통과시킨다`() {
+        val prompts = mutableListOf<String>()
+        val capture: (String, String) -> String = { prompt, _ -> prompts += prompt; """{"verdict":"PASS","findings":[]}""" }
+        fun mcp() = IlsimMcp(store, server, active, repo, capture, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        fun failure(name: String, args: String) = runCatching { run(name, args) }.exceptionOrNull()?.message.orEmpty()
+        jevAnswer = { id -> if (id[0] in "uv") 0.05 else 0.95 }
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        val spec = "# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/main/Slug.java`\n- `src/test/SlugTest.java`\n\n## 미결정 사항\n- Q1. 빈 문자열이면 무엇을 돌려주는가?\n- Q2. null 이면 예외를 던지는가?\n"
+        assertContains(run("submit_result", doc(spec)), "나중에 답하면 record_decision으로 기록")
+        assertContains(failure("record_decision", """{"question":"Q1","decision":"빈 문자열"}"""), "reject_stage")
+        server.approve("t")
+
+        val cases = "| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |\n| TC-2 | REQ-1 | 경계값 | of(\"\") | \"\" |"
+        jevAnswer = { id -> when { id == "u0" -> 0.9; id[0] in "uv" -> 0.05; else -> 0.95 } }
+        val guessed = run("submit_result", doc(cases))
+        assertContains(guessed, "미결정 사항을 사용자 결정 없이 정한 것으로 보입니다")
+        assertContains(guessed, "- Q1. 빈 문자열이면 무엇을 돌려주는가? (정함 확률 0.90)")
+        assertTrue("Q2. null" !in guessed, guessed)
+        assertTrue(server.results.size == 1, "추측이면 서버에 보고하지 않는다")
+
+        val confirm = hook("pre-tool-use", """{"cwd":"$repo","tool_name":"mcp__ilsim__record_decision","tool_input":{"question":"Q1","decision":"빈 문자열을 돌려준다"}}""")
+        assertContains(confirm.stdout, "\"ask\"")
+        assertContains(confirm.stdout, "사용자 결정 기록 (Q1): 빈 문자열을 돌려준다")
+        assertContains(failure("record_decision", """{"question":"Q9","decision":"x"}"""), "Q9 가 없습니다")
+        assertContains(run("record_decision", """{"question":"q1","decision":"빈 문자열을 돌려준다"}"""), "남은 미결정 질문: Q2")
+        assertTrue(server.events.any { it == "log:사용자 결정 기록: Q1: 빈 문자열을 돌려준다" })
+
+        jevAnswer = { id -> when { id == "u0" -> 0.5; id[0] == 'v' -> 0.05; else -> 0.95 } }
+        assertContains(run("submit_result", doc(cases)), "undecided=UNCERTAIN")
+        val waiting = run("next_step")
+        assertContains(waiting, "사용자 결정 없이 정했는지 일심이 확신하지 못했습니다")
+        assertContains(waiting, "- Q2. null 이면 예외를 던지는가? (정함 확률 0.50)")
+        server.approve("t")
+
+        val testing = run("next_step")
+        assertContains(testing, "## 사용자가 정한 사항")
+        assertContains(testing, "- Q1: 빈 문자열을 돌려준다")
+        assertContains(testing, "## 정하지 않은 사항")
+        assertTrue("- Q1." !in testing.substringAfter("## 정하지 않은 사항"), testing)
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        assertContains(run("submit_result"), "undecided=UNCERTAIN")
+        assertContains(prompts.last(), "- GUESS:")
+        assertContains(prompts.last(), "## 정하지 않은 사항\n- Q2. null 이면 예외를 던지는가?")
+        assertContains(prompts.last(), "## 사용자가 정한 사항")
+
+        repo.resolve("src/main").createDirectories()
+        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { if (s == null) throw new IllegalArgumentException(); return s.toLowerCase(); } }\n")
+        jevAnswer = { id -> when { id == "u0" -> 0.85; id.startsWith("v") -> 0.05; else -> 0.95 } }
+        val implemented = run("submit_result")
+        assertContains(implemented, "- Q2. null 이면 예외를 던지는가? (정함 확률 0.85)")
+        assertTrue(server.results.last().stage == "TEST_CODE")
+
+        val recorded = run("record_decision", """{"question":"Q2","decision":"null 이면 IllegalArgumentException"}""")
+        assertContains(recorded, "남은 미결정 질문: 없음")
+        assertContains(recorded, "reopen_stage(TEST_CODE)로 테스트를 더할지")
+        val passed = run("submit_result")
+        assertContains(passed, "통과(IMPLEMENTATION)")
+        assertTrue("undecided=" !in passed, passed)
+        assertTrue(server.results.last().decisions.none { it.purpose == "UNDECIDED_CHECK" })
+        assertTrue(server.results.dropLast(1).last().decisions.any { it.purpose == "UNDECIDED_CHECK" && it.handler == "JEV" })
     }
 
     @Test

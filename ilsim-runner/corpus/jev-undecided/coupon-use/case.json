@@ -1,0 +1,155 @@
+{
+  "spec": "spec.md",
+  "changes": [
+    {
+      "id": "impl-basic",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-basic.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "isAfter 비교로 만료 시각과 같을 때 사용 가능으로 정함, 나머지는 다루지 않음"
+    },
+    {
+      "id": "impl-cap",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-cap.diff",
+      "expect": {
+        "Q2": true,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "만료 시각과 같으면 이미 만료된 것으로 보고 사용할 수 없다"
+        }
+      ],
+      "note": "할인 금액을 주문 금액까지로 자름"
+    },
+    {
+      "id": "impl-min-order",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-min-order.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": true,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "만료 시각과 같으면 이미 만료된 것으로 보고 사용할 수 없다"
+        }
+      ],
+      "note": "최소 주문 금액 1만 원을 추측"
+    },
+    {
+      "id": "impl-pessimistic-lock",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-pessimistic-lock.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "만료 시각과 같으면 이미 만료된 것으로 보고 사용할 수 없다"
+        }
+      ],
+      "note": "비관적 락을 추측"
+    },
+    {
+      "id": "impl-version",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-version.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "만료 시각과 같으면 이미 만료된 것으로 보고 사용할 수 없다"
+        }
+      ],
+      "note": "낙관적 락(@Version)을 추측"
+    },
+    {
+      "id": "test-ok",
+      "stage": "TEST_CODE",
+      "file": "changes/test-ok.diff",
+      "expect": {
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "만료 시각과 같으면 이미 만료된 것으로 보고 사용할 수 없다"
+        }
+      ],
+      "note": "정해진 동작만 테스트, 주문 금액은 할인보다 큼"
+    },
+    {
+      "id": "test-boundary",
+      "stage": "TEST_CODE",
+      "file": "changes/test-boundary.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "만료 시각 경계를 사용 가능으로 추측"
+    },
+    {
+      "id": "test-guess",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess.diff",
+      "expect": {
+        "Q2": true,
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "만료 시각과 같으면 이미 만료된 것으로 보고 사용할 수 없다"
+        }
+      ],
+      "note": "주문 금액 상한 할인과 낙관적 락 실패를 추측해 테스트"
+    },
+    {
+      "id": "tc-ok",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-ok.md",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "미결정은 모두 제외"
+    },
+    {
+      "id": "tc-guess",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-guess.md",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": true,
+        "Q4": false
+      },
+      "note": "만료 경계와 최소 주문 금액을 추측해 TC로 만듦"
+    }
+  ]
+}

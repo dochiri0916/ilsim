@@ -1,0 +1,33 @@
+diff --git a/src/main/java/com/x/attachment/AttachmentService.java b/src/main/java/com/x/attachment/AttachmentService.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/attachment/AttachmentService.java
+@@ -0,0 +1,28 @@
++package com.x.attachment;
++
++@Service
++@RequiredArgsConstructor
++public class AttachmentService {
++
++    private final PostRepository postRepository;
++    private final AttachmentRepository attachmentRepository;
++    private final FileStorage fileStorage;
++
++    @Transactional
++    public AttachmentResponse upload(Long postId, Long userId, MultipartFile file) {
++        Post post = postRepository.findById(postId).orElseThrow(PostNotFoundException::new);
++        if (!post.isWrittenBy(userId)) {
++            throw new ForbiddenException();
++        }
++        if (file.getSize() > 10 * 1024 * 1024) {
++            throw new FileTooLargeException();
++        }
++        String extension = StringUtils.getFilenameExtension(file.getOriginalFilename());
++        if (!Set.of("png", "jpg", "pdf").contains(extension)) {
++            throw new UnsupportedFileTypeException(extension);
++        }
++        StoredFile stored = fileStorage.store(UUID.randomUUID() + "-" + file.getOriginalFilename(), file);
++        Attachment attachment = attachmentRepository.save(new Attachment(post, file.getOriginalFilename(), file.getSize(), stored.url()));
++        return AttachmentResponse.from(attachment);
++    }
++}

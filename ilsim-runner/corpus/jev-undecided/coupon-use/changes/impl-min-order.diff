@@ -1,0 +1,76 @@
+diff --git a/src/main/java/com/x/coupon/CouponService.java b/src/main/java/com/x/coupon/CouponService.java
+--- a/src/main/java/com/x/coupon/CouponService.java
++++ b/src/main/java/com/x/coupon/CouponService.java
+@@ -12,6 +12,26 @@ public class CouponService {
+     private final CouponRepository couponRepository;
+     private final Clock clock;
++    private static final long MINIMUM_ORDER_AMOUNT = 10_000L;
++
++
++    @Transactional
++    public long use(Long couponId, Long memberId, long orderAmount) {
++        Coupon coupon = couponRepository.findById(couponId).orElseThrow(CouponNotFoundException::new);
++        if (!coupon.isOwnedBy(memberId)) {
++            throw new CouponOwnerMismatchException();
++        }
++        if (coupon.isUsed()) {
++            throw new CouponAlreadyUsedException();
++        }
++        if (coupon.isExpiredAt(LocalDateTime.now(clock))) {
++            throw new CouponExpiredException();
++        }
++        if (orderAmount < MINIMUM_ORDER_AMOUNT) {
++            throw new CouponMinimumOrderAmountException(MINIMUM_ORDER_AMOUNT);
++        }
++        coupon.use();
++        return coupon.getDiscountAmount();
++    }
+ }
+diff --git a/src/main/java/com/x/coupon/Coupon.java b/src/main/java/com/x/coupon/Coupon.java
+--- a/src/main/java/com/x/coupon/Coupon.java
++++ b/src/main/java/com/x/coupon/Coupon.java
+@@ -30,4 +30,17 @@ public class Coupon {
+     private boolean used;
+
+     protected Coupon() {
+     }
++
++    public boolean isOwnedBy(Long memberId) {
++        return this.memberId.equals(memberId);
++    }
++
++    public boolean isExpiredAt(LocalDateTime now) {
++        return !now.isBefore(expiresAt);
++    }
++
++    public void use() {
++        this.used = true;
++    }
+ }
+diff --git a/src/main/java/com/x/coupon/CouponOwnerMismatchException.java b/src/main/java/com/x/coupon/CouponOwnerMismatchException.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/coupon/CouponOwnerMismatchException.java
+@@ -0,0 +1,4 @@
++package com.x.coupon;
++
++public class CouponOwnerMismatchException extends RuntimeException {
++}
+diff --git a/src/main/java/com/x/coupon/CouponAlreadyUsedException.java b/src/main/java/com/x/coupon/CouponAlreadyUsedException.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/coupon/CouponAlreadyUsedException.java
+@@ -0,0 +1,4 @@
++package com.x.coupon;
++
++public class CouponAlreadyUsedException extends RuntimeException {
++}
+diff --git a/src/main/java/com/x/coupon/CouponExpiredException.java b/src/main/java/com/x/coupon/CouponExpiredException.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/coupon/CouponExpiredException.java
+@@ -0,0 +1,4 @@
++package com.x.coupon;
++
++public class CouponExpiredException extends RuntimeException {
++}

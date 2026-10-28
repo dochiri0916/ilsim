@@ -1,0 +1,41 @@
+diff --git a/src/test/java/com/x/payment/PaymentServiceTest.java b/src/test/java/com/x/payment/PaymentServiceTest.java
+--- a/src/test/java/com/x/payment/PaymentServiceTest.java
++++ b/src/test/java/com/x/payment/PaymentServiceTest.java
+@@ -1,3 +1,41 @@
++package com.x.payment;
++
++class PaymentServiceTest {
++
++    private final OrderRepository orderRepository = mock(OrderRepository.class);
++    private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
++    private final PgClient pgClient = mock(PgClient.class);
++    private final Order order = Order.pending(1L, "pay-key", 10_000L);
+++    private final PaymentService paymentService = new PaymentService(orderRepository, paymentRepository, pgClient, duration -> { });
++
++    @BeforeEach
++    void setUp() {
++        given(orderRepository.findById(1L)).willReturn(Optional.of(order));
++    }
++
++    @Test
++    void 일시적_오류_뒤_성공하면_승인으로_저장한다() {
++        given(pgClient.approve(any(), anyLong())).willThrow(new PgTemporaryException("busy")).willReturn(new PgApproval("tx-1"));
++        paymentService.approve(1L);
++        then(paymentRepository).should().save(argThat(p -> p.getStatus() == PaymentStatus.APPROVED));
++    }
++
++    @Test
++    void 카드_거절은_다시_시도하지_않는다() {
++        given(pgClient.approve(any(), anyLong())).willThrow(new PgRejectedException("limit"));
++        assertThatThrownBy(() -> paymentService.approve(1L)).isInstanceOf(PaymentFailedException.class);
++        then(pgClient).should(times(1)).approve(any(), anyLong());
++    }
++
++    @Test
++    void 세_번_모두_일시적_오류면_결제_실패로_바꾼다() {
++        given(pgClient.approve(any(), anyLong())).willThrow(new PgTemporaryException("busy"));
++        assertThatThrownBy(() -> paymentService.approve(1L)).isInstanceOf(PaymentFailedException.class);
++        then(pgClient).should(times(3)).approve(any(), anyLong());
++        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
++    }
+ }

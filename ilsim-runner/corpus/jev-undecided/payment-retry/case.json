@@ -1,0 +1,121 @@
+{
+  "spec": "spec.md",
+  "changes": [
+    {
+      "id": "impl-hardcoded",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-hardcoded.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": true,
+        "Q3": true,
+        "Q4": false
+      },
+      "note": "횟수·간격 상수와 실패 상태를 추측"
+    },
+    {
+      "id": "impl-config",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-config.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "횟수·간격은 기본값 없는 설정으로 남기고 상태는 바꾸지 않음"
+    },
+    {
+      "id": "impl-config-yml",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-config-yml.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": true,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "설정 파일에 3회·200ms 값을 추측해 넣음"
+    },
+    {
+      "id": "impl-defaults",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-defaults.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": true,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "설정 기본값으로 3회·500ms를 추측"
+    },
+    {
+      "id": "impl-timeout",
+      "stage": "IMPLEMENTATION",
+      "file": "changes/impl-timeout.diff",
+      "expect": {
+        "Q3": false,
+        "Q4": true
+      },
+      "decisions": [
+        {
+          "question": "Q1",
+          "text": "최대 3번 시도한다"
+        },
+        {
+          "question": "Q2",
+          "text": "시도 사이 1초 기다린다"
+        }
+      ],
+      "note": "타임아웃도 재시도 대상으로 추측"
+    },
+    {
+      "id": "test-ok",
+      "stage": "TEST_CODE",
+      "file": "changes/test-ok.diff",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "테스트 전용 설정값(2회, 대기 0)으로만 검증"
+    },
+    {
+      "id": "test-guess",
+      "stage": "TEST_CODE",
+      "file": "changes/test-guess.diff",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": true,
+        "Q4": false
+      },
+      "note": "기본 3회와 PAYMENT_FAILED 상태를 추측해 단정"
+    },
+    {
+      "id": "tc-ok",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-ok.md",
+      "expect": {
+        "Q1": false,
+        "Q2": false,
+        "Q3": false,
+        "Q4": false
+      },
+      "note": "미결정은 설정값·제외로 둠"
+    },
+    {
+      "id": "tc-guess",
+      "stage": "TEST_CASES",
+      "file": "changes/tc-guess.md",
+      "expect": {
+        "Q1": true,
+        "Q2": false,
+        "Q3": false,
+        "Q4": true
+      },
+      "note": "3회와 타임아웃 재시도를 추측해 TC로 만듦"
+    }
+  ]
+}

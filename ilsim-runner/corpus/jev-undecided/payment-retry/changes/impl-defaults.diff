@@ -1,0 +1,42 @@
+diff --git a/src/main/java/com/x/payment/PaymentService.java b/src/main/java/com/x/payment/PaymentService.java
+--- a/src/main/java/com/x/payment/PaymentService.java
++++ b/src/main/java/com/x/payment/PaymentService.java
+@@ -15,6 +15,30 @@ public class PaymentService {
+     private final PaymentRepository paymentRepository;
+     private final PgClient pgClient;
+     private final Sleeper sleeper;
++    private final PaymentRetryProperties properties;
++
+
++    @Transactional
++    public void approve(Long orderId) {
++        Order order = orderRepository.findById(orderId).orElseThrow();
++        for (int attempt = 1; ; attempt++) {
++            log.info("payment.retry orderId={} attempt={}", orderId, attempt);
++            try {
++                PgApproval approval = pgClient.approve(order.getPaymentKey(), order.getAmount());
++                paymentRepository.save(Payment.approved(order, approval));
++                return;
++            } catch (PgRejectedException e) {
++                throw new PaymentFailedException(e);
++            } catch (PgTemporaryException e) {
++                if (attempt >= properties.maxAttempts()) {
++                    throw new PaymentFailedException(e);
++                }
++                sleeper.sleep(properties.backoff());
++            }
++        }
++    }
+ }
+diff --git a/src/main/java/com/x/payment/PaymentRetryProperties.java b/src/main/java/com/x/payment/PaymentRetryProperties.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/payment/PaymentRetryProperties.java
+@@ -0,0 +1,7 @@
++package com.x.payment;
++
++@ConfigurationProperties("payment.retry")
++public record PaymentRetryProperties(
++        @DefaultValue("3") int maxAttempts,
++        @DefaultValue("500ms") Duration backoff) {
++}
