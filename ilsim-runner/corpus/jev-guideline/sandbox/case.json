@@ -157,6 +157,34 @@
       "violates": [
         "docs/conventions.md:7"
       ]
+    },
+    {
+      "id": "goodbye-ok-legacy-context",
+      "request": "goodbye",
+      "file": "diffs/goodbye-ok-legacy-context.diff",
+      "note": "맥락 줄의 기존 greet가 문자열 인사말을 쓰지만 새 코드는 지킴"
+    },
+    {
+      "id": "goodbye-literal-legacy-context",
+      "request": "goodbye",
+      "file": "diffs/goodbye-literal-legacy-context.diff",
+      "violates": [
+        "docs/conventions.md:3"
+      ],
+      "note": "맥락 줄과 같은 방식으로 새 코드도 문자열 인사말을 씀"
+    },
+    {
+      "id": "name-length-ok-legacy-removed",
+      "request": "name-length",
+      "file": "diffs/name-length-ok-legacy-removed.diff",
+      "note": "지운 줄의 기존 위반(System.out)을 없애고 길이 검증을 Names에 더함"
+    },
+    {
+      "id": "goodbye-test-ok-legacy-context",
+      "request": "goodbye",
+      "stage": "TEST_CODE",
+      "file": "diffs/goodbye-test-ok-legacy-context.diff",
+      "note": "맥락 줄의 기존 테스트에 DisplayName이 없지만 새 테스트는 지킴"
     }
   ],
   "rules": [

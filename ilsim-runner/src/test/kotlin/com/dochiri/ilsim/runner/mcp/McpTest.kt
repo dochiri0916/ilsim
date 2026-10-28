@@ -355,6 +355,7 @@ class McpTest {
         val guessed = run("submit_result", doc(cases))
         assertContains(guessed, "미결정 사항을 사용자 결정 없이 정한 것으로 보입니다")
         assertContains(guessed, "- Q1. 빈 문자열이면 무엇을 돌려주는가? (정함 확률 0.90)")
+        assertTrue(server.events.any { it.startsWith("log:제출 실패: 요구사항 문서의 미결정 사항") && "(정함 확률 0.90)" in it }, "막힌 제출의 판정 확률을 로그에 남긴다")
         assertTrue("Q2. null" !in guessed, guessed)
         assertTrue(server.results.size == 1, "추측이면 서버에 보고하지 않는다")
 

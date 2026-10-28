@@ -1,0 +1,15 @@
+diff --git a/src/main/java/demo/Greeter.java b/src/main/java/demo/Greeter.java
+index 1f2a3b4..5c6d7e8 100644
+--- a/src/main/java/demo/Greeter.java
++++ b/src/main/java/demo/Greeter.java
+@@ -3,6 +3,10 @@ package demo;
+ public class Greeter {
+ 
+     public String greet(String name) {
+         return "Hello, " + name;
+     }
++
++    public String goodbye(String name) {
++        return "Goodbye, " + Names.normalize(name) + ".";
++    }
+ }

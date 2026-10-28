@@ -345,7 +345,7 @@ class IlsimMcp(
         }
         if (outcome.error != null) {
             Shell.git(ws.root, "reset", "-q")
-            log("제출 실패: ${outcome.error.lines().first()}")
+            log("제출 실패: ${outcome.error.take(MAX_FAILURE_LOG)}")
             return "제출 실패($stage):\n${outcome.error}\n\n지적된 부분을 고친 뒤 submit_result를 다시 호출하세요"
         }
         val saved = Artifacts(store).path(ws.projectId, task.feature, task.taskId, stage)
@@ -558,6 +558,8 @@ class IlsimMcp(
         private const val MAX_OUTPUT = 12_000
 
         private const val MAX_DOCUMENT = 8_000
+
+        private const val MAX_FAILURE_LOG = 4_000
 
         const val AUDIT_SAMPLE_RATE = 0.2
 

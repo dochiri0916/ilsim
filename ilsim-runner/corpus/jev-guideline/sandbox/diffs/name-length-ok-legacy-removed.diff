@@ -1,0 +1,18 @@
+diff --git a/src/main/java/demo/Names.java b/src/main/java/demo/Names.java
+index 2a3b4c5..6d7e8f9 100644
+--- a/src/main/java/demo/Names.java
++++ b/src/main/java/demo/Names.java
+@@ -3,10 +3,12 @@ public final class Names {
+ 
+     public static String normalize(String name) {
+-        System.out.println("normalize " + name);
+         String trimmed = name.strip();
+         if (trimmed.isEmpty()) {
+             throw new IllegalArgumentException("name must not be blank");
+         }
++        if (trimmed.length() > 20) {
++            throw new IllegalArgumentException("name must be at most 20 characters");
++        }
+         return trimmed;
+     }
+ }
