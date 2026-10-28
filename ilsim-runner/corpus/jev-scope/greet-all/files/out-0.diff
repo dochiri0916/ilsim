@@ -1,0 +1,10 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -5,5 +5,5 @@
+ ## 실행
+ 
+ ```bash
+-./gradlew bootRun
++./gradlew run
+ ```

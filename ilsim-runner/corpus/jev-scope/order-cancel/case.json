@@ -1,0 +1,38 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "files": [
+    {
+      "path": "src/main/java/com/x/order/Order.java",
+      "diff": "files/in-0.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/order/OrderNotCancellableException.java",
+      "diff": "files/in-1.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/order/OrderService.java",
+      "diff": "files/in-2.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/order/OrderStatus.java",
+      "diff": "files/in-3.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/order/OrderQueryService.java",
+      "diff": "files/out-0.diff",
+      "inside": false,
+      "note": "관계없는 최근 주문 조회 추가"
+    },
+    {
+      "path": "src/main/resources/application.yml",
+      "diff": "files/out-1.diff",
+      "inside": false,
+      "note": "관계없는 서버 포트 변경"
+    }
+  ]
+}

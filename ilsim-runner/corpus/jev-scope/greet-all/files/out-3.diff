@@ -1,0 +1,15 @@
+diff --git a/src/main/java/demo/Strings.java b/src/main/java/demo/Strings.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/demo/Strings.java
+@@ -0,0 +1,10 @@
++package demo;
++
++public final class Strings {
++    private Strings() {
++    }
++
++    public static boolean isBlank(String value) {
++        return value == null || value.strip().isEmpty();
++    }
++}

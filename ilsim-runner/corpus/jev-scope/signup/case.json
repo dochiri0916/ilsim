@@ -1,0 +1,28 @@
+{
+  "stage": "TEST_CODE",
+  "spec": "spec.md",
+  "files": [
+    {
+      "path": "src/test/java/com/x/member/MemberServiceTest.java",
+      "diff": "files/in-0.diff",
+      "inside": true
+    },
+    {
+      "path": "src/test/java/com/x/member/SignupPasswordTest.java",
+      "diff": "files/in-1.diff",
+      "inside": true
+    },
+    {
+      "path": "src/test/java/com/x/coupon/CouponServiceTest.java",
+      "diff": "files/out-0.diff",
+      "inside": false,
+      "note": "관계없는 쿠폰 테스트 기대값 변경"
+    },
+    {
+      "path": "src/test/java/com/x/post/PostControllerTest.java",
+      "diff": "files/out-1.diff",
+      "inside": false,
+      "note": "관계없는 게시글 테스트 삭제"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+diff --git a/src/test/java/com/x/member/MemberServiceTest.java b/src/test/java/com/x/member/MemberServiceTest.java
+--- a/src/test/java/com/x/member/MemberServiceTest.java
++++ b/src/test/java/com/x/member/MemberServiceTest.java
+@@ -30,3 +30,10 @@ class MemberServiceTest {
++
++    @Test
++    void 이미_가입한_이메일이면_예외() {
++        given(memberRepository.existsByEmail("a@x.com")).willReturn(true);
++        assertThatThrownBy(() -> memberService.signUp(new SignUpCommand("a@x.com", "password1")))
++                .isInstanceOf(DuplicateEmailException.class);
++    }
+diff --git a/src/test/java/com/x/member/MemberServiceTest.java b/src/test/java/com/x/member/MemberServiceTest.java
+--- a/src/test/java/com/x/member/MemberServiceTest.java
++++ b/src/test/java/com/x/member/MemberServiceTest.java
+@@ -40,3 +40,15 @@ class MemberServiceTest {
++
++    @Test
++    void 비밀번호가_8자_미만이면_예외() {
++        assertThatThrownBy(() -> memberService.signUp(new SignUpCommand("b@x.com", "short7!")))
++                .isInstanceOf(InvalidPasswordException.class);
++    }
++
++    @Test
++    void 비밀번호_8자는_허용() {
++        given(memberRepository.save(any())).willReturn(member(1L));
++        assertThat(memberService.signUp(new SignUpCommand("c@x.com", "eight888"))).isEqualTo(1L);
++    }

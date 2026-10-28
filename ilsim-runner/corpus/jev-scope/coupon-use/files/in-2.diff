@@ -1,0 +1,9 @@
+diff --git a/src/main/java/com/x/coupon/CouponRepository.java b/src/main/java/com/x/coupon/CouponRepository.java
+--- a/src/main/java/com/x/coupon/CouponRepository.java
++++ b/src/main/java/com/x/coupon/CouponRepository.java
+@@ -4,4 +4,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
+ 
+ public interface CouponRepository extends JpaRepository<Coupon, Long> {
++
++    boolean existsByUsedOrderId(Long orderId);
+ }

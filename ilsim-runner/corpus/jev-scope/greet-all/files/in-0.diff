@@ -1,0 +1,19 @@
+diff --git a/src/main/java/demo/Greeter.java b/src/main/java/demo/Greeter.java
+--- a/src/main/java/demo/Greeter.java
++++ b/src/main/java/demo/Greeter.java
+@@ -1,7 +1,15 @@
+ package demo;
+ 
++import java.util.List;
++
+ public class Greeter {
+     public String greet(String name) {
+         return "Hello, " + name;
+     }
++
++    public List<String> greetAll(List<String> names) {
++        return names.stream()
++                .map(name -> Messages.HELLO + ", " + Names.normalize(name) + ".")
++                .toList();
++    }
+ }

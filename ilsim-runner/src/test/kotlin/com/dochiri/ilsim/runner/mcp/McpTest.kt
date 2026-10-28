@@ -307,6 +307,34 @@ class McpTest {
     }
 
     @Test
+    fun `구현 단계는 요구사항 문서의 영향 범위와 관계없는 파일을 바꾸면 제출을 실패시킨다`() {
+        fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/main/Slug.java`\n- `src/test/SlugTest.java`")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        run("submit_result")
+        assertEquals("IMPLEMENTATION", server.stages[server.index])
+        assertContains(run("next_step"), "영향 범위와 관계없는 파일은 고치지 않는다")
+
+        repo.resolve("src/main").createDirectories()
+        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+        repo.resolve("src/main/Other.java").writeText("class Other {}\n")
+        jevAnswer = { id -> when { id.startsWith("f") -> 0.05; id.startsWith("v") -> 0.05; else -> 0.95 } }
+        val outside = run("submit_result")
+        assertContains(outside, "영향 범위 밖 변경으로 보입니다")
+        assertContains(outside, "src/main/Other.java (범위 안 확률 0.05)")
+        assertTrue("src/main/Slug.java" !in outside.substringAfter("영향 범위 밖"), outside)
+
+        repo.resolve("src/main/Other.java").deleteExisting()
+        val passed = run("submit_result")
+        assertContains(passed, "scope=PASSED")
+        assertTrue(server.results.last().decisions.any { it.purpose == "SCOPE_CHECK" && it.handler == "STATIC" })
+    }
+
+    @Test
     fun `TC-18 구현 단계 diff가 입력 한도로 잘리면 누락 대신 불확실로 기록한다`() {
         fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
@@ -320,7 +348,7 @@ class McpTest {
 
         repo.resolve("src/main").createDirectories()
         repo.resolve("src/main/Slug.java").writeText("class Slug {\n" + "    int value = 1;\n".repeat(2000) + "}\n")
-        jevAnswer = { id -> if (id == "m0") 0.1 else 0.05 }
+        jevAnswer = { id -> when { id == "m0" -> 0.1; id.startsWith("f") -> 0.95; else -> 0.05 } }
         val submitted = run("submit_result")
         assertTrue("요구사항이 빠진 것으로 보입니다" !in submitted, submitted)
         assertEquals("UNCERTAIN", server.results.last().validation["requirements"])

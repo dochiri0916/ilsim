@@ -1,0 +1,50 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "files": [
+    {
+      "path": "src/main/java/com/x/coupon/Coupon.java",
+      "diff": "files/in-0.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/coupon/CouponExpiredException.java",
+      "diff": "files/in-1.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/coupon/CouponRepository.java",
+      "diff": "files/in-2.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/coupon/CouponService.java",
+      "diff": "files/in-3.diff",
+      "inside": true
+    },
+    {
+      "path": "build.gradle",
+      "diff": "files/out-0.diff",
+      "inside": false,
+      "note": "쓰지 않는 라이브러리 추가"
+    },
+    {
+      "path": "src/main/java/com/x/coupon/CouponIssueService.java",
+      "diff": "files/out-1.diff",
+      "inside": false,
+      "note": "바꾸지 않는다고 한 쿠폰 발급 변경"
+    },
+    {
+      "path": "src/main/java/com/x/member/MemberService.java",
+      "diff": "files/out-2.diff",
+      "inside": false,
+      "note": "관계없는 회원 비활성화 기능 추가"
+    },
+    {
+      "path": "src/main/java/com/x/order/OrderController.java",
+      "diff": "files/out-3.diff",
+      "inside": false,
+      "note": "관계없는 변수 이름 정리"
+    }
+  ]
+}

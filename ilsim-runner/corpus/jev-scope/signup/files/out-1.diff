@@ -1,0 +1,11 @@
+diff --git a/src/test/java/com/x/post/PostControllerTest.java b/src/test/java/com/x/post/PostControllerTest.java
+--- a/src/test/java/com/x/post/PostControllerTest.java
++++ b/src/test/java/com/x/post/PostControllerTest.java
+@@ -52,10 +52,4 @@ class PostControllerTest {
+     }
+-
+-    @Test
+-    void 삭제된_글은_조회되지_않는다() throws Exception {
+-        mockMvc.perform(get("/posts/1")).andExpect(status().isNotFound());
+-    }
+ }

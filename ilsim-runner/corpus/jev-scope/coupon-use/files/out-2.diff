@@ -1,0 +1,13 @@
+diff --git a/src/main/java/com/x/member/MemberService.java b/src/main/java/com/x/member/MemberService.java
+--- a/src/main/java/com/x/member/MemberService.java
++++ b/src/main/java/com/x/member/MemberService.java
+@@ -30,6 +30,13 @@ public class MemberService {
+         return memberRepository.findById(id).orElseThrow();
+     }
++
++    @Transactional
++    public void deactivate(Long id) {
++        Member member = memberRepository.findById(id).orElseThrow();
++        member.deactivate();
++    }
+ }

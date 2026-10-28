@@ -1,0 +1,8 @@
+diff --git a/src/main/java/com/x/payment/RefundService.java b/src/main/java/com/x/payment/RefundService.java
+--- a/src/main/java/com/x/payment/RefundService.java
++++ b/src/main/java/com/x/payment/RefundService.java
+@@ -21,7 +21,7 @@ public class RefundService {
+     public long fee(long amount) {
+-        return amount / 100;
++        return Math.max(500, amount / 100);
+     }

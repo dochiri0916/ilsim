@@ -1,0 +1,12 @@
+diff --git a/src/main/java/demo/Farewell.java b/src/main/java/demo/Farewell.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/demo/Farewell.java
+@@ -0,0 +1,7 @@
++package demo;
++
++public class Farewell {
++    public String goodbye(String name) {
++        return "Goodbye, " + name + ".";
++    }
++}

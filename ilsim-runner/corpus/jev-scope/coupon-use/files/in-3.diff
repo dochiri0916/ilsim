@@ -1,0 +1,22 @@
+diff --git a/src/main/java/com/x/coupon/CouponService.java b/src/main/java/com/x/coupon/CouponService.java
+--- a/src/main/java/com/x/coupon/CouponService.java
++++ b/src/main/java/com/x/coupon/CouponService.java
+@@ -22,6 +22,9 @@ public class CouponService {
+     @Transactional
+     public void use(Long couponId, Long orderId) {
+         Coupon coupon = couponRepository.findById(couponId).orElseThrow();
++        if (coupon.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
++            throw new CouponExpiredException(couponId);
++        }
+         coupon.use(orderId);
+     }
+diff --git a/src/main/java/com/x/coupon/CouponService.java b/src/main/java/com/x/coupon/CouponService.java
+--- a/src/main/java/com/x/coupon/CouponService.java
++++ b/src/main/java/com/x/coupon/CouponService.java
+@@ -24,5 +24,8 @@ public class CouponService {
+         Coupon coupon = couponRepository.findById(couponId).orElseThrow();
++        if (couponRepository.existsByUsedOrderId(orderId)) {
++            throw new IllegalStateException("이 주문에는 이미 쿠폰을 사용했습니다");
++        }
+         coupon.use(orderId);
+     }

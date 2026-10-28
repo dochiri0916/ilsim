@@ -1,0 +1,25 @@
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -15,6 +15,7 @@ public class PostService {
+     @Transactional(readOnly = true)
+-    public List<PostResponse> list() {
+-        return postRepository.findAll().stream().map(PostResponse::from).toList();
++    public List<PostResponse> list(int page, int size) {
++        Pageable pageable = PageRequest.of(page, size);
++        return postRepository.findAll(pageable).map(PostResponse::from).toList();
+     }
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -17,3 +17,3 @@ public class PostService {
+     public List<PostResponse> list(int page, int size) {
+-        Pageable pageable = PageRequest.of(page, size);
++        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -19,3 +19,3 @@ public class PostService {
+-        return postRepository.findAll(pageable).map(PostResponse::from).toList();
++        return postRepository.findAllByDeletedFalse(pageable).map(PostResponse::from).toList();
+     }

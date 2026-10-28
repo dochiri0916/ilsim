@@ -1,0 +1,19 @@
+diff --git a/src/test/java/com/x/member/SignupPasswordTest.java b/src/test/java/com/x/member/SignupPasswordTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/com/x/member/SignupPasswordTest.java
+@@ -0,0 +1,14 @@
++package com.x.member;
++
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++
++import org.junit.jupiter.api.Test;
++
++class SignupPasswordTest {
++    private final MemberService memberService = TestMembers.service();
++
++    @Test
++    void 일곱_자_비밀번호는_거부한다() {
++        assertThatThrownBy(() -> memberService.join("a@b.c", "1234567")).isInstanceOf(InvalidPasswordException.class);
++    }
++}

@@ -1,0 +1,8 @@
+diff --git a/src/main/java/com/x/coupon/CouponIssueService.java b/src/main/java/com/x/coupon/CouponIssueService.java
+--- a/src/main/java/com/x/coupon/CouponIssueService.java
++++ b/src/main/java/com/x/coupon/CouponIssueService.java
+@@ -25,7 +25,7 @@ public class CouponIssueService {
+     public Coupon issue(Long memberId) {
+-        return couponRepository.save(Coupon.issue(memberId, LocalDateTime.now(clock).plusDays(30)));
++        return couponRepository.save(Coupon.issue(memberId, LocalDateTime.now(clock).plusDays(60)));
+     }

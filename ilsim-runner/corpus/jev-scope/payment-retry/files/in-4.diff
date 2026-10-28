@@ -1,0 +1,16 @@
+diff --git a/src/main/java/com/x/payment/PaymentService.java b/src/main/java/com/x/payment/PaymentService.java
+--- a/src/main/java/com/x/payment/PaymentService.java
++++ b/src/main/java/com/x/payment/PaymentService.java
+@@ -20,8 +20,14 @@ public class PaymentService {
+     public void pay(Long paymentId) {
+         Payment payment = paymentRepository.findById(paymentId).orElseThrow();
+-        PaymentResult result = paymentGateway.approve(PaymentRequest.from(payment));
+-        payment.approve(result.transactionId());
++        try {
++            PaymentResult result = paymentGateway.approve(PaymentRequest.from(payment));
++            payment.approve(result.transactionId());
++        } catch (RestClientException e) {
++            payment.fail();
++        }
+         paymentRepository.save(payment);
+     }

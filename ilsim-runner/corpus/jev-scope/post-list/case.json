@@ -1,0 +1,39 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "files": [
+    {
+      "path": "src/main/java/com/x/post/PostController.java",
+      "diff": "files/in-0.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/post/PostRepository.java",
+      "diff": "files/in-1.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/post/PostService.java",
+      "diff": "files/in-2.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/post/CommentService.java",
+      "diff": "files/out-0.diff",
+      "inside": false,
+      "note": "관계없는 댓글 길이 제한 변경"
+    },
+    {
+      "path": "src/main/java/com/x/post/Post.java",
+      "diff": "files/out-1.diff",
+      "inside": false,
+      "note": "관계없는 제목 검증 추가"
+    },
+    {
+      "path": "src/main/java/com/x/post/PostCacheConfig.java",
+      "diff": "files/out-2.diff",
+      "inside": false,
+      "note": "요구하지 않은 목록 캐시 추가"
+    }
+  ]
+}

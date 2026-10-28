@@ -1,0 +1,12 @@
+diff --git a/src/main/java/com/x/order/OrderNotCancellableException.java b/src/main/java/com/x/order/OrderNotCancellableException.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/order/OrderNotCancellableException.java
+@@ -0,0 +1,7 @@
++package com.x.order;
++
++public class OrderNotCancellableException extends RuntimeException {
++    public OrderNotCancellableException(Long orderId) {
++        super("배송이 시작된 주문은 취소할 수 없습니다: " + orderId);
++    }
++}

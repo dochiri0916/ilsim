@@ -31,6 +31,7 @@ import com.dochiri.ilsim.runner.document.ProjectDocs
 import com.dochiri.ilsim.runner.jev.Guidelines
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.RequirementCheck
+import com.dochiri.ilsim.runner.jev.ScopeCheck
 import com.dochiri.ilsim.runner.risk.RiskScanner
 import java.nio.file.Path
 import kotlinx.serialization.json.JsonObject
@@ -354,6 +355,11 @@ class IlsimMcp(
             return Outcome("구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
                 check.missing.joinToString("\n") { "- ${it.id} ${it.text} (충족 확률 ${"%.2f".format(check.probabilities[it.id])})" })
         }
+        val scope = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") scopeCheck(ws, task, stage, diff, validation) else null
+        if (scope != null && scope.outside.isNotEmpty()) {
+            return Outcome("요구사항 문서의 영향 범위 밖 변경으로 보입니다. 아래 파일의 변경을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 물어보세요(사용자가 원하면 reopen_stage로 요구사항 단계로 되돌려 영향 범위에 넣습니다):\n" +
+                scope.outside.joinToString("\n") { "- $it (범위 안 확률 ${"%.2f".format(scope.probabilities[it])})" })
+        }
         val guide = guide(ws, task, assigned.prompt, stage)
         if (!guide.reported) {
             DecisionScope.record("GUIDELINE_SELECT", if (guide.selected) "JEV" else "NONE",
@@ -370,7 +376,7 @@ class IlsimMcp(
             guide.selected && guide.guidelines.isEmpty() -> emptyList()
             else -> listOf("판정 없음")
         }
-        val audit = if (auditNeeded(ws, stage, check, unresolved, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
+        val audit = if (auditNeeded(ws, stage, check, scope, unresolved, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
             gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey), guide.render().takeIf { guide.guidelines.isNotEmpty() || !guide.selected })
         } else {
             validation["ai-audit"] = "SKIPPED"
@@ -404,6 +410,21 @@ class IlsimMcp(
         return result
     }
 
+    private fun scopeCheck(ws: Workspace, task: ActiveTask, stage: String, diff: String, validation: MutableMap<String, String>): ScopeCheck.Result? {
+        val spec = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS")
+        val result = spec?.let { runCatching { ScopeCheck.judge(jev(), it, stage, diff) }.getOrNull() }
+        validation["scope"] = when {
+            result == null -> "UNKNOWN"
+            result.outside.isNotEmpty() -> "OUTSIDE"
+            result.uncertain.isNotEmpty() -> "UNCERTAIN"
+            else -> "PASSED"
+        }
+        DecisionScope.record("SCOPE_CHECK", when { result == null -> "NONE"; result.probabilities.isEmpty() -> "STATIC"; else -> "JEV" },
+            result?.let { r -> "요구사항 문서에 적힌 파일 ${r.listed.size}개" + if (r.probabilities.isEmpty()) "" else ", JEV: " + r.probabilities.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } }
+                ?: "요구사항 문서 없음 또는 JEV 꺼짐·실패", diff)
+        return result
+    }
+
     private fun guidelineCheck(guide: TaskGuide, stage: String, diff: String, validation: MutableMap<String, String>): Guidelines.Check? {
         if (guide.selected && guide.guidelines.isEmpty()) {
             validation["guidelines"] = "NONE"
@@ -422,7 +443,7 @@ class IlsimMcp(
         return result
     }
 
-    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, unresolvedGuidelines: List<String>, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
+    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, unresolvedGuidelines: List<String>, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
         if (stage == "TEST_CODE") return true
         if (stage != "IMPLEMENTATION") return false
         val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
@@ -430,6 +451,7 @@ class IlsimMcp(
         val reasons = listOfNotNull(
             "요구사항 판정 없음".takeIf { check == null },
             "판정이 불확실한 요구사항 ${check?.uncertain?.joinToString { it.id }}".takeIf { check != null && check.uncertain.isNotEmpty() },
+            "영향 범위 판정 불확실 ${scope?.uncertain?.joinToString()}".takeIf { scope != null && scope.uncertain.isNotEmpty() },
             "문서 지침 판정 불확실 ${unresolvedGuidelines.joinToString()}".takeIf { unresolvedGuidelines.isNotEmpty() },
             "위험 후보 ${riskCandidates}건".takeIf { riskCandidates > 0 },
             "변경 ${lines}줄(기준 ${maxLines}줄 초과)".takeIf { lines > maxLines },
@@ -452,7 +474,7 @@ class IlsimMcp(
     private fun rules(stage: String): String = """
         ## 일심 진행 규칙
         - 이 단계에서 고칠 수 있는 경로: ${allowed(stage)}
-        - git commit·push·브랜치 변경은 하지 않는다. 커밋은 일심이 한다.
+        - git commit·push·브랜치 변경은 하지 않는다. 커밋은 일심이 한다.${if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") "\n        - 요구사항 문서의 영향 범위와 관계없는 파일은 고치지 않는다. 제출 때 일심이 범위 밖 변경을 확인한다. 꼭 필요하면 멈추고 사용자에게 묻는다." else ""}
         - 단계를 마치면 submit_result를 호출한다${if (stage in Artifacts.DOCUMENT_STAGES) "(완성한 문서 전체를 document 에 넣는다)" else ""}. 실패하면 지적된 부분만 고치고 다시 호출한다.
         - 사용자에게 보고할 때 submit_result 결과를 함께 알린다.
         """.trimIndent()

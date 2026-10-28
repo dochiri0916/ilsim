@@ -1,0 +1,14 @@
+diff --git a/src/main/java/com/x/order/OrderStatus.java b/src/main/java/com/x/order/OrderStatus.java
+--- a/src/main/java/com/x/order/OrderStatus.java
++++ b/src/main/java/com/x/order/OrderStatus.java
+@@ -1,5 +1,9 @@
+ package com.x.order;
+ 
+ public enum OrderStatus {
+-    PENDING, PAID, SHIPPED, DELIVERED, CANCELLED
++    PENDING, PAID, SHIPPED, DELIVERED, CANCELLED;
++
++    public boolean isCancellable() {
++        return this == PENDING || this == PAID;
++    }
+ }

@@ -1,0 +1,10 @@
+diff --git a/src/main/java/com/x/post/Post.java b/src/main/java/com/x/post/Post.java
+--- a/src/main/java/com/x/post/Post.java
++++ b/src/main/java/com/x/post/Post.java
+@@ -28,6 +28,9 @@ public class Post {
+     public void rename(String title) {
++        if (title.isBlank()) {
++            throw new IllegalArgumentException("제목이 비었습니다");
++        }
+         this.title = title;
+     }

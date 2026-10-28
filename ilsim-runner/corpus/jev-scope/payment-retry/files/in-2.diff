@@ -1,0 +1,15 @@
+diff --git a/src/main/java/com/x/payment/PaymentClientConfig.java b/src/main/java/com/x/payment/PaymentClientConfig.java
+--- a/src/main/java/com/x/payment/PaymentClientConfig.java
++++ b/src/main/java/com/x/payment/PaymentClientConfig.java
+@@ -12,7 +12,11 @@ public class PaymentClientConfig {
+     @Bean
+-    public RestClient paymentRestClient(RestClient.Builder builder) {
++    public RestClient paymentRestClient(RestClient.Builder builder,
++                                        @Value("${payment.client.read-timeout}") Duration readTimeout) {
++        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
++        factory.setReadTimeout(readTimeout);
+         return builder
+                 .baseUrl("https://pay.example.com")
++                .requestFactory(factory)
+                 .build();
+     }

@@ -1,0 +1,9 @@
+diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
+--- a/src/main/resources/application.yml
++++ b/src/main/resources/application.yml
+@@ -8,3 +8,6 @@ spring:
+   jpa:
+     open-in-view: false
++payment:
++  client:
++    read-timeout: 3s

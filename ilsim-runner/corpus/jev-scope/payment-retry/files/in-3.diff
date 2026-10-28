@@ -1,0 +1,10 @@
+diff --git a/src/main/java/com/x/payment/PaymentGateway.java b/src/main/java/com/x/payment/PaymentGateway.java
+--- a/src/main/java/com/x/payment/PaymentGateway.java
++++ b/src/main/java/com/x/payment/PaymentGateway.java
+@@ -14,6 +14,7 @@ public class PaymentGateway {
+     private final RestClient paymentRestClient;
+ 
++    @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 500, multiplier = 2))
+     public PaymentResult approve(PaymentRequest request) {
+         return paymentRestClient.post().uri("/approve").body(request).retrieve().body(PaymentResult.class);
+     }

@@ -1,0 +1,9 @@
+diff --git a/src/test/java/com/x/coupon/CouponServiceTest.java b/src/test/java/com/x/coupon/CouponServiceTest.java
+--- a/src/test/java/com/x/coupon/CouponServiceTest.java
++++ b/src/test/java/com/x/coupon/CouponServiceTest.java
+@@ -40,7 +40,7 @@ class CouponServiceTest {
+     @Test
+     void 할인율을_계산한다() {
+-        assertThat(coupon.discount(10_000)).isEqualTo(1_000);
++        assertThat(coupon.discount(10_000)).isEqualTo(900);
+     }

@@ -1,0 +1,15 @@
+diff --git a/src/main/java/com/x/order/Order.java b/src/main/java/com/x/order/Order.java
+--- a/src/main/java/com/x/order/Order.java
++++ b/src/main/java/com/x/order/Order.java
+@@ -30,8 +30,12 @@ public class Order {
+     @Enumerated(EnumType.STRING)
+     private OrderStatus status;
+ 
++    @Column(name = "cancel_reason")
++    private String cancelReason;
++
+-    public void cancel() {
++    public void cancel(String reason) {
+         this.status = OrderStatus.CANCELLED;
++        this.cancelReason = reason;
+     }

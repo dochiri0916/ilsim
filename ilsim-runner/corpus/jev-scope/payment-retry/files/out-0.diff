@@ -1,0 +1,8 @@
+diff --git a/src/main/java/com/x/payment/PaymentController.java b/src/main/java/com/x/payment/PaymentController.java
+--- a/src/main/java/com/x/payment/PaymentController.java
++++ b/src/main/java/com/x/payment/PaymentController.java
+@@ -12,7 +12,7 @@
+ @RestController
+-@RequestMapping("/payments")
++@RequestMapping("/api/v2/payments")
+ public class PaymentController {

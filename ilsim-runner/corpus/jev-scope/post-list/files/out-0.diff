@@ -1,0 +1,9 @@
+diff --git a/src/main/java/com/x/post/CommentService.java b/src/main/java/com/x/post/CommentService.java
+--- a/src/main/java/com/x/post/CommentService.java
++++ b/src/main/java/com/x/post/CommentService.java
+@@ -19,7 +19,7 @@ public class CommentService {
+     public Comment write(Long postId, String body) {
+-        if (body.length() > 500) {
++        if (body.length() > 1000) {
+             throw new IllegalArgumentException("댓글이 너무 깁니다");
+         }

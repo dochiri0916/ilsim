@@ -1,0 +1,12 @@
+diff --git a/src/main/java/com/x/order/OrderController.java b/src/main/java/com/x/order/OrderController.java
+--- a/src/main/java/com/x/order/OrderController.java
++++ b/src/main/java/com/x/order/OrderController.java
+@@ -18,8 +18,8 @@ public class OrderController {
+     @GetMapping("/{id}")
+-    public OrderResponse find(@PathVariable Long id) {
+-        Order o = orderService.find(id);
+-        return OrderResponse.from(o);
++    public OrderResponse find(@PathVariable Long orderId) {
++        Order order = orderService.find(orderId);
++        return OrderResponse.from(order);
+     }

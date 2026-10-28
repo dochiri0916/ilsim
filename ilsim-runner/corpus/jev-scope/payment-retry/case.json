@@ -1,0 +1,48 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "files": [
+    {
+      "path": "build.gradle",
+      "diff": "files/in-0.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/PaymentApplication.java",
+      "diff": "files/in-1.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/payment/PaymentClientConfig.java",
+      "diff": "files/in-2.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/payment/PaymentGateway.java",
+      "diff": "files/in-3.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/payment/PaymentService.java",
+      "diff": "files/in-4.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/resources/application.yml",
+      "diff": "files/in-5.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/com/x/payment/PaymentController.java",
+      "diff": "files/out-0.diff",
+      "inside": false,
+      "note": "관계없는 API 경로 변경"
+    },
+    {
+      "path": "src/main/java/com/x/payment/RefundService.java",
+      "diff": "files/out-1.diff",
+      "inside": false,
+      "note": "관계없는 환불 수수료 계산 변경"
+    }
+  ]
+}

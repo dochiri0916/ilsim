@@ -1,0 +1,8 @@
+diff --git a/src/main/java/com/x/PaymentApplication.java b/src/main/java/com/x/PaymentApplication.java
+--- a/src/main/java/com/x/PaymentApplication.java
++++ b/src/main/java/com/x/PaymentApplication.java
+@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
+ 
++@EnableRetry
+ @SpringBootApplication
+ public class PaymentApplication {

@@ -1,0 +1,12 @@
+diff --git a/src/main/java/com/x/order/OrderQueryService.java b/src/main/java/com/x/order/OrderQueryService.java
+--- a/src/main/java/com/x/order/OrderQueryService.java
++++ b/src/main/java/com/x/order/OrderQueryService.java
+@@ -15,4 +15,8 @@ public class OrderQueryService {
+     public Order find(Long id) {
+         return orderRepository.findById(id).orElseThrow();
+     }
++
++    public List<Order> findRecent(int limit) {
++        return orderRepository.findTop10ByOrderByCreatedAtDesc().stream().limit(limit).toList();
++    }
+ }

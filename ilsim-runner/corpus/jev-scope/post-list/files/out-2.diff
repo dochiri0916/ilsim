@@ -1,0 +1,14 @@
+diff --git a/src/main/java/com/x/post/PostCacheConfig.java b/src/main/java/com/x/post/PostCacheConfig.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/post/PostCacheConfig.java
+@@ -0,0 +1,9 @@
++package com.x.post;
++
++import org.springframework.cache.annotation.EnableCaching;
++import org.springframework.context.annotation.Configuration;
++
++@Configuration
++@EnableCaching
++public class PostCacheConfig {
++}

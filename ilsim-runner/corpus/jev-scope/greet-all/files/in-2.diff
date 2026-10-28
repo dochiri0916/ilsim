@@ -1,0 +1,19 @@
+diff --git a/src/main/java/demo/Names.java b/src/main/java/demo/Names.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/demo/Names.java
+@@ -0,0 +1,15 @@
++package demo;
++
++public final class Names {
++    private Names() {
++    }
++
++    public static String normalize(String name) {
++        String normalized = name.strip();
++        if (normalized.isEmpty()) {
++            throw new IllegalArgumentException("name must not be blank");
++        }
++        return normalized;
++    }
++}

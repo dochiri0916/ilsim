@@ -1,0 +1,13 @@
+diff --git a/src/main/java/com/x/post/PostController.java b/src/main/java/com/x/post/PostController.java
+--- a/src/main/java/com/x/post/PostController.java
++++ b/src/main/java/com/x/post/PostController.java
+@@ -17,7 +17,11 @@ public class PostController {
+     @GetMapping("/posts")
+-    public List<PostResponse> list() {
+-        return postService.list();
++    public List<PostResponse> list(
++            @RequestParam(defaultValue = "0") int page,
++            @RequestParam(defaultValue = "20") int size
++    ) {
++        return postService.list(page, Math.min(size, 100));
+     }

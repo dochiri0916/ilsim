@@ -1,0 +1,45 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "files": [
+    {
+      "path": "src/main/java/demo/Greeter.java",
+      "diff": "files/in-0.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/demo/Messages.java",
+      "diff": "files/in-1.diff",
+      "inside": true
+    },
+    {
+      "path": "src/main/java/demo/Names.java",
+      "diff": "files/in-2.diff",
+      "inside": true
+    },
+    {
+      "path": "README.md",
+      "diff": "files/out-0.diff",
+      "inside": false,
+      "note": "관계없는 실행 안내 변경"
+    },
+    {
+      "path": "build.gradle.kts",
+      "diff": "files/out-1.diff",
+      "inside": false,
+      "note": "쓰지 않는 라이브러리 추가"
+    },
+    {
+      "path": "src/main/java/demo/Farewell.java",
+      "diff": "files/out-2.diff",
+      "inside": false,
+      "note": "관계없는 작별 인사 클래스 추가"
+    },
+    {
+      "path": "src/main/java/demo/Strings.java",
+      "diff": "files/out-3.diff",
+      "inside": false,
+      "note": "쓰지 않는 문자열 유틸 추가"
+    }
+  ]
+}
