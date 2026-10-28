@@ -70,7 +70,7 @@ Claude 앱(Claude Code)
 | PreToolUse(Edit·Write·MultiEdit·NotebookEdit) | 활성 작업과 현재 단계에서 허용한 경로인지 확인 | 활성 작업 없음, 승인 대기 중, 단계 범위 밖 경로(예: 요구사항 단계에서 `src/` 수정) |
 | PreToolUse(Bash) | 파일을 바꾸는 명령 패턴 검사 | 활성 작업 없이 저장소 안 쓰기·이동·삭제(저장소 밖 절대 경로로의 출력 저장은 허용, 따옴표 안 글자는 검사하지 않지만 셸 `-c`·`eval`·큰따옴표 안 명령 치환은 검사. here-document 본문도 데이터로 보지만 셸이 실행(`bash <<EOF`, `| sh`)하거나 따옴표 없는 구분자 본문에 명령 치환이 있으면 검사하고, 끝나지 않은 본문은 전체를 검사), 항상 `git commit`·`reset`·`rebase`·`cherry-pick`·`revert`·`restore`·`stash`(`list`·`show` 제외), 활성 작업 중 `git push`·`pull`·`merge`·`checkout`·`switch`·`branch -d` 등(작업이 끝난 뒤 병합·푸시는 허용, 2026-10-25 E2E에서 사용자가 터미널로 병합·푸시해야 했던 문제) |
 | Git pre-commit(`ilsim-runner hook commit`) | `start_task`가 대상 저장소 `.git/hooks/pre-commit`에 설치(기존 훅이 있으면 설치하지 않고 알림) | Claude Code 환경(`CLAUDECODE=1`)에서 일어난 커밋. 일심 자체 커밋(`ILSIM_RUNNER=1`)과 사람의 터미널 커밋은 통과 |
-| Stop | 활성 작업의 마지막 `submit_result` 상태 확인 | 변경이 있는데 제출하지 않음, 마지막 제출 실패, JEV가 누락으로 판정한 요구사항 있음 |
+| Stop | 활성 작업의 마지막 `submit_result` 상태 확인 | 변경이 있는데 제출하지 않음, 마지막 제출 실패, JEV가 누락으로 판정한 요구사항 있음. 같은 턴에서는 한 번만 막고, Agent가 이유를 보고한 뒤 다시 멈추면(훅 입력 `stop_hook_active`) 허용한다. 막은 횟수는 제출·다음 단계 전까지 3번이 상한(사용자 결정 2026-10-28, 사용자에게 물으려고 멈출 때 세 번 막혀 비용이 늘었음) |
 
 - 훅은 `ilsim-runner hook <시점>`을 실행한다. 활성 작업 상태는 `~/.ilsim/active/<저장소 경로 해시>.json`에 두고, MCP와 훅이 함께 읽는다. 훅 입력의 `cwd`로 저장소를 찾는다.
 - 같은 저장소에서 두 세션이 동시에 작업하면 상태가 겹친다. 1차 구현은 저장소당 활성 작업 하나로 제한하고, 두 번째 `start_task`는 거절한다.

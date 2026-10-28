@@ -191,7 +191,7 @@ class McpTest {
     }
 
     @Test
-    fun `Bash 의 Git 커밋·되돌리기와 작업 중 병합·푸시, 작업 없는 저장소 안 파일 쓰기를 막고 종료 차단은 상한이 있다`() {
+    fun `Bash 의 Git 커밋·되돌리기와 작업 중 병합·푸시, 작업 없는 저장소 안 파일 쓰기를 막고 종료 차단은 턴마다 한 번이며 상한이 있다`() {
         fun bash(command: String) = hook("pre-tool-use", buildJsonObject {
             put("cwd", repo.toString())
             put("tool_name", "Bash")
@@ -213,7 +213,8 @@ class McpTest {
         assertContains(bash("git merge ilsim/other"), "진행 중인 일심 작업")
         assertContains(bash("git checkout main"), "deny")
         repo.resolve("README.md").writeText("changed\n")
-        repeat(Hooks.MAX_STOP_BLOCKS) { assertContains(hook("stop", """{"cwd":"$repo"}""").stdout, "block") }
+        assertEquals("", hook("stop", """{"cwd":"$repo","stop_hook_active":true}""").stdout, "같은 턴에서 이미 막았으면 보고하고 멈추게 둔다")
+        repeat(Hooks.MAX_STOP_BLOCKS) { assertContains(hook("stop", """{"cwd":"$repo","stop_hook_active":false}""").stdout, "block") }
         assertEquals("", hook("stop", """{"cwd":"$repo"}""").stdout)
         assertContains(hook("user-prompt-submit", """{"cwd":"$repo"}""").stdout, "단계 IMPLEMENTATION")
         assertNull(ActiveTasks(home.resolve("none")).load(repo))

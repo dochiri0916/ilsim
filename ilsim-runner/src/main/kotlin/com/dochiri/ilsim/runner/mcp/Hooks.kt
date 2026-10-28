@@ -5,6 +5,8 @@ import com.dochiri.ilsim.runner.Gate
 import java.nio.file.Path
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -38,7 +40,7 @@ object Hooks {
         return when (event) {
             "user-prompt-submit" -> Output(context(ws, task))
             "pre-tool-use" -> preToolUse(ws, task, payload)
-            "stop" -> stop(ws, task, active)
+            "stop" -> stop(ws, task, active, (payload["stop_hook_active"] as? JsonPrimitive)?.booleanOrNull == true)
             else -> Output()
         }
     }
@@ -149,9 +151,9 @@ object Hooks {
         else -> null
     }
 
-    private fun stop(ws: Workspace, task: ActiveTask?, active: ActiveTasks): Output {
+    private fun stop(ws: Workspace, task: ActiveTask?, active: ActiveTasks, continuing: Boolean): Output {
         if (task == null || task.status != IlsimMcp.RUNNING) return Output()
-        if (ws.changedFiles().isEmpty() || task.stopBlocks >= MAX_STOP_BLOCKS) return Output()
+        if (continuing || ws.changedFiles().isEmpty() || task.stopBlocks >= MAX_STOP_BLOCKS) return Output()
         active.save(ws.root, task.copy(stopBlocks = task.stopBlocks + 1))
         val reason = "일심 ${task.stage} 단계의 변경이 아직 제출되지 않았습니다. submit_result로 제출해 통과시키세요. 통과시키지 못하면 이유와 사용자가 정할 일을 보고하고 끝내세요"
         return Output(buildJsonObject { put("decision", "block"); put("reason", reason) }.toString())
