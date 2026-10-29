@@ -36,6 +36,8 @@ class StageGates(
 ) {
     var failureKind: String? = null
         private set
+    var proposedRuleHits: List<String> = emptyList()
+        private set
     var riskCandidates: Int = 0
         private set
     private var survivors: List<String> = emptyList()
@@ -252,15 +254,24 @@ class StageGates(
 
     private fun docRules(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {
         val model = docRuleStore.load(task.projectId)
+        proposedRuleHits = emptyList()
+        val proposed = model?.rules.orEmpty().filter { !it.approved && !it.rejected }
+        if (model != null && proposed.isNotEmpty()) {
+            val trial = model.copy(rules = proposed.map { it.copy(approved = true) })
+            val hits = ConventionChecker.check(worktree, StackDetector.detect(worktree), DocRules.asConvention(trial), approvedOnly = true, onlyFiles = changedFiles(worktree).toSet())
+            proposedRuleHits = DocRules.introduced(worktree, trial, hits) { path -> Shell.git(worktree, "show", "HEAD:$path").takeIf { it.exit == 0 }?.output?.lines() }
+                .map { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
+            proposedRuleHits.take(10).forEach { log("승인 전 문서 규칙에 걸림(막지 않고 검토로 올림): $it") }
+        }
         if (model == null || model.rules.none { it.approved && !it.rejected }) {
-            validation["doc-rules"] = "UNKNOWN"
+            validation["doc-rules"] = if (proposedRuleHits.isEmpty()) "UNKNOWN" else "PROPOSED"
             return null
         }
         val found = ConventionChecker.check(worktree, StackDetector.detect(worktree), DocRules.asConvention(model), approvedOnly = true, onlyFiles = changedFiles(worktree).toSet())
             .filter { it.severity == "BLOCK" }
         val blocking = DocRules.introduced(worktree, model, found) { path -> Shell.git(worktree, "show", "HEAD:$path").takeIf { it.exit == 0 }?.output?.lines() }
         (found.size - blocking.size).takeIf { it > 0 }?.let { log("문서 규칙의 기존 위반 ${it}건은 이번 변경이 만든 것이 아니라서 막지 않습니다") }
-        validation["doc-rules"] = if (blocking.isEmpty()) "PASSED" else "FAILED"
+        validation["doc-rules"] = when { blocking.isNotEmpty() -> "FAILED"; proposedRuleHits.isNotEmpty() -> "PROPOSED"; else -> "PASSED" }
         if (blocking.isEmpty()) return null
         return "이 프로젝트 문서에 적힌 규칙 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
     }

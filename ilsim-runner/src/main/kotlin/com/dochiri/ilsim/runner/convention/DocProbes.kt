@@ -19,7 +19,7 @@ internal object DocProbes {
     private val texts = setOf("code", "raw")
     private val measures = setOf("lines", "nesting")
     private val testAnnotations = setOf("Test", "ParameterizedTest", "RepeatedTest", "TestFactory", "TestTemplate")
-    private val regexKeys = listOf("pattern", "import", "name")
+    private val regexKeys = listOf("pattern", "import", "name", "value")
     private val globKeys = listOf("path", "location")
     private val annotationKeys = setOf("annotation", "when")
 
@@ -100,6 +100,24 @@ internal object DocProbes {
     }
 
     fun annotations(names: List<String>) = names.joinToString(" 또는 ") { "@$it" }
+
+    fun annotationArguments(t: DocTarget, names: List<String>): List<String> {
+        val end = t.line.coerceAtMost(t.file.lines.size)
+        var start = end - 1
+        while (start > 0 && end - start < MAX_ANNOTATION_LINES && annotationLine.containsMatchIn(t.file.lines[start - 1])) start--
+        val text = t.file.lines.subList(start.coerceAtLeast(0), end).joinToString("\n")
+        return names.flatMap { name ->
+            Regex("""@(?:[\w.]+\.)?${Regex.escape(name)}\s*\(""").findAll(text).map { m ->
+                var depth = 1
+                var i = m.range.last + 1
+                while (i < text.length && depth > 0) { if (text[i] == '(') depth++ else if (text[i] == ')') depth--; i++ }
+                text.substring(m.range.last + 1, (i - 1).coerceAtLeast(m.range.last + 1))
+            }.toList()
+        }
+    }
+
+    private const val MAX_ANNOTATION_LINES = 8
+    private val annotationLine = Regex("""^\s*(@|["')]|.*[,(]\s*$)""")
 }
 
 internal object ForbiddenImport : DocProbe("doc-forbidden-import", emptySet(), setOf("import"), emptySet()) {
@@ -118,12 +136,16 @@ internal object ForbiddenImport : DocProbe("doc-forbidden-import", emptySet(), s
 }
 
 internal object RequiredAnnotation : DocProbe(
-    "doc-required-annotation", setOf("class", "test-class", "method", "test-method"), setOf("annotation", "target"), setOf("when", "name"),
+    "doc-required-annotation", setOf("class", "test-class", "method", "test-method"), setOf("annotation", "target"), setOf("when", "name", "value"),
 ) {
     override fun samples(f: Facts, params: Map<String, List<String>>): List<Sample> {
         val required = params.getValue("annotation")
+        val values = params["value"].orEmpty().map(::Regex)
         return DocProbes.targets(f, params).map { t ->
-            Sample(t.file.path, t.line, t.annotations.any { it in required }, "${t.name} 에 ${DocProbes.annotations(required)} 가 없습니다")
+            if (t.annotations.none { it in required }) return@map Sample(t.file.path, t.line, false, "${t.name} 에 ${DocProbes.annotations(required)} 가 없습니다")
+            val arguments = if (values.isEmpty()) emptyList() else DocProbes.annotationArguments(t, required)
+            val ok = values.isEmpty() || (arguments.isNotEmpty() && arguments.all { a -> values.any { it.containsMatchIn(a) } })
+            Sample(t.file.path, t.line, ok, "${t.name} 의 ${DocProbes.annotations(required)} 값이 정해진 형식과 다릅니다")
         }
     }
 }

@@ -26,7 +26,7 @@ object DocRules {
     private const val MAX_DIRECTORIES = 60
     private const val RECHECK_FROM = 0.15
     private const val RECHECK_UNTIL = 0.6
-    private const val VERSION = "doc-rules-v2"
+    private const val VERSION = "doc-rules-v3"
     private const val MAX_REMAINING = 20
 
     class Extracted(val rules: List<ConventionRule>, val documents: List<DocCoverage>, val notes: List<String>)
@@ -244,7 +244,7 @@ object DocRules {
             put("candidates", batch.mapIndexed { i, p -> mapOf("id" to "c$i", "section" to "s${sections.indexOf(p.section)}", "kind" to p.kind, "params" to p.params, "description" to p.description, "quote" to p.quote) })
         }
         val questions = batch.indices.associate { i ->
-            "f$i" to NoulQuestion.of("f$i", "후보 규칙 c$i 가 그 section 의 text 에 적힌 규칙을 그대로 옮긴 것인가? kinds 의 뜻대로 kind 와 params 를 읽었을 때 검사 대상(scope, path, target, when, name)과 조건(import, annotation, pattern, location, max 등)이 원문 규칙과 같으면 Yes. 원문에 없는 조건을 더했거나, 대상을 넓히거나 좁혔거나, 원문과 다른 규칙이면 No. 규칙이 합리적인지는 따지지 않는다. scope 와 path 가 원문이 말한 대상과 같은지 따로 확인한다: 원문이 '테스트에서'·'파서는'처럼 대상을 한정했는데 all 이거나 path 없이 전체를 검사하면 넓힌 것이고, 원문에 한정이 없는데 main 이나 test 로 줄였으면 좁힌 것이다. 한 문장에 규칙이 여럿이면 그중 하나만 옮겨도 옮긴 부분이 원문과 같으면 Yes. 원문이 역할 이름(서비스 클래스, JPA 엔티티, 컨트롤러, 리포지토리 등)으로 가리킨 대상을 그 역할의 애너테이션(when)이나 structure 에 있는 경로·패키지·이름으로 가린 것은 대상을 바꾼 것이 아니다. 검사는 이번 변경이 새로 만든 위반만 막으므로 '새 코드는 ~' 규칙을 모든 파일 대상으로 옮긴 것도 같은 규칙이다.")
+            "f$i" to NoulQuestion.of("f$i", "후보 규칙 c$i 가 그 section 의 text 에 적힌 규칙을 그대로 옮긴 것인가? kinds 의 뜻대로 kind 와 params 를 읽었을 때 검사 대상(scope, path, target, when, name)과 조건(import, annotation, pattern, location, max 등)이 원문 규칙과 같으면 Yes. 원문에 없는 조건을 더했거나, 대상을 넓히거나 좁혔거나, 원문과 다른 규칙이면 No. 원문이 애너테이션 값의 언어·형식까지 정했는데(예: 한국어 설명) value 없이 애너테이션만 요구하면 원문보다 느슨하므로 No. 규칙이 합리적인지는 따지지 않는다. scope 와 path 가 원문이 말한 대상과 같은지 따로 확인한다: 원문이 '테스트에서'·'파서는'처럼 대상을 한정했는데 all 이거나 path 없이 전체를 검사하면 넓힌 것이고, 원문에 한정이 없는데 main 이나 test 로 줄였으면 좁힌 것이다. 한 문장에 규칙이 여럿이면 그중 하나만 옮겨도 옮긴 부분이 원문과 같으면 Yes. 원문이 역할 이름(서비스 클래스, JPA 엔티티, 컨트롤러, 리포지토리 등)으로 가리킨 대상을 그 역할의 애너테이션(when)이나 structure 에 있는 경로·패키지·이름으로 가린 것은 대상을 바꾼 것이 아니다. 검사는 이번 변경이 새로 만든 위반만 막으므로 '새 코드는 ~' 규칙을 모든 파일 대상으로 옮긴 것도 같은 규칙이다.")
                 .withCriteria("원문 규칙을 그대로 옮김", "원문과 다르거나 원문에 없는 규칙")
         }
         val answers = jev.probabilities(state, questions) ?: return null
@@ -331,7 +331,7 @@ object DocRules {
         - text: ["code"] 주석과 문자열 내용을 뺀 코드(기본), ["raw"] 원래 줄(주석이나 문자열에 대한 규칙일 때).
         kind:
         - doc-forbidden-import: import 경로 일부가 import: [정규식] 중 하나와 맞으면 위반. scope, path.
-        - doc-required-annotation: annotation: [이름] 중 하나가 대상에 붙어 있어야 한다. target(class|test-class|method|test-method) 필수, when, name.
+        - doc-required-annotation: annotation: [이름] 중 하나가 대상에 붙어 있어야 한다. value: [정규식] 이 있으면 그 애너테이션 괄호 안 값이 정규식과 맞아야 한다(예: 한국어 설명은 ["[가-힣]"]). target(class|test-class|method|test-method) 필수, when, name, value.
         - doc-forbidden-annotation: annotation: [이름] 이 붙어 있으면 위반. target(생략하면 애너테이션이 붙은 모든 선언), when, name.
         - doc-name-pattern: pattern: [정규식] 중 하나가 대상 이름 전체와 맞아야 한다(파일은 확장자를 뺀 이름). target(file|class|test-class|method|test-method) 필수, when, name.
         - doc-forbidden-code: pattern: [정규식] 이 한 줄 안에서 찾아지면 위반. scope, path, text.

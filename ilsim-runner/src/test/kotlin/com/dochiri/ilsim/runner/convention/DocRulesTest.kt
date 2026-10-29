@@ -138,6 +138,31 @@ class DocRulesTest {
     """.trimIndent()
 
     @Test
+    fun `필수 애너테이션 규칙은 값 형식까지 확인하고 앞 메서드의 애너테이션과 섞지 않는다`() {
+        val tests = Facts(listOf(FactScanner.parse("src/test/java/demo/GreeterTest.java", "java", true, """
+            package demo;
+
+            class GreeterTest {
+                @Test
+                @DisplayName("작별 인사는 마침표로 끝난다")
+                void goodbye() { assertThat(1).isOne(); }
+                @Test
+                @DisplayName("blank name throws")
+                void blank() { assertThat(1).isOne(); }
+                @Test
+                @DisplayName(
+                    "여러 줄 설명"
+                )
+                void multi() { assertThat(1).isOne(); }
+            }
+        """.trimIndent().lines())!!))
+        val params = DocProbes.normalize("doc-required-annotation", mapOf("scope" to listOf("test"), "target" to listOf("test-method"), "annotation" to listOf("DisplayName"), "value" to listOf("[가-힣]")))
+        val failed = DocProbes.byKind("doc-required-annotation")!!.samples(tests, params).filter { !it.ok }
+        assertEquals(listOf("blank 의 @DisplayName 값이 정해진 형식과 다릅니다"), failed.map { it.message })
+        assertFailsWith<IllegalArgumentException> { DocProbes.normalize("doc-required-annotation", mapOf("scope" to listOf("test"), "target" to listOf("test-method"), "annotation" to listOf("A"), "value" to listOf("[가-"))) }
+    }
+
+    @Test
     fun `문서 규칙 종류는 코드에서 위반을 찾는다`() {
         assertEquals(listOf("금지된 import org.junit.jupiter.api.Assertions.assertEquals"), failures("doc-forbidden-import", mapOf("scope" to listOf("test"), "import" to listOf("^org\\.junit\\.jupiter\\.api\\.Assertions"))))
         assertEquals(listOf("cancel 에 @DisplayName 가 없습니다"), failures("doc-required-annotation", mapOf("scope" to listOf("test"), "target" to listOf("test-method"), "annotation" to listOf("@DisplayName"))))
@@ -307,6 +332,40 @@ class DocRulesTest {
         assertContains(documented, "규칙 위반 1건")
         assertContains(documented, "SleepTest.kt:9 ")
         assertTrue(logs.any { "기존 위반 1건" in it }, logs.toString())
+    }
+
+    @Test
+    fun `승인 전 문서 규칙의 새 위반은 막지 않고 검토 근거로 남기며 거절한 규칙은 보지 않는다`() {
+        val home = Files.createTempDirectory("ilsim-doc-proposed-home")
+        val repo = Files.createTempDirectory("ilsim-doc-proposed-repo").toRealPath()
+        Shell.gitOk(repo, "init", "-q", "-b", "main")
+        repo.resolve("settings.gradle.kts").writeText("rootProject.name = \"demo\"\n")
+        repo.resolve("build.gradle.kts").writeText("plugins { kotlin(\"jvm\") }\n")
+        repo.resolve("src/main/kotlin/com/x/A.kt").also { it.parent.createDirectories() }.writeText("package com.x\n\nclass A\n")
+        val test = repo.resolve("src/test/kotlin/com/x/SleepTest.kt").also { it.parent.createDirectories() }
+        test.writeText("package com.x\n\nclass SleepTest {\n    fun a() {\n        Thread.sleep(1)\n    }\n}\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+        test.writeText("package com.x\n\nclass SleepTest {\n    fun a() {\n        Thread.sleep(1)\n    }\n\n    fun b() {\n        Thread.sleep(2)\n    }\n}\n")
+        val store = ConfigStore(home.resolve(".ilsim/runner.json"))
+        store.save(RunnerConfig(runnerId = "r1", projects = mapOf("p" to ProjectEntry(repo.toString(), "demo"))))
+        val sleep = ConventionRule("doc:sleep", "doc-forbidden-code", "테스트에서 Thread.sleep 을 쓰지 않는다", DocProbes.normalize("doc-forbidden-code", mapOf("scope" to listOf("test"), "pattern" to listOf("""Thread\.sleep"""))),
+            origin = DocOrigin("docs/testing.md", 7, "테스트", "q", "h"))
+        val other = ConventionRule("doc:fun", "doc-forbidden-code", "테스트에서 fun b 를 쓰지 않는다", DocProbes.normalize("doc-forbidden-code", mapOf("scope" to listOf("test"), "pattern" to listOf("""fun b"""))),
+            rejected = true, origin = DocOrigin("docs/testing.md", 9, "테스트", "q", "h"))
+        DocRuleStore(store).save("p", DocRules.DocRuleModel(listOf(sleep, other)))
+        val logs = mutableListOf<String>()
+        val gates = StageGates(store, ArchitectureStore(store), ConventionStore(store), { _, _ -> "" }, logs::add)
+        val validation = linkedMapOf<String, String>()
+
+        val problems = gates.quickCheck(AssignedTask("t", "p", "IMPLEMENTATION", 1, "f", "m", prompt = ""), repo, validation)
+
+        assertEquals("PROPOSED", validation["doc-rules"])
+        assertTrue(problems.none { it.startsWith("이 프로젝트 문서에 적힌 규칙 위반") }, problems.toString())
+        assertEquals(1, gates.proposedRuleHits.size, gates.proposedRuleHits.toString())
+        assertContains(gates.proposedRuleHits.single(), "SleepTest.kt:9 ")
+        assertContains(gates.proposedRuleHits.single(), "<doc:sleep>")
+        assertTrue(logs.any { "승인 전 문서 규칙에 걸림" in it }, logs.toString())
     }
 
     @Test

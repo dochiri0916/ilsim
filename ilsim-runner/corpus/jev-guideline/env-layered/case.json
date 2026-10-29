@@ -149,6 +149,28 @@
       },
       "description": "모든 테스트 메서드에 @DisplayName을 붙인다",
       "quote": "테스트 메서드마다 `@DisplayName`으로 한국어 설명을 붙인다.",
+      "faithful": false,
+      "note": "한국어 설명 조건을 빠뜨림(value 로 표현할 수 있음)"
+    },
+    {
+      "section": "docs/conventions.md:12",
+      "kind": "doc-required-annotation",
+      "params": {
+        "scope": [
+          "test"
+        ],
+        "target": [
+          "test-method"
+        ],
+        "annotation": [
+          "DisplayName"
+        ],
+        "value": [
+          "[가-힣]"
+        ]
+      },
+      "description": "모든 테스트 메서드에 @DisplayName을 붙이고 설명은 한국어로 쓴다",
+      "quote": "테스트 메서드마다 `@DisplayName`으로 한국어 설명을 붙인다.",
       "faithful": true
     },
     {

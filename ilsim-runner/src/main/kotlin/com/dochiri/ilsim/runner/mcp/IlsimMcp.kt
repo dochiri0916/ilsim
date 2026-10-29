@@ -434,8 +434,12 @@ class IlsimMcp(
             else -> listOf("판정 없음")
         }
         val unsettled = undecided?.unresolved.orEmpty()
-        val audit = if (auditNeeded(ws, stage, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
-            gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey), guide.render().takeIf { guide.guidelines.isNotEmpty() || !guide.selected }, unsettled.map { it.label })
+        val proposals = gates.proposedRuleHits
+        val audit = if (auditNeeded(ws, stage, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved + proposals.map { "승인 전 문서 규칙 ${it.substringAfterLast('<').removeSuffix(">")}" }.distinct(), gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
+            gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey),
+                listOfNotNull(guide.render().takeIf { guide.guidelines.isNotEmpty() || !guide.selected },
+                    proposals.takeIf { it.isNotEmpty() }?.let { "## 승인 전 문서 규칙에 걸린 곳(사용자 승인 전이라 막지 않음, 실제 위반인지 RULE로 판단)\n" + it.joinToString("\n") { h -> "- $h" } }).joinToString("\n\n").ifEmpty { null },
+                unsettled.map { it.label })
         } else {
             validation["ai-audit"] = "SKIPPED"
             StageGates.AuditOutcome(emptyMap(), emptyList())
