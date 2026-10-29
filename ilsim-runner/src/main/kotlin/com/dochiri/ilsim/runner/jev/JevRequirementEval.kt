@@ -85,7 +85,11 @@ object JevRequirementEval {
                 }
             }
         }, raw.values.flatten().map { it.second }, usage.toList())
-        return listOf(run("JEV 확정 가능할 때만", true), run("JEV 충족 확률만", false))
+        val operated = Run("운영(애매만 하나씩 다시 물음)", samples.associate { s ->
+            val rounds = (1..repeat).map { JevRiskEval.timed { RequirementCheck.judge(if (it == 1) jev else fresh, s.requirements, s.diff) } }
+            s.id to s.requirements.associate { r -> r.id to rounds.map { (result, millis) -> result?.probabilities?.get(r.id).let { m -> Judgment(m, null, if (result == null) "ERROR" else verdict(m), millis) } } }
+        }, emptyList())
+        return listOf(run("JEV 확정 가능할 때만", true), run("JEV 충족 확률만", false), operated)
     }
 
     internal fun prompt(s: Sample): String = buildString {

@@ -34,8 +34,10 @@ import com.dochiri.ilsim.runner.convention.DocRuleStore
 import com.dochiri.ilsim.runner.document.ProjectDocs
 import com.dochiri.ilsim.runner.jev.Guidelines
 import com.dochiri.ilsim.runner.jev.Jev
+import com.dochiri.ilsim.runner.jev.Requirement
 import com.dochiri.ilsim.runner.jev.RequirementCheck
 import com.dochiri.ilsim.runner.jev.ScopeCheck
+import com.dochiri.ilsim.runner.jev.TestCodeCheck
 import com.dochiri.ilsim.runner.jev.UndecidedCheck
 import com.dochiri.ilsim.runner.risk.RiskScanner
 import java.nio.file.Path
@@ -127,8 +129,9 @@ class IlsimMcp(
         server.register(PollRequest(config.runnerId, listOf(ProjectReport(ws.projectId, ws.project.name))))
         val created = server.createAgentTask(AgentTaskRequest(ws.projectId, feature?.takeIf { it.isNotBlank() }, requirement))
         val branch = "ilsim/${created.feature}-${created.taskId.take(8)}"
+        val base = Shell.gitOk(ws.root, "rev-parse", "HEAD").trim()
         Shell.gitOk(ws.root, "checkout", "-b", branch)
-        active.save(ws.root, ActiveTask(created.taskId, ws.projectId, created.feature, branch))
+        active.save(ws.root, ActiveTask(created.taskId, ws.projectId, created.feature, branch, base = base))
         guides.save(created.taskId, buildGuide(ws, created.feature, requirement))
         val pending = pendingRules(store, ws.projectId).takeIf { it.isNotEmpty() }?.let { counts ->
             "\n주의: 사용자 승인을 기다리는 규칙이 있습니다(${counts.entries.joinToString { "${it.key} ${it.value}개" }}). 승인 전에는 제출 때 정적으로 강제하지 않습니다(문서 지침은 JEV가 판정). 단계를 진행하기 전에 사용자에게 review_rules로 보여 주고 decide_rules로 정하게 권하세요"
@@ -393,6 +396,7 @@ class IlsimMcp(
             return Outcome("구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
                 check.missing.joinToString("\n") { "- ${it.id} ${it.text} (충족 확률 ${"%.2f".format(check.probabilities[it.id])})" })
         }
+        val verified = if (check != null && check.uncertain.isNotEmpty() && validation["tests"] == "PASSED") testedRequirements(ws, task, check.uncertain) else emptySet()
         val scope = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") scopeCheck(ws, task, stage, diff, validation) else null
         if (scope != null && scope.outside.isNotEmpty()) {
             return Outcome("요구사항 문서의 영향 범위 밖 변경으로 보입니다. 아래 파일의 변경을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용과 파일 경로)으로 기록한 뒤 다시 제출하세요:\n" +
@@ -403,6 +407,15 @@ class IlsimMcp(
         if (judged != null && judged.decided.isNotEmpty()) {
             return Outcome("요구사항 문서의 미결정 사항을 사용자 결정 없이 정한 것으로 보입니다. 아래 질문의 답을 정한 부분(그 상황만을 위한 코드·값이나 그 상황의 기대 결과)을 빼세요. 이 단계를 끝내는 데 꼭 정해야 하면 멈추고 사용자에게 묻고, 사용자가 답하면 record_decision(질문 ID, 답)으로 기록한 뒤 다시 제출하세요:\n" +
                 judged.decided.joinToString("\n") { "- ${it.label} (정함 확률 ${"%.2f".format(judged.probabilities[it.id])})" })
+        }
+        val tests = if (stage == "TEST_CODE") testCodeCheck(ws, task, task.base?.let { runCatching { Shell.gitOk(ws.root, "diff", "--cached", it) }.getOrNull() } ?: diff, validation) else null
+        if (tests != null && tests.missing.isNotEmpty()) {
+            return Outcome("테스트 케이스 문서의 TC 중 이 테스트 코드에 시나리오 테스트가 없는 것으로 보입니다. 아래 TC마다 그 시나리오를 실행하고 기대 결과를 단정하는 테스트를 작성한 뒤 다시 제출하세요:\n" +
+                tests.missing.joinToString("\n") { "- ${it.id} ${it.text} (테스트 있음 확률 ${"%.2f".format(tests.coverage[it.id])})" })
+        }
+        if (tests != null && tests.bypassed.isNotEmpty()) {
+            return Outcome("기대 동작을 검증하지 않고 통과할 수 있는 테스트가 있는 것으로 보입니다(조건에 따른 return·skip·@Disabled, 단언 없음·조건부 단언, fail() 없는 try-catch, 검증 대상 목, 어떤 결과든 통과하는 단언). 아래 파일의 해당 테스트가 TC의 기대 결과를 항상 단정하도록 고친 뒤 다시 제출하세요:\n" +
+                tests.bypassed.joinToString("\n") { "- $it (우회 확률 ${"%.2f".format(tests.bypass[it])})" })
         }
         val guide = guide(ws, task, assigned.prompt, stage)
         if (!guide.reported) {
@@ -421,7 +434,7 @@ class IlsimMcp(
             else -> listOf("판정 없음")
         }
         val unsettled = undecided?.unresolved.orEmpty()
-        val audit = if (auditNeeded(ws, stage, check, scope, unsettled, unresolved, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
+        val audit = if (auditNeeded(ws, stage, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
             gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey), guide.render().takeIf { guide.guidelines.isNotEmpty() || !guide.selected }, unsettled.map { it.label })
         } else {
             validation["ai-audit"] = "SKIPPED"
@@ -465,6 +478,41 @@ class IlsimMcp(
             result?.let { r -> "남은 미결정 질문 ${open.size}개: " + r.probabilities.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } + if (r.truncated) " (변경 일부만 판정)" else "" }
                 ?: "JEV 꺼짐·실패, 남은 미결정 질문 ${open.joinToString { it.id }}", change)
         return Undecided(open, result)
+    }
+
+    private fun testedRequirements(ws: Workspace, task: ActiveTask, uncertain: List<Requirement>): Set<String> {
+        val base = task.base ?: return emptySet()
+        val cases = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.static }
+        val linked = uncertain.associateWith { r -> cases.filter { c -> Regex("""(?<![\w-])${Regex.escape(r.id)}(?![\w-])""").containsMatchIn(c.text) } }.filterValues { it.isNotEmpty() }
+        if (linked.isEmpty()) return emptySet()
+        val tests = runCatching { ScopeCheck.files(Shell.gitOk(ws.root, "diff", "--cached", base)).filterKeys { Gate.isTestPath(it) }.values.joinToString("") }.getOrNull()?.takeIf { it.isNotBlank() } ?: return emptySet()
+        val coverage = runCatching { TestCodeCheck.coverage(jev(), linked.values.flatten().distinctBy { it.id }, Guidelines.cut(tests, Guidelines.MAX_DIFF_WEIGHT)) }.getOrNull() ?: return emptySet()
+        val verified = linked.filter { (_, cs) -> cs.all { (coverage[it.id] ?: 0.0) >= TestCodeCheck.COVERED } }.keys.map { it.id }.toSet()
+        DecisionScope.record("REQUIREMENT_TESTS", "JEV", "애매한 요구사항 중 연결된 TC 테스트가 있고 테스트가 통과해 검토 사유에서 뺌: ${verified.joinToString().ifEmpty { "없음" }} (" +
+            linked.entries.joinToString { (r, cs) -> "${r.id}: " + cs.joinToString("·") { "${it.id}=${coverage[it.id]?.let { v -> "%.2f".format(v) } ?: "-"}" } } + ")", tests)
+        return verified
+    }
+
+    private fun testCodeCheck(ws: Workspace, task: ActiveTask, diff: String, validation: MutableMap<String, String>): TestCodeCheck.Result? {
+        val cases = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty()
+        val result = runCatching { TestCodeCheck.judge(jev(), cases, diff) }.getOrNull()
+        validation["test-cases"] = when {
+            result == null -> "UNKNOWN"
+            result.missing.isNotEmpty() -> "MISSING"
+            result.unsureCases.isNotEmpty() || result.truncated -> "UNCERTAIN"
+            else -> "PASSED"
+        }
+        validation["test-bypass"] = when {
+            result == null -> "UNKNOWN"
+            result.bypassed.isNotEmpty() -> "BYPASSED"
+            result.unsureFiles.isNotEmpty() -> "UNCERTAIN"
+            else -> "PASSED"
+        }
+        DecisionScope.record("TESTCODE_CHECK", if (result == null) "NONE" else "JEV",
+            result?.let { r -> "TC ${cases.size}개(정적 검사 ${cases.count { it.static }}개 제외): " + r.coverage.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } +
+                "; 우회: " + r.bypass.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } + if (r.truncated) " (diff 일부만 판정)" else "" }
+                ?: "JEV 꺼짐·실패", diff)
+        return result
     }
 
     private fun requirements(ws: Workspace, task: ActiveTask): String? {
@@ -522,13 +570,17 @@ class IlsimMcp(
         return result
     }
 
-    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
-        if (stage == "TEST_CODE") return true
-        if (stage != "IMPLEMENTATION") return false
+    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, tests: TestCodeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
+        if (stage != "TEST_CODE" && stage != "IMPLEMENTATION") return false
+        val testing = stage == "TEST_CODE"
         val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
         val lines = diff.lines().count { (it.startsWith("+") || it.startsWith("-")) && !it.startsWith("+++") && !it.startsWith("---") }
         val reasons = listOfNotNull(
-            "요구사항 판정 없음".takeIf { check == null },
+            "요구사항 판정 없음".takeIf { !testing && check == null },
+            "테스트 코드 판정 없음".takeIf { testing && tests == null },
+            "판정이 불확실한 TC ${tests?.unsureCases?.joinToString { it.id }}".takeIf { tests != null && tests.unsureCases.isNotEmpty() },
+            "검증 없이 통과할 수 있는지 불확실한 테스트 ${tests?.unsureFiles?.joinToString()}".takeIf { tests != null && tests.unsureFiles.isNotEmpty() },
+            "테스트 코드가 커서 일부만 판정".takeIf { tests != null && tests.truncated },
             "판정이 불확실한 요구사항 ${check?.uncertain?.joinToString { it.id }}".takeIf { check != null && check.uncertain.isNotEmpty() },
             "영향 범위 판정 불확실 ${scope?.uncertain?.joinToString()}".takeIf { scope != null && scope.uncertain.isNotEmpty() },
             "미결정 판정 불확실 ${undecided.joinToString { it.id }}".takeIf { undecided.isNotEmpty() },
@@ -543,7 +595,7 @@ class IlsimMcp(
         val rate = (ws.project.auditSampleRate ?: AUDIT_SAMPLE_RATE).coerceIn(0.0, 1.0)
         val sampled = Math.floorMod(executionId.hashCode(), 100) < (rate * 100).toInt()
         DecisionScope.record("CHANGE_AUDIT", if (sampled) "SAMPLE" else "SKIP",
-            if (sampled) "건너뛸 조건이지만 표본(${(rate * 100).toInt()}%)으로 검토" else "요구사항·문서 지침 판정 충족·위험 후보 없음·변경 ${lines}줄로 검토 생략", diff)
+            if (sampled) "건너뛸 조건이지만 표본(${(rate * 100).toInt()}%)으로 검토" else "${if (testing) "TC·우회 테스트" else "요구사항"}·문서 지침 판정 충족·위험 후보 없음·변경 ${lines}줄로 검토 생략", diff)
         log(if (sampled) "독립 검토: 표본으로 실행" else "독립 검토: 조건 충족으로 생략")
         return sampled
     }

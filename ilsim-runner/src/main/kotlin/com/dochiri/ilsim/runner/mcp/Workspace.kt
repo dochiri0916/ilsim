@@ -67,6 +67,7 @@ data class ActiveTask(
     val shelvedStage: String? = null,
     val attention: List<String> = emptyList(),
     val undecided: List<String> = emptyList(),
+    val base: String? = null,
 )
 
 class ActiveTasks(private val dir: Path) {

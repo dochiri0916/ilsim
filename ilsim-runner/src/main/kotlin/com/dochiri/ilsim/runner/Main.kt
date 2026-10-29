@@ -24,6 +24,7 @@ import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevGuidelineEval
 import com.dochiri.ilsim.runner.jev.JevRequirementEval
 import com.dochiri.ilsim.runner.jev.JevScopeEval
+import com.dochiri.ilsim.runner.jev.JevTestCodeEval
 import com.dochiri.ilsim.runner.jev.JevUndecidedEval
 import com.dochiri.ilsim.runner.jev.JevRiskEval
 import com.dochiri.ilsim.runner.mcp.ActiveTasks
@@ -102,6 +103,7 @@ private const val USAGE = """사용법:
     ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
     ilsim-runner jev-eval scope [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항 문서의 영향 범위 밖 변경 판정 평가
     ilsim-runner jev-eval undecided [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항 문서의 미결정 사항을 추측해 정했는지 판정 평가
+    ilsim-runner jev-eval testcode [--data <폴더>] [--repeat <n>] [--out <파일>]   테스트 코드의 TC 누락·검증 없이 통과하는 테스트 판정 평가
     ilsim-runner jev-eval guidelines [--data <폴더>] [--repeat <n>] [--out <파일>] [--sections] [--rules]   정답 있는 문서·요청·변경으로 지침 선택·위반·문서 규칙 판정 평가(--rules는 문서 규칙 질문만)
                                                  jev-eval 공통: 1회차 판정은 ~/.ilsim/eval-decisions에 저장해 같은 질문을 다시 보내지 않음. --repeat의 2회차부터와 --fresh는 저장된 판정 없이 새로 물음
   Claude 앱
@@ -724,6 +726,15 @@ private fun jevEval(store: ConfigStore, args: Array<String>) {
             val records = JevScopeEval.run(samples, jev, repeat, fresh)
             println(JevScopeEval.report(records))
             save(JevScopeEval.toJson(records))
+            return
+        }
+        if (rest.firstOrNull() == "testcode") {
+            val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-testcode").toAbsolutePath().normalize()
+            val samples = JevTestCodeEval.load(dir)
+            if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
+            val records = JevTestCodeEval.run(samples, jev, repeat, fresh)
+            println(JevTestCodeEval.report(records))
+            save(JevTestCodeEval.toJson(records))
             return
         }
         if (rest.firstOrNull() == "undecided") {

@@ -1,0 +1,31 @@
+diff --git a/test/orders-export.e2e-spec.ts b/test/orders-export.e2e-spec.ts
+new file mode 100644
+--- /dev/null
++++ b/test/orders-export.e2e-spec.ts
+@@ -0,0 +1,26 @@
++import { INestApplication } from '@nestjs/common';
++import request from 'supertest';
++import { createApp, adminAuth, userAuth, seed } from './helpers';
++
++describe('GET /admin/orders/export', () => {
++  let app: INestApplication;
++  const url = '/admin/orders/export?from=2026-01-01&to=2026-01-31';
++
++  beforeAll(async () => {
++    app = await createApp();
++    await seed([{ orderNo: 'A-1', status: 'PAID', amount: 12000, orderedAt: '2026-01-05T03:00:00Z' }]);
++  });
++
++  it('기간 안 주문을 정한 열 순서로 내려준다', async () => {
++    const res = await request(app.getHttpServer()).get(url).set(adminAuth);
++    expect(res.status).toBe(200);
++    expect(res.text).toContain('주문번호,주문일시,금액,상태');
++    expect(res.text).toContain('A-1');
++  });
++
++  it('text/csv와 파일 이름을 돌려준다', async () => {
++    const res = await request(app.getHttpServer()).get(url).set(adminAuth);
++    expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
++    expect(res.headers['content-disposition']).toContain('orders-2026-01-01-2026-01-31.csv');
++  });
++});

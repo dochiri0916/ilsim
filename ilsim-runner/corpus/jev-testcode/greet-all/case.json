@@ -1,0 +1,70 @@
+{
+  "testspec": "testspec.md",
+  "diffs": [
+    {
+      "id": "full",
+      "file": "diffs/full.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true,
+        "TC-5": true
+      },
+      "bypass": false,
+      "note": "모든 동작 TC를 테스트, TC-5는 정적 검사"
+    },
+    {
+      "id": "missing-tc2-tc3",
+      "file": "diffs/missing-tc2-tc3.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": false,
+        "TC-3": false,
+        "TC-4": true,
+        "TC-5": true
+      },
+      "bypass": false,
+      "note": "순서·공백 테스트 없음"
+    },
+    {
+      "id": "no-assert",
+      "file": "diffs/no-assert.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true,
+        "TC-5": true
+      },
+      "bypass": true,
+      "note": "공백 테스트가 호출만 하고 단언 없음"
+    },
+    {
+      "id": "assume-skip",
+      "file": "diffs/assume-skip.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true,
+        "TC-5": true
+      },
+      "bypass": true,
+      "note": "CI가 아니면 예외 테스트를 건너뜀"
+    },
+    {
+      "id": "catch-swallow",
+      "file": "diffs/catch-swallow.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true,
+        "TC-5": true
+      },
+      "bypass": true,
+      "note": "예외가 안 나도 통과하는 try-catch"
+    }
+  ]
+}

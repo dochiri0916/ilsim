@@ -1,0 +1,67 @@
+diff --git a/src/test/java/com/x/payment/PaymentServiceTest.java b/src/test/java/com/x/payment/PaymentServiceTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/com/x/payment/PaymentServiceTest.java
+@@ -0,0 +1,62 @@
++package com.x.payment;
++
++import java.time.Duration;
++import java.util.Optional;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Disabled;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.extension.ExtendWith;
++import org.springframework.boot.test.system.CapturedOutput;
++import org.springframework.boot.test.system.OutputCaptureExtension;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.anyLong;
++import static org.mockito.ArgumentMatchers.argThat;
++import static org.mockito.BDDMockito.given;
++import static org.mockito.BDDMockito.then;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.times;
++
++class PaymentServiceTest {
++    private final OrderRepository orderRepository = mock(OrderRepository.class);
++    private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
++    private final PgClient pgClient = mock(PgClient.class);
++    private final PaymentRetryProperties properties = new PaymentRetryProperties(2, Duration.ZERO);
++    private final PaymentService paymentService = new PaymentService(orderRepository, paymentRepository, pgClient, duration -> { }, properties);
++
++    @BeforeEach
++    void setUp() {
++        given(orderRepository.findById(1L)).willReturn(Optional.of(Order.pending(1L, "pay-key", 10_000L)));
++    }
++
++    @Test
++    void 일시적_오류_뒤_성공하면_승인으로_저장한다() {
++        given(pgClient.approve(any(), anyLong())).willThrow(new PgTemporaryException("busy")).willReturn(new PgApproval("tx-1"));
++        paymentService.approve(1L);
++        then(paymentRepository).should().save(argThat(p -> p.getStatus() == PaymentStatus.APPROVED));
++    }
++
++    @Test
++    void 카드_거절은_다시_시도하지_않는다() {
++        given(pgClient.approve(any(), anyLong())).willThrow(new PgRejectedException("limit"));
++        assertThatThrownBy(() -> paymentService.approve(1L)).isInstanceOf(PaymentFailedException.class);
++        then(pgClient).should(times(1)).approve(any(), anyLong());
++    }
++
++    @Test
++    void 설정한_횟수만큼_모두_실패하면_예외() {
++        given(pgClient.approve(any(), anyLong())).willThrow(new PgTemporaryException("busy"));
++        assertThatThrownBy(() -> paymentService.approve(1L)).isInstanceOf(PaymentFailedException.class);
++        then(pgClient).should(times(properties.maxAttempts())).approve(any(), anyLong());
++    }
++
++    @Test
++    @ExtendWith(OutputCaptureExtension.class)
++    void 시도마다_재시도_로그를_남긴다(CapturedOutput output) {
++        given(pgClient.approve(any(), anyLong())).willThrow(new PgTemporaryException("busy")).willReturn(new PgApproval("tx-1"));
++        paymentService.approve(1L);
++        assertThat(output.getOut()).contains("payment.retry orderId=1 attempt=1", "payment.retry orderId=1 attempt=2");
++    }
++}

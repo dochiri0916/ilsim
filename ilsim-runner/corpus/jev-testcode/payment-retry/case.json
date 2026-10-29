@@ -1,0 +1,40 @@
+{
+  "testspec": "testspec.md",
+  "diffs": [
+    {
+      "id": "full",
+      "file": "diffs/full.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true
+      },
+      "bypass": false
+    },
+    {
+      "id": "missing-tc4",
+      "file": "diffs/missing-tc4.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": false
+      },
+      "bypass": false,
+      "note": "재시도 로그 테스트 없음"
+    },
+    {
+      "id": "disabled",
+      "file": "diffs/disabled.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true
+      },
+      "bypass": true,
+      "note": "모두 실패 테스트를 꺼 둠"
+    }
+  ]
+}

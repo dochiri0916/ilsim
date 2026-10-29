@@ -1,0 +1,31 @@
+{
+  "testspec": "testspec.md",
+  "diffs": [
+    {
+      "id": "full",
+      "file": "diffs/full.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true,
+        "TC-5": true
+      },
+      "bypass": false,
+      "note": "정적 검사 TC는 테스트가 없어도 됨"
+    },
+    {
+      "id": "missing-tc2",
+      "file": "diffs/missing-tc2.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": false,
+        "TC-3": true,
+        "TC-4": true,
+        "TC-5": true
+      },
+      "bypass": false,
+      "note": "빈 이름 예외 테스트 없음"
+    }
+  ]
+}

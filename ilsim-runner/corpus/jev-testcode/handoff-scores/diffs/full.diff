@@ -1,0 +1,42 @@
+diff --git a/ilsim-runner/src/test/kotlin/com/dochiri/ilsim/HandoffGuidelineScoresTest.kt b/ilsim-runner/src/test/kotlin/com/dochiri/ilsim/HandoffGuidelineScoresTest.kt
+new file mode 100644
+--- /dev/null
++++ b/ilsim-runner/src/test/kotlin/com/dochiri/ilsim/HandoffGuidelineScoresTest.kt
+@@ -0,0 +1,37 @@
++package com.dochiri.ilsim
++
++import java.nio.file.Path
++import kotlin.io.path.readText
++import kotlin.test.Test
++import kotlin.test.assertTrue
++
++class HandoffGuidelineScoresTest {
++    private val root = Path.of("..").toAbsolutePath().normalize()
++
++    private fun git(vararg args: String): String {
++        val process = ProcessBuilder(listOf("git") + args).directory(root.toFile()).redirectErrorStream(true).start()
++        val out = process.inputStream.bufferedReader().readText()
++        check(process.waitFor() == 0) { "git ${args.joinToString(" ")} 실패: $out" }
++        return out
++    }
++
++    private fun diffBase(): String? = git("rev-parse", "--verify", "-q", "main").trim().ifEmpty { null }
++
++    @Test
++    fun `TC-1 문서별 최종 관련도 줄을 적는다`() {
++        val text = root.resolve("docs/handoff.md").readText()
++        assertTrue("문서별 최종 관련도" in text)
++    }
++
++    @Test
++    fun `TC-2 기존 줄은 지우거나 고치지 않는다`() {
++        val removed = git("diff", "main", "--", "docs/handoff.md").lines().filter { it.startsWith("-") && !it.startsWith("---") }
++        assertTrue(removed.isEmpty(), removed.joinToString("\n"))
++    }
++
++    @Test
++    fun `TC-3 바뀐 파일은 handoff 문서뿐이다`() {
++        val changed = git("diff", "--name-only", "main").lines().filter { it.isNotBlank() }
++        assertTrue(changed == listOf("docs/handoff.md"), changed.toString())
++    }
++}

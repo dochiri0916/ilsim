@@ -381,7 +381,7 @@ class McpTest {
         assertContains(run("record_decision", """{"question":"q1","decision":"빈 문자열을 돌려준다"}"""), "남은 미결정 질문: Q2")
         assertTrue(server.events.any { it == "log:사용자 결정 기록: Q1: 빈 문자열을 돌려준다" })
 
-        jevAnswer = { id -> when { id == "u0" -> 0.5; id[0] == 'v' -> 0.05; else -> 0.95 } }
+        jevAnswer = { id -> when { id == "u0" -> 0.5; id[0] in "vb" -> 0.05; else -> 0.95 } }
         assertContains(run("submit_result", doc(cases)), "undecided=UNCERTAIN")
         val waiting = run("next_step")
         assertContains(waiting, "사용자 결정 없이 정했는지 일심이 확신하지 못했습니다")
@@ -418,6 +418,88 @@ class McpTest {
     }
 
     @Test
+    fun `테스트 코드 단계는 JEV가 TC 누락이나 검증 없이 통과하는 테스트를 보면 막고 확실하면 독립 검토를 건너뛴다`() {
+        var audits = 0
+        val counting: (String, String) -> String = { _, _ -> audits++; """{"verdict":"PASS","findings":[]}""" }
+        fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/test/SlugTest.java`")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |\n| TC-2 | REQ-1 | 정상(정적 검사) | 구현 확인 | toLowerCase 를 쓴다 |")); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+
+        jevAnswer = { id -> when { id == "t0" -> 0.05; id[0] in "uvb" -> 0.05; else -> 0.95 } }
+        val missing = run("submit_result")
+        assertContains(missing, "시나리오 테스트가 없는 것으로 보입니다")
+        assertContains(missing, "- TC-1 ")
+        assertTrue("TC-2" !in missing, "정적 검사 TC는 테스트를 요구하지 않는다")
+        jevAnswer = { id -> when { id == "b0_2" -> 0.9; id[0] in "uvb" -> 0.05; else -> 0.95 } }
+        assertContains(run("submit_result"), "- src/test/SlugTest.java (우회 확률 0.90)")
+        assertEquals(0, audits, "막히면 독립 검토를 부르지 않는다")
+
+        jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        val passed = run("submit_result")
+        assertContains(passed, "test-cases=PASSED")
+        assertContains(passed, "test-bypass=PASSED")
+        assertTrue("ai-audit=SKIPPED" in passed || audits == 1, "확실하면 생략하거나 표본으로만 검토한다")
+        assertTrue(server.results.last().decisions.any { it.purpose == "TESTCODE_CHECK" && it.handler == "JEV" && "정적 검사 1개 제외" in it.reason })
+        assertTrue(server.results.last().decisions.any { it.purpose == "CHANGE_AUDIT" && it.handler in setOf("SKIP", "SAMPLE") })
+    }
+
+    @Test
+    fun `되돌린 테스트 코드 단계도 앞서 커밋한 테스트까지 보고 TC 누락을 판정한다`() {
+        fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        jevByBody = { id, body -> if (id[0] == 't') (if ("alphaMarker" in body) 0.95 else 0.05) else null }
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        assertTrue(active.load(repo)?.base?.isNotBlank() == true, "작업 시작 커밋을 저장한다")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest { void alphaMarker() {} }\n")
+        repo.resolve("src/test/OtherTest.java").writeText("class OtherTest {}\n")
+        assertContains(run("submit_result"), "test-cases=PASSED")
+        assertEquals("IMPLEMENTATION", server.stages[server.index])
+
+        run("reopen_stage", """{"stage":"TEST_CODE","feedback":"다른 테스트 이름을 고친다"}""")
+        repo.resolve("src/test/OtherTest.java").writeText("class OtherTest { void renamed() {} }\n")
+        assertContains(run("submit_result"), "test-cases=PASSED")
+    }
+
+    @Test
+    fun `구현 단계에서 애매한 요구사항도 연결된 TC 테스트가 있고 테스트가 통과하면 독립 검토 사유에서 뺀다`() {
+        store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
+        var audits = 0
+        val counting: (String, String) -> String = { _, _ -> audits++; """{"verdict":"PASS","findings":[]}""" }
+        fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |\n| TC-2 | REQ-2 | 정상 | of(\"a b\") | \"a-b\" |")); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} void hyphen() {} }\n")
+        assertContains(run("submit_result"), "tests=RED")
+        val before = audits
+
+        repo.resolve("src/main").createDirectories()
+        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase().replace(' ', '-'); } }\n")
+        jevByBody = { id, body -> if (id.startsWith("m") && "REQ-2" in body && (id == "m1" || "REQ-1" !in body)) 0.6 else null }
+        val passed = run("submit_result")
+        assertContains(passed, "tests=PASSED")
+        assertContains(passed, "requirements=UNCERTAIN")
+        val decisions = server.results.last().decisions
+        assertTrue(decisions.any { it.purpose == "REQUIREMENT_TESTS" && "REQ-2" in it.reason.substringBefore("(") }, decisions.toString())
+        assertTrue(decisions.none { it.purpose == "CHANGE_AUDIT" && "판정이 불확실한 요구사항" in it.reason })
+        assertTrue("ai-audit=SKIPPED" in passed || audits == before + 1)
+    }
+
     fun `TC-18 구현 단계 diff가 입력 한도로 잘리면 누락 대신 불확실로 기록한다`() {
         fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)

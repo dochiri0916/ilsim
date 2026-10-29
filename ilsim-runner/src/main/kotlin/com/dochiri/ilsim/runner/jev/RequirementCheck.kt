@@ -56,8 +56,12 @@ object RequirementCheck {
         val truncated = shown.length < diff.length
         val pool = java.util.concurrent.Executors.newFixedThreadPool(Guidelines.PARALLEL)
         val probabilities = try {
-            batches(requirements, Guidelines.MAX_STATE_WEIGHT - Guidelines.weight(shown) - Guidelines.weight(STAGE)).map { batch -> pool.submit<Map<String, Double>?> { judgeBatch(jev, batch, shown) } }
+            val first = batches(requirements, Guidelines.MAX_STATE_WEIGHT - Guidelines.weight(shown) - Guidelines.weight(STAGE)).map { batch -> pool.submit<Map<String, Double>?> { judgeBatch(jev, batch, shown) } }
                 .map { it.get() ?: return null }.fold(emptyMap<String, Double>()) { a, b -> a + b }
+            val again = requirements.filter { r -> first[r.id]?.let { it > MISSING && it < MET } == true }
+                .map { r -> r.id to pool.submit<Map<String, Double>?> { judgeBatch(jev, listOf(r), shown) } }
+                .mapNotNull { (id, single) -> single.get()?.get(id)?.let { id to maxOf(it, first.getValue(id)) } }.toMap()
+            first + again
         } finally {
             pool.shutdownNow()
         }

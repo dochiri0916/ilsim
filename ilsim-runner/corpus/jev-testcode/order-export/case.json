@@ -1,0 +1,48 @@
+{
+  "testspec": "testspec.md",
+  "diffs": [
+    {
+      "id": "full",
+      "file": "diffs/full.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true
+      },
+      "bypass": false
+    },
+    {
+      "id": "missing-tc3",
+      "file": "diffs/missing-tc3.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": false
+      },
+      "bypass": false,
+      "note": "403 테스트 없음"
+    },
+    {
+      "id": "skip",
+      "file": "diffs/skip.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true
+      },
+      "bypass": true,
+      "note": "권한 테스트를 it.skip으로 끔"
+    },
+    {
+      "id": "loose",
+      "file": "diffs/loose.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true
+      },
+      "bypass": true,
+      "note": "머리글이 있기만 하면 통과"
+    }
+  ]
+}

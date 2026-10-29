@@ -1,0 +1,37 @@
+{
+  "testspec": "testspec.md",
+  "diffs": [
+    {
+      "id": "full",
+      "file": "diffs/full.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true
+      },
+      "bypass": false
+    },
+    {
+      "id": "missing-tc2-tc3",
+      "file": "diffs/missing-tc2-tc3.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": false,
+        "TC-3": false
+      },
+      "bypass": false,
+      "note": "실사용 E2E에서 독립 검토가 잡은 TC 누락 형태"
+    },
+    {
+      "id": "base-return",
+      "file": "diffs/base-return.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true
+      },
+      "bypass": true,
+      "note": "실사용 E2E에서 독립 검토가 잡은 기준 브랜치 없으면 return 형태"
+    }
+  ]
+}

@@ -13,7 +13,7 @@ class ReviewCache(private val directory: Path) {
                 DecisionScope.record("CHANGE_AUDIT", "CACHE", "동일한 전체 근거·검토 정책의 유효한 결과", prompt)
                 return@locked it
             }
-            DecisionScope.record("CHANGE_AUDIT", "AGENT", "개방형 누락 탐지는 독립 검토로 유지; JEV 대체 품질은 미검증", prompt)
+            DecisionScope.record("CHANGE_AUDIT", "AGENT", "같은 근거의 검토 결과가 없어 독립 검토를 새로 실행", prompt)
             val response = ask()
             val result = parse(response)
             KnowledgeFiles.write(file, response)

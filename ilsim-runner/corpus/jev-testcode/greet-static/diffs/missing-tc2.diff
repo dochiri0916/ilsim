@@ -1,0 +1,22 @@
+diff --git a/src/test/java/demo/GreeterTest.java b/src/test/java/demo/GreeterTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/demo/GreeterTest.java
+@@ -0,0 +1,17 @@
++package demo;
++
++import java.util.List;
++import org.junit.jupiter.api.Assumptions;
++import org.junit.jupiter.api.DisplayName;
++import org.junit.jupiter.api.Test;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++
++class GreeterTest {
++    @Test
++    @DisplayName("아침 인사는 마침표로 끝난다")
++    void goodMorning() {
++        assertThat(new Greeter().goodMorning("Kim")).isEqualTo("Good morning, Kim.");
++    }
++}

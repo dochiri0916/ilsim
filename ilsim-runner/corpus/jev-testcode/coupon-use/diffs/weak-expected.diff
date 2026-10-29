@@ -1,0 +1,59 @@
+diff --git a/src/test/java/com/x/coupon/CouponServiceTest.java b/src/test/java/com/x/coupon/CouponServiceTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/com/x/coupon/CouponServiceTest.java
+@@ -0,0 +1,54 @@
++package com.x.coupon;
++
++import java.time.Clock;
++import java.time.LocalDateTime;
++import java.time.ZoneOffset;
++import java.util.Optional;
++import org.junit.jupiter.api.Test;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++import static org.mockito.BDDMockito.given;
++import static org.mockito.Mockito.mock;
++
++class CouponServiceTest {
++    private final CouponRepository couponRepository = mock(CouponRepository.class);
++    private final LocalDateTime expiresAt = LocalDateTime.of(2026, 5, 1, 0, 0);
++
++    private CouponService serviceAt(LocalDateTime now) {
++        return new CouponService(couponRepository, Clock.fixed(now.toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
++    }
++
++    private Coupon coupon(long memberId) {
++        Coupon coupon = new Coupon(memberId, 3_000L, expiresAt);
++        given(couponRepository.findById(1L)).willReturn(Optional.of(coupon));
++        return coupon;
++    }
++
++    @Test
++    void 사용할_수_있는_쿠폰이면_사용_처리하고_할인_금액을_돌려준다() {
++        coupon(7L);
++        assertThat(serviceAt(expiresAt.minusDays(1)).use(1L, 7L, 50_000L)).isGreaterThanOrEqualTo(0L);
++    }
++
++    @Test
++    void 다른_회원의_쿠폰이면_예외() {
++        coupon(7L);
++        assertThatThrownBy(() -> serviceAt(expiresAt.minusDays(1)).use(1L, 8L, 50_000L))
++                .isInstanceOf(CouponOwnerMismatchException.class);
++    }
++
++    @Test
++    void 이미_사용한_쿠폰이면_예외() {
++        coupon(7L).use();
++        assertThatThrownBy(() -> serviceAt(expiresAt.minusDays(1)).use(1L, 7L, 50_000L))
++                .isInstanceOf(CouponAlreadyUsedException.class);
++    }
++
++    @Test
++    void 만료된_쿠폰이면_예외() {
++        coupon(7L);
++        assertThatThrownBy(() -> serviceAt(expiresAt.plusSeconds(1)).use(1L, 7L, 50_000L))
++                .isInstanceOf(CouponExpiredException.class);
++    }
++}

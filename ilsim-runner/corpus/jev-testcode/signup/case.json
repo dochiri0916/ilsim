@@ -1,0 +1,40 @@
+{
+  "testspec": "testspec.md",
+  "diffs": [
+    {
+      "id": "full",
+      "file": "diffs/full.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true
+      },
+      "bypass": false
+    },
+    {
+      "id": "missing-tc1-tc3",
+      "file": "diffs/missing-tc1-tc3.diff",
+      "covered": {
+        "TC-1": false,
+        "TC-2": true,
+        "TC-3": false,
+        "TC-4": true
+      },
+      "bypass": false,
+      "note": "컨트롤러 201 테스트와 이벤트 테스트 없음"
+    },
+    {
+      "id": "early-return",
+      "file": "diffs/early-return.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true
+      },
+      "bypass": true,
+      "note": "DB_URL이 없으면 서비스 테스트가 바로 return"
+    }
+  ]
+}

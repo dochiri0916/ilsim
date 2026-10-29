@@ -1,0 +1,64 @@
+{
+  "testspec": "testspec.md",
+  "diffs": [
+    {
+      "id": "full",
+      "file": "diffs/full.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true
+      },
+      "bypass": false
+    },
+    {
+      "id": "missing-tc3",
+      "file": "diffs/missing-tc3.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": false,
+        "TC-4": true
+      },
+      "bypass": false,
+      "note": "이미 사용한 쿠폰 테스트 없음"
+    },
+    {
+      "id": "weak-expected",
+      "file": "diffs/weak-expected.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true
+      },
+      "bypass": true,
+      "note": "할인 금액을 0 이상으로만 단정하고 사용 처리 확인 없음"
+    },
+    {
+      "id": "conditional-assert",
+      "file": "diffs/conditional-assert.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true
+      },
+      "bypass": true,
+      "note": "실행 시각에 따라 단언을 건너뜀"
+    },
+    {
+      "id": "mock-sut",
+      "file": "diffs/mock-sut.diff",
+      "covered": {
+        "TC-1": true,
+        "TC-2": true,
+        "TC-3": true,
+        "TC-4": true
+      },
+      "bypass": true,
+      "note": "검증 대상 서비스를 목으로 바꿔 목의 동작을 단정"
+    }
+  ]
+}
