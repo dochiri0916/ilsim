@@ -36,7 +36,7 @@ object Hooks {
         val payload = runCatching { json.parseToJsonElement(input).jsonObject }.getOrNull() ?: return Output()
         val cwd = payload.text("cwd")?.let { Path.of(it) } ?: return Output()
         val ws = Workspace.of(store.load(), cwd) ?: return Output()
-        val task = active.load(ws.root)
+        val task = active.load(ws.home)
         return when (event) {
             "user-prompt-submit" -> Output(context(ws, task))
             "pre-tool-use" -> preToolUse(ws, task, payload)
@@ -55,7 +55,7 @@ object Hooks {
         appendLine("[일심] 이 저장소(${ws.projectId})는 일심이 관리합니다.")
         appendLine("- 코드·문서를 바꾸는 요청이면 먼저 ilsim MCP 도구를 쓰세요: 새 작업은 start_task, 진행 중 작업은 next_step. 단계를 마치면 submit_result로 제출합니다.")
         appendLine("- 질문·설명 요청이면 파일을 바꾸지 말고 답만 하세요.")
-        append(if (task == null) "- 진행 중인 일심 작업: 없음" else "- 진행 중인 일심 작업: ${task.feature} (${task.taskId.take(8)}), 단계 ${task.stage ?: "-"}, 상태 ${task.status ?: "-"}")
+        append(if (task == null) "- 진행 중인 일심 작업: 없음" else "- 진행 중인 일심 작업: ${task.feature} (${task.taskId.take(8)}), 단계 ${task.stage ?: "-"}, 상태 ${task.status ?: "-"}${task.worktree?.let { ", 작업 폴더 $it(이 폴더 안의 파일만 고친다)" }.orEmpty()}")
     }
 
     private fun preToolUse(ws: Workspace, task: ActiveTask?, payload: JsonObject): Output {
@@ -88,8 +88,15 @@ object Hooks {
         if (tool !in editTools) return Output()
         val target = (input.text("file_path") ?: input.text("notebook_path"))?.let { Path.of(it) } ?: return Output()
         val absolute = real((if (target.isAbsolute) target else ws.root.resolve(target)).normalize())
-        if (!absolute.startsWith(ws.root)) return Output()
-        val relative = ws.root.relativize(absolute).toString().replace('\\', '/')
+        if (!absolute.startsWith(ws.home) && !absolute.startsWith(ws.root)) return Output()
+        val work = ws.at(task).root
+        if (!absolute.startsWith(work)) {
+            val outside = ws.home.relativize(absolute).toString().replace('\\', '/')
+            if (Gate.isIgnored(outside)) return Output()
+            blocked(task)?.let { return deny(it) }
+            return deny("일심 작업은 사용자 작업 트리와 분리된 작업 폴더 $work 에서 합니다. 이 파일 대신 ${work.resolve(outside)} 를 고치세요")
+        }
+        val relative = work.relativize(absolute).toString().replace('\\', '/')
         if (Gate.isIgnored(relative)) return Output()
         blocked(task)?.let { return deny(it) }
         val violations = Gate.pathViolations(checkNotNull(task).stage.orEmpty(), listOf(relative))
@@ -153,8 +160,8 @@ object Hooks {
 
     private fun stop(ws: Workspace, task: ActiveTask?, active: ActiveTasks, continuing: Boolean): Output {
         if (task == null || task.status != IlsimMcp.RUNNING) return Output()
-        if (continuing || ws.changedFiles().isEmpty() || task.stopBlocks >= MAX_STOP_BLOCKS) return Output()
-        active.save(ws.root, task.copy(stopBlocks = task.stopBlocks + 1))
+        if (continuing || ws.at(task).changedFiles().isEmpty() || task.stopBlocks >= MAX_STOP_BLOCKS) return Output()
+        active.save(ws.home, task.copy(stopBlocks = task.stopBlocks + 1))
         val reason = "일심 ${task.stage} 단계의 변경이 아직 제출되지 않았습니다. submit_result로 제출해 통과시키세요. 통과시키지 못하면 이유와 사용자가 정할 일을 보고하고 끝내세요"
         return Output(buildJsonObject { put("decision", "block"); put("reason", reason) }.toString())
     }

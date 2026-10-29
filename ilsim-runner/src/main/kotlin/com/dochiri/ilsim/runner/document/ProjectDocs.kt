@@ -21,7 +21,8 @@ object ProjectDocs {
 
     fun files(root: Path, project: ProjectEntry, otherProjects: Collection<Path>, feature: String?): Map<String, Path> {
         val base = real(root)
-        val nested = otherProjects.map(::real).filter { it != base && it.startsWith(base) }.map { relative(base, it) }
+        val home = real(Path.of(project.path))
+        val nested = otherProjects.map(::real).filter { it != home && it.startsWith(home) }.map { relative(home, it) }
         val skipped = nested + (project.docsExclude + ignored(base)).map { it.trim().trimEnd('/') }.filter { it.isNotEmpty() } + listOfNotNull(feature?.let { "specs/$it" })
         val tracked = Shell.gitOk(base, "-c", "core.quotepath=false", "ls-files", "--", *extensions.map { "*.$it" }.toTypedArray())
             .lines().map { it.trim() }.filter { it.isNotEmpty() }

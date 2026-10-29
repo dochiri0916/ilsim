@@ -110,51 +110,54 @@ class IlsimMcp(
     )
 
     private fun workspace(): Workspace {
-        Workspace.of(store.load(), cwd)?.let { return it }
+        Workspace.of(store.load(), cwd)?.let { return it.at(active.load(it.home)) }
         val root = Workspace.root(cwd) ?: throw IllegalStateException("Git 저장소가 아닙니다: $cwd")
         throw IllegalStateException("일심에 등록되지 않은 프로젝트입니다: $root. 터미널에서 `ilsim-runner add <id> $root`로 등록하세요")
     }
 
     private fun startTask(requirement: String, feature: String?): String {
         val ws = workspace()
-        active.load(ws.root)?.let { current ->
+        active.load(ws.home)?.let { current ->
             if (server.agentTask(current.taskId)?.status == "ACTIVE") {
                 throw IllegalStateException("이미 진행 중인 작업이 있습니다: ${current.feature} (${current.taskId.take(8)}). next_step으로 이어서 하세요")
             }
-            active.clear(ws.root)
+            active.clear(ws.home)
         }
-        val dirty = ws.changedFiles()
+        val home = ws.at(null)
+        val dirty = home.changedFiles()
         if (dirty.isNotEmpty()) throw IllegalStateException("커밋하지 않은 변경이 있어 작업을 시작할 수 없습니다(${dirty.take(5).joinToString()}). 사용자에게 커밋하거나 되돌릴지 물어보세요")
         val config = store.load()
-        analysisGaps(store, ws.projectId, projectDocs(config, ws.projectId, ws.root, ws.project)).takeIf { it.isNotEmpty() }?.let { gaps ->
+        analysisGaps(store, ws.projectId, projectDocs(config, ws.projectId, home.root, ws.project)).takeIf { it.isNotEmpty() }?.let { gaps ->
             throw IllegalStateException("이 프로젝트의 분석이 없거나 낡아 아키텍처·컨벤션·문서 지침을 빠짐없이 강제할 수 없습니다(${gaps.joinToString("; ")}). analyze_project를 먼저 실행한 뒤 start_task를 다시 호출하세요")
         }
         server.register(PollRequest(config.runnerId, listOf(ProjectReport(ws.projectId, ws.project.name))))
         val created = server.createAgentTask(AgentTaskRequest(ws.projectId, feature?.takeIf { it.isNotBlank() }, requirement))
         val branch = "ilsim/${created.feature}-${created.taskId.take(8)}"
-        val base = Shell.gitOk(ws.root, "rev-parse", "HEAD").trim()
-        Shell.gitOk(ws.root, "checkout", "-b", branch)
-        active.save(ws.root, ActiveTask(created.taskId, ws.projectId, created.feature, branch, base = base))
-        guides.save(created.taskId, buildGuide(ws, created.feature, requirement))
+        val base = Shell.gitOk(home.root, "rev-parse", "HEAD").trim()
+        val worktree = Workspace.worktree(home.root, "${created.feature}-${created.taskId.take(8)}", branch)
+        val task = ActiveTask(created.taskId, ws.projectId, created.feature, branch, base = base, worktree = worktree.toString())
+        active.save(ws.home, task)
+        guides.save(created.taskId, buildGuide(home.at(task), created.feature, requirement))
         val pending = pendingRules(store, ws.projectId).takeIf { it.isNotEmpty() }?.let { counts ->
             "\n주의: 사용자 승인을 기다리는 규칙이 있습니다(${counts.entries.joinToString { "${it.key} ${it.value}개" }}). 승인 전에는 제출 때 정적으로 강제하지 않습니다(문서 지침은 JEV가 판정). 단계를 진행하기 전에 사용자에게 review_rules로 보여 주고 decide_rules로 정하게 권하세요"
         }.orEmpty()
-        val warning = ws.installCommitHook(runnerCommand)?.let { "\n주의: $it" }.orEmpty() + pending
-        return "작업을 만들었습니다: ${created.feature} (${created.taskId.take(8)}), 브랜치 $branch$warning\n\n" + nextStep()
+        val warning = home.installCommitHook(runnerCommand)?.let { "\n주의: $it" }.orEmpty() + pending
+        return "작업을 만들었습니다: ${created.feature} (${created.taskId.take(8)}), 브랜치 $branch, 작업 폴더 $worktree$warning\n\n" + nextStep()
     }
 
     private fun nextStep(): String {
         val ws = workspace()
-        val task = active.load(ws.root) ?: return "진행 중인 일심 작업이 없습니다(프로젝트 ${ws.projectId}). 코드·문서를 바꾸는 요청이면 start_task로 시작하세요"
+        val task = active.load(ws.home) ?: return "진행 중인 일심 작업이 없습니다(프로젝트 ${ws.projectId}). 코드·문서를 바꾸는 요청이면 start_task로 시작하세요"
         val assigned = server.claim(task.taskId, store.load().runnerId) ?: return describe(ws, task)
         val restored = if (task.shelved != null && task.shelvedStage == assigned.stage) unshelve(ws, task.shelved) else null
-        active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(), undecided = emptyList(),
+        active.save(ws.home, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(), undecided = emptyList(),
             shelved = task.shelved.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }, shelvedStage = task.shelvedStage.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }))
         val gates = gates {}
         val brief = gates.rulesBrief(assigned)?.let { once(task.taskId, "brief", it, "## 승인된 아키텍처·컨벤션 규칙 (이 대화에서 이미 받은 것과 같음)\n본문이 이 대화에 남아 있지 않으면 get_rules 도구로 다시 받으세요.") }
         val prompt = gates.promptWithRules(assigned.copy(testCommand = ws.project.testCommand), brief)
         val guide = guide(ws, task, assigned.prompt, assigned.stage)
-        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, once(task.taskId, "guide", guide.render(), guide.brief()), rules(assigned.stage)).joinToString("\n\n")
+        val folder = task.worktree?.let { "## 작업 폴더\n이 작업은 사용자 작업 트리와 분리된 `$it`(브랜치 ${task.branch})에서 합니다. 파일은 이 폴더 안의 경로로 만들고 고치며, 빌드·테스트 명령도 이 폴더에서 실행하세요(`cd $it`). 사용자 작업 트리(`${ws.home}`)의 파일은 고치지 마세요." }
+        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", folder, restored, prompt, once(task.taskId, "guide", guide.render(), guide.brief()), rules(assigned.stage)).joinToString("\n\n")
     }
 
     private fun once(taskId: String, part: String, text: String, again: String): String {
@@ -164,21 +167,23 @@ class IlsimMcp(
 
     private fun describe(ws: Workspace, task: ActiveTask): String {
         val state = server.agentTask(task.taskId) ?: run {
-            active.clear(ws.root)
+            active.clear(ws.home)
             return "서버에서 작업을 찾을 수 없어 활성 작업을 지웠습니다"
         }
         return when {
             state.status == "COMPLETED" -> {
-                active.clear(ws.root)
+                active.clear(ws.home)
                 guides.clear(task.taskId)
-                "작업이 끝났습니다: ${task.feature}. 브랜치 ${task.branch}에 단계별 커밋이 있습니다. 병합 여부는 사용자가 정합니다"
+                val removed = task.worktree?.let { Shell.git(ws.home, "worktree", "remove", it).exit == 0 }
+                "작업이 끝났습니다: ${task.feature}. 브랜치 ${task.branch}에 단계별 커밋이 있습니다. 병합 여부는 사용자가 정합니다" +
+                    when (removed) { true -> ". 작업 폴더를 지웠습니다"; false -> ". 작업 폴더(${task.worktree})를 지우지 못해 남겨 두었습니다"; null -> "" }
             }
             state.status == "BLOCKED" -> {
-                active.save(ws.root, task.copy(stage = state.stage, status = "BLOCKED"))
+                active.save(ws.home, task.copy(stage = state.stage, status = "BLOCKED"))
                 "작업이 차단됐습니다(${state.stage}): ${state.error ?: "사유 없음"}. 사용자에게 사유를 알리고, 다시 시도하자고 하면 retry_task(사용자 지시)를 호출하세요"
             }
             state.stageStatus == "WAITING_APPROVAL" -> {
-                active.save(ws.root, task.copy(stage = state.stage, status = "WAITING_APPROVAL"))
+                active.save(ws.home, task.copy(stage = state.stage, status = "WAITING_APPROVAL"))
                 "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 아래 산출물을 사용자에게 요약해 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요\n\n${artifact(ws, task, state.stage)}" +
                     openQuestions(ws, task, state.stage) +
                     task.attention.takeIf { it.isNotEmpty() }?.let { items ->
@@ -194,7 +199,7 @@ class IlsimMcp(
 
     private fun checkChange(): String {
         val ws = workspace()
-        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
         val stage = task.stage?.takeIf { task.status == RUNNING } ?: throw IllegalStateException("실행 중인 단계가 없습니다(상태 ${task.status ?: "-"}). next_step을 호출하세요")
         val notes = mutableListOf<String>()
         val validation = linkedMapOf<String, String>()
@@ -214,7 +219,7 @@ class IlsimMcp(
 
     private fun guidelines(): String {
         val ws = workspace()
-        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
         return guide(ws, task, task.feature, task.stage).render()
     }
 
@@ -265,17 +270,17 @@ class IlsimMcp(
 
     private fun retry(instruction: String?): String {
         val ws = workspace()
-        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
         val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
         if (state.status != "BLOCKED") throw IllegalStateException("차단된 작업이 아닙니다(상태 ${state.status})")
         server.retry(task.taskId, instruction)
-        active.save(ws.root, task.copy(submissions = 0, claudeCalls = 0, costUsd = 0.0))
+        active.save(ws.home, task.copy(submissions = 0, claudeCalls = 0, costUsd = 0.0))
         return "다시 시도합니다\n\n" + nextStep()
     }
 
     private fun reopen(stage: String, feedback: String): String {
         val ws = workspace()
-        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
         if (ws.branch() != task.branch) throw IllegalStateException("작업 브랜치(${task.branch})가 아닙니다. 브랜치를 바꾸지 마세요")
         val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
         if (state.status !in setOf("ACTIVE", "BLOCKED") || state.stage == null) throw IllegalStateException("진행 중인 작업이 아닙니다(상태 ${state.status})")
@@ -288,7 +293,7 @@ class IlsimMcp(
             if (shelved) unshelve(ws, label)
             throw e
         }
-        active.save(ws.root, task.copy(stage = stage, status = "PENDING", stopBlocks = 0,
+        active.save(ws.home, task.copy(stage = stage, status = "PENDING", stopBlocks = 0,
             shelved = if (shelved) label else task.shelved, shelvedStage = if (shelved) state.stage else task.shelvedStage))
         val note = if (shelved) "${state.stage} 단계의 미커밋 변경을 보관했습니다. ${state.stage} 단계로 돌아오면 되살립니다" else "보관할 변경이 없습니다"
         return "$stage 단계로 되돌렸습니다. $note\n\n" + nextStep()
@@ -304,7 +309,7 @@ class IlsimMcp(
 
     private fun waiting(stage: String): Pair<Workspace, ActiveTask> {
         val ws = workspace()
-        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
         val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
         if (state.stageStatus != "WAITING_APPROVAL" || state.stage != stage) {
             throw IllegalStateException("$stage 단계가 승인 대기 중이 아닙니다(현재 ${state.stage} ${state.stageStatus})")
@@ -326,7 +331,7 @@ class IlsimMcp(
 
     private fun recordDecision(question: String?, decision: String): String {
         val ws = workspace()
-        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
         val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
         val stage = state.stage?.takeIf { state.status == "ACTIVE" } ?: throw IllegalStateException("진행 중인 작업이 아닙니다(상태 ${state.status})")
         if (stage == "REQUIREMENTS") throw IllegalStateException("요구사항 단계에서는 사용자의 답을 reject_stage(답)로 요구사항 문서에 반영하세요")
@@ -353,7 +358,7 @@ class IlsimMcp(
 
     private fun submit(summary: String?, document: String?): String {
         val ws = workspace()
-        val task = active.load(ws.root) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다. start_task로 시작하세요")
+        val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다. start_task로 시작하세요")
         val branch = ws.branch()
         if (branch != task.branch) throw IllegalStateException("작업 브랜치(${task.branch})가 아닙니다(현재 $branch). 브랜치를 바꾸지 마세요")
         val assigned = server.claim(task.taskId, store.load().runnerId) ?: return describe(ws, task)
@@ -362,10 +367,10 @@ class IlsimMcp(
             System.err.println("[ilsim] $message")
             runCatching { server.event(task.taskId, stage, "log", message) }
         }
-        TaskPolicy.load(ws.root).exceeded(task)?.let { reason ->
+        TaskPolicy.load(ws.home).exceeded(task)?.let { reason ->
             log("정책 상한으로 작업을 멈춤: $reason")
             server.result(task.taskId, StageResult(false, retryable = false, error = "정책 상한(${TaskPolicy.FILE}): $reason", executionId = assigned.executionId, stage = stage))
-            active.save(ws.root, task.copy(status = "BLOCKED"))
+            active.save(ws.home, task.copy(status = "BLOCKED"))
             return "정책 상한(${TaskPolicy.FILE})에 걸려 작업을 멈췄습니다: $reason. 더 고치지 말고 사용자에게 알리세요. 계속하려면 사용자가 다시 시도하라고 해야 하고, 그때 retry_task를 호출하면 상한을 새로 셉니다"
         }
         summary?.takeIf { it.isNotBlank() }?.let { runCatching { server.event(task.taskId, stage, "text", it) } }
@@ -383,7 +388,7 @@ class IlsimMcp(
         runCatching { server.event(task.taskId, stage, "attempt", "stage=$stage;passed=${outcome.error == null};cause=${outcome.cause.orEmpty()};claude=${claudeUsage.size};jevUsd=$jevUsd;claudeUsd=$claudeUsd") }
         val counted = task.copy(submissions = if (outcome.error == null) 0 else task.submissions + 1, claudeCalls = task.claudeCalls + claudeUsage.size, costUsd = task.costUsd + jevUsd + claudeUsd)
         if (outcome.error != null) {
-            active.save(ws.root, counted)
+            active.save(ws.home, counted)
             Shell.git(ws.root, "reset", "-q")
             log("제출 실패: ${outcome.error.take(MAX_FAILURE_LOG)}")
             return "제출 실패($stage):\n${outcome.error}\n\n지적된 부분을 고친 뒤 submit_result를 다시 호출하세요"
@@ -392,7 +397,7 @@ class IlsimMcp(
         if (saved == null) Shell.gitOk(ws.root, "-c", "user.name=ilsim", "-c", "user.email=ilsim@localhost", "commit", "-m", "ilsim(${stage.lowercase()}): ${task.feature}")
         server.result(task.taskId, StageResult(true, diff = outcome.diff, artifacts = outcome.artifacts, validation = validation, branch = task.branch,
             model = assigned.model, executionId = assigned.executionId, stage = stage, usage = usage.toList(), decisions = decisions.toList()))
-        active.save(ws.root, counted.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention, undecided = outcome.undecided))
+        active.save(ws.home, counted.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention, undecided = outcome.undecided))
         guides.load(task.taskId)?.takeIf { !it.reported }?.let { guides.save(task.taskId, it.copy(reported = true)) }
         val checks = validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "형식·경로 검사" }
         return "통과($stage): $checks. ${if (saved == null) "커밋했습니다" else "문서를 저장했습니다($saved)"}\n\n" + nextStep()

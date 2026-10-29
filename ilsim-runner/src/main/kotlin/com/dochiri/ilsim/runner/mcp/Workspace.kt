@@ -15,7 +15,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-data class Workspace(val root: Path, val projectId: String, val project: ProjectEntry) {
+data class Workspace(val root: Path, val projectId: String, val project: ProjectEntry, val home: Path = root) {
+    fun at(task: ActiveTask?): Workspace = task?.worktree?.let { copy(root = Path.of(it)) } ?: copy(root = home)
+
     fun changedFiles(): List<String> = Shell.gitOk(root, "status", "--porcelain", "-uall")
         .lines().filter { it.length > 3 }
         .map { it.substring(3).trim().removeSurrounding("\"") }
@@ -44,10 +46,25 @@ data class Workspace(val root: Path, val projectId: String, val project: Project
         fun root(dir: Path): Path? = Shell.git(dir, "rev-parse", "--show-toplevel").takeIf { it.exit == 0 }
             ?.output?.trim()?.takeIf { it.isNotEmpty() }?.let { real(Path.of(it)) }
 
+        const val WORKTREES = ".ilsim/worktrees"
+
         fun of(config: RunnerConfig, dir: Path): Workspace? {
             val root = root(dir) ?: return null
-            val (id, project) = config.projects.entries.firstOrNull { real(Path.of(it.value.path)) == root } ?: return null
-            return Workspace(root, id, project)
+            config.projects.entries.firstOrNull { real(Path.of(it.value.path)) == root }?.let { return Workspace(root, it.key, it.value) }
+            val (id, project) = config.projects.entries.firstOrNull { root.startsWith(real(Path.of(it.value.path)).resolve(WORKTREES)) } ?: return null
+            return Workspace(root, id, project, real(Path.of(project.path)))
+        }
+
+        fun worktree(home: Path, name: String, branch: String): Path {
+            val path = home.resolve(WORKTREES).resolve(name)
+            val exclude = home.resolve(Shell.gitOk(home, "rev-parse", "--git-common-dir").trim()).resolve("info/exclude").normalize()
+            val line = "/$WORKTREES/"
+            if (!exclude.exists() || exclude.readText().lines().none { it.trim() == line }) {
+                exclude.parent.createDirectories()
+                exclude.toFile().appendText((if (exclude.exists() && !exclude.readText().endsWith("\n") && exclude.readText().isNotEmpty()) "\n" else "") + line + "\n")
+            }
+            Shell.gitOk(home, "worktree", "add", "-q", "-b", branch, path.toString(), "HEAD")
+            return real(path)
         }
 
         private fun real(path: Path): Path = path.toAbsolutePath().normalize().let { if (it.exists()) it.toRealPath() else it }
@@ -71,6 +88,7 @@ data class ActiveTask(
     val submissions: Int = 0,
     val claudeCalls: Int = 0,
     val costUsd: Double = 0.0,
+    val worktree: String? = null,
 )
 
 class ActiveTasks(private val dir: Path) {

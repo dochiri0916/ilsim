@@ -78,6 +78,8 @@ class McpTest {
     private val server = FakeServer()
     private val pass: (String, String) -> String = { _, _ -> """{"verdict":"PASS","findings":[]}""" }
 
+    private val work: Path get() = active.load(repo)?.worktree?.let { Path.of(it) } ?: repo
+
     @BeforeTest
     fun setUp() {
         home = Files.createTempDirectory("ilsim-mcp-home")
@@ -136,20 +138,24 @@ class McpTest {
         val started = call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         assertContains(started, "일심 단계: REQUIREMENTS")
         assertContains(started, "submit_result 의 document")
-        assertEquals("ilsim/slug-task-123", Shell.gitOk(repo, "rev-parse", "--abbrev-ref", "HEAD").trim())
+        assertEquals("ilsim/slug-task-123", Shell.gitOk(work, "rev-parse", "--abbrev-ref", "HEAD").trim())
+        assertEquals(repo.resolve(".ilsim/worktrees/slug-task-123"), work)
+        assertEquals("main", Shell.gitOk(repo, "rev-parse", "--abbrev-ref", "HEAD").trim(), "사용자 작업 트리는 브랜치를 바꾸지 않는다")
+        assertTrue(Shell.gitOk(repo, "status", "--porcelain").isBlank(), "작업 폴더는 사용자 작업 트리 상태에 보이지 않는다")
+        assertContains(started, "작업 폴더")
         assertEquals("p", server.registered.single().projects.single().id)
 
         assertContains(call("submit_result"), "document 에 넣어 제출합니다")
         assertContains(edit("src/Main.java").stdout, "deny")
         assertContains(edit("specs/slug/requirements.md").stdout, "deny")
 
-        repo.resolve("src").createDirectories()
-        repo.resolve("src/Main.java").writeText("class Main {}\n")
+        work.resolve("src").createDirectories()
+        work.resolve("src/Main.java").writeText("class Main {}\n")
         assertContains(call("submit_result", doc("# 슬러그\n\nREQ-1 소문자로 바꾼다")), "허용되지 않은 변경: src/Main.java")
-        assertTrue(Shell.gitOk(repo, "diff", "--cached", "--name-only").isBlank(), "실패한 제출은 스테이징을 남기지 않는다")
+        assertTrue(Shell.gitOk(work, "diff", "--cached", "--name-only").isBlank(), "실패한 제출은 스테이징을 남기지 않는다")
         assertContains(hook("stop", """{"cwd":"$repo"}""").stdout, "\"decision\":\"block\"")
 
-        repo.resolve("src/Main.java").deleteExisting()
+        work.resolve("src/Main.java").deleteExisting()
         val submitted = call("submit_result", doc("# 슬러그\n\nREQ-1 소문자로 바꾼다", "요구사항 작성"))
         assertContains(submitted, "통과(REQUIREMENTS)")
         assertContains(submitted, "문서를 저장했습니다")
@@ -244,10 +250,10 @@ class McpTest {
         assertContains(hook.toFile().readText(), "hook commit")
         assertTrue(hook.toFile().canExecute())
 
-        repo.resolve("src").createDirectories()
-        repo.resolve("src/Main.java").writeText("class Main {}\n")
+        work.resolve("src").createDirectories()
+        work.resolve("src/Main.java").writeText("class Main {}\n")
         assertContains(call("check_change"), "허용되지 않은 변경: src/Main.java")
-        repo.resolve("src/Main.java").deleteExisting()
+        work.resolve("src/Main.java").deleteExisting()
         assertContains(call("check_change"), "문제 없음")
 
         assertContains(runCatching { call("retry_task") }.exceptionOrNull()!!.message!!, "차단된 작업이 아닙니다")
@@ -269,23 +275,23 @@ class McpTest {
         call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         server.index = server.stages.indexOf("IMPLEMENTATION"); server.status = "PENDING"
         assertContains(call("next_step"), "일심 단계: IMPLEMENTATION")
-        repo.resolve("src").createDirectories()
-        repo.resolve("src/Main.java").writeText("class Main {}\n")
+        work.resolve("src").createDirectories()
+        work.resolve("src/Main.java").writeText("class Main {}\n")
 
         assertContains(hook("pre-tool-use", """{"cwd":"$repo","tool_name":"mcp__plugin_ilsim_ilsim__reopen_stage","tool_input":{"stage":"TEST_CODE","feedback":"TC-4"}}""").stdout, "\"permissionDecision\":\"ask\"")
         assertContains(runCatching { call("reopen_stage", """{"stage":"IMPLEMENTATION","feedback":"x"}""") }.exceptionOrNull()!!.message!!, "통과한 단계가 아닙니다")
-        assertTrue(repo.resolve("src/Main.java").exists(), "되돌리기에 실패하면 변경을 그대로 둔다")
+        assertTrue(work.resolve("src/Main.java").exists(), "되돌리기에 실패하면 변경을 그대로 둔다")
 
         val reopened = call("reopen_stage", """{"stage":"TEST_CODE","feedback":"TC-4 기대값을 고친다"}""")
         assertContains(reopened, "일심 단계: TEST_CODE")
         assertContains(reopened, "보관했습니다")
         assertEquals("TEST_CODE" to "TC-4 기대값을 고친다", server.reopened)
-        assertTrue(!repo.resolve("src/Main.java").exists())
+        assertTrue(!work.resolve("src/Main.java").exists())
         assertEquals("IMPLEMENTATION", active.load(repo)!!.shelvedStage)
 
         server.index = server.stages.indexOf("IMPLEMENTATION"); server.status = "PENDING"
         assertContains(call("next_step"), "되살렸습니다")
-        assertEquals("class Main {}\n", repo.resolve("src/Main.java").readText())
+        assertEquals("class Main {}\n", work.resolve("src/Main.java").readText())
         assertEquals(null, active.load(repo)!!.shelved)
     }
 
@@ -299,14 +305,14 @@ class McpTest {
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |\n| TC-2 | REQ-2 |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
         run("submit_result")
         assertEquals("IMPLEMENTATION", server.stages[server.index])
         val before = audits
 
-        repo.resolve("src/main").createDirectories()
-        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
         jevAnswer = { id -> if (id == "m1") 0.05 else 0.95 }
         val missing = run("submit_result")
         assertContains(missing, "요구사항이 빠진 것으로 보입니다")
@@ -329,15 +335,15 @@ class McpTest {
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/main/Slug.java`\n- `src/test/SlugTest.java`")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
         run("submit_result")
         assertEquals("IMPLEMENTATION", server.stages[server.index])
         assertContains(run("next_step"), "영향 범위와 관계없는 파일은 고치지 않는다")
 
-        repo.resolve("src/main").createDirectories()
-        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
-        repo.resolve("src/main/Other.java").writeText("class Other {}\n")
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+        work.resolve("src/main/Other.java").writeText("class Other {}\n")
         jevAnswer = { id -> when { id.startsWith("f") -> 0.05; id.startsWith("v") -> 0.05; else -> 0.95 } }
         val outside = run("submit_result")
         assertContains(outside, "영향 범위 밖 변경으로 보입니다")
@@ -394,15 +400,15 @@ class McpTest {
         assertContains(testing, "- Q1: 빈 문자열을 돌려준다")
         assertContains(testing, "## 정하지 않은 사항")
         assertTrue("- Q1." !in testing.substringAfter("## 정하지 않은 사항"), testing)
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
         assertContains(run("submit_result"), "undecided=UNCERTAIN")
         assertContains(prompts.last(), "- GUESS:")
         assertContains(prompts.last(), "## 정하지 않은 사항\n- Q2. null 이면 예외를 던지는가?")
         assertContains(prompts.last(), "## 사용자가 정한 사항")
 
-        repo.resolve("src/main").createDirectories()
-        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { if (s == null) throw new IllegalArgumentException(); return s.toLowerCase(); } }\n")
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { if (s == null) throw new IllegalArgumentException(); return s.toLowerCase(); } }\n")
         jevAnswer = { id -> when { id == "u0" -> 0.85; id.startsWith("v") -> 0.05; else -> 0.95 } }
         val implemented = run("submit_result")
         assertContains(implemented, "- Q2. null 이면 예외를 던지는가? (정함 확률 0.85)")
@@ -429,8 +435,8 @@ class McpTest {
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/test/SlugTest.java`")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |\n| TC-2 | REQ-1 | 정상(정적 검사) | 구현 확인 | toLowerCase 를 쓴다 |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
 
         jevAnswer = { id -> when { id == "t0" -> 0.05; id[0] in "uvb" -> 0.05; else -> 0.95 } }
         val missing = run("submit_result")
@@ -461,14 +467,14 @@ class McpTest {
         assertTrue(active.load(repo)?.base?.isNotBlank() == true, "작업 시작 커밋을 저장한다")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest { void alphaMarker() {} }\n")
-        repo.resolve("src/test/OtherTest.java").writeText("class OtherTest {}\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void alphaMarker() {} }\n")
+        work.resolve("src/test/OtherTest.java").writeText("class OtherTest {}\n")
         assertContains(run("submit_result"), "test-cases=PASSED")
         assertEquals("IMPLEMENTATION", server.stages[server.index])
 
         run("reopen_stage", """{"stage":"TEST_CODE","feedback":"다른 테스트 이름을 고친다"}""")
-        repo.resolve("src/test/OtherTest.java").writeText("class OtherTest { void renamed() {} }\n")
+        work.resolve("src/test/OtherTest.java").writeText("class OtherTest { void renamed() {} }\n")
         assertContains(run("submit_result"), "test-cases=PASSED")
     }
 
@@ -484,13 +490,13 @@ class McpTest {
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |\n| TC-2 | REQ-2 | 정상 | of(\"a b\") | \"a-b\" |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} void hyphen() {} }\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} void hyphen() {} }\n")
         assertContains(run("submit_result"), "tests=RED")
         val before = audits
 
-        repo.resolve("src/main").createDirectories()
-        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase().replace(' ', '-'); } }\n")
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase().replace(' ', '-'); } }\n")
         jevByBody = { id, body -> if (id.startsWith("m") && "REQ-2" in body && (id == "m1" || "REQ-1" !in body)) 0.6 else null }
         val passed = run("submit_result")
         assertContains(passed, "tests=PASSED")
@@ -513,12 +519,12 @@ class McpTest {
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
         assertContains(run("submit_result"), "tests=RED")
 
-        repo.resolve("src/main").createDirectories()
-        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.trim().toLowerCase(); } }\n")
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.trim().toLowerCase(); } }\n")
         jevAnswer = { id -> when { id == "c0" -> 0.05; id[0] in "uvb" -> 0.05; else -> 0.95 } }
         val failed = run("submit_result")
         assertContains(failed, "요구사항과 관계없는 변경으로 보입니다")
@@ -526,7 +532,7 @@ class McpTest {
         assertContains(failed, "  +class Slug { String of(String s) { return s.trim().toLowerCase(); } }")
         assertTrue(prompts.isEmpty(), "JEV가 막으면 독립 검토를 부르지 않는다")
 
-        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+        work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
         jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
         val passed = run("submit_result")
         assertContains(passed, "scope-change=PASSED")
@@ -550,11 +556,11 @@ class McpTest {
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         jevAnswer = { null }
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
         assertContains(run("submit_result"), "tests=RED")
-        repo.resolve("src/main").createDirectories()
-        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
 
         assertContains(run("submit_result"), "tests=PASSED")
         val prompt = prompts.last()
@@ -571,13 +577,13 @@ class McpTest {
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
         run("submit_result")
         assertEquals("IMPLEMENTATION", server.stages[server.index])
 
-        repo.resolve("src/main").createDirectories()
-        repo.resolve("src/main/Slug.java").writeText("class Slug {\n" + "    int value = 1;\n".repeat(2000) + "}\n")
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug {\n" + "    int value = 1;\n".repeat(2000) + "}\n")
         jevAnswer = { id -> when { id == "m0" -> 0.1; id[0] in "fc" -> 0.95; else -> 0.05 } }
         val submitted = run("submit_result")
         assertTrue("요구사항이 빠진 것으로 보입니다" !in submitted, submitted)
@@ -682,8 +688,8 @@ class McpTest {
         call("start_task", """{"requirement":"작별 인사 추가","feature":"slug"}""")
         call("submit_result", doc("# 작별\n\n- REQ-1: 작별 인사를 더한다")); server.approve("t")
         call("submit_result", doc("| TC-1 | REQ-1 | 정상 | bye(\"Kim\") | \"Bye, Kim.\" |")); server.approve("t")
-        repo.resolve("src/test").createDirectories()
-        repo.resolve("src/test/ByeTest.java").writeText("class ByeTest {}\n")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/ByeTest.java").writeText("class ByeTest {}\n")
         val blocked = call("submit_result")
         assertContains(blocked, "문서 지침을 어긴 것으로 보입니다")
         assertContains(blocked, "record_decision(허락한 내용)")
@@ -742,5 +748,24 @@ class McpTest {
         assertTrue("## 프로젝트 문서 지침 (반드시 지킨다)" !in again)
         assertContains(session.getValue("get_guidelines").call(Json.parseToJsonElement("{}").jsonObject), "## 프로젝트 문서 지침 (반드시 지킨다)")
         assertContains(tools().getValue("next_step").call(Json.parseToJsonElement("{}").jsonObject), "## 프로젝트 문서 지침 (반드시 지킨다)")
+    }
+
+    @Test
+    fun `작업은 사용자 작업 트리와 분리된 작업 폴더에서 하고 훅이 원래 폴더 수정을 작업 폴더로 돌린다`() {
+        call("analyze_project")
+        call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        val folder = work
+        server.index = server.stages.indexOf("IMPLEMENTATION"); server.status = "PENDING"
+        assertContains(call("next_step"), "## 작업 폴더")
+        val redirected = hook("pre-tool-use", """{"cwd":"$repo","tool_name":"Write","tool_input":{"file_path":"$repo/src/main/Slug.java"}}""").stdout
+        assertContains(redirected, "\"permissionDecision\":\"deny\"")
+        assertContains(redirected, "$folder/src/main/Slug.java")
+        assertEquals("", hook("pre-tool-use", """{"cwd":"$repo","tool_name":"Write","tool_input":{"file_path":"$folder/src/main/Slug.java"}}""").stdout)
+        assertContains(hook("user-prompt-submit", """{"cwd":"$repo"}""").stdout, "작업 폴더 $folder")
+        assertEquals(1, Hooks.commit(folder, store, mapOf("CLAUDECODE" to "1")).exit, "작업 폴더에서도 Agent 커밋을 막는다")
+        server.index = server.stages.size
+        assertContains(call("next_step"), "작업 폴더를 지웠습니다")
+        assertTrue(!folder.toFile().exists())
+        assertEquals("ilsim/slug-task-123", Shell.gitOk(repo, "branch", "--list", "ilsim/slug-task-123", "--format=%(refname:short)").trim(), "브랜치는 남긴다")
     }
 }
