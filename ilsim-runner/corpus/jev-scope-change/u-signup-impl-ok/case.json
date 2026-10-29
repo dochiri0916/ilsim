@@ -1,0 +1,11 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "impl-ok",
+      "file": "diffs/impl-ok.diff",
+      "note": "정한 동작만 구현, 예외 상태 코드 지정 없음"
+    }
+  ]
+}

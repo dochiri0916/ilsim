@@ -1,0 +1,19 @@
+diff --git a/src/test/java/com/x/member/MemberServiceTest.java b/src/test/java/com/x/member/MemberServiceTest.java
+--- a/src/test/java/com/x/member/MemberServiceTest.java
++++ b/src/test/java/com/x/member/MemberServiceTest.java
+@@ -18,7 +18,7 @@ class MemberServiceTest {
+     @Test
+     void 로그인하면_토큰을_돌려준다() {
+         given(memberRepository.findByEmail("a@x.com")).willReturn(Optional.of(member(1L)));
+-        assertThat(memberService.login("a@x.com", "password1")).isEqualTo("token-1");
++        assertThat(memberService.login("a@x.com", "password1")).isNotNull();
+     }
+
+@@ -30,3 +30,10 @@ class MemberServiceTest {
++
++    @Test
++    void 이미_가입한_이메일이면_예외() {
++        given(memberRepository.existsByEmail("a@x.com")).willReturn(true);
++        assertThatThrownBy(() -> memberService.signUp(new SignUpCommand("a@x.com", "password1")))
++                .isInstanceOf(DuplicateEmailException.class);
++    }

@@ -1,0 +1,11 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "impl-ok",
+      "file": "diffs/impl-ok.diff",
+      "note": "정한 제목·발송 시점만 쓰고 재발송·수신 거부는 다루지 않음"
+    }
+  ]
+}

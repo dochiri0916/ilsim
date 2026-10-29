@@ -1,0 +1,32 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "all",
+      "file": "diffs/all.diff",
+      "outsideFiles": [
+        "src/main/java/com/x/post/CommentService.java",
+        "src/main/java/com/x/post/Post.java",
+        "src/main/java/com/x/post/PostCacheConfig.java"
+      ],
+      "note": "범위 밖 파일: CommentService.java 관계없는 댓글 길이 제한 변경; Post.java 관계없는 제목 검증 추가; PostCacheConfig.java 요구하지 않은 목록 캐시 추가"
+    },
+    {
+      "id": "mixed-search-limit",
+      "file": "diffs/mixed-search-limit.diff",
+      "outside": [
+        "Math.min(size, 500)"
+      ],
+      "note": "같은 파일의 검색 API 최대 크기를 50에서 500으로 늘림"
+    },
+    {
+      "id": "mixed-delete",
+      "file": "diffs/mixed-delete.diff",
+      "outside": [
+        "postRepository.delete(post)"
+      ],
+      "note": "같은 파일의 글 삭제를 논리 삭제에서 물리 삭제로 바꿈"
+    }
+  ]
+}

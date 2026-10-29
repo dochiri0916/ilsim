@@ -1,0 +1,24 @@
+diff --git a/src/test/java/com/x/member/MemberServiceTest.java b/src/test/java/com/x/member/MemberServiceTest.java
+--- a/src/test/java/com/x/member/MemberServiceTest.java
++++ b/src/test/java/com/x/member/MemberServiceTest.java
+@@ -22,13 +22,6 @@ class MemberServiceTest {
+         assertThat(memberService.login("a@x.com", "password1")).isEqualTo("token-1");
+     }
+
+-    @Test
+-    void 회원_조회() {
+-        given(memberRepository.findById(1L)).willReturn(Optional.of(member(1L)));
+-        assertThat(memberService.find(1L).email()).isEqualTo("a@x.com");
+-    }
+-
+     @Test
+     void 가입하면_아이디를_돌려준다() {
+         given(memberRepository.save(any())).willReturn(member(1L));
+@@ -30,3 +23,10 @@ class MemberServiceTest {
++
++    @Test
++    void 이미_가입한_이메일이면_예외() {
++        given(memberRepository.existsByEmail("a@x.com")).willReturn(true);
++        assertThatThrownBy(() -> memberService.signUp(new SignUpCommand("a@x.com", "password1")))
++                .isInstanceOf(DuplicateEmailException.class);
++    }

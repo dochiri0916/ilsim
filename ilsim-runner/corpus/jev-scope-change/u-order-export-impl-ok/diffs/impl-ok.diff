@@ -1,0 +1,47 @@
+diff --git a/src/orders/orders-export.controller.ts b/src/orders/orders-export.controller.ts
+new file mode 100644
+--- /dev/null
++++ b/src/orders/orders-export.controller.ts
+@@ -0,0 +1,19 @@
++import { Controller, Get, Header, Query, Res, UseGuards } from '@nestjs/common';
++import { Response } from 'express';
++import { Roles } from '../auth/roles.decorator';
++import { RolesGuard } from '../auth/roles.guard';
++import { OrdersExportService } from './orders-export.service';
++
++@Controller('admin/orders')
++@UseGuards(RolesGuard)
++export class OrdersExportController {
++  constructor(private readonly exportService: OrdersExportService) {}
++
++  @Get('export')
++  @Roles('ADMIN')
++  @Header('Content-Type', 'text/csv; charset=utf-8')
++  async export(@Query('from') from: string, @Query('to') to: string, @Res() res: Response): Promise<void> {
++    res.setHeader('Content-Disposition', `attachment; filename="orders-${from}-${to}.csv"`);
++    res.send(await this.exportService.exportCsv(from, to));
++  }
++}
+diff --git a/src/orders/orders-export.service.ts b/src/orders/orders-export.service.ts
+new file mode 100644
+--- /dev/null
++++ b/src/orders/orders-export.service.ts
+@@ -0,0 +1,18 @@
++import { Injectable } from '@nestjs/common';
++import { InjectRepository } from '@nestjs/typeorm';
++import { Between, Repository } from 'typeorm';
++import { Order } from './order.entity';
++
++@Injectable()
++export class OrdersExportService {
++  constructor(@InjectRepository(Order) private readonly orders: Repository<Order>) {}
++
++  async exportCsv(from: string, to: string): Promise<string> {
++    const rows = await this.orders.find({
++      where: { orderedAt: Between(new Date(`${from}T00:00:00Z`), new Date(`${to}T23:59:59.999Z`)) },
++      order: { orderedAt: 'ASC' },
++    });
++    const lines = rows.map((o) => [o.orderNo, o.orderedAt.toISOString(), o.amount, o.status].join(','));
++    return ['주문번호,주문일시,금액,상태', ...lines].join('\n');
++  }
++}

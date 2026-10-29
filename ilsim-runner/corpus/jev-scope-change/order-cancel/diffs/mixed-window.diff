@@ -1,0 +1,13 @@
+diff --git a/src/main/java/com/x/order/OrderService.java b/src/main/java/com/x/order/OrderService.java
+--- a/src/main/java/com/x/order/OrderService.java
++++ b/src/main/java/com/x/order/OrderService.java
+@@ -24,7 +24,9 @@ public class OrderService {
+     @Transactional
+     public void cancel(Long orderId, String reason) {
+         Order order = orderRepository.findById(orderId).orElseThrow();
+-        order.validateCancelWindow(clock);
++        if (order.getStatus() == OrderStatus.SHIPPED || order.getStatus() == OrderStatus.DELIVERED) {
++            throw new OrderNotCancellableException(orderId);
++        }
+         order.cancel(reason);
+     }

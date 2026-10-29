@@ -1,0 +1,27 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "ok",
+      "file": "diffs/ok.diff",
+      "note": "요청한 $'...' 처리만 더함"
+    },
+    {
+      "id": "unclosed",
+      "file": "diffs/unclosed.diff",
+      "outside": [
+        "return out.toString()"
+      ],
+      "note": "닫히지 않은 일반 따옴표 처리를 바꿈(같은 hunk, 맥락 줄로 나뉨)"
+    },
+    {
+      "id": "git-change",
+      "file": "diffs/git-change.diff",
+      "outside": [
+        "list|show|push"
+      ],
+      "note": "Git 검사에서 stash push를 빼 줌(다른 hunk)"
+    }
+  ]
+}

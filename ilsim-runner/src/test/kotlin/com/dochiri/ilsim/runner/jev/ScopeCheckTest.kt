@@ -19,7 +19,8 @@ class ScopeCheckTest {
         val transport = object : JevTransport {
             override fun post(uri: URI, headers: Map<String, String>, body: JsonNode): CompletableFuture<JsonNode> {
                 val answers = mapper.createObjectNode()
-                val paths = body.path("state").path("files").associate { it.path("id").asText() to it.path("path").asText() }
+                val items = body.path("state").path("files").takeIf { it.size() > 0 } ?: body.path("state").path("changes")
+                val paths = items.associate { it.path("id").asText() to it.path("path").asText() + "\n" + it.path("diff").asText() }
                 body.path("questions").fieldNames().forEach { id -> answers.putObject(id).put("type", "noul").put("noul", answer(paths.getValue(id))) }
                 return CompletableFuture.completedFuture(mapper.createObjectNode().put("model", "jev").set("answers", answers))
             }
@@ -63,12 +64,48 @@ class ScopeCheckTest {
     fun `문서에 없는 파일만 JEV에 묻고 0점2 이하는 범위 밖, 0점8 미만은 애매로 본다`() {
         val diff = file("src/main/java/com/x/coupon/CouponService.java", "a") + file("build.gradle", "b") + file("src/main/java/com/x/coupon/Clock.java", "c")
         val asked = mutableListOf<String>()
-        val result = ScopeCheck.judge(jev { path -> asked += path; if (path == "build.gradle") 0.1 else 0.6 }, spec, "IMPLEMENTATION", diff)!!
+        val result = ScopeCheck.judge(jev { item -> val path = item.substringBefore("\n"); asked += path; if (path == "build.gradle") 0.1 else 0.6 }, spec, "IMPLEMENTATION", diff)!!
         assertEquals(listOf("build.gradle", "src/main/java/com/x/coupon/Clock.java"), asked.sorted())
         assertEquals(listOf("src/main/java/com/x/coupon/CouponService.java"), result.listed)
         assertEquals(listOf("build.gradle"), result.outside)
         assertEquals(listOf("src/main/java/com/x/coupon/Clock.java"), result.uncertain)
         assertEquals(emptyList(), ScopeCheck.judge(Jev(null), spec, "IMPLEMENTATION", file("src/main/java/com/x/coupon/CouponService.java", "a"))!!.outside)
         assertNull(ScopeCheck.judge(Jev(null), spec, "IMPLEMENTATION", diff), "JEV가 꺼졌는데 물을 파일이 있으면 판정 없음")
+    }
+
+    @Test
+    fun `변경 묶음은 맥락 줄로 나누고 import만 바꾼 묶음은 묻지 않는다`() {
+        val diff = """
+            diff --git a/src/main/kotlin/Hooks.kt b/src/main/kotlin/Hooks.kt
+            --- a/src/main/kotlin/Hooks.kt
+            +++ b/src/main/kotlin/Hooks.kt
+            @@ -1,4 +1,5 @@
+             package x
+            +import java.util.List
+             
+             object Hooks {
+            @@ -112,8 +113,12 @@ object Hooks {
+                 while (i < command.length) {
+                     val c = command[i]
+            +        if (c == '${'$'}') {
+            +            continue
+            +        }
+                     if (c != '\'') { out.append(c); i++; continue }
+                     var end = i + 1
+                     while (end < command.length) end++
+            -        if (end >= command.length) return command
+            +        if (end >= command.length) return out.toString()
+            \ No newline at end of file
+        """.trimIndent() + "\n"
+        val changes = ScopeCheck.changes(diff)
+        assertEquals(2, changes.size)
+        assertEquals(listOf("src/main/kotlin/Hooks.kt"), changes.map { it.path }.distinct())
+        assertTrue(changes[0].diff.startsWith("@@ -112,8 +113,12 @@ object Hooks {\n     while"), "hunk 머리와 앞 맥락 줄")
+        assertEquals("-        if (end >= command.length) return command\n+        if (end >= command.length) return out.toString()", changes[1].changed)
+        assertTrue("         var end = i + 1" in changes[1].diff && "No newline" !in changes[1].diff)
+        val asked = mutableListOf<String>()
+        val p = ScopeCheck.askChanges(jev { item -> asked += item; if ("out.toString()" in item) 0.1 else 0.9 }, spec, "IMPLEMENTATION", listOf("src/main/kotlin/Hooks.kt"), changes)
+        assertEquals(listOf(0.9, 0.1), p)
+        assertEquals(2, asked.size)
     }
 }

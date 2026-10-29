@@ -1,0 +1,96 @@
+diff --git a/src/main/java/demo/Greeter.java b/src/main/java/demo/Greeter.java
+--- a/src/main/java/demo/Greeter.java
++++ b/src/main/java/demo/Greeter.java
+@@ -1,7 +1,15 @@
+ package demo;
+ 
++import java.util.List;
++
+ public class Greeter {
+     public String greet(String name) {
+         return "Hello, " + name;
+     }
++
++    public List<String> greetAll(List<String> names) {
++        return names.stream()
++                .map(name -> Messages.HELLO + ", " + Names.normalize(name) + ".")
++                .toList();
++    }
+ }
+diff --git a/src/main/java/demo/Messages.java b/src/main/java/demo/Messages.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/demo/Messages.java
+@@ -0,0 +1,8 @@
++package demo;
++
++public final class Messages {
++    public static final String HELLO = "Hello";
++
++    private Messages() {
++    }
++}
+diff --git a/src/main/java/demo/Names.java b/src/main/java/demo/Names.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/demo/Names.java
+@@ -0,0 +1,15 @@
++package demo;
++
++public final class Names {
++    private Names() {
++    }
++
++    public static String normalize(String name) {
++        String normalized = name.strip();
++        if (normalized.isEmpty()) {
++            throw new IllegalArgumentException("name must not be blank");
++        }
++        return normalized;
++    }
++}
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -5,5 +5,5 @@
+ ## 실행
+ 
+ ```bash
+-./gradlew bootRun
++./gradlew run
+ ```
+diff --git a/build.gradle.kts b/build.gradle.kts
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -10,6 +10,7 @@ repositories {
+ dependencies {
++    implementation("com.google.guava:guava:33.0.0-jre")
+     testImplementation(platform("org.junit:junit-bom:5.10.2"))
+     testImplementation("org.junit.jupiter:junit-jupiter")
+diff --git a/src/main/java/demo/Farewell.java b/src/main/java/demo/Farewell.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/demo/Farewell.java
+@@ -0,0 +1,7 @@
++package demo;
++
++public class Farewell {
++    public String goodbye(String name) {
++        return "Goodbye, " + name + ".";
++    }
++}
+diff --git a/src/main/java/demo/Strings.java b/src/main/java/demo/Strings.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/demo/Strings.java
+@@ -0,0 +1,10 @@
++package demo;
++
++public final class Strings {
++    private Strings() {
++    }
++
++    public static boolean isBlank(String value) {
++        return value == null || value.strip().isEmpty();
++    }
++}

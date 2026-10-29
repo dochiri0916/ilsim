@@ -1,0 +1,11 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "impl-ok",
+      "file": "diffs/impl-ok.diff",
+      "note": "정렬·삭제·보안은 건드리지 않음"
+    }
+  ]
+}

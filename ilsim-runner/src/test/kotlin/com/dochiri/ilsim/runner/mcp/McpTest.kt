@@ -500,6 +500,73 @@ class McpTest {
         assertTrue("ai-audit=SKIPPED" in passed || audits == before + 1)
     }
 
+    @Test
+    fun `요구사항과 관계없어 보이는 변경 묶음은 막지 않고 독립 검토에 그 묶음을 보여 준다`() {
+        store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
+        val prompts = mutableListOf<String>()
+        val reviewer: (String, String) -> String = { prompt, _ ->
+            prompts += prompt
+            if ("## 요구사항과 관계없어 보이는 변경 묶음" in prompt) """{"verdict":"CONCERN","findings":[{"type":"UNRELATED","target":"src/main/Slug.java:1","reason":"요청 밖 공백 제거"}]}"""
+            else """{"verdict":"PASS","findings":[]}"""
+        }
+        fun mcp() = IlsimMcp(store, server, active, repo, reviewer, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
+        assertContains(run("submit_result"), "tests=RED")
+
+        repo.resolve("src/main").createDirectories()
+        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.trim().toLowerCase(); } }\n")
+        jevAnswer = { id -> when { id == "c0" -> 0.05; id[0] in "uvb" -> 0.05; else -> 0.95 } }
+        val failed = run("submit_result")
+        assertContains(failed, "AI 변경 검토가 아래를 지적했습니다")
+        assertContains(failed, "[UNRELATED] src/main/Slug.java:1")
+        assertContains(prompts.last(), "- src/main/Slug.java (범위 안 확률 0.05)")
+        assertContains(prompts.last(), "  +class Slug { String of(String s) { return s.trim().toLowerCase(); } }")
+
+        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+        jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        val passed = run("submit_result")
+        assertContains(passed, "scope-change=PASSED")
+        val decisions = server.results.last().decisions
+        assertTrue(decisions.any { it.purpose == "SCOPE_CHANGE_CHECK" && it.handler == "JEV" && "Slug.java=0.95" in it.reason }, decisions.toString())
+    }
+
+    @Test
+    fun `JEV를 못 쓰면 독립 검토에 이 프로젝트 문서 구간 전체를 넣는다`() {
+        store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
+        repo.resolve("AGENTS.md").writeText("# 규칙\n\n## 작업 원칙\n\n- 요청 범위 밖 리팩터링이나 검증 규칙 완화를 하지 않는다.\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "docs")
+        val prompts = mutableListOf<String>()
+        val reviewer: (String, String) -> String = { prompt, _ -> prompts += prompt; """{"verdict":"PASS","findings":[]}""" }
+        fun mcp() = IlsimMcp(store, server, active, repo, reviewer, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
+        jevAnswer = { null }
+        run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
+        assertContains(run("submit_result"), "tests=RED")
+        repo.resolve("src/main").createDirectories()
+        repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+
+        assertContains(run("submit_result"), "tests=PASSED")
+        val prompt = prompts.last()
+        assertContains(prompt, "JEV를 쓸 수 없어 일심이 이 작업에 적용할 지침을 고르지 못했습니다")
+        assertContains(prompt, "### AGENTS.md:")
+        assertContains(prompt, "- 요청 범위 밖 리팩터링이나 검증 규칙 완화를 하지 않는다.")
+    }
+
+    @Test
     fun `TC-18 구현 단계 diff가 입력 한도로 잘리면 누락 대신 불확실로 기록한다`() {
         fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)

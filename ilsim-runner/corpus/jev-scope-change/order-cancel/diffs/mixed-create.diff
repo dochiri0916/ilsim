@@ -1,0 +1,20 @@
+diff --git a/src/main/java/com/x/order/OrderService.java b/src/main/java/com/x/order/OrderService.java
+--- a/src/main/java/com/x/order/OrderService.java
++++ b/src/main/java/com/x/order/OrderService.java
+@@ -24,6 +24,9 @@ public class OrderService {
+     @Transactional
+     public void cancel(Long orderId, String reason) {
+         Order order = orderRepository.findById(orderId).orElseThrow();
++        if (order.getStatus() == OrderStatus.SHIPPED || order.getStatus() == OrderStatus.DELIVERED) {
++            throw new OrderNotCancellableException(orderId);
++        }
+         order.cancel(reason);
+     }
+@@ -38,7 +41,7 @@ public class OrderService {
+     @Transactional
+     public Long create(CreateOrderCommand command) {
+-        if (command.totalPrice() < 1000) {
++        if (command.totalPrice() < 100) {
+             throw new MinimumOrderAmountException();
+         }
+         return orderRepository.save(Order.create(command)).getId();

@@ -1,0 +1,25 @@
+diff --git a/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt b/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
+--- a/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
++++ b/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
+@@ -112,10 +112,17 @@ object Hooks {
+         val out = StringBuilder()
+         var i = 0
+         while (i < command.length) {
+             val c = command[i]
++            if (c == '$' && command.getOrNull(i + 1) == '\'') {
++                val end = command.indexOf('\'', i + 2)
++                if (end < 0) return command
++                out.append("_")
++                i = end + 1
++                continue
++            }
+             if (c != '\'' && c != '"') { out.append(c); i++; continue }
+             var end = i + 1
+             while (end < command.length && command[end] != c) end += if (c == '"' && command[end] == '\\') 2 else 1
+             if (end >= command.length) return command
+diff --git a/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt b/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
+--- a/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
++++ b/ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/mcp/Hooks.kt
+@@ -26,3 +26,3 @@ object Hooks {
+-    private val gitChange = Regex("""(^|[\s;&|(])git\s+(commit|reset|rebase|cherry-pick|revert|restore|stash(?!\s+(list|show)))\b""")
++    private val gitChange = Regex("""(^|[\s;&|(])git\s+(commit|reset|rebase|cherry-pick|revert|restore|stash(?!\s+(list|show|push)))\b""")

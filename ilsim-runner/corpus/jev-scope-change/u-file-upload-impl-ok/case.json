@@ -1,0 +1,11 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "impl-ok",
+      "file": "diffs/impl-ok.diff",
+      "note": "기존 저장 포트에 맡기고 제한은 두지 않음"
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+diff --git a/src/main/java/com/x/order/Order.java b/src/main/java/com/x/order/Order.java
+--- a/src/main/java/com/x/order/Order.java
++++ b/src/main/java/com/x/order/Order.java
+@@ -30,8 +30,12 @@ public class Order {
+     @Enumerated(EnumType.STRING)
+     private OrderStatus status;
+ 
++    @Column(name = "cancel_reason")
++    private String cancelReason;
++
+-    public void cancel() {
++    public void cancel(String reason) {
+         this.status = OrderStatus.CANCELLED;
++        this.cancelReason = reason;
+     }
+diff --git a/src/main/java/com/x/order/OrderNotCancellableException.java b/src/main/java/com/x/order/OrderNotCancellableException.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/order/OrderNotCancellableException.java
+@@ -0,0 +1,7 @@
++package com.x.order;
++
++public class OrderNotCancellableException extends RuntimeException {
++    public OrderNotCancellableException(Long orderId) {
++        super("배송이 시작된 주문은 취소할 수 없습니다: " + orderId);
++    }
++}
+diff --git a/src/main/java/com/x/order/OrderService.java b/src/main/java/com/x/order/OrderService.java
+--- a/src/main/java/com/x/order/OrderService.java
++++ b/src/main/java/com/x/order/OrderService.java
+@@ -24,6 +24,9 @@ public class OrderService {
+     @Transactional
+     public void cancel(Long orderId, String reason) {
+         Order order = orderRepository.findById(orderId).orElseThrow();
++        if (order.getStatus() == OrderStatus.SHIPPED || order.getStatus() == OrderStatus.DELIVERED) {
++            throw new OrderNotCancellableException(orderId);
++        }
+         order.cancel();
+     }
+diff --git a/src/main/java/com/x/order/OrderService.java b/src/main/java/com/x/order/OrderService.java
+--- a/src/main/java/com/x/order/OrderService.java
++++ b/src/main/java/com/x/order/OrderService.java
+@@ -14,6 +14,7 @@ public class OrderService {
+     private final OrderRepository orderRepository;
++    private final StockService stockService;
+ 
+@@ -28,5 +29,8 @@ public class OrderService {
+         order.cancel();
++        for (OrderItem item : order.getItems()) {
++            stockService.restore(item.getProductId(), item.getQuantity());
++        }
+     }
+diff --git a/src/main/java/com/x/order/OrderService.java b/src/main/java/com/x/order/OrderService.java
+--- a/src/main/java/com/x/order/OrderService.java
++++ b/src/main/java/com/x/order/OrderService.java
+@@ -27,3 +27,3 @@ public class OrderService {
+         Order order = orderRepository.findById(orderId).orElseThrow();
+-        order.cancel();
++        order.cancel(reason);
+     }
+diff --git a/src/main/java/com/x/order/OrderStatus.java b/src/main/java/com/x/order/OrderStatus.java
+--- a/src/main/java/com/x/order/OrderStatus.java
++++ b/src/main/java/com/x/order/OrderStatus.java
+@@ -1,5 +1,9 @@
+ package com.x.order;
+ 
+ public enum OrderStatus {
+-    PENDING, PAID, SHIPPED, DELIVERED, CANCELLED
++    PENDING, PAID, SHIPPED, DELIVERED, CANCELLED;
++
++    public boolean isCancellable() {
++        return this == PENDING || this == PAID;
++    }
+ }
+diff --git a/src/main/java/com/x/order/OrderQueryService.java b/src/main/java/com/x/order/OrderQueryService.java
+--- a/src/main/java/com/x/order/OrderQueryService.java
++++ b/src/main/java/com/x/order/OrderQueryService.java
+@@ -15,4 +15,8 @@ public class OrderQueryService {
+     public Order find(Long id) {
+         return orderRepository.findById(id).orElseThrow();
+     }
++
++    public List<Order> findRecent(int limit) {
++        return orderRepository.findTop10ByOrderByCreatedAtDesc().stream().limit(limit).toList();
++    }
+ }
+diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
+--- a/src/main/resources/application.yml
++++ b/src/main/resources/application.yml
+@@ -1,4 +1,4 @@
+ server:
+-  port: 8080
++  port: 8081
+ spring:
+   jpa:

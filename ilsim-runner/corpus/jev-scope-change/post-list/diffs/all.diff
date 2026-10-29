@@ -1,0 +1,80 @@
+diff --git a/src/main/java/com/x/post/PostController.java b/src/main/java/com/x/post/PostController.java
+--- a/src/main/java/com/x/post/PostController.java
++++ b/src/main/java/com/x/post/PostController.java
+@@ -17,7 +17,11 @@ public class PostController {
+     @GetMapping("/posts")
+-    public List<PostResponse> list() {
+-        return postService.list();
++    public List<PostResponse> list(
++            @RequestParam(defaultValue = "0") int page,
++            @RequestParam(defaultValue = "20") int size
++    ) {
++        return postService.list(page, Math.min(size, 100));
+     }
+diff --git a/src/main/java/com/x/post/PostRepository.java b/src/main/java/com/x/post/PostRepository.java
+--- a/src/main/java/com/x/post/PostRepository.java
++++ b/src/main/java/com/x/post/PostRepository.java
+@@ -5,4 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
+ 
+ public interface PostRepository extends JpaRepository<Post, Long> {
++
++    Page<Post> findAllByDeletedFalse(Pageable pageable);
+ }
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -15,6 +15,7 @@ public class PostService {
+     @Transactional(readOnly = true)
+-    public List<PostResponse> list() {
+-        return postRepository.findAll().stream().map(PostResponse::from).toList();
++    public List<PostResponse> list(int page, int size) {
++        Pageable pageable = PageRequest.of(page, size);
++        return postRepository.findAll(pageable).map(PostResponse::from).toList();
+     }
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -17,3 +17,3 @@ public class PostService {
+     public List<PostResponse> list(int page, int size) {
+-        Pageable pageable = PageRequest.of(page, size);
++        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -19,3 +19,3 @@ public class PostService {
+-        return postRepository.findAll(pageable).map(PostResponse::from).toList();
++        return postRepository.findAllByDeletedFalse(pageable).map(PostResponse::from).toList();
+     }
+diff --git a/src/main/java/com/x/post/CommentService.java b/src/main/java/com/x/post/CommentService.java
+--- a/src/main/java/com/x/post/CommentService.java
++++ b/src/main/java/com/x/post/CommentService.java
+@@ -19,7 +19,7 @@ public class CommentService {
+     public Comment write(Long postId, String body) {
+-        if (body.length() > 500) {
++        if (body.length() > 1000) {
+             throw new IllegalArgumentException("댓글이 너무 깁니다");
+         }
+diff --git a/src/main/java/com/x/post/Post.java b/src/main/java/com/x/post/Post.java
+--- a/src/main/java/com/x/post/Post.java
++++ b/src/main/java/com/x/post/Post.java
+@@ -28,6 +28,9 @@ public class Post {
+     public void rename(String title) {
++        if (title.isBlank()) {
++            throw new IllegalArgumentException("제목이 비었습니다");
++        }
+         this.title = title;
+     }
+diff --git a/src/main/java/com/x/post/PostCacheConfig.java b/src/main/java/com/x/post/PostCacheConfig.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/post/PostCacheConfig.java
+@@ -0,0 +1,9 @@
++package com.x.post;
++
++import org.springframework.cache.annotation.EnableCaching;
++import org.springframework.context.annotation.Configuration;
++
++@Configuration
++@EnableCaching
++public class PostCacheConfig {
++}

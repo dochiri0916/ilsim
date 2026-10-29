@@ -1,0 +1,18 @@
+diff --git a/src/main/java/com/x/post/PostService.java b/src/main/java/com/x/post/PostService.java
+--- a/src/main/java/com/x/post/PostService.java
++++ b/src/main/java/com/x/post/PostService.java
+@@ -15,6 +15,7 @@ public class PostService {
+     @Transactional(readOnly = true)
+-    public List<PostResponse> list() {
+-        return postRepository.findAll().stream().map(PostResponse::from).toList();
++    public List<PostResponse> list(int page, int size) {
++        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
++        return postRepository.findAllByDeletedFalse(pageable).map(PostResponse::from).toList();
+     }
+@@ -30,7 +31,7 @@ public class PostService {
+     @Transactional
+     public void delete(Long postId) {
+         Post post = postRepository.findById(postId).orElseThrow();
+-        post.markDeleted();
++        postRepository.delete(post);
+     }

@@ -1,0 +1,30 @@
+diff --git a/src/main/java/com/x/coupon/CouponService.java b/src/main/java/com/x/coupon/CouponService.java
+--- a/src/main/java/com/x/coupon/CouponService.java
++++ b/src/main/java/com/x/coupon/CouponService.java
+@@ -18,12 +18,15 @@ public class CouponService {
+     private final Clock clock;
+
+     @Transactional
+     public void use(Long couponId, Long orderId) {
+-        Coupon coupon = couponRepository.findById(couponId).orElseThrow();
++        Coupon coupon = couponRepository.findById(couponId).orElseThrow(() -> new IllegalArgumentException("쿠폰이 없습니다: " + couponId));
+         if (coupon.isUsed()) {
+             throw new CouponAlreadyUsedException(couponId);
+         }
++        if (coupon.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
++            throw new CouponExpiredException(couponId);
++        }
+         coupon.use(orderId);
+     }
+diff --git a/src/main/java/com/x/coupon/CouponExpiredException.java b/src/main/java/com/x/coupon/CouponExpiredException.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/x/coupon/CouponExpiredException.java
+@@ -0,0 +1,7 @@
++package com.x.coupon;
++
++public class CouponExpiredException extends RuntimeException {
++    public CouponExpiredException(Long couponId) {
++        super("만료된 쿠폰: " + couponId);
++    }
++}

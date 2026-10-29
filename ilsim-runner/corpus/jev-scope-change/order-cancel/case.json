@@ -1,0 +1,31 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "all",
+      "file": "diffs/all.diff",
+      "outsideFiles": [
+        "src/main/java/com/x/order/OrderQueryService.java",
+        "src/main/resources/application.yml"
+      ],
+      "note": "범위 밖 파일: OrderQueryService.java 관계없는 최근 주문 조회 추가; application.yml 관계없는 서버 포트 변경"
+    },
+    {
+      "id": "mixed-window",
+      "file": "diffs/mixed-window.diff",
+      "outside": [
+        "validateCancelWindow"
+      ],
+      "note": "기존 취소 기한 검사를 지우고 그 자리에 상태 검사를 넣음(같은 묶음)"
+    },
+    {
+      "id": "mixed-create",
+      "file": "diffs/mixed-create.diff",
+      "outside": [
+        "totalPrice() < 100"
+      ],
+      "note": "같은 파일의 주문 생성 최소 금액을 1000에서 100으로 낮춤"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "all",
+      "file": "diffs/all.diff",
+      "outsideFiles": [
+        "README.md",
+        "build.gradle.kts",
+        "src/main/java/demo/Farewell.java",
+        "src/main/java/demo/Strings.java"
+      ],
+      "note": "범위 밖 파일: README.md 관계없는 실행 안내 변경; build.gradle.kts 쓰지 않는 라이브러리 추가; Farewell.java 관계없는 작별 인사 클래스 추가; Strings.java 쓰지 않는 문자열 유틸 추가"
+    },
+    {
+      "id": "mixed-greet",
+      "file": "diffs/mixed-greet.diff",
+      "outside": [
+        "\", \" + name + \".\""
+      ],
+      "note": "greetAll과 함께 기존 greet 문구를 바꿈(맥락 한 줄로 나뉨)"
+    }
+  ]
+}

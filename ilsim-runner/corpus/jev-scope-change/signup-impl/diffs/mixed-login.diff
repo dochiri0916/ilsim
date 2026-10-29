@@ -1,0 +1,22 @@
+diff --git a/src/main/java/com/x/member/MemberService.java b/src/main/java/com/x/member/MemberService.java
+--- a/src/main/java/com/x/member/MemberService.java
++++ b/src/main/java/com/x/member/MemberService.java
+@@ -19,6 +19,9 @@ public class MemberService {
+     @Transactional
+     public Long signUp(SignUpCommand command) {
+         if (command.password().length() < 8) {
+             throw new InvalidPasswordException();
+         }
++        if (memberRepository.existsByEmail(command.email())) {
++            throw new DuplicateEmailException(command.email());
++        }
+         Member member = memberRepository.save(Member.create(command.email(), passwordEncoder.encode(command.password())));
+@@ -40,9 +43,6 @@ public class MemberService {
+     public String login(String email, String password) {
+         Member member = memberRepository.findByEmail(email).orElseThrow(LoginFailedException::new);
+-        if (member.isLocked()) {
+-            throw new AccountLockedException(email);
+-        }
+         if (!passwordEncoder.matches(password, member.getPassword())) {
+             throw new LoginFailedException();
+         }

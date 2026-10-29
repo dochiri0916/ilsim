@@ -1,0 +1,30 @@
+diff --git a/src/main/java/com/x/member/MemberService.java b/src/main/java/com/x/member/MemberService.java
+--- a/src/main/java/com/x/member/MemberService.java
++++ b/src/main/java/com/x/member/MemberService.java
+@@ -19,12 +19,15 @@ public class MemberService {
+     @Transactional
+     public Long signUp(SignUpCommand command) {
+-        if (command.password().length() <= 8) {
++        if (command.password().length() < 8) {
+             throw new InvalidPasswordException();
+         }
++        if (memberRepository.existsByEmail(command.email())) {
++            throw new DuplicateEmailException(command.email());
++        }
+         Member member = memberRepository.save(Member.create(command.email(), passwordEncoder.encode(command.password())));
++        eventPublisher.publishEvent(new MemberJoinedEvent(member.getId()));
+         return member.getId();
+     }
+diff --git a/src/main/java/com/x/common/GlobalExceptionHandler.java b/src/main/java/com/x/common/GlobalExceptionHandler.java
+--- a/src/main/java/com/x/common/GlobalExceptionHandler.java
++++ b/src/main/java/com/x/common/GlobalExceptionHandler.java
+@@ -15,6 +15,11 @@ public class GlobalExceptionHandler {
+     public ResponseEntity<ErrorResponse> handleInvalidPassword(InvalidPasswordException e) {
+         return ResponseEntity.badRequest().body(ErrorResponse.of(e.getMessage()));
+     }
++
++    @ExceptionHandler(DuplicateEmailException.class)
++    public ResponseEntity<ErrorResponse> handleDuplicateEmail(DuplicateEmailException e) {
++        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(e.getMessage()));
++    }
+ }

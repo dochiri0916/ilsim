@@ -1,0 +1,33 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "all",
+      "file": "diffs/all.diff",
+      "outsideFiles": [
+        "build.gradle",
+        "src/main/java/com/x/coupon/CouponIssueService.java",
+        "src/main/java/com/x/member/MemberService.java",
+        "src/main/java/com/x/order/OrderController.java"
+      ],
+      "note": "범위 밖 파일: build.gradle 쓰지 않는 라이브러리 추가; CouponIssueService.java 바꾸지 않는다고 한 쿠폰 발급 변경; MemberService.java 관계없는 회원 비활성화 기능 추가; OrderController.java 관계없는 변수 이름 정리"
+    },
+    {
+      "id": "mixed-missing",
+      "file": "diffs/mixed-missing.diff",
+      "outside": [
+        "쿠폰이 없습니다"
+      ],
+      "note": "만료 검사와 함께 없는 쿠폰의 예외를 요구 없이 바꿈(맥락 줄로 나뉨)"
+    },
+    {
+      "id": "mixed-used-check",
+      "file": "diffs/mixed-used-check.diff",
+      "outside": [
+        "CouponAlreadyUsedException"
+      ],
+      "note": "이미 사용한 쿠폰 검사를 지우고 그 자리에 만료 검사를 넣음(같은 묶음)"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "all",
+      "file": "diffs/all.diff",
+      "outsideFiles": [
+        "src/main/java/com/x/payment/PaymentController.java",
+        "src/main/java/com/x/payment/RefundService.java"
+      ],
+      "note": "범위 밖 파일: PaymentController.java 관계없는 API 경로 변경; RefundService.java 관계없는 환불 수수료 계산 변경"
+    },
+    {
+      "id": "mixed-refund",
+      "file": "diffs/mixed-refund.diff",
+      "outside": [
+        "long fee = 0"
+      ],
+      "note": "같은 파일의 환불 수수료 계산을 0으로 바꿈"
+    }
+  ]
+}

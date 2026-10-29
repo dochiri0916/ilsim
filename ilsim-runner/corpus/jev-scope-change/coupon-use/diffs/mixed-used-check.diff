@@ -1,0 +1,15 @@
+diff --git a/src/main/java/com/x/coupon/CouponService.java b/src/main/java/com/x/coupon/CouponService.java
+--- a/src/main/java/com/x/coupon/CouponService.java
++++ b/src/main/java/com/x/coupon/CouponService.java
+@@ -22,10 +22,10 @@ public class CouponService {
+     @Transactional
+     public void use(Long couponId, Long orderId) {
+         Coupon coupon = couponRepository.findById(couponId).orElseThrow();
+-        if (coupon.isUsed()) {
+-            throw new CouponAlreadyUsedException(couponId);
+-        }
++        if (coupon.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
++            throw new CouponExpiredException(couponId);
++        }
+         coupon.use(orderId);
+     }

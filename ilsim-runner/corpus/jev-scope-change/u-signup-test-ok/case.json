@@ -1,0 +1,11 @@
+{
+  "stage": "TEST_CODE",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "test-ok",
+      "file": "diffs/test-ok.diff",
+      "note": "같은 대소문자 이메일만, 상태 코드·비밀번호 규칙·닉네임은 단정하지 않음"
+    }
+  ]
+}

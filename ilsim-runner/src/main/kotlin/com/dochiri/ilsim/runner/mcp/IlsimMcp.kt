@@ -31,6 +31,7 @@ import com.dochiri.ilsim.runner.architecture.ArchitectureStore
 import com.dochiri.ilsim.runner.brief.RulesBrief
 import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.convention.DocRuleStore
+import com.dochiri.ilsim.runner.document.DocSection
 import com.dochiri.ilsim.runner.document.ProjectDocs
 import com.dochiri.ilsim.runner.jev.Guidelines
 import com.dochiri.ilsim.runner.jev.Jev
@@ -222,10 +223,14 @@ class IlsimMcp(
             ?: buildGuide(ws, task.feature, spec ?: request, basis).also { guides.save(task.taskId, it) }
     }
 
-    private fun buildGuide(ws: Workspace, feature: String, request: String, basis: String? = null): TaskGuide {
+    private fun docSections(ws: Workspace, feature: String): Pair<Map<String, Path>, List<DocSection>> {
         val others = store.load().projects.filterKeys { it != ws.projectId }.values.map { Path.of(it.path) }
         val files = ProjectDocs.files(ws.root, ws.project, others, feature)
-        val sections = ProjectDocs.sections(files)
+        return files to ProjectDocs.sections(files)
+    }
+
+    private fun buildGuide(ws: Workspace, feature: String, request: String, basis: String? = null): TaskGuide {
+        val (files, sections) = docSections(ws, feature)
         val scored = if (sections.isEmpty()) emptyList() else runCatching { Guidelines.select(jev(), request, sections, ProjectDocs.modules(ws.root)) }.getOrNull()
         return TaskGuide(ws.projectId, scored != null, sections.size, scored?.let(Guidelines::relevant).orEmpty(),
             if (scored == null) files.keys.toList() else emptyList(), scored?.let(Guidelines::scores).orEmpty(), basis = basis)
@@ -402,6 +407,7 @@ class IlsimMcp(
             return Outcome("요구사항 문서의 영향 범위 밖 변경으로 보입니다. 아래 파일의 변경을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용과 파일 경로)으로 기록한 뒤 다시 제출하세요:\n" +
                 scope.outside.joinToString("\n") { "- $it (범위 안 확률 ${"%.2f".format(scope.probabilities[it])})" })
         }
+        val suspects = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") changeScopeCheck(ws, task, stage, diff, validation) else emptyList()
         val undecided = if (stage in StageGates.UNDECIDED_STAGES) undecidedCheck(ws, task, stage, if (key != null) text.orEmpty() else diff, validation) else null
         val judged = undecided?.result
         if (judged != null && judged.decided.isNotEmpty()) {
@@ -435,10 +441,11 @@ class IlsimMcp(
         }
         val unsettled = undecided?.unresolved.orEmpty()
         val proposals = gates.proposedRuleHits
-        val audit = if (auditNeeded(ws, stage, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved + proposals.map { "승인 전 문서 규칙 ${it.substringAfterLast('<').removeSuffix(">")}" }.distinct(), gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
+        val audit = if (auditNeeded(ws, stage, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved + proposals.map { "승인 전 문서 규칙 ${it.substringAfterLast('<').removeSuffix(">")}" }.distinct(), suspects.size, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
             gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey),
-                listOfNotNull(guide.render().takeIf { guide.guidelines.isNotEmpty() || !guide.selected },
-                    proposals.takeIf { it.isNotEmpty() }?.let { "## 승인 전 문서 규칙에 걸린 곳(사용자 승인 전이라 막지 않음, 실제 위반인지 RULE로 판단)\n" + it.joinToString("\n") { h -> "- $h" } }).joinToString("\n\n").ifEmpty { null },
+                listOfNotNull((if (guide.selected) guide.render() else TaskGuide.all(docSections(ws, task.feature).second)).takeIf { guide.guidelines.isNotEmpty() || !guide.selected },
+                    proposals.takeIf { it.isNotEmpty() }?.let { "## 승인 전 문서 규칙에 걸린 곳(사용자 승인 전이라 막지 않음, 실제 위반인지 RULE로 판단)\n" + it.joinToString("\n") { h -> "- $h" } },
+                    suspects.takeIf { it.isNotEmpty() }?.let { "## 요구사항과 관계없어 보이는 변경 묶음(JEV 판정, 막지 않음. 요청 밖 동작 변경·기존 검사나 테스트 완화면 UNRELATED로 보고)\n" + it.joinToString("\n") { h -> "- $h" } }).joinToString("\n\n").ifEmpty { null },
                 unsettled.map { it.label })
         } else {
             validation["ai-audit"] = "SKIPPED"
@@ -556,6 +563,23 @@ class IlsimMcp(
         return result
     }
 
+    private fun changeScopeCheck(ws: Workspace, task: ActiveTask, stage: String, diff: String, validation: MutableMap<String, String>): List<String> {
+        val spec = requirements(ws, task)
+        val changes = ScopeCheck.changes(diff)
+        val p = if (spec == null || changes.isEmpty()) null else runCatching { ScopeCheck.askChanges(jev(), spec, stage, ScopeCheck.files(diff).keys.toList(), changes) }.getOrNull()
+        val suspects = p?.let { changes.zip(it).mapNotNull { (c, v) -> v?.takeIf { it <= ScopeCheck.OUTSIDE }?.let { c to it } } }.orEmpty()
+        validation["scope-change"] = when {
+            changes.isEmpty() -> "PASSED"
+            p == null -> "UNKNOWN"
+            suspects.isNotEmpty() -> "SUSPECT"
+            else -> "PASSED"
+        }
+        if (changes.isNotEmpty()) DecisionScope.record("SCOPE_CHANGE_CHECK", if (p == null) "NONE" else "JEV",
+            p?.let { "변경 묶음 ${changes.size}개 중 범위 밖으로 보임 ${suspects.size}개(평가 전이라 막지 않고 검토로 올림): " + changes.zip(it).joinToString(", ") { (c, v) -> "${c.path.substringAfterLast('/')}=${v?.let { x -> "%.2f".format(x) } ?: "-"}" } }
+                ?: "요구사항 문서 없음 또는 JEV 꺼짐·실패", diff)
+        return suspects.map { (c, v) -> "${c.path} (범위 안 확률 ${"%.2f".format(v)})\n" + c.changed.lines().take(MAX_SUSPECT_LINES).joinToString("\n") { "  $it" } }
+    }
+
     private fun guidelineCheck(guide: TaskGuide, stage: String, diff: String, validation: MutableMap<String, String>, decisions: List<String>): Guidelines.Check? {
         if (guide.selected && guide.guidelines.isEmpty()) {
             validation["guidelines"] = "NONE"
@@ -574,7 +598,7 @@ class IlsimMcp(
         return result
     }
 
-    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, tests: TestCodeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
+    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, tests: TestCodeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, scopeSuspects: Int, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
         if (stage != "TEST_CODE" && stage != "IMPLEMENTATION") return false
         val testing = stage == "TEST_CODE"
         val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
@@ -587,6 +611,7 @@ class IlsimMcp(
             "테스트 코드가 커서 일부만 판정".takeIf { tests != null && tests.truncated },
             "판정이 불확실한 요구사항 ${check?.uncertain?.joinToString { it.id }}".takeIf { check != null && check.uncertain.isNotEmpty() },
             "영향 범위 판정 불확실 ${scope?.uncertain?.joinToString()}".takeIf { scope != null && scope.uncertain.isNotEmpty() },
+            "요구사항과 관계없어 보이는 변경 묶음 ${scopeSuspects}개".takeIf { scopeSuspects > 0 },
             "미결정 판정 불확실 ${undecided.joinToString { it.id }}".takeIf { undecided.isNotEmpty() },
             "문서 지침 판정 불확실 ${unresolvedGuidelines.joinToString()}".takeIf { unresolvedGuidelines.isNotEmpty() },
             "위험 후보 ${riskCandidates}건".takeIf { riskCandidates > 0 },
@@ -625,6 +650,7 @@ class IlsimMcp(
         private const val MAX_DOCUMENT = 8_000
 
         private const val MAX_FAILURE_LOG = 4_000
+        private const val MAX_SUSPECT_LINES = 8
 
         const val AUDIT_SAMPLE_RATE = 0.2
 

@@ -1,0 +1,11 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "impl-config",
+      "file": "diffs/impl-config.diff",
+      "note": "횟수·간격은 기본값 없는 설정으로 남기고 상태는 바꾸지 않음"
+    }
+  ]
+}

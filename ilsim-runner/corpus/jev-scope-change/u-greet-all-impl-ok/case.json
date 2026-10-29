@@ -1,0 +1,11 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "impl-ok",
+      "file": "diffs/impl-ok.diff",
+      "note": "빈 목록·null은 따로 다루지 않음(스트림의 자연스러운 결과)"
+    }
+  ]
+}

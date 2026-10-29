@@ -24,6 +24,7 @@ import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevGuidelineEval
 import com.dochiri.ilsim.runner.jev.JevRequirementEval
 import com.dochiri.ilsim.runner.jev.JevScopeEval
+import com.dochiri.ilsim.runner.jev.JevScopeChangeEval
 import com.dochiri.ilsim.runner.jev.JevTestCodeEval
 import com.dochiri.ilsim.runner.jev.JevUndecidedEval
 import com.dochiri.ilsim.runner.jev.JevRiskEval
@@ -102,6 +103,7 @@ private const val USAGE = """사용법:
     ilsim-runner jev-eval --project <경로>... [--limit <n>] [--agent]   실제 코드 후보에서 판단이 갈린 것만 추림 (라벨 없음)
     ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
     ilsim-runner jev-eval scope [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항 문서의 영향 범위 밖 변경 판정 평가
+    ilsim-runner jev-eval scope-change [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항과 관계없는 변경 묶음(같은 파일 안 포함) 판정 평가
     ilsim-runner jev-eval undecided [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항 문서의 미결정 사항을 추측해 정했는지 판정 평가
     ilsim-runner jev-eval testcode [--data <폴더>] [--repeat <n>] [--out <파일>]   테스트 코드의 TC 누락·검증 없이 통과하는 테스트 판정 평가
     ilsim-runner jev-eval guidelines [--data <폴더>] [--repeat <n>] [--out <파일>] [--sections] [--rules]   정답 있는 문서·요청·변경으로 지침 선택·위반·문서 규칙 판정 평가(--rules는 문서 규칙 질문만)
@@ -728,6 +730,15 @@ private fun jevEval(store: ConfigStore, args: Array<String>) {
             val records = JevScopeEval.run(samples, jev, repeat, fresh)
             println(JevScopeEval.report(records))
             save(JevScopeEval.toJson(records))
+            return
+        }
+        if (rest.firstOrNull() == "scope-change") {
+            val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-scope-change").toAbsolutePath().normalize()
+            val samples = JevScopeChangeEval.load(dir)
+            if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
+            val records = JevScopeChangeEval.run(samples, jev, repeat, fresh)
+            println(JevScopeChangeEval.report(records))
+            save(JevScopeChangeEval.toJson(records))
             return
         }
         if (rest.firstOrNull() == "testcode") {

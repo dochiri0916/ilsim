@@ -1,0 +1,82 @@
+diff --git a/build.gradle b/build.gradle
+--- a/build.gradle
++++ b/build.gradle
+@@ -22,6 +22,8 @@ dependencies {
+     implementation 'org.springframework.boot:spring-boot-starter-web'
++    implementation 'org.springframework.retry:spring-retry'
++    implementation 'org.springframework:spring-aspects'
+     runtimeOnly 'com.h2database:h2'
+diff --git a/src/main/java/com/x/PaymentApplication.java b/src/main/java/com/x/PaymentApplication.java
+--- a/src/main/java/com/x/PaymentApplication.java
++++ b/src/main/java/com/x/PaymentApplication.java
+@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
+ 
++@EnableRetry
+ @SpringBootApplication
+ public class PaymentApplication {
+diff --git a/src/main/java/com/x/payment/PaymentClientConfig.java b/src/main/java/com/x/payment/PaymentClientConfig.java
+--- a/src/main/java/com/x/payment/PaymentClientConfig.java
++++ b/src/main/java/com/x/payment/PaymentClientConfig.java
+@@ -12,7 +12,11 @@ public class PaymentClientConfig {
+     @Bean
+-    public RestClient paymentRestClient(RestClient.Builder builder) {
++    public RestClient paymentRestClient(RestClient.Builder builder,
++                                        @Value("${payment.client.read-timeout}") Duration readTimeout) {
++        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
++        factory.setReadTimeout(readTimeout);
+         return builder
+                 .baseUrl("https://pay.example.com")
++                .requestFactory(factory)
+                 .build();
+     }
+diff --git a/src/main/java/com/x/payment/PaymentGateway.java b/src/main/java/com/x/payment/PaymentGateway.java
+--- a/src/main/java/com/x/payment/PaymentGateway.java
++++ b/src/main/java/com/x/payment/PaymentGateway.java
+@@ -14,6 +14,7 @@ public class PaymentGateway {
+     private final RestClient paymentRestClient;
+ 
++    @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 500, multiplier = 2))
+     public PaymentResult approve(PaymentRequest request) {
+         return paymentRestClient.post().uri("/approve").body(request).retrieve().body(PaymentResult.class);
+     }
+diff --git a/src/main/java/com/x/payment/PaymentService.java b/src/main/java/com/x/payment/PaymentService.java
+--- a/src/main/java/com/x/payment/PaymentService.java
++++ b/src/main/java/com/x/payment/PaymentService.java
+@@ -20,8 +20,14 @@ public class PaymentService {
+     public void pay(Long paymentId) {
+         Payment payment = paymentRepository.findById(paymentId).orElseThrow();
+-        PaymentResult result = paymentGateway.approve(PaymentRequest.from(payment));
+-        payment.approve(result.transactionId());
++        try {
++            PaymentResult result = paymentGateway.approve(PaymentRequest.from(payment));
++            payment.approve(result.transactionId());
++        } catch (RestClientException e) {
++            payment.fail();
++        }
+         paymentRepository.save(payment);
+     }
+diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
+--- a/src/main/resources/application.yml
++++ b/src/main/resources/application.yml
+@@ -8,3 +8,6 @@ spring:
+   jpa:
+     open-in-view: false
++payment:
++  client:
++    read-timeout: 3s
+diff --git a/src/main/java/com/x/payment/PaymentController.java b/src/main/java/com/x/payment/PaymentController.java
+--- a/src/main/java/com/x/payment/PaymentController.java
++++ b/src/main/java/com/x/payment/PaymentController.java
+@@ -12,7 +12,7 @@
+ @RestController
+-@RequestMapping("/payments")
++@RequestMapping("/api/v2/payments")
+ public class PaymentController {
+diff --git a/src/main/java/com/x/payment/RefundService.java b/src/main/java/com/x/payment/RefundService.java
+--- a/src/main/java/com/x/payment/RefundService.java
++++ b/src/main/java/com/x/payment/RefundService.java
+@@ -21,7 +21,7 @@ public class RefundService {
+     public long fee(long amount) {
+-        return amount / 100;
++        return Math.max(500, amount / 100);
+     }

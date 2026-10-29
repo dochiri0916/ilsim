@@ -1,0 +1,19 @@
+{
+  "stage": "IMPLEMENTATION",
+  "spec": "spec.md",
+  "diffs": [
+    {
+      "id": "boundary",
+      "file": "diffs/boundary.diff",
+      "note": "8자 허용을 위해 기존 비밀번호 길이 검사를 고치고 409 응답 처리기를 더함(영향 범위에 없는 파일)"
+    },
+    {
+      "id": "mixed-login",
+      "file": "diffs/mixed-login.diff",
+      "outside": [
+        "isLocked()"
+      ],
+      "note": "같은 파일의 로그인에서 잠긴 계정 검사를 지움"
+    }
+  ]
+}

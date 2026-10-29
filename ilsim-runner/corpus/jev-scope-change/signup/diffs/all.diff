@@ -1,0 +1,66 @@
+diff --git a/src/test/java/com/x/member/MemberServiceTest.java b/src/test/java/com/x/member/MemberServiceTest.java
+--- a/src/test/java/com/x/member/MemberServiceTest.java
++++ b/src/test/java/com/x/member/MemberServiceTest.java
+@@ -30,3 +30,10 @@ class MemberServiceTest {
++
++    @Test
++    void 이미_가입한_이메일이면_예외() {
++        given(memberRepository.existsByEmail("a@x.com")).willReturn(true);
++        assertThatThrownBy(() -> memberService.signUp(new SignUpCommand("a@x.com", "password1")))
++                .isInstanceOf(DuplicateEmailException.class);
++    }
+diff --git a/src/test/java/com/x/member/MemberServiceTest.java b/src/test/java/com/x/member/MemberServiceTest.java
+--- a/src/test/java/com/x/member/MemberServiceTest.java
++++ b/src/test/java/com/x/member/MemberServiceTest.java
+@@ -40,3 +40,15 @@ class MemberServiceTest {
++
++    @Test
++    void 비밀번호가_8자_미만이면_예외() {
++        assertThatThrownBy(() -> memberService.signUp(new SignUpCommand("b@x.com", "short7!")))
++                .isInstanceOf(InvalidPasswordException.class);
++    }
++
++    @Test
++    void 비밀번호_8자는_허용() {
++        given(memberRepository.save(any())).willReturn(member(1L));
++        assertThat(memberService.signUp(new SignUpCommand("c@x.com", "eight888"))).isEqualTo(1L);
++    }
+diff --git a/src/test/java/com/x/member/SignupPasswordTest.java b/src/test/java/com/x/member/SignupPasswordTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/com/x/member/SignupPasswordTest.java
+@@ -0,0 +1,14 @@
++package com.x.member;
++
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++
++import org.junit.jupiter.api.Test;
++
++class SignupPasswordTest {
++    private final MemberService memberService = TestMembers.service();
++
++    @Test
++    void 일곱_자_비밀번호는_거부한다() {
++        assertThatThrownBy(() -> memberService.join("a@b.c", "1234567")).isInstanceOf(InvalidPasswordException.class);
++    }
++}
+diff --git a/src/test/java/com/x/coupon/CouponServiceTest.java b/src/test/java/com/x/coupon/CouponServiceTest.java
+--- a/src/test/java/com/x/coupon/CouponServiceTest.java
++++ b/src/test/java/com/x/coupon/CouponServiceTest.java
+@@ -40,7 +40,7 @@ class CouponServiceTest {
+     @Test
+     void 할인율을_계산한다() {
+-        assertThat(coupon.discount(10_000)).isEqualTo(1_000);
++        assertThat(coupon.discount(10_000)).isEqualTo(900);
+     }
+diff --git a/src/test/java/com/x/post/PostControllerTest.java b/src/test/java/com/x/post/PostControllerTest.java
+--- a/src/test/java/com/x/post/PostControllerTest.java
++++ b/src/test/java/com/x/post/PostControllerTest.java
+@@ -52,10 +52,4 @@ class PostControllerTest {
+     }
+-
+-    @Test
+-    void 삭제된_글은_조회되지_않는다() throws Exception {
+-        mockMvc.perform(get("/posts/1")).andExpect(status().isNotFound());
+-    }
+ }
