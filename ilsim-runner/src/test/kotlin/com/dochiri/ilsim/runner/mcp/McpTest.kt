@@ -501,14 +501,10 @@ class McpTest {
     }
 
     @Test
-    fun `요구사항과 관계없어 보이는 변경 묶음은 막지 않고 독립 검토에 그 묶음을 보여 준다`() {
+    fun `요구사항과 관계없어 보이는 변경 묶음은 JEV 판정으로 막는다`() {
         store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
         val prompts = mutableListOf<String>()
-        val reviewer: (String, String) -> String = { prompt, _ ->
-            prompts += prompt
-            if ("## 요구사항과 관계없어 보이는 변경 묶음" in prompt) """{"verdict":"CONCERN","findings":[{"type":"UNRELATED","target":"src/main/Slug.java:1","reason":"요청 밖 공백 제거"}]}"""
-            else """{"verdict":"PASS","findings":[]}"""
-        }
+        val reviewer: (String, String) -> String = { prompt, _ -> prompts += prompt; """{"verdict":"PASS","findings":[]}""" }
         fun mcp() = IlsimMcp(store, server, active, repo, reviewer, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
         jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
@@ -524,10 +520,10 @@ class McpTest {
         repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.trim().toLowerCase(); } }\n")
         jevAnswer = { id -> when { id == "c0" -> 0.05; id[0] in "uvb" -> 0.05; else -> 0.95 } }
         val failed = run("submit_result")
-        assertContains(failed, "AI 변경 검토가 아래를 지적했습니다")
-        assertContains(failed, "[UNRELATED] src/main/Slug.java:1")
-        assertContains(prompts.last(), "- src/main/Slug.java (범위 안 확률 0.05)")
-        assertContains(prompts.last(), "  +class Slug { String of(String s) { return s.trim().toLowerCase(); } }")
+        assertContains(failed, "요구사항과 관계없는 변경으로 보입니다")
+        assertContains(failed, "- src/main/Slug.java (범위 안 확률 0.05)")
+        assertContains(failed, "  +class Slug { String of(String s) { return s.trim().toLowerCase(); } }")
+        assertTrue(prompts.isEmpty(), "JEV가 막으면 독립 검토를 부르지 않는다")
 
         repo.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
         jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
@@ -581,7 +577,7 @@ class McpTest {
 
         repo.resolve("src/main").createDirectories()
         repo.resolve("src/main/Slug.java").writeText("class Slug {\n" + "    int value = 1;\n".repeat(2000) + "}\n")
-        jevAnswer = { id -> when { id == "m0" -> 0.1; id.startsWith("f") -> 0.95; else -> 0.05 } }
+        jevAnswer = { id -> when { id == "m0" -> 0.1; id[0] in "fc" -> 0.95; else -> 0.05 } }
         val submitted = run("submit_result")
         assertTrue("요구사항이 빠진 것으로 보입니다" !in submitted, submitted)
         assertEquals("UNCERTAIN", server.results.last().validation["requirements"])
