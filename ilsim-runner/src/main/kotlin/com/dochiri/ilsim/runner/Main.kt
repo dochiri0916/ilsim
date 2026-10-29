@@ -103,6 +103,7 @@ private const val USAGE = """사용법:
     ilsim-runner jev-eval scope [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항 문서의 영향 범위 밖 변경 판정 평가
     ilsim-runner jev-eval undecided [--data <폴더>] [--repeat <n>] [--out <파일>]   요구사항 문서의 미결정 사항을 추측해 정했는지 판정 평가
     ilsim-runner jev-eval guidelines [--data <폴더>] [--repeat <n>] [--out <파일>] [--sections] [--rules]   정답 있는 문서·요청·변경으로 지침 선택·위반·문서 규칙 판정 평가(--rules는 문서 규칙 질문만)
+                                                 jev-eval 공통: 1회차 판정은 ~/.ilsim/eval-decisions에 저장해 같은 질문을 다시 보내지 않음. --repeat의 2회차부터와 --fresh는 저장된 판정 없이 새로 물음
   Claude 앱
     ilsim-runner mcp                             일심 MCP 서버(stdio). Claude 앱 플러그인이 실행한다
     ilsim-runner hook user-prompt-submit|pre-tool-use|stop   Claude 앱 훅(표준 입력으로 훅 JSON)
@@ -364,7 +365,7 @@ private fun docs(store: ConfigStore, args: Array<String>) {
     store.load().projects[args[1]]?.let { project ->
         val others = store.load().projects.filterKeys { it != args[1] }.values.map { Path.of(it.path) }
         val files = ProjectDocs.files(Path.of(project.path), project, others, null)
-        println("[지침 문서] ${files.size}개 (추가 ${project.docs.size}, 제외 ${project.docsExclude.size})")
+        println("[지침 문서] ${files.size}개 (추가 ${project.docs.size}, 제외 ${project.docsExclude.size}, 저장소 ${ProjectDocs.IGNORE_FILE} ${ProjectDocs.ignored(Path.of(project.path)).size})")
         files.forEach { (label, path) -> println("  - $label (구간 ${ProjectDocs.split(label, runCatching { path.readText() }.getOrDefault("")).size})") }
     }
     val path = Path.of(store.load().projects[args[1]]?.path ?: args[1]).toAbsolutePath().normalize()
@@ -679,50 +680,60 @@ private fun jevEval(store: ConfigStore, args: Array<String>) {
     val rest = args.drop(1)
     fun option(name: String) = rest.zipWithNext().firstOrNull { it.first == name }?.second
     if (rest.firstOrNull() == "guidelines") return guidelineEval(store, rest, option("--data"), option("--repeat"), option("--out"))
-    val jev = Jev.uncached()
+    val jev = if ("--fresh" in rest) Jev.uncached() else Jev.cached(evalDecisions(store))
+    val fresh = Jev.uncached()
     if (!jev.enabled) { println("JEV 키가 없습니다. 환경 변수 TYPESAFE_API_KEY 를 설정하세요"); exitProcess(1) }
     val repeat = option("--repeat")?.toIntOrNull()?.coerceIn(1, 5) ?: 1
     val cost = CostTally(if (rest.firstOrNull() == "requirements") "REVIEW" else "RISK_REVIEW")
     fun save(text: String) = option("--out")?.let { out -> Path.of(out).also { it.toAbsolutePath().parent.createDirectories() }.writeText(text); println("저장: $out") }
-    if (rest.firstOrNull() == "scope") {
-        val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-scope").toAbsolutePath().normalize()
-        val samples = JevScopeEval.load(dir)
-        if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
-        val records = JevScopeEval.run(samples, jev, repeat)
-        println(JevScopeEval.report(records))
-        save(JevScopeEval.toJson(records))
-        return
-    }
-    if (rest.firstOrNull() == "undecided") {
-        val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-undecided").toAbsolutePath().normalize()
-        val samples = JevUndecidedEval.load(dir)
-        if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
-        val records = JevUndecidedEval.run(samples, jev, repeat)
-        println(JevUndecidedEval.report(records))
-        save(JevUndecidedEval.toJson(records))
-        return
-    }
-    if (rest.firstOrNull() == "requirements") {
-        val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-requirement").toAbsolutePath().normalize()
-        val samples = JevRequirementEval.load(dir)
-        if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
-        val runs = JevRequirementEval.jev(samples, jev, repeat).toMutableList()
-        if ("--agent" in rest) runs += JevRequirementEval.agent(samples, "Agent($AI_MODEL)") { cost.ask(it, AI_MODEL) }
-        println(JevRequirementEval.report(samples, runs))
+    try {
+        if (rest.firstOrNull() == "scope") {
+            val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-scope").toAbsolutePath().normalize()
+            val samples = JevScopeEval.load(dir)
+            if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
+            val records = JevScopeEval.run(samples, jev, repeat, fresh)
+            println(JevScopeEval.report(records))
+            save(JevScopeEval.toJson(records))
+            return
+        }
+        if (rest.firstOrNull() == "undecided") {
+            val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-undecided").toAbsolutePath().normalize()
+            val samples = JevUndecidedEval.load(dir)
+            if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
+            val records = JevUndecidedEval.run(samples, jev, repeat, fresh)
+            println(JevUndecidedEval.report(records))
+            save(JevUndecidedEval.toJson(records))
+            return
+        }
+        if (rest.firstOrNull() == "requirements") {
+            val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-requirement").toAbsolutePath().normalize()
+            val samples = JevRequirementEval.load(dir)
+            if (samples.isEmpty()) { println("평가 사례가 없습니다: $dir"); exitProcess(1) }
+            val runs = JevRequirementEval.jev(samples, jev, repeat, fresh).toMutableList()
+            if ("--agent" in rest) runs += JevRequirementEval.agent(samples, "Agent($AI_MODEL)") { cost.ask(it, AI_MODEL) }
+            println(JevRequirementEval.report(samples, runs))
+            cost.summary()?.let(::println)
+            save(JevRequirementEval.toJson(samples, runs))
+            return
+        }
+        val projects = rest.zipWithNext().filter { it.first == "--project" }.map { Path.of(it.second).toAbsolutePath().normalize() }
+        val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-risk").toAbsolutePath().normalize()
+        val samples = if (projects.isEmpty()) JevRiskEval.load(dir) else JevRiskEval.unlabeled(projects, option("--limit")?.toIntOrNull() ?: 20)
+        if (samples.isEmpty()) { println("평가 사례가 없습니다: ${projects.ifEmpty { listOf(dir) }.joinToString()}"); exitProcess(1) }
+        val runs = mutableListOf(JevRiskEval.batched(samples, jev, repeat, fresh), JevRiskEval.single(samples, jev, repeat, fresh))
+        if ("--agent" in rest) runs += JevRiskEval.agent(samples, "Agent($AI_MODEL)") { cost.ask(it, AI_MODEL) }
+        println(if (projects.isEmpty()) JevRiskEval.report(samples, runs) else JevRiskEval.disagreements(samples, runs))
         cost.summary()?.let(::println)
-        save(JevRequirementEval.toJson(samples, runs))
-        return
+        save(JevRiskEval.toJson(samples, runs))
+    } finally {
+        println(jevCalls(listOf(jev, fresh)))
     }
-    val projects = rest.zipWithNext().filter { it.first == "--project" }.map { Path.of(it.second).toAbsolutePath().normalize() }
-    val dir = Path.of(option("--data") ?: "ilsim-runner/corpus/jev-risk").toAbsolutePath().normalize()
-    val samples = if (projects.isEmpty()) JevRiskEval.load(dir) else JevRiskEval.unlabeled(projects, option("--limit")?.toIntOrNull() ?: 20)
-    if (samples.isEmpty()) { println("평가 사례가 없습니다: ${projects.ifEmpty { listOf(dir) }.joinToString()}"); exitProcess(1) }
-    val runs = mutableListOf(JevRiskEval.batched(samples, jev, repeat), JevRiskEval.single(samples, jev, repeat))
-    if ("--agent" in rest) runs += JevRiskEval.agent(samples, "Agent($AI_MODEL)") { cost.ask(it, AI_MODEL) }
-    println(if (projects.isEmpty()) JevRiskEval.report(samples, runs) else JevRiskEval.disagreements(samples, runs))
-    cost.summary()?.let(::println)
-    save(JevRiskEval.toJson(samples, runs))
 }
+
+private fun evalDecisions(store: ConfigStore): Path = store.location.toAbsolutePath().parent.resolve("eval-decisions")
+
+private fun jevCalls(clients: List<Jev>): String =
+    "JEV 새 호출 ${clients.sumOf { it.calls.get() }}회, 저장된 판정 재사용 ${clients.sumOf { it.reused.get() }}회"
 
 private fun guidelineEval(store: ConfigStore, rest: List<String>, data: String?, repeat: String?, out: String?) {
     val dir = Path.of(data ?: "ilsim-runner/corpus/jev-guideline").toAbsolutePath().normalize()
@@ -739,9 +750,12 @@ private fun guidelineEval(store: ConfigStore, rest: List<String>, data: String?,
     if (!Jev.uncached().enabled) { println("JEV 키가 없습니다. ilsim-runner jev-key set 으로 등록하세요"); exitProcess(2) }
     val rounds = repeat?.toIntOrNull()?.coerceIn(1, 5) ?: 1
     val caches = mutableListOf<Path>()
-    val observations = JevGuidelineEval.run(projects, rounds, "--rules" in rest) { Jev.cached(java.nio.file.Files.createTempDirectory("ilsim-jev-eval").also(caches::add)) }
+    val clients = mutableListOf<Jev>()
+    val observations = JevGuidelineEval.run(projects, rounds, "--rules" in rest) { round ->
+        (if (round == 1 && "--fresh" !in rest) Jev.cached(evalDecisions(store)) else Jev.cached(java.nio.file.Files.createTempDirectory("ilsim-jev-eval").also(caches::add))).also(clients::add)
+    }
     println(JevGuidelineEval.report(projects, observations))
-    println("JEV 호출 ${caches.sumOf { dir -> dir.toFile().listFiles { f -> f.name.endsWith(".json") }?.size ?: 0 }}회")
+    println(jevCalls(clients))
     caches.forEach { it.toFile().deleteRecursively() }
     out?.let { Path.of(it).also { f -> f.toAbsolutePath().parent.createDirectories() }.writeText(JevGuidelineEval.toJson(observations)); println("저장: $it") }
 }

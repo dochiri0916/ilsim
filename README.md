@@ -109,7 +109,8 @@ claude plugin marketplace update ilsim && claude plugin update ilsim@ilsim
 - 프로젝트마다 그 프로젝트 문서로 만든 별도의 문서 지침 검증기가 돈다. 문서에 적힌 규칙 중 기계적으로 확인되는 것(이름 형식, 필수·금지 애너테이션, 금지 import·코드, 파일 위치, 크기 제한 등)은 `analyze_project` 또는 `ilsim-runner doc-rules <id>`로 그 프로젝트 전용 검증기(`~/.ilsim/projects/<id>/doc-rules.json`, 규칙 id `doc:`)에 옮긴다. Claude가 프로젝트 디렉터리 구조를 보고 옮기므로 "컨트롤러는 리포지토리를 쓰지 않는다"처럼 역할 이름으로 적은 규칙도 경로·패키지로 옮긴다. JEV가 원문과 같은지 판정하며, 승인하면 제출 때 `doc-rules` 검사가 바꾼 코드에 새로 생기는 위반을 막는다. 옮기지 못한 문장은 위 JEV 판정으로 확인한다(Java·Kotlin). `ilsim-runner check <id>`로 전체 코드를 검사할 수 있다.
 - `ilsim-runner guidelines <id> "<요청>" [기준 Git ref]`로 JEV가 고르는 지침과 점수, 작업 트리 diff의 위반 판정을 미리 볼 수 있다.
 - `ilsim-runner jev-eval guidelines`는 정답이 있는 평가 세트(`ilsim-runner/corpus/jev-guideline`: 실제·가상 프로젝트와 시험 환경 10개의 문서·요청·변경·문서 규칙 후보)로 운영과 같은 JEV 질문의 정확도를 재고, 질문별 놓침·오경보와 기준값 제안을 보인다(`--repeat`로 반복 안정성, `--sections`로 구간 정답 확인, `--rules`로 문서 규칙 질문만).
-- 문서 목록은 `ilsim-runner docs <id>`로 보고, `docs add <id> <경로>`(저장소 밖 파일·폴더 가능)·`docs exclude <id> <경로>`·`docs remove <id> <경로>`로 고친다.
+- 문서 목록은 `ilsim-runner docs <id>`로 보고, `docs add <id> <경로>`(저장소 밖 파일·폴더 가능)·`docs exclude <id> <경로>`·`docs remove <id> <경로>`로 고친다. 이 설정은 그 PC에만 남는다. 어느 PC에서나 빼야 하는 지침이 아닌 문서(인수인계·평가 데이터 등)는 저장소 루트 `.ilsimignore`에 한 줄에 경로 하나(파일 또는 폴더, `#` 줄은 무시)로 적는다. 커밋된 내용만 쓴다.
+- `jev-eval`은 1회차 판정을 `~/.ilsim/eval-decisions`에 저장해, 바뀌지 않은 사례는 다시 묻지 않고 바뀐 사례만 JEV를 부른다. `--repeat`의 2회차부터는 흔들림을 재려고 저장된 판정 없이 새로 묻고, `--fresh`는 1회차도 새로 묻는다(JEV 모델이 바뀐 뒤 다시 잴 때). 끝에 새 호출과 재사용 횟수를 보인다.
 
 ## 아키텍처·컨벤션 추천
 

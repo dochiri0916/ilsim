@@ -36,13 +36,13 @@ object JevUndecidedEval {
         }
     }
 
-    fun run(samples: List<Sample>, jev: Jev, repeat: Int = 1): List<UndecidedRecord> {
+    fun run(samples: List<Sample>, jev: Jev, repeat: Int = 1, fresh: Jev = jev): List<UndecidedRecord> {
         val pool = java.util.concurrent.Executors.newFixedThreadPool(Guidelines.PARALLEL)
         try {
             val answers = samples.map { s ->
                 pool.submit<List<Map<String, Double>?>> {
                     val shown = UndecidedCheck.shown(s.spec, s.change.stage, s.questions, s.decisions, s.text)
-                    (1..repeat).map { UndecidedCheck.ask(jev, s.spec, s.change.stage, s.questions, s.decisions, shown) }
+                    (1..repeat).map { UndecidedCheck.ask(if (it == 1) jev else fresh, s.spec, s.change.stage, s.questions, s.decisions, shown) }
                 }
             }.map { it.get() }
             return samples.zip(answers).flatMap { (s, rounds) ->

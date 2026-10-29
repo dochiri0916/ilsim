@@ -27,9 +27,9 @@ object JevScopeEval {
         Sample(root.fileName.toString(), case.stage, root.resolve(case.spec).readText(), case.files.map { it to root.resolve(it.diff).readText() })
     }
 
-    fun run(samples: List<Sample>, jev: Jev, repeat: Int = 1): List<ScopeRecord> = samples.flatMap { s ->
+    fun run(samples: List<Sample>, jev: Jev, repeat: Int = 1, fresh: Jev = jev): List<ScopeRecord> = samples.flatMap { s ->
         val changed = s.files.map { it.first.path }
-        val rounds = (1..repeat).map { ScopeCheck.ask(jev, s.spec, s.stage, changed, s.files.associate { (f, diff) -> f.path to diff }) }
+        val rounds = (1..repeat).map { ScopeCheck.ask(if (it == 1) jev else fresh, s.spec, s.stage, changed, s.files.associate { (f, diff) -> f.path to diff }) }
         s.files.map { (f, _) -> ScopeRecord(s.name, f.path, f.inside, ScopeCheck.listed(s.spec, f.path), rounds.map { it?.get(f.path) }, f.note) }
     }
 

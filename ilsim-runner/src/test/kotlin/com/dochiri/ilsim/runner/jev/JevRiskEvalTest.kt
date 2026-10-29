@@ -84,6 +84,31 @@ class JevRiskEvalTest {
     }
 
     @Test
+    fun `평가 1회차는 저장된 판정을 다시 쓰고 반복 회차만 새로 묻는다`() {
+        val dir = Files.createTempDirectory("ilsim-jev-eval")
+        val cache = Files.createTempDirectory("ilsim-jev-eval-cache")
+        try {
+            case(dir, "a-risk", "RISK", service)
+            val samples = JevRiskEval.load(dir)
+            fun client(directory: Path?) = Jev(TypeSafeJevClient.builder().apiKey("k").transport(Transport(mapper) { _, _ -> 0.95 }).build(), directory)
+            val first = client(cache)
+            val fresh = client(null)
+            JevRiskEval.batched(samples, first, repeat = 3, fresh = fresh)
+            assertEquals(1 to 0, first.calls.get() to first.reused.get())
+            assertEquals(2, fresh.calls.get())
+            val again = client(cache)
+            val freshAgain = client(null)
+            val run = JevRiskEval.batched(samples, again, repeat = 2, fresh = freshAgain)
+            assertEquals(0 to 1, again.calls.get() to again.reused.get(), "바뀌지 않은 사례는 다시 묻지 않는다")
+            assertEquals(1, freshAgain.calls.get(), "반복 회차는 흔들림을 재려고 새로 묻는다")
+            assertEquals(listOf(0.95, 0.95), run.judgments.getValue("a-risk").map { it.r })
+        } finally {
+            dir.toFile().deleteRecursively()
+            cache.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun `AUROC 는 위험 점수가 안전 점수보다 높은 쌍의 비율이다`() {
         assertEquals(1.0, JevRiskEval.auroc(listOf(0.9, 0.8), listOf(0.1, 0.2)))
         assertEquals(0.5, JevRiskEval.auroc(listOf(0.5), listOf(0.5)))

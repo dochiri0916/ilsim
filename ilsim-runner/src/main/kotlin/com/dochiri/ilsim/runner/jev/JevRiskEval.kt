@@ -52,16 +52,16 @@ object JevRiskEval {
         return result to (System.nanoTime() - start) / 1_000_000
     }
 
-    private fun collect(mode: String, samples: List<Sample>, repeat: Int, judge: (Sample) -> Judgment): Run {
+    private fun collect(mode: String, samples: List<Sample>, repeat: Int, judge: (Sample, Int) -> Judgment): Run {
         val usage = mutableListOf<AiUsage>()
         val judgments = UsageScope.collect(usage) {
-            samples.filter { it.finding != null }.associate { s -> s.id to (1..repeat).map { judge(s) } }
+            samples.filter { it.finding != null }.associate { s -> s.id to (1..repeat).map { judge(s, it) } }
         }
         return Run(mode, judgments, usage.toList())
     }
 
-    fun batched(samples: List<Sample>, jev: Jev, repeat: Int = 1): Run = collect("JEV 묶음 질문(운영)", samples, repeat) { s ->
-        val (answers, millis) = timed { JevRiskScreen.answers(jev, s.root, listOf(s.finding!!)) }
+    fun batched(samples: List<Sample>, jev: Jev, repeat: Int = 1, fresh: Jev = jev): Run = collect("JEV 묶음 질문(운영)", samples, repeat) { s, round ->
+        val (answers, millis) = timed { JevRiskScreen.answers(if (round == 1) jev else fresh, s.root, listOf(s.finding!!)) }
         if (answers == null) Judgment(verdict = "ERROR", millis = millis)
         else {
             val r = answers["r0"]
@@ -70,8 +70,8 @@ object JevRiskEval {
         }
     }
 
-    fun single(samples: List<Sample>, jev: Jev, repeat: Int = 1): Run = collect("JEV 단일 질문", samples, repeat) { s ->
-        val (p, millis) = timed { JevRiskScreen.of(jev, s.root, Int.MAX_VALUE)(s.finding!!) }
+    fun single(samples: List<Sample>, jev: Jev, repeat: Int = 1, fresh: Jev = jev): Run = collect("JEV 단일 질문", samples, repeat) { s, round ->
+        val (p, millis) = timed { JevRiskScreen.of(if (round == 1) jev else fresh, s.root, Int.MAX_VALUE)(s.finding!!) }
         if (p == null) Judgment(verdict = "ERROR", millis = millis) else Judgment(p, null, verdict(p), millis)
     }
 

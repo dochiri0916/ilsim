@@ -45,6 +45,8 @@ class Jev(private val client: JevClient?, private val cacheDirectory: Path? = nu
     private val json = Json { ignoreUnknownKeys = true }
     private var failures = 0
     private var blockedUntil = 0L
+    val calls = java.util.concurrent.atomic.AtomicInteger()
+    val reused = java.util.concurrent.atomic.AtomicInteger()
 
     val enabled: Boolean get() = client != null
 
@@ -55,9 +57,10 @@ class Jev(private val client: JevClient?, private val cacheDirectory: Path? = nu
             "questions" to questions.map { (id, q) -> mapOf("id" to id, "instructions" to q.instructions(), "criteria" to q.criteria()) })))
         val file = cacheDirectory?.resolve("$key.json")
         if (file?.exists() == true) runCatching { json.decodeFromString<Map<String, Double>>(file.readText()) }.getOrNull()
-            ?.takeIf { a -> a.keys == questions.keys && a.values.all { it.isFinite() && it in 0.0..1.0 } }?.let { return it }
+            ?.takeIf { a -> a.keys == questions.keys && a.values.all { it.isFinite() && it in 0.0..1.0 } }?.let { reused.incrementAndGet(); return it }
         if (System.currentTimeMillis() < blockedUntil) return null
         val id = UUID.randomUUID().toString()
+        calls.incrementAndGet()
         return try {
             val evaluation = c.evaluate(state, *questions.values.toTypedArray())
             val usage = evaluation.usage()

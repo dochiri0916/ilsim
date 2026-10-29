@@ -66,11 +66,11 @@ object JevRequirementEval {
 
     internal fun questions(requirements: List<Requirement>): Map<String, NoulQuestion> = RequirementCheck.questions(requirements)
 
-    fun jev(samples: List<Sample>, jev: Jev, repeat: Int = 1): List<Run> {
+    fun jev(samples: List<Sample>, jev: Jev, repeat: Int = 1, fresh: Jev = jev): List<Run> {
         val usage = mutableListOf<AiUsage>()
         val raw = UsageScope.collect(usage) {
             samples.associate { s ->
-                s.id to (1..repeat).map { JevRiskEval.timed { jev.probabilities(RequirementCheck.state(s.requirements, s.diff), questions(s.requirements)) } }
+                s.id to (1..repeat).map { JevRiskEval.timed { (if (it == 1) jev else fresh).probabilities(RequirementCheck.state(s.requirements, s.diff), questions(s.requirements)) } }
             }
         }
         fun run(mode: String, gated: Boolean) = Run(mode, samples.associate { s ->

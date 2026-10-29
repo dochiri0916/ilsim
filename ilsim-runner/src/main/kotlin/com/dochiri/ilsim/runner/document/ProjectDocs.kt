@@ -16,12 +16,13 @@ data class DocSection(val path: String, val line: Int, val heading: String, val 
 object ProjectDocs {
     const val MAX_SECTION = 4000
     const val MAX_FILE_BYTES = 200_000L
+    const val IGNORE_FILE = ".ilsimignore"
     val extensions = setOf("md", "markdown", "adoc", "rst")
 
     fun files(root: Path, project: ProjectEntry, otherProjects: Collection<Path>, feature: String?): Map<String, Path> {
         val base = real(root)
         val nested = otherProjects.map(::real).filter { it != base && it.startsWith(base) }.map { relative(base, it) }
-        val skipped = nested + project.docsExclude.map { it.trim().trimEnd('/') }.filter { it.isNotEmpty() } + listOfNotNull(feature?.let { "specs/$it" })
+        val skipped = nested + (project.docsExclude + ignored(base)).map { it.trim().trimEnd('/') }.filter { it.isNotEmpty() } + listOfNotNull(feature?.let { "specs/$it" })
         val tracked = Shell.gitOk(base, "-c", "core.quotepath=false", "ls-files", "--", *extensions.map { "*.$it" }.toTypedArray())
             .lines().map { it.trim() }.filter { it.isNotEmpty() }
             .associateWith { base.resolve(it) }
@@ -36,6 +37,12 @@ object ProjectDocs {
         return (tracked + extra).filterKeys { key -> skipped.none { key == it || key.startsWith("$it/") } }
             .filterValues { it.exists() && it.isRegularFile() && it.fileSize() <= MAX_FILE_BYTES }
             .toSortedMap()
+    }
+
+    fun ignored(root: Path): List<String> {
+        val result = Shell.git(real(root), "show", "HEAD:./$IGNORE_FILE")
+        if (result.exit != 0) return emptyList()
+        return result.output.lines().map { it.trim() }.filterNot { it.startsWith("#") }.map { it.removePrefix("./").trim('/') }.filter { it.isNotEmpty() }
     }
 
     val buildFiles = setOf("build.gradle", "build.gradle.kts", "pom.xml", "package.json", "Cargo.toml", "go.mod", "pyproject.toml", "setup.py", "Gemfile", "composer.json")

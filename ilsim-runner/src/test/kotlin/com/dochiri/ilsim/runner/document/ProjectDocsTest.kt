@@ -52,6 +52,17 @@ class ProjectDocsTest {
     }
 
     @Test
+    fun `저장소에 커밋된 일심 제외 목록의 경로만 지침 문서에서 뺀다`() {
+        repo.resolve(ProjectDocs.IGNORE_FILE).writeText("# 지침이 아닌 문서\ndocs/old/\n/README.md\n\n")
+        Shell.gitOk(repo, "add", ProjectDocs.IGNORE_FILE)
+        Shell.gitOk(repo, "-c", "user.name=ilsim", "-c", "user.email=ilsim@example.com", "commit", "-q", "-m", "init")
+        repo.resolve(ProjectDocs.IGNORE_FILE).writeText("docs/old/\n/README.md\ndocs/architecture.adoc\n")
+        assertEquals(listOf("docs/old", "README.md"), ProjectDocs.ignored(repo))
+        val files = ProjectDocs.files(repo, ProjectEntry(repo.toString(), "demo"), emptyList(), null)
+        assertEquals(listOf("docs/architecture.adoc", "specs/prev/requirements.md", "specs/slug/requirements.md", "sub/GUIDE.md"), files.keys.toList(), "커밋하지 않은 제외 목록 변경은 쓰지 않는다")
+    }
+
+    @Test
     fun `제목 단위로 나누고 코드 블록 안의 샵은 제목으로 보지 않으며 긴 구간은 자른다`() {
         val text = "# 규칙\n\n## 계층\n도메인 순수\n```bash\n# 주석\necho x\n```\n\n## 비어 있음\n\n# 테스트\n" + "가".repeat(ProjectDocs.MAX_SECTION + 10) + "\n"
         val sections = ProjectDocs.split("a.md", text)
