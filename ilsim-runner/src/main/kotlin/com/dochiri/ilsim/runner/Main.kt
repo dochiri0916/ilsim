@@ -565,21 +565,51 @@ fun analyzeDocRules(store: ConfigStore, id: String, out: Appendable) {
     val path = Path.of(project.path).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
     val facts = FactScanner.scan(path, profile.modules)
+    val docs = projectDocs(config, id, path, project)
+    val rules = DocRuleStore(store)
     if (!DocRules.applicable(profile.buildTool, facts)) {
+        rules.save(id, DocRules.DocRuleModel(notes = listOf("Java·Kotlin 소스와 빌드 파일이 없어 정적 검증기로 옮기지 않음"), files = docs.keys.sorted(), applicable = false))
         out.appendLine("Java·Kotlin 소스와 빌드 파일이 없어 문서 지침 검증기를 만들지 않았습니다: $id (문서 지침은 제출 때 JEV 판정으로 확인)")
         return
     }
-    val others = config.projects.filterKeys { it != id }.values.map { Path.of(it.path) }
-    val sections = ProjectDocs.sections(ProjectDocs.files(path, project, others, null)).filterNot { Gate.isArtifact(it.path) }
+    val sections = ProjectDocs.sections(docs)
     val cost = CostTally("DOC_RULES")
-    val rules = DocRuleStore(store)
     val extracted = DocRules.extract(sections, facts, rules.load(id), Jev.fromEnvironment()) { cost.ask(it, AI_MODEL) }
     var model: DocRules.DocRuleModel? = null
-    val file = rules.update(id) { latest -> DocRules.carryOver(latest, extracted).also { model = it } }
+    val file = rules.update(id) { latest -> DocRules.carryOver(latest, extracted).copy(files = docs.keys.sorted()).also { model = it } }
     out.appendLine("저장: $file (프로젝트 $id 문서 지침 검증기, 문서 구간 ${sections.size}개)")
     out.append(DocRules.report(checkNotNull(model)))
     extracted.notes.forEach { out.appendLine("  ! $it") }
     cost.summary()?.let { out.appendLine("문서 규칙 $it") }
+}
+
+fun projectDocs(config: RunnerConfig, id: String, root: Path, project: ProjectEntry): Map<String, Path> =
+    ProjectDocs.files(root, project, config.projects.filterKeys { it != id }.values.map { Path.of(it.path) }, null).filterKeys { !Gate.isArtifact(it) }
+
+fun pendingRules(store: ConfigStore, id: String): Map<String, Int> = listOfNotNull(
+    ArchitectureStore(store).load(id)?.let { "아키텍처" to RuleApproval.undecidedIds(it).size },
+    ConventionStore(store).load(id)?.let { "컨벤션" to ConventionApproval.undecidedIds(it).filterNot(DocRules::isDocRule).size },
+    DocRuleStore(store).load(id)?.let { "문서 규칙" to DocRules.undecidedIds(it).size },
+).filter { it.second > 0 }.toMap()
+
+fun analysisGaps(store: ConfigStore, id: String, docs: Map<String, Path>): List<String> {
+    val gaps = mutableListOf<String>()
+    if (ArchitectureStore(store).load(id) == null) gaps += "아키텍처 분석이 없습니다"
+    if (ConventionStore(store).load(id) == null) gaps += "컨벤션 분석이 없습니다"
+    val model = DocRuleStore(store).load(id)
+    when {
+        model == null -> gaps += "문서 지침 검증기가 없습니다"
+        !model.applicable -> {}
+        model.files.isEmpty() && model.documents.isNotEmpty() -> gaps += "문서 지침 검증기가 예전 형식이라 문서가 바뀌었는지 알 수 없습니다"
+        else -> {
+            val added = (docs.keys - model.files.toSet()).sorted()
+            if (added.isNotEmpty()) gaps += "분석 뒤 생긴 문서 ${added.take(5).joinToString()}"
+            val sections = ProjectDocs.sections(docs)
+            val changed = model.documents.filter { d -> sections.none { it.path == d.path && DocRules.sectionHash(it) == d.hash } }
+            if (changed.isNotEmpty()) gaps += "분석 뒤 바뀌거나 사라졌거나 검증기 버전이 달라진 문서 규칙 구간 ${changed.take(5).joinToString { "${it.path}:${it.line} ${it.heading}" }}"
+        }
+    }
+    return gaps
 }
 
 private fun loadJevKey(store: ConfigStore, config: RunnerConfig) {

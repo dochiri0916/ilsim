@@ -32,13 +32,21 @@ object DocRules {
     class Extracted(val rules: List<ConventionRule>, val documents: List<DocCoverage>, val notes: List<String>)
 
     @Serializable
-    data class DocRuleModel(val rules: List<ConventionRule> = emptyList(), val documents: List<DocCoverage> = emptyList(), val notes: List<String> = emptyList())
+    data class DocRuleModel(
+        val rules: List<ConventionRule> = emptyList(),
+        val documents: List<DocCoverage> = emptyList(),
+        val notes: List<String> = emptyList(),
+        val files: List<String> = emptyList(),
+        val applicable: Boolean = true,
+    )
 
     internal class Proposal(val section: DocSection, val kind: String, val params: Map<String, List<String>>, val description: String, val quote: String)
 
     internal class SectionResult(val section: DocSection, val hash: String, val proposals: List<Proposal>, val remaining: List<String>)
 
     fun isDocRule(id: String) = id.startsWith(PREFIX)
+
+    fun sectionHash(s: DocSection): String = ReviewCache.digest("$VERSION|${s.heading}|${s.text}")
 
     internal fun applicable(buildTool: String, facts: Facts): Boolean = facts.files.isNotEmpty() || buildTool == "maven" || buildTool.startsWith("gradle")
 
@@ -53,7 +61,7 @@ object DocRules {
         val pending = mutableListOf<Pair<DocSection, String>>()
         val tree = structure(facts)
         for (s in sections.filter { (scores[it] ?: 0.0) >= Guidelines.CLEAR }) {
-            val hash = ReviewCache.digest("$VERSION|${s.heading}|${s.text}")
+            val hash = sectionHash(s)
             val cached = known.firstOrNull { it.hash == hash }
             if (cached == null) { pending += s to hash; continue }
             coverage += cached.copy(path = s.path, line = s.line, heading = s.heading)

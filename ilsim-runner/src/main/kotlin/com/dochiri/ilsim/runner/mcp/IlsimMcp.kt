@@ -22,6 +22,9 @@ import com.dochiri.ilsim.runner.UserDecision
 import com.dochiri.ilsim.runner.analyzeArchitecture
 import com.dochiri.ilsim.runner.analyzeConvention
 import com.dochiri.ilsim.runner.analyzeDocRules
+import com.dochiri.ilsim.runner.analysisGaps
+import com.dochiri.ilsim.runner.pendingRules
+import com.dochiri.ilsim.runner.projectDocs
 import com.dochiri.ilsim.runner.decideRules
 import com.dochiri.ilsim.runner.rulesReport
 import com.dochiri.ilsim.runner.architecture.ArchitectureStore
@@ -118,13 +121,19 @@ class IlsimMcp(
         val dirty = ws.changedFiles()
         if (dirty.isNotEmpty()) throw IllegalStateException("커밋하지 않은 변경이 있어 작업을 시작할 수 없습니다(${dirty.take(5).joinToString()}). 사용자에게 커밋하거나 되돌릴지 물어보세요")
         val config = store.load()
+        analysisGaps(store, ws.projectId, projectDocs(config, ws.projectId, ws.root, ws.project)).takeIf { it.isNotEmpty() }?.let { gaps ->
+            throw IllegalStateException("이 프로젝트의 분석이 없거나 낡아 아키텍처·컨벤션·문서 지침을 빠짐없이 강제할 수 없습니다(${gaps.joinToString("; ")}). analyze_project를 먼저 실행한 뒤 start_task를 다시 호출하세요")
+        }
         server.register(PollRequest(config.runnerId, listOf(ProjectReport(ws.projectId, ws.project.name))))
         val created = server.createAgentTask(AgentTaskRequest(ws.projectId, feature?.takeIf { it.isNotBlank() }, requirement))
         val branch = "ilsim/${created.feature}-${created.taskId.take(8)}"
         Shell.gitOk(ws.root, "checkout", "-b", branch)
         active.save(ws.root, ActiveTask(created.taskId, ws.projectId, created.feature, branch))
         guides.save(created.taskId, buildGuide(ws, created.feature, requirement))
-        val warning = ws.installCommitHook(runnerCommand)?.let { "\n주의: $it" }.orEmpty()
+        val pending = pendingRules(store, ws.projectId).takeIf { it.isNotEmpty() }?.let { counts ->
+            "\n주의: 사용자 승인을 기다리는 규칙이 있습니다(${counts.entries.joinToString { "${it.key} ${it.value}개" }}). 승인 전에는 제출 때 정적으로 강제하지 않습니다(문서 지침은 JEV가 판정). 단계를 진행하기 전에 사용자에게 review_rules로 보여 주고 decide_rules로 정하게 권하세요"
+        }.orEmpty()
+        val warning = ws.installCommitHook(runnerCommand)?.let { "\n주의: $it" }.orEmpty() + pending
         return "작업을 만들었습니다: ${created.feature} (${created.taskId.take(8)}), 브랜치 $branch$warning\n\n" + nextStep()
     }
 

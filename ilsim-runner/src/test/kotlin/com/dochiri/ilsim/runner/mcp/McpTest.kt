@@ -131,6 +131,7 @@ class McpTest {
         assertContains(call("next_step"), "진행 중인 일심 작업이 없습니다")
         assertContains(edit("README.md").stdout, "start_task")
 
+        call("analyze_project")
         val started = call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         assertContains(started, "일심 단계: REQUIREMENTS")
         assertContains(started, "submit_result 의 document")
@@ -176,6 +177,15 @@ class McpTest {
         assertContains(cases, "REQ-2 대문자도 처리한다")
         assertContains(edit("specs/slug/test-spec.md").stdout, "deny")
         assertTrue(!repo.resolve("specs").toFile().exists(), "프로젝트 안에 일심 산출물을 만들지 않는다")
+    }
+
+    @Test
+    fun `프로젝트 분석이 없거나 분석 뒤 문서가 바뀌면 작업을 시작하지 않고 분석부터 하게 한다`() {
+        val missing = runCatching { call("start_task", """{"requirement":"x"}""") }.exceptionOrNull()!!.message!!
+        assertContains(missing, "아키텍처 분석이 없습니다")
+        assertContains(missing, "analyze_project를 먼저 실행")
+        assertContains(call("analyze_project"), "[문서 지침 검증기]")
+        assertContains(call("start_task", """{"requirement":"x","feature":"slug"}"""), "작업을 만들었습니다")
     }
 
     @Test
@@ -226,6 +236,7 @@ class McpTest {
         assertContains(call("review_rules"), "저장된 규칙이 없습니다")
         assertContains(runCatching { call("decide_rules", """{"ids":["nope"],"decision":"approve"}""") }.exceptionOrNull()!!.message!!, "알 수 없는 규칙 id")
         assertContains(hook("pre-tool-use", """{"cwd":"$repo","tool_name":"mcp__plugin_ilsim_ilsim__decide_rules","tool_input":{"ids":["a","b"],"decision":"reject"}}""").stdout, "\"permissionDecision\":\"ask\"")
+        call("analyze_project")
         call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         val hook = repo.resolve(".git/hooks/pre-commit")
         assertContains(hook.toFile().readText(), Workspace.HOOK_MARK)
@@ -253,6 +264,7 @@ class McpTest {
 
     @Test
     fun `통과한 테스트 코드 단계로 되돌리면 구현 변경을 보관했다가 구현 단계로 돌아올 때 되살린다`() {
+        call("analyze_project")
         call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         server.index = server.stages.indexOf("IMPLEMENTATION"); server.status = "PENDING"
         assertContains(call("next_step"), "일심 단계: IMPLEMENTATION")
@@ -282,6 +294,7 @@ class McpTest {
         val counting: (String, String) -> String = { _, _ -> audits++; """{"verdict":"PASS","findings":[]}""" }
         fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |\n| TC-2 | REQ-2 |")); server.approve("t")
@@ -311,6 +324,7 @@ class McpTest {
     fun `구현 단계는 요구사항 문서의 영향 범위와 관계없는 파일을 바꾸면 제출을 실패시킨다`() {
         fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/main/Slug.java`\n- `src/test/SlugTest.java`")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
@@ -344,6 +358,7 @@ class McpTest {
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
         fun failure(name: String, args: String) = runCatching { run(name, args) }.exceptionOrNull()?.message.orEmpty()
         jevAnswer = { id -> if (id[0] in "uv") 0.05 else 0.95 }
+        run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         val spec = "# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/main/Slug.java`\n- `src/test/SlugTest.java`\n\n## 미결정 사항\n- Q1. 빈 문자열이면 무엇을 돌려주는가?\n- Q2. null 이면 예외를 던지는가?\n"
         assertContains(run("submit_result", doc(spec)), "나중에 답하면 record_decision으로 기록")
@@ -406,6 +421,7 @@ class McpTest {
     fun `TC-18 구현 단계 diff가 입력 한도로 잘리면 누락 대신 불확실로 기록한다`() {
         fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
@@ -441,6 +457,7 @@ class McpTest {
             else -> null
         } }
 
+        call("analyze_project")
         val started = call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         assertContains(started, "## 프로젝트 문서 지침")
         assertContains(started, "docs/architecture.md:3 — 아키텍처 > 계층")
@@ -484,6 +501,7 @@ class McpTest {
             else -> null
         } }
 
+        call("analyze_project")
         val started = call("start_task", """{"requirement":"결제 금액 계산을 고친다","feature":"slug"}""")
         assertContains(started, "결제 금액은 Money 로 다룬다")
         assertTrue("배송비는 정수 원 단위로 다룬다" !in started)
