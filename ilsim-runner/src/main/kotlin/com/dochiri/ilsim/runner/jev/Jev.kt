@@ -66,9 +66,11 @@ class Jev(private val client: JevClient?, private val cacheDirectory: Path? = nu
             val usage = evaluation.usage()
             val rawCost = evaluation.rawResponse().path("usage").path("cost_usd")
             val cost = rawCost.takeIf { it.isNumber }?.asDouble()?.takeIf { it.isFinite() && it >= 0 }
-            UsageScope.record(AiUsage(id, "JEV", evaluation.model(), "none", costUsd = cost,
-                inputTokens = usage.inputTokens().orElse(0), outputTokens = usage.outputTokens().orElse(0),
-                status = if (cost == null) "UNKNOWN" else "CONFIRMED", questions = questions.size))
+            val tokens = usage.inputTokens().orElse(0).toLong().takeIf { it > 0 }
+                ?: Guidelines.weight(mapper.writeValueAsString(mapOf("state" to state, "questions" to questions.values.map { q -> mapOf("instructions" to q.instructions(), "criteria" to q.criteria()) }))).toLong()
+            UsageScope.record(AiUsage(id, "JEV", evaluation.model(), "none", costUsd = cost ?: tokens * INPUT_USD_PER_TOKEN,
+                inputTokens = tokens, outputTokens = usage.outputTokens().orElse(0),
+                status = if (cost == null) "ESTIMATED" else "CONFIRMED", questions = questions.size))
             val answers = questions.mapValues { (_, q) -> evaluation.answer(q).probability() }
             require(answers.values.all { it.isFinite() && it in 0.0..1.0 }) { "잘못된 JEV 확률" }
             failures = 0
@@ -95,6 +97,7 @@ class Jev(private val client: JevClient?, private val cacheDirectory: Path? = nu
     fun probability(state: Any, question: NoulQuestion): Double? = probabilities(state, mapOf(question.id() to question))?.get(question.id())
 
     companion object {
+        const val INPUT_USD_PER_TOKEN = 0.042 / 1_000_000
         private var cachedKey: String? = null
         private var cached: Jev? = null
         private fun key() = (listOfNotNull(JevKey.also { it.refresh() }.fromServer) + listOf("TYPESAFE_API_KEY", "JEV_API_KEY").mapNotNull { System.getenv(it) }).firstOrNull { it.isNotBlank() }?.trim()

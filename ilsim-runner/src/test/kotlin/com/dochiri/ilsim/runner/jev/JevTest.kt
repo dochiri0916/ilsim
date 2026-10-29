@@ -50,6 +50,18 @@ class JevTest {
     }
 
     @Test
+    fun `응답에 비용이 없으면 입력 토큰으로 JEV 비용을 추정한다`() {
+        val usage = mutableListOf<com.dochiri.ilsim.runner.AiUsage>()
+        com.dochiri.ilsim.runner.UsageScope.collect(usage) {
+            jev(FakeTransport(mapper) { 0.7 }).probability(mapOf("code" to "x".repeat(2000)), io.github.gudcks0305.jev.NoulQuestion.of("a", "?"))
+        }
+        val call = usage.single()
+        assertEquals("ESTIMATED", call.status)
+        assertTrue(call.inputTokens >= 1000)
+        assertEquals(call.inputTokens * Jev.INPUT_USD_PER_TOKEN, call.costUsd)
+    }
+
+    @Test
     fun `MCP가 서버보다 먼저 떠서 키를 못 받았으면 서버가 뜬 뒤 다시 받아 온다`() {
         try {
             var up = false

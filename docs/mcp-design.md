@@ -102,7 +102,7 @@ Claude 앱(Claude Code)
 ## 7. `submit_result` 게이트
 
 - 정책 상한(2026-10-29, 대기업 하네스 사례의 "에이전트가 우회할 수 없는 상한"): 저장소 루트에 커밋한 `.ilsim-policy.json`(HEAD 내용만, 작업 중 Agent가 고쳐도 반영 안 됨)의 `maxSubmissions`(한 단계에서 실패한 제출 수), `maxClaudeCalls`(작업의 Claude 호출 수), `maxCostUsd`(작업의 JEV+Claude 비용)에 이르면 다음 제출을 검사 없이 거절하고 작업을 차단한다(재시도 불가 결과 보고). 사용자가 다시 시도하라고 해 `retry_task`를 부르면 세던 값을 0으로 돌린다. 값은 활성 작업 파일(`ActiveTask.submissions`·`claudeCalls`·`costUsd`)에 센다. 서버의 단계 시도 상한(3회)은 그대로다.
-- 제출 기록과 지표(2026-10-29): 제출마다 성공·실패, 실패 원인(`path`·`document`·`gates:<검사>`·`requirements`·`scope`·`scope-change`·`undecided`·`test-cases`·`test-bypass`·`guidelines`·`ai-audit`), Claude 호출 수, JEV·Claude 비용을 `attempt` 이벤트로 서버에 남긴다. 예전에는 실패한 제출이 서버 결과로 남지 않아 실패 원인과 그 비용을 셀 수 없었다. `ilsim-runner metrics <id>`가 서버 `GET /runner/api/metrics`로 단계별 제출·실패 원인·Claude 호출·비용과 작업별 요약을 보이고, 완료 작업 브랜치가 현재 브랜치에 병합됐는지 Git으로 확인한다. 검토 과다·기준값 조정의 근거로 쓴다.
+- 제출 기록과 지표(2026-10-29): 제출마다 성공·실패, 실패 원인(`path`·`document`·`gates:<검사>`·`requirements`·`scope`·`scope-change`·`undecided`·`test-cases`·`test-bypass`·`guidelines`·`ai-audit`), Claude 호출 수, JEV·Claude 비용을 `attempt` 이벤트로 서버에 남긴다. 예전에는 실패한 제출이 서버 결과로 남지 않아 실패 원인과 그 비용을 셀 수 없었다. `ilsim-runner metrics <id>`가 서버 `GET /runner/api/metrics`로 단계별 제출·실패 원인·Claude 호출·비용과 작업별 요약을 보이고, 완료 작업 브랜치가 현재 브랜치에 병합됐는지 Git으로 확인한다. 검토 과다·기준값 조정의 근거로 쓴다. TypeSafe 응답에 JEV 비용(`usage.cost_usd`)이 없으면 입력 토큰(응답에 없으면 요청 JSON 크기로 어림한 토큰)에 백만 토큰당 $0.042를 곱해 추정하고 `ESTIMATED`로 표시한다(서버 사용량 집계에서는 미확인으로 남는다).
 
 | 단계 | 게이트 |
 |---|---|
