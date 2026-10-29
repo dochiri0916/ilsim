@@ -88,6 +88,8 @@ object JevGuidelineEval {
         Question("v-e2e", "위반 판정(실제 선택 구간)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("v-first", "위반 판정(재질문 전, 항목 최댓값)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("diff", "변경 차단(가장 높은 위반 확률)", Guidelines.VIOLATED, false, Goal.PRECISION),
+        Question("diff-static", "변경 차단(승인한 문서 규칙 정적 검사)", Guidelines.VIOLATED, false, Goal.PRECISION),
+        Question("diff-all", "변경 차단·검토(정적 문서 규칙과 JEV 중 큰 값)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("gate", "문서 규칙: 규칙 구간 거름", Guidelines.CLEAR, false, Goal.RECALL),
         Question("f", "문서 규칙: 원문 그대로 옮겼는가", DocRules.FAITHFUL, false, Goal.PRECISION),
         Question("f-single", "문서 규칙: 원문 일치(후보마다 따로 판정)", DocRules.FAITHFUL, false, Goal.PRECISION),
@@ -177,7 +179,11 @@ object JevGuidelineEval {
                     val label = p.corpus.sections["${g.path}:${g.line}"]?.rule ?: return@forEach
                     add("v-e2e", "${d.id}/${g.source}", label && g.source in d.violates, e2e?.probabilities?.get(g))
                 }
-                add("diff", d.id, d.violates.isNotEmpty(), e2e?.let { c -> selected.mapNotNull { c.probabilities[it] }.maxOrNull() ?: 0.0 })
+                val jevScore = e2e?.let { c -> selected.mapNotNull { c.probabilities[it] }.maxOrNull() ?: 0.0 }
+                add("diff", d.id, d.violates.isNotEmpty(), jevScore)
+                val caught = if (staticCatch(diff, approvedRules(p))) 1.0 else 0.0
+                add("diff-static", d.id, d.violates.isNotEmpty(), caught)
+                add("diff-all", d.id, d.violates.isNotEmpty(), jevScore?.let { maxOf(it, caught) })
                 d.violates.filter { v -> selected.none { it.source == v } }.forEach { add("missed-selection", "${d.id}/$it", true, 0.0) }
                 val gold = p.sections.filter { p.relevant(it, request) == true }.map { Guideline(it.path, it.line, it.heading, it.text, 1.0) }
                 val check = Guidelines.check(jev, d.stage, gold, diff)
@@ -239,10 +245,42 @@ object JevGuidelineEval {
         Goal.PRECISION -> sweep.filter { score(obs, it, q.strict).fp == 0 }.minOrNull()
     }
 
+    private fun approvedRules(p: Project): List<com.dochiri.ilsim.runner.convention.ConventionRule> = toRules(p.corpus.rules.filter { it.faithful })
+
+    private fun toRules(rules: List<EvalRule>): List<com.dochiri.ilsim.runner.convention.ConventionRule> = rules.mapIndexed { i, r ->
+        com.dochiri.ilsim.runner.convention.ConventionRule("doc:eval$i", r.kind, r.description, com.dochiri.ilsim.runner.convention.DocProbes.normalize(r.kind, r.params), approved = true)
+    }
+
+    internal fun staticCatch(diff: String, rules: List<com.dochiri.ilsim.runner.convention.ConventionRule>): Boolean {
+        if (rules.isEmpty()) return false
+        val files = ScopeCheck.files(diff).mapNotNull { (path, text) ->
+            val ext = path.substringAfterLast('.', "")
+            if (ext !in setOf("java", "kt")) return@mapNotNull null
+            val added = text.lines().filter { it.startsWith("+") && !it.startsWith("+++") }.map { it.drop(1) }
+            val wrapped = if (added.any { Regex("""^\s*(public\s+|internal\s+)?(final\s+|abstract\s+|data\s+)?(class|interface|object|enum|record)\s""").containsMatchIn(it) }) added
+            else listOf("class ${baseName(path)} {") + added + "}"
+            val packaged = if (wrapped.any { it.trimStart().startsWith("package ") }) wrapped else listOf("package eval${if (ext == "java") ";" else ""}") + wrapped
+            com.dochiri.ilsim.runner.convention.FactScanner.parse(path, ext, com.dochiri.ilsim.runner.Gate.isTestPath(path), packaged)
+        }
+        if (files.isEmpty()) return false
+        val model = com.dochiri.ilsim.runner.convention.ConventionModel(null, 0, 0, emptyMap(), rules)
+        return com.dochiri.ilsim.runner.convention.ConventionChecker.check(com.dochiri.ilsim.runner.convention.Facts(files), model, approvedOnly = true).isNotEmpty()
+    }
+
+    private fun baseName(path: String) = path.substringAfterLast('/').substringBeforeLast('.')
+
     fun report(projects: List<Project>, observations: List<Observation>): String = buildString {
         val first = observations.filter { it.round == 1 }
         appendLine("JEV 지침·문서 규칙 판정 평가: 프로젝트 ${projects.size}개(${projects.joinToString { it.name }}), 구간 ${projects.sumOf { it.sections.size }}개, 요청 ${projects.sumOf { it.corpus.requests.size }}개, 변경 ${projects.sumOf { it.corpus.diffs.size }}개, 문서 규칙 후보 ${projects.sumOf { it.corpus.rules.size }}개, 반복 ${observations.maxOfOrNull { it.round } ?: 0}회")
         appendLine()
+        observations.filter { it.question == "diff-all" && it.p != null }.groupBy { it.project to it.item }.values.let { groups ->
+            val bad = groups.filter { it.first().expected }
+            val good = groups.filter { !it.first().expected }
+            val static = observations.filter { it.question == "diff-static" && it.expected && (it.p ?: 0.0) >= 1.0 }.map { it.project to it.item }.toSet()
+            appendLine("변경 단위 종합(정적 문서 규칙+JEV, 모든 반복 기준): 위반 ${bad.size}개 중 막음 ${bad.count { g -> g.all { it.p!! >= Guidelines.VIOLATED } }}(정적 ${static.size}), 검토로 올림 ${bad.count { g -> g.any { it.p!! < Guidelines.VIOLATED } && g.all { it.p!! > Guidelines.CLEAR } }}, 조용히 통과 ${bad.count { g -> g.any { it.p!! <= Guidelines.CLEAR } }} / 정상 ${good.size}개 중 잘못 막음 ${good.count { g -> g.any { it.p!! >= Guidelines.VIOLATED } }}, 검토로 올림 ${good.count { g -> g.any { it.p!! > Guidelines.CLEAR && it.p!! < Guidelines.VIOLATED } }}")
+            bad.filter { g -> g.any { it.p!! <= Guidelines.CLEAR } }.forEach { g -> appendLine("  조용히 통과: ${g.first().project}/${g.first().item} ${g.joinToString("/") { "%.2f".format(it.p) }}") }
+            appendLine()
+        }
         appendLine("질문 | 사례(양성) | AUROC | 현재 기준 | 정확도 | 놓침 | 오경보 | 판정 실패 | 제안 기준(놓침 0 또는 오경보 0)")
         for (q in questions) {
             val obs = first.filter { it.question == q.id }

@@ -13,6 +13,7 @@ object Guidelines {
     const val IRRELEVANT = 0.2
     const val VIOLATED = 0.8
     const val CLEAR = 0.4
+    const val LEGACY = 0.6
     const val APPLIES = 0.5
     const val BATCH = 10
     const val PARALLEL = 4
@@ -24,8 +25,10 @@ object Guidelines {
 
     data class Check(val probabilities: Map<Guideline, Double>, val violated: List<Guideline>, val uncertain: List<Guideline>, val truncated: Boolean, val parts: List<Part> = emptyList())
 
-    data class Part(val guideline: Guideline, val text: String, val batch: Double?, val single: Double?) {
-        val probability: Double? get() = single ?: batch
+    data class Part(val guideline: Guideline, val text: String, val batch: Double?, val single: Double?, val before: Double? = null, val added: Double? = null) {
+        val raw: Double? get() = listOfNotNull(batch, single).maxOrNull()
+        val legacy: Boolean get() = (before ?: 0.0) >= LEGACY && (added ?: 1.0) <= CLEAR
+        val probability: Double? get() = if (legacy) added else raw
     }
 
     data class Selection(val guidelines: List<Guideline>, val filtered: Map<String, Double>)
@@ -218,7 +221,7 @@ object Guidelines {
 
     fun scores(scored: List<Guideline>): List<String> = scored.map { "${it.source}=${"%.2f".format(it.relevance)}" }
 
-    fun check(jev: Jev, stage: String, guidelines: List<Guideline>, diff: String): Check? {
+    fun check(jev: Jev, stage: String, guidelines: List<Guideline>, diff: String, decisions: List<String> = emptyList()): Check? {
         if (!jev.enabled) return null
         val shown = cut(diff, MAX_DIFF_WEIGHT)
         val truncated = shown.length < diff.length
@@ -226,10 +229,17 @@ object Guidelines {
         val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
         val parts = try {
             val first = byDocument(units, MAX_STATE_WEIGHT - weight(shown), { it.first.path }, { weight(it.first.heading) + weight(it.second) })
-                .map { batch -> batch to pool.submit<List<Double?>?> { checkBatch(jev, stage, batch, shown) } }
+                .map { batch -> batch to pool.submit<List<Double?>?> { checkBatch(jev, stage, batch, shown, decisions) } }
                 .flatMap { (batch, answers) -> batch.zip(answers.get() ?: return null) }
-            val again = first.map { (unit, p) -> if (p != null && p >= IRRELEVANT && p < VIOLATED) pool.submit<Double?> { checkBatch(jev, stage, listOf(unit), shown)?.single() } else null }
-            first.zip(again).map { (scored, single) -> Part(scored.first.first, scored.first.second, scored.second, single?.get()) }
+            val again = first.map { (unit, p) -> if (p != null && p >= IRRELEVANT && p < VIOLATED) pool.submit<Double?> { checkBatch(jev, stage, listOf(unit), shown, decisions)?.single() } else null }
+            val scored = first.zip(again).map { (scored, single) -> Part(scored.first.first, scored.first.second, scored.second, single?.get()) }
+            val flagged = scored.filter { (it.raw ?: 0.0) > CLEAR }.map { it.guideline to it.text }
+            val previous = previous(shown)
+            if (flagged.isEmpty() || previous == null) scored else {
+                val before = judgeAll(jev, stage, flagged, previous, decisions, pool) ?: return null
+                val added = judgeAll(jev, stage, flagged, additions(shown), decisions, pool) ?: return null
+                scored.map { p -> if ((p.raw ?: 0.0) > CLEAR) p.copy(before = before[p.guideline to p.text], added = added[p.guideline to p.text]) else p }
+            }
         } finally {
             pool.shutdownNow()
         }
@@ -238,6 +248,27 @@ object Guidelines {
         val uncertain = guidelines.filter { it !in violated && (truncated || (it.relevance >= APPLIES && (probabilities[it] ?: 1.0) > CLEAR)) }
         return Check(probabilities, violated, uncertain, truncated, parts)
     }
+
+    private fun judgeAll(jev: Jev, stage: String, units: List<Pair<Guideline, String>>, view: String, decisions: List<String>, pool: java.util.concurrent.ExecutorService): Map<Pair<Guideline, String>, Double?>? =
+        byDocument(units, MAX_STATE_WEIGHT - weight(view), { it.first.path }, { weight(it.first.heading) + weight(it.second) })
+            .map { batch -> batch to pool.submit<List<Double?>?> { checkBatch(jev, stage, batch, view, decisions) } }
+            .flatMap { (batch, answers) -> batch.zip(answers.get() ?: return null) }.toMap()
+
+    private val header = Regex("""^(diff --git |index |--- |\+\+\+ |@@|new file mode|deleted file mode)""")
+
+    internal fun previous(diff: String): String? {
+        val lines = diff.lines().mapNotNull { line ->
+            when {
+                header.containsMatchIn(line) -> line
+                line.startsWith("+") -> null
+                line.startsWith(" ") || line.startsWith("-") -> "+" + line.drop(1)
+                else -> null
+            }
+        }
+        return lines.takeIf { ls -> ls.any { it.startsWith("+") && !it.startsWith("+++ ") } }?.joinToString("\n")
+    }
+
+    internal fun additions(diff: String): String = diff.lines().filter { header.containsMatchIn(it) || it.startsWith("+") }.joinToString("\n")
 
     private val bullet = Regex("""^([-*+]|\d+[.)])\s+""")
     private val headingLine = Regex("""^(#{1,6}|={1,6})\s+""")
@@ -320,15 +351,17 @@ object Guidelines {
         return text
     }
 
-    private fun checkBatch(jev: Jev, stage: String, batch: List<Pair<Guideline, String>>, diff: String): List<Double?>? {
-        val state = mapOf(
+    private fun checkBatch(jev: Jev, stage: String, batch: List<Pair<Guideline, String>>, diff: String, decisions: List<String> = emptyList()): List<Double?>? {
+        val state = listOfNotNull(
+            ("decided" to decisions).takeIf { decisions.isNotEmpty() },
+        ).toMap() + mapOf(
             "task" to TASK_CONTEXT,
             "stage" to "$stage: ${STAGES[stage].orEmpty()}",
             "guidelines" to batch.mapIndexed { i, (g, text) -> mapOf("id" to "g$i", "source" to g.source, "heading" to g.heading, "text" to text) },
             "diff" to diff,
         )
         val questions = batch.indices.associate { i ->
-            "v$i" to NoulQuestion.of("v$i", "변경(diff)이 지침 g$i 의 text 에 적힌 규칙을 직접 어기는가? g$i 의 text 에 적힌 규칙만 기준으로 하고, 다른 지침의 위반은 g$i 위반으로 보지 않는다. diff 에 g$i 가 정한 것과 다른 구조·이름·문구·동작·의존·테스트 방식이 있으면 Yes. g$i 에 지킬 규칙이 없거나(소개·배경·미결정 사항 등), 규칙이 이 변경 코드에 적용되지 않거나, 지키고 있으면 No. 이 단계(stage)에서 아직 만들 차례가 아닌 코드나 앞 단계에서 이미 만든 코드(구현 단계 전에 테스트 코드 단계에서 작성한 테스트 등)가 이 diff에 없는 것은 위반이 아니다. 지침이 합리적인지나 더 나은 방법이 있는지는 따지지 않고 적힌 대로만 판정한다.")
+            "v$i" to NoulQuestion.of("v$i", "변경(diff)이 지침 g$i 의 text 에 적힌 규칙을 직접 어기는가? g$i 의 text 에 적힌 규칙만 기준으로 하고, 다른 지침의 위반은 g$i 위반으로 보지 않는다. diff 에 g$i 가 정한 것과 다른 구조·이름·문구·동작·의존·테스트 방식이 있으면 Yes. g$i 에 지킬 규칙이 없거나(소개·배경·미결정 사항 등), 규칙이 이 변경 코드에 적용되지 않거나, 지키고 있으면 No. 이 단계(stage)에서 아직 만들 차례가 아닌 코드나 앞 단계에서 이미 만든 코드(구현 단계 전에 테스트 코드 단계에서 작성한 테스트 등)가 이 diff에 없는 것은 위반이 아니다. 지침이 합리적인지나 더 나은 방법이 있는지는 따지지 않고 적힌 대로만 판정한다.${if (decisions.isEmpty()) "" else " 단, decided(사용자가 승인 뒤 정한 사항)가 이 변경의 그 부분을 지침과 다르게 해도 된다고 명시했으면 위반이 아니다."}")
                 .withCriteria("변경이 지침을 어김", "변경이 지침을 지키거나 지침과 무관함")
         }
         val answers = jev.probabilities(state, questions) ?: return null

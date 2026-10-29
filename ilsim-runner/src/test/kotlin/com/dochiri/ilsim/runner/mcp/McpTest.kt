@@ -602,6 +602,32 @@ class McpTest {
     }
 
     @Test
+    fun `사용자가 기록한 결정은 지침 판정 맥락으로 들어가 허락한 부분은 막지 않는다`() {
+        repo.resolve("docs").createDirectories()
+        repo.resolve("docs/spec.md").writeText("# 스펙\n\n## 문구\n새 인사 문구는 마침표로 끝난다.\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "docs")
+        jevAnswer = { 0.9 }
+        jevByBody = { id, body -> when {
+            id[0] == 'v' && "TEST_CODE" in body && "기존 greet 문구는 그대로" !in body -> 0.95
+            id[0] in "vb" -> 0.05
+            id[0] in "km" && "README.md" in body -> 0.05
+            else -> null
+        } }
+        call("analyze_project")
+        call("start_task", """{"requirement":"작별 인사 추가","feature":"slug"}""")
+        call("submit_result", doc("# 작별\n\n- REQ-1: 작별 인사를 더한다")); server.approve("t")
+        call("submit_result", doc("| TC-1 | REQ-1 | 정상 | bye(\"Kim\") | \"Bye, Kim.\" |")); server.approve("t")
+        repo.resolve("src/test").createDirectories()
+        repo.resolve("src/test/ByeTest.java").writeText("class ByeTest {}\n")
+        val blocked = call("submit_result")
+        assertContains(blocked, "문서 지침을 어긴 것으로 보입니다")
+        assertContains(blocked, "record_decision(허락한 내용)")
+        call("record_decision", """{"decision":"기존 greet 문구는 그대로 두는 회귀 테스트를 허락한다"}""")
+        assertContains(call("submit_result"), "guidelines=PASSED")
+    }
+
+    @Test
     fun `MCP 서버는 초기화·도구 목록·호출·오류를 JSON-RPC 로 답한다`() {
         val mcp = McpServer("ilsim", "0.1.0", "안내", listOf(McpTool("echo", "에코", buildJsonObject { put("type", "object") }) { args ->
             args["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("text 가 필요합니다")

@@ -645,7 +645,9 @@ private fun guidelines(store: ConfigStore, args: Array<String>) {
     val check = Guidelines.check(jev, "IMPLEMENTATION", selected, diff) ?: run { println("JEV 호출 실패"); exitProcess(2) }
     println("위반 판정(diff ${diff.length}자${if (check.truncated) ", 일부만" else ""}): 위반 ${check.violated.size}, 애매 ${check.uncertain.size}")
     check.probabilities.entries.sortedByDescending { it.value }.forEach { (g, p) ->
-        println("  ${when { g in check.violated -> "위반"; g in check.uncertain -> "애매"; else -> "통과" }} ${"%.2f".format(p)} ${g.source} ${g.heading}")
+        val parts = check.parts.filter { it.guideline == g && it.before != null }
+        println("  ${when { g in check.violated -> "위반"; g in check.uncertain -> "애매"; else -> "통과" }} ${"%.2f".format(p)} ${g.source} ${g.heading}" +
+            parts.joinToString("") { " [원래 ${it.raw?.let { v -> "%.2f".format(v) }} 기존 코드 ${it.before?.let { v -> "%.2f".format(v) }} 추가 줄 ${it.added?.let { v -> "%.2f".format(v) }}]" })
     }
 }
 
