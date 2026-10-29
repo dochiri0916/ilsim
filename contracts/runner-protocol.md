@@ -13,6 +13,7 @@
 | `POST /runner/api/tasks/{id}/result` `StageResult` | 단계 결과 보고(`submit_result`) |
 | `POST /runner/api/tasks/{id}/approve`·`reject` `{feedback}`·`retry` `{instruction?}` | Claude 앱의 승인·반려·재시도 |
 | `POST /runner/api/tasks/{id}/reopen` `{stage, feedback}` | 통과한 코드 단계로 되돌린다(그 단계부터 시도 1, 이후 단계 초기화) |
+| `GET /runner/api/metrics?projectId=` | 작업 수·단계별 제출·실패 원인·Claude 호출·JEV/Claude 비용(`ilsim-runner metrics`). 제출마다 Runner가 남기는 `attempt` 이벤트(`stage=..;passed=..;cause=..;claude=..;jevUsd=..;claudeUsd=..`)로 센다 |
 | `GET`·`PUT`·`DELETE /runner/api/secrets/jev`, `GET .../status` | JEV 키 조회·저장·삭제(`ilsim-runner jev-key`) |
 
 ```

@@ -56,6 +56,8 @@ class IlsimMcp(
     private val jev: () -> Jev = Jev::fromEnvironment,
     private val guides: TaskGuides = TaskGuides(store.location.parent.resolve("guides")),
 ) {
+    private val delivered = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     fun tools(): List<McpTool> = listOf(
         McpTool("start_task", "코드·문서를 바꾸는 요청을 일심 작업으로 시작한다. 작업 브랜치로 전환하고 첫 단계 지시를 돌려준다.", schema(
             """{"type":"object","properties":{"requirement":{"type":"string","description":"사용자 요구사항 원문"},"feature":{"type":"string","description":"기능 이름(영문 소문자·숫자·하이픈, 생략 가능)"}},"required":["requirement"]}""",
@@ -148,8 +150,16 @@ class IlsimMcp(
         val restored = if (task.shelved != null && task.shelvedStage == assigned.stage) unshelve(ws, task.shelved) else null
         active.save(ws.root, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(), undecided = emptyList(),
             shelved = task.shelved.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }, shelvedStage = task.shelvedStage.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }))
-        val prompt = gates {}.promptWithRules(assigned.copy(testCommand = ws.project.testCommand))
-        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, guide(ws, task, assigned.prompt, assigned.stage).render(), rules(assigned.stage)).joinToString("\n\n")
+        val gates = gates {}
+        val brief = gates.rulesBrief(assigned)?.let { once(task.taskId, "brief", it, "## 승인된 아키텍처·컨벤션 규칙 (이 대화에서 이미 받은 것과 같음)\n본문이 이 대화에 남아 있지 않으면 get_rules 도구로 다시 받으세요.") }
+        val prompt = gates.promptWithRules(assigned.copy(testCommand = ws.project.testCommand), brief)
+        val guide = guide(ws, task, assigned.prompt, assigned.stage)
+        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", restored, prompt, once(task.taskId, "guide", guide.render(), guide.brief()), rules(assigned.stage)).joinToString("\n\n")
+    }
+
+    private fun once(taskId: String, part: String, text: String, again: String): String {
+        val hash = ReviewCache.digest(text)
+        return if (delivered.put("$taskId:$part", hash) == hash) again else text
     }
 
     private fun describe(ws: Workspace, task: ActiveTask): String {
@@ -259,6 +269,7 @@ class IlsimMcp(
         val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
         if (state.status != "BLOCKED") throw IllegalStateException("차단된 작업이 아닙니다(상태 ${state.status})")
         server.retry(task.taskId, instruction)
+        active.save(ws.root, task.copy(submissions = 0, claudeCalls = 0, costUsd = 0.0))
         return "다시 시도합니다\n\n" + nextStep()
     }
 
@@ -351,6 +362,12 @@ class IlsimMcp(
             System.err.println("[ilsim] $message")
             runCatching { server.event(task.taskId, stage, "log", message) }
         }
+        TaskPolicy.load(ws.root).exceeded(task)?.let { reason ->
+            log("정책 상한으로 작업을 멈춤: $reason")
+            server.result(task.taskId, StageResult(false, retryable = false, error = "정책 상한(${TaskPolicy.FILE}): $reason", executionId = assigned.executionId, stage = stage))
+            active.save(ws.root, task.copy(status = "BLOCKED"))
+            return "정책 상한(${TaskPolicy.FILE})에 걸려 작업을 멈췄습니다: $reason. 더 고치지 말고 사용자에게 알리세요. 계속하려면 사용자가 다시 시도하라고 해야 하고, 그때 retry_task를 호출하면 상한을 새로 셉니다"
+        }
         summary?.takeIf { it.isNotBlank() }?.let { runCatching { server.event(task.taskId, stage, "text", it) } }
         val usage = mutableListOf<AiUsage>()
         val decisions = mutableListOf<ProcessingDecision>()
@@ -360,7 +377,13 @@ class IlsimMcp(
                 DecisionScope.collect(decisions) { verify(ws, task, assigned.copy(testCommand = ws.project.testCommand), validation, document, ::log) }
             }
         }
+        val claudeUsage = usage.filter { it.purpose != "JEV" }
+        val claudeUsd = claudeUsage.sumOf { it.chargedUsd ?: it.costUsd ?: 0.0 }
+        val jevUsd = usage.filter { it.purpose == "JEV" }.sumOf { it.chargedUsd ?: it.costUsd ?: 0.0 }
+        runCatching { server.event(task.taskId, stage, "attempt", "stage=$stage;passed=${outcome.error == null};cause=${outcome.cause.orEmpty()};claude=${claudeUsage.size};jevUsd=$jevUsd;claudeUsd=$claudeUsd") }
+        val counted = task.copy(submissions = if (outcome.error == null) 0 else task.submissions + 1, claudeCalls = task.claudeCalls + claudeUsage.size, costUsd = task.costUsd + jevUsd + claudeUsd)
         if (outcome.error != null) {
+            active.save(ws.root, counted)
             Shell.git(ws.root, "reset", "-q")
             log("제출 실패: ${outcome.error.take(MAX_FAILURE_LOG)}")
             return "제출 실패($stage):\n${outcome.error}\n\n지적된 부분을 고친 뒤 submit_result를 다시 호출하세요"
@@ -369,28 +392,28 @@ class IlsimMcp(
         if (saved == null) Shell.gitOk(ws.root, "-c", "user.name=ilsim", "-c", "user.email=ilsim@localhost", "commit", "-m", "ilsim(${stage.lowercase()}): ${task.feature}")
         server.result(task.taskId, StageResult(true, diff = outcome.diff, artifacts = outcome.artifacts, validation = validation, branch = task.branch,
             model = assigned.model, executionId = assigned.executionId, stage = stage, usage = usage.toList(), decisions = decisions.toList()))
-        active.save(ws.root, task.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention, undecided = outcome.undecided))
+        active.save(ws.root, counted.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention, undecided = outcome.undecided))
         guides.load(task.taskId)?.takeIf { !it.reported }?.let { guides.save(task.taskId, it.copy(reported = true)) }
         val checks = validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "형식·경로 검사" }
         return "통과($stage): $checks. ${if (saved == null) "커밋했습니다" else "문서를 저장했습니다($saved)"}\n\n" + nextStep()
     }
 
-    private class Outcome(val error: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap(), val attention: List<String> = emptyList(), val undecided: List<String> = emptyList())
+    private class Outcome(val error: String? = null, val cause: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap(), val attention: List<String> = emptyList(), val undecided: List<String> = emptyList())
 
     private fun verify(ws: Workspace, task: ActiveTask, assigned: AssignedTask, validation: MutableMap<String, String>, document: String?, log: (String) -> Unit): Outcome {
         val stage = assigned.stage
         val violations = Gate.pathViolations(stage, ws.changedFiles())
-        if (violations.isNotEmpty()) return Outcome(violations.joinToString("\n"))
+        if (violations.isNotEmpty()) return Outcome(cause = "path", error = violations.joinToString("\n"))
         val key = when (stage) {
             "REQUIREMENTS" -> Gate.requirementsPath(task.feature)
             "TEST_CASES" -> Gate.testSpecPath(task.feature)
             else -> null
         }
         val text = document?.trim()?.takeIf { it.isNotEmpty() }
-        if (key != null && text == null) return Outcome("이 단계는 완성한 문서 전체를 submit_result 의 document 에 넣어 제출합니다. 프로젝트에 파일로 만들지 않습니다")
+        if (key != null && text == null) return Outcome(cause = "document", error = "이 단계는 완성한 문서 전체를 submit_result 의 document 에 넣어 제출합니다. 프로젝트에 파일로 만들지 않습니다")
         if (key != null && text != null) Artifacts(store).write(ws.projectId, task.feature, task.taskId, stage, text)
         val gates = gates(log)
-        gates.failure(assigned, ws.project, ws.root, validation)?.let { return Outcome(it) }
+        gates.failure(assigned, ws.project, ws.root, validation)?.let { return Outcome(cause = "gates" + (validation.entries.firstOrNull { e -> e.value == "FAILED" }?.key?.let { k -> ":$k" } ?: ""), error = it) }
         val artifacts = if (key != null && text != null) mapOf(key to text) else emptyMap()
         val diff = if (text != null && key != null) "+++ ${key.substringAfterLast('/')}\n" + text.lines().joinToString("\n") { "+$it" } else {
             Shell.gitOk(ws.root, "add", "-A")
@@ -398,33 +421,33 @@ class IlsimMcp(
         }
         val check = if (stage == "IMPLEMENTATION") requirementCheck(ws, task, diff, validation) else null
         if (check != null && check.missing.isNotEmpty()) {
-            return Outcome("구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
+            return Outcome(cause = "requirements", error = "구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
                 check.missing.joinToString("\n") { "- ${it.id} ${it.text} (충족 확률 ${"%.2f".format(check.probabilities[it.id])})" })
         }
         val verified = if (check != null && check.uncertain.isNotEmpty() && validation["tests"] == "PASSED") testedRequirements(ws, task, check.uncertain) else emptySet()
         val scope = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") scopeCheck(ws, task, stage, diff, validation) else null
         if (scope != null && scope.outside.isNotEmpty()) {
-            return Outcome("요구사항 문서의 영향 범위 밖 변경으로 보입니다. 아래 파일의 변경을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용과 파일 경로)으로 기록한 뒤 다시 제출하세요:\n" +
+            return Outcome(cause = "scope", error = "요구사항 문서의 영향 범위 밖 변경으로 보입니다. 아래 파일의 변경을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용과 파일 경로)으로 기록한 뒤 다시 제출하세요:\n" +
                 scope.outside.joinToString("\n") { "- $it (범위 안 확률 ${"%.2f".format(scope.probabilities[it])})" })
         }
         val suspects = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") changeScopeCheck(ws, task, stage, diff, validation) else emptyList()
         if (suspects.isNotEmpty()) {
-            return Outcome("요구사항과 관계없는 변경으로 보입니다(요청하지 않은 동작 변경, 기존 검사·검증·테스트를 줄이거나 지움, 관계없는 리팩터링 등). 아래 변경 묶음을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용과 파일 경로)으로 기록한 뒤 다시 제출하세요:\n" +
+            return Outcome(cause = "scope-change", error = "요구사항과 관계없는 변경으로 보입니다(요청하지 않은 동작 변경, 기존 검사·검증·테스트를 줄이거나 지움, 관계없는 리팩터링 등). 아래 변경 묶음을 되돌리세요. 이 작업에 꼭 필요한 변경이면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용과 파일 경로)으로 기록한 뒤 다시 제출하세요:\n" +
                 suspects.joinToString("\n") { "- $it" })
         }
         val undecided = if (stage in StageGates.UNDECIDED_STAGES) undecidedCheck(ws, task, stage, if (key != null) text.orEmpty() else diff, validation) else null
         val judged = undecided?.result
         if (judged != null && judged.decided.isNotEmpty()) {
-            return Outcome("요구사항 문서의 미결정 사항을 사용자 결정 없이 정한 것으로 보입니다. 아래 질문의 답을 정한 부분(그 상황만을 위한 코드·값이나 그 상황의 기대 결과)을 빼세요. 이 단계를 끝내는 데 꼭 정해야 하면 멈추고 사용자에게 묻고, 사용자가 답하면 record_decision(질문 ID, 답)으로 기록한 뒤 다시 제출하세요:\n" +
+            return Outcome(cause = "undecided", error = "요구사항 문서의 미결정 사항을 사용자 결정 없이 정한 것으로 보입니다. 아래 질문의 답을 정한 부분(그 상황만을 위한 코드·값이나 그 상황의 기대 결과)을 빼세요. 이 단계를 끝내는 데 꼭 정해야 하면 멈추고 사용자에게 묻고, 사용자가 답하면 record_decision(질문 ID, 답)으로 기록한 뒤 다시 제출하세요:\n" +
                 judged.decided.joinToString("\n") { "- ${it.label} (정함 확률 ${"%.2f".format(judged.probabilities[it.id])})" })
         }
         val tests = if (stage == "TEST_CODE") testCodeCheck(ws, task, task.base?.let { runCatching { Shell.gitOk(ws.root, "diff", "--cached", it) }.getOrNull() } ?: diff, validation) else null
         if (tests != null && tests.missing.isNotEmpty()) {
-            return Outcome("테스트 케이스 문서의 TC 중 이 테스트 코드에 시나리오 테스트가 없는 것으로 보입니다. 아래 TC마다 그 시나리오를 실행하고 기대 결과를 단정하는 테스트를 작성한 뒤 다시 제출하세요:\n" +
+            return Outcome(cause = "test-cases", error = "테스트 케이스 문서의 TC 중 이 테스트 코드에 시나리오 테스트가 없는 것으로 보입니다. 아래 TC마다 그 시나리오를 실행하고 기대 결과를 단정하는 테스트를 작성한 뒤 다시 제출하세요:\n" +
                 tests.missing.joinToString("\n") { "- ${it.id} ${it.text} (테스트 있음 확률 ${"%.2f".format(tests.coverage[it.id])})" })
         }
         if (tests != null && tests.bypassed.isNotEmpty()) {
-            return Outcome("기대 동작을 검증하지 않고 통과할 수 있는 테스트가 있는 것으로 보입니다(조건에 따른 return·skip·@Disabled, 단언 없음·조건부 단언, fail() 없는 try-catch, 검증 대상 목, 어떤 결과든 통과하는 단언). 아래 파일의 해당 테스트가 TC의 기대 결과를 항상 단정하도록 고친 뒤 다시 제출하세요:\n" +
+            return Outcome(cause = "test-bypass", error = "기대 동작을 검증하지 않고 통과할 수 있는 테스트가 있는 것으로 보입니다(조건에 따른 return·skip·@Disabled, 단언 없음·조건부 단언, fail() 없는 try-catch, 검증 대상 목, 어떤 결과든 통과하는 단언). 아래 파일의 해당 테스트가 TC의 기대 결과를 항상 단정하도록 고친 뒤 다시 제출하세요:\n" +
                 tests.bypassed.joinToString("\n") { "- $it (우회 확률 ${"%.2f".format(tests.bypass[it])})" })
         }
         val guide = guide(ws, task, assigned.prompt, stage)
@@ -435,7 +458,7 @@ class IlsimMcp(
         }
         val compliance = guidelineCheck(guide, stage, diff, validation, Artifacts(store).decisions(ws.projectId, task.feature, task.taskId).map { listOfNotNull(it.question, it.text).joinToString(": ") })
         if (compliance != null && compliance.violated.isNotEmpty()) {
-            return Outcome("이 프로젝트 문서 지침을 어긴 것으로 보입니다. 아래 지침에 맞게 고친 뒤 다시 제출하세요. 승인된 요구사항이나 사용자 뜻대로 한 부분인데 지적됐다면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용)으로 기록한 뒤 다시 제출하세요:\n" +
+            return Outcome(cause = "guidelines", error = "이 프로젝트 문서 지침을 어긴 것으로 보입니다. 아래 지침에 맞게 고친 뒤 다시 제출하세요. 승인된 요구사항이나 사용자 뜻대로 한 부분인데 지적됐다면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용)으로 기록한 뒤 다시 제출하세요:\n" +
                 compliance.violated.joinToString("\n") { g -> "- ${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()} (위반 확률 ${"%.2f".format(compliance.probabilities[g])})\n  ${g.text.lines().filter { it.isNotBlank() }.take(6).joinToString(" ").take(400)}" })
         }
         val unresolved = when {
@@ -455,7 +478,7 @@ class IlsimMcp(
             StageGates.AuditOutcome(emptyMap(), emptyList())
         }
         if (audit.fixable.isNotEmpty()) {
-            return Outcome("AI 변경 검토가 아래를 지적했습니다. 해당 부분만 고치세요:\n" + audit.fixable.joinToString("\n") { "- [${it.type}] ${it.target} ${it.reason}" })
+            return Outcome(cause = "ai-audit", error = "AI 변경 검토가 아래를 지적했습니다. 해당 부분만 고치세요:\n" + audit.fixable.joinToString("\n") { "- [${it.type}] ${it.target} ${it.reason}" })
         }
         val attention = if (stage !in APPROVAL_STAGES) emptyList() else when {
             compliance != null -> compliance.uncertain.map { g -> "${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()} (위반 확률 ${compliance.probabilities[g]?.let { "%.2f".format(it) } ?: "-"}${if (compliance.truncated) ", 변경이 커서 일부만 판정" else ""})" }

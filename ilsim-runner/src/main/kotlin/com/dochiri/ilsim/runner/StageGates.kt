@@ -45,12 +45,13 @@ class StageGates(
     private val artifacts = Artifacts(configStore)
     private val docRuleStore = DocRuleStore(configStore)
 
-    fun promptWithRules(task: AssignedTask): String {
+    fun rulesBrief(task: AssignedTask): String? = if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") null else RulesBrief.build(
+        architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId), docRuleStore.load(task.projectId),
+    )
+
+    fun promptWithRules(task: AssignedTask, brief: String? = rulesBrief(task)): String {
         val documents = documents(task)
         if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return listOfNotNull(task.prompt, documents).joinToString("\n\n")
-        val brief = RulesBrief.build(
-            architectures.load(task.projectId), conventions.load(task.projectId), RiskScanner.Store(configStore).load(task.projectId), docRuleStore.load(task.projectId),
-        )
         val test = task.testCommand?.let { Gate.selfCheck(task.stage, it) }
         return listOfNotNull(task.prompt, documents, brief, test).joinToString("\n\n")
     }

@@ -68,6 +68,9 @@ data class ActiveTask(
     val attention: List<String> = emptyList(),
     val undecided: List<String> = emptyList(),
     val base: String? = null,
+    val submissions: Int = 0,
+    val claudeCalls: Int = 0,
+    val costUsd: Double = 0.0,
 )
 
 class ActiveTasks(private val dir: Path) {

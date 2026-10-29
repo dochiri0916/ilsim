@@ -54,6 +54,32 @@ class AgentTaskTest {
     }
 
     @Test
+    fun `제출 시도 기록으로 단계별 실패 원인과 작업별 비용·Claude 호출 수를 센다`() {
+        val task = service.createForAgent("demo", "slug", "slugify 추가")
+        val id = task.id.value
+        service.addEvent(id, "TEST_CODE", "attempt", "stage=TEST_CODE;passed=false;cause=test-cases;claude=0;jevUsd=0.001;claudeUsd=0")
+        service.addEvent(id, "TEST_CODE", "attempt", "stage=TEST_CODE;passed=false;cause=guidelines;claude=1;jevUsd=0.002;claudeUsd=0.03")
+        service.addEvent(id, "TEST_CODE", "attempt", "stage=TEST_CODE;passed=true;cause=;claude=1;jevUsd=0.001;claudeUsd=0.03")
+        service.addEvent(id, "IMPLEMENTATION", "attempt", "stage=IMPLEMENTATION;passed=true;claude=0;jevUsd=0.001;claudeUsd=0")
+        service.addEvent(id, "IMPLEMENTATION", "log", "passed=false")
+        service.addEvent(id, "IMPLEMENTATION", "attempt", "깨진 기록")
+
+        val metrics = service.metrics("demo")
+        assertThat(metrics.tasks).isEqualTo(1)
+        assertThat(metrics.active).isEqualTo(1)
+        assertThat(metrics.stages.map { it.stage }).containsExactly("TEST_CODE", "IMPLEMENTATION")
+        val testCode = metrics.stages.first()
+        assertThat(testCode.submissions).isEqualTo(3)
+        assertThat(testCode.failures).isEqualTo(2)
+        assertThat(testCode.causes).isEqualTo(mapOf("test-cases" to 1, "guidelines" to 1))
+        assertThat(testCode.claudeCalls).isEqualTo(2)
+        val summary = metrics.summaries.single()
+        assertThat(summary.submissions).isEqualTo(4)
+        assertThat(summary.costUsd).isCloseTo(0.065, org.assertj.core.data.Offset.offset(1e-9))
+        assertThat(service.metrics("other").tasks).isZero()
+    }
+
+    @Test
     fun `구현 중에 통과한 테스트 코드 단계로 되돌리면 그 단계부터 시도 횟수를 새로 센다`() {
         val task = service.createForAgent("demo", "slug", "slugify 추가")
         for (stage in listOf("REQUIREMENTS", "TEST_CASES")) {

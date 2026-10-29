@@ -182,6 +182,16 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
         return json.decodeFromString(res.body())
     }
 
+    fun metrics(projectId: String?): TaskMetrics {
+        val query = projectId?.let { "?projectId=" + java.net.URLEncoder.encode(it, Charsets.UTF_8) }.orEmpty()
+        val res = http.send(
+            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/metrics$query")).timeout(java.time.Duration.ofSeconds(10)).header("X-Ilsim-Token", token).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        check(res.statusCode() == 200) { "지표 조회 실패: HTTP ${res.statusCode()} ${res.body()}" }
+        return json.decodeFromString(res.body())
+    }
+
     override fun approve(taskId: String) {
         val res = post("/runner/api/tasks/$taskId/approve", "{}")
         check(res.statusCode() in 200..299) { "승인 실패: HTTP ${res.statusCode()} ${res.body()}" }

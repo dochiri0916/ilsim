@@ -68,6 +68,7 @@ private const val USAGE = """사용법:
     ilsim-runner architecture <id>               아키텍처 규칙
     ilsim-runner convention <id>                 코드 컨벤션 규칙
     ilsim-runner doc-rules <id>                  그 프로젝트 문서에 적힌 규칙으로 문서 지침 검증기(doc: 규칙)를 만든다(JEV·Claude)
+    ilsim-runner metrics <id>                    제출 결과·실패 원인·Claude 호출·비용·병합 여부 지표(서버 기록 기준)
     ilsim-runner docs <id>                       이 프로젝트의 지침 문서 목록과 규칙 검토에 쓰는 문서
     ilsim-runner docs add <id> <경로>            지침 문서(파일·폴더, 저장소 밖 가능)를 이 프로젝트에 추가
     ilsim-runner docs exclude <id> <경로>        지침 문서에서 뺄 경로
@@ -129,6 +130,7 @@ fun main(args: Array<String>) {
         "convention" -> convention(store, args)
         "doc-rules" -> docRules(store, args)
         "docs" -> docs(store, args)
+        "metrics" -> metrics(store, args)
         "guidelines" -> guidelines(store, args)
         "rules" -> rulesCmd(store, args)
         "approve" -> decide(store, args, approve = true)
@@ -614,6 +616,15 @@ fun analysisGaps(store: ConfigStore, id: String, docs: Map<String, Path>): List<
         }
     }
     return gaps
+}
+
+private fun metrics(store: ConfigStore, args: Array<String>) {
+    if (args.size < 2) { println(USAGE); exitProcess(1) }
+    val config = store.load()
+    val project = config.projects[args[1]] ?: run { println("등록되지 않은 프로젝트: ${args[1]}"); exitProcess(1) }
+    val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token")) ?: run { println("Runner 토큰이 없습니다"); exitProcess(1) }
+    val metrics = ServerClient(config.serverUrl, token).metrics(args[1])
+    println(MetricsReport.render(args[1], metrics, MetricsReport.merged(Path.of(project.path), metrics.summaries)))
 }
 
 private fun loadJevKey(store: ConfigStore, config: RunnerConfig) {

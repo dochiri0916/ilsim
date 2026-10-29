@@ -42,6 +42,15 @@ data class TaskGuide(
         appendSections(guidelines, relevance = true)
     }.trimEnd()
 
+    fun brief(): String = buildString {
+        appendLine("## 프로젝트 문서 지침 (이 대화에서 이미 받은 것과 같음, 반드시 지킨다)")
+        append("본문이 이 대화에 남아 있지 않으면 get_guidelines 도구로 다시 받으세요.")
+        if (selected && guidelines.isNotEmpty()) {
+            appendLine(" 지침 ${guidelines.size}개:")
+            guidelines.forEach { appendLine("- ${it.source}${it.heading.takeIf { h -> h.isNotBlank() }?.let { h -> " — $h" }.orEmpty()}") }
+        }
+    }.trimEnd()
+
     companion object {
         fun all(sections: List<DocSection>): String = buildString {
             appendLine("## 프로젝트 문서 지침 (반드시 지킨다)")

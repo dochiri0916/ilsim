@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
@@ -60,6 +61,9 @@ class RunnerController(private val runner: RunnerUseCase) {
     @GetMapping("/tasks/{id}")
     fun state(@PathVariable id: String): ResponseEntity<AgentTaskResponse> =
         runner.find(id)?.let { ResponseEntity.ok(AgentTaskResponse.of(it)) } ?: ResponseEntity.notFound().build()
+
+    @GetMapping("/metrics")
+    fun metrics(@RequestParam(required = false) projectId: String?) = runner.metrics(projectId)
 
     data class RejectRequest(val feedback: String? = null)
 

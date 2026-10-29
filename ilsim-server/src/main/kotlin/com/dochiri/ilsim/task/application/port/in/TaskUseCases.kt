@@ -7,6 +7,7 @@ import com.dochiri.ilsim.task.domain.ProjectStatus
 import com.dochiri.ilsim.task.domain.Stats
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
+import com.dochiri.ilsim.task.domain.TaskMetrics
 
 interface RunnerUseCase {
     fun reviewPolicy(projectId: String): com.dochiri.ilsim.task.domain.ReviewPolicySnapshot = com.dochiri.ilsim.task.domain.ReviewPolicySnapshot()
@@ -30,6 +31,8 @@ interface RunnerUseCase {
     }
 
     fun find(taskId: String): Task? = null
+
+    fun metrics(projectId: String?): TaskMetrics = TaskMetrics.of(emptyList(), emptyMap())
 
     fun approve(taskId: String)
 

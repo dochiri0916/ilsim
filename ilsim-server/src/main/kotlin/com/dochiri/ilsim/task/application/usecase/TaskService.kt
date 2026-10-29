@@ -11,6 +11,8 @@ import com.dochiri.ilsim.task.domain.PromptTemplates
 import com.dochiri.ilsim.task.domain.Stats
 import com.dochiri.ilsim.task.domain.Task
 import com.dochiri.ilsim.task.domain.TaskEvent
+import com.dochiri.ilsim.task.domain.TaskMetrics
+import com.dochiri.ilsim.task.domain.AttemptRecord
 import com.dochiri.ilsim.task.domain.ExecutionRecord
 import com.dochiri.ilsim.task.domain.AiUsage
 import com.dochiri.ilsim.task.domain.ReviewCostPolicy
@@ -76,6 +78,13 @@ class TaskService(
         val reservations = (if (projectId == null) projectSamples.values.flatten() else projectSamples[projectId].orEmpty()).filter { it.policyVersion == reviewCostPolicy.version }
         return Stats.of(selected, analysis).copy(reviewProfiles = reviewCostPolicy.snapshot(selected.flatMap { task -> task.stages.flatMap { it.usage } } + analysis).profiles,
             reviewSamplesReserved = reservations.size, reviewSampleBudgetReservedUsd = reservations.sumOf { it.maxCostUsd })
+    }
+
+    override fun metrics(projectId: String?): TaskMetrics {
+        val selected = if (projectId == null) tasks.values.toList() else tasks.values.filter { it.projectId.value == projectId }
+        return TaskMetrics.of(selected, selected.associate { task ->
+            task.id.value to events(task.id.value).filter { it.type == AttemptRecord.EVENT_TYPE }.mapNotNull { AttemptRecord.parse(it.stage, it.data) }
+        })
     }
 
     fun list(): List<Task> = tasks.values.sortedByDescending { it.createdAt }

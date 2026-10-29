@@ -54,6 +54,7 @@ class McpTest {
         override fun event(taskId: String, stage: String, type: String, data: String) { events += "$type:$data" }
         override fun result(taskId: String, result: StageResult) {
             results += result
+            if (!result.passed) { if (!result.retryable) blocked = true; return }
             status = if (result.stage in setOf("REQUIREMENTS", "TEST_CASES")) "WAITING_APPROVAL" else "PENDING"
             if (status == "PENDING") index++
         }
@@ -706,5 +707,40 @@ class McpTest {
         assertContains(mcp.handle("""{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"echo","arguments":{}}}""")!!, "\"isError\":true")
         assertContains(mcp.handle("""{"jsonrpc":"2.0","id":4,"method":"resources/list"}""")!!, "-32601")
         assertContains(mcp.handle("not json")!!, "-32700")
+    }
+
+    @Test
+    fun `저장소에 커밋한 정책 상한을 넘으면 작업을 멈추고 사용자가 다시 시도하면 새로 센다`() {
+        repo.resolve(".ilsim-policy.json").writeText("""{"maxSubmissions":1}""")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "policy")
+        fun mcp() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
+        assertContains(run("submit_result"), "제출 실패(TEST_CODE)")
+        assertTrue(server.events.any { it.startsWith("attempt:stage=TEST_CODE;passed=false;cause=path;") }, server.events.toString())
+        val stopped = run("submit_result")
+        assertContains(stopped, "정책 상한(.ilsim-policy.json)에 걸려 작업을 멈췄습니다: 이 단계에서 실패한 제출 1회(상한 1회)")
+        assertTrue(server.blocked)
+        assertTrue(server.results.last().let { !it.passed && !it.retryable })
+        run("retry_task", """{"instruction":"계속"}""")
+        assertContains(run("submit_result"), "제출 실패(TEST_CODE)")
+    }
+
+    @Test
+    fun `같은 대화에서 이미 준 지침은 다음 지시에서 제목만 주고 새 대화에서는 다시 전부 준다`() {
+        fun tools() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
+        tools().getValue("analyze_project").call(Json.parseToJsonElement("{}").jsonObject)
+        val session = tools()
+        val first = session.getValue("start_task").call(Json.parseToJsonElement("""{"requirement":"slugify 추가","feature":"slug"}""").jsonObject)
+        assertContains(first, "## 프로젝트 문서 지침 (반드시 지킨다)")
+        val again = session.getValue("next_step").call(Json.parseToJsonElement("{}").jsonObject)
+        assertContains(again, "## 프로젝트 문서 지침 (이 대화에서 이미 받은 것과 같음, 반드시 지킨다)")
+        assertTrue("## 프로젝트 문서 지침 (반드시 지킨다)" !in again)
+        assertContains(session.getValue("get_guidelines").call(Json.parseToJsonElement("{}").jsonObject), "## 프로젝트 문서 지침 (반드시 지킨다)")
+        assertContains(tools().getValue("next_step").call(Json.parseToJsonElement("{}").jsonObject), "## 프로젝트 문서 지침 (반드시 지킨다)")
     }
 }
