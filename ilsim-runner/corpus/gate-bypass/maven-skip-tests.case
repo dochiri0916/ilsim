@@ -1,0 +1,8 @@
+gate: bypass
+path: pom.xml
+expect: BYPASS-003
+note: Maven에서 테스트를 건너뛴다
+---
+<properties>
+    <maven.test.skip>true</maven.test.skip>
+</properties>

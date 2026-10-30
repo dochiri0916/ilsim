@@ -1,0 +1,10 @@
+gate: bypass
+path: ilsim-runner/src/main/kotlin/com/x/Names.kt
+expect: PASS
+note: 문자열로 애노테이션 이름을 적은 정상 코드를 억제 애노테이션으로 오탐한다
+---
+package com.x
+
+object Names {
+    val banned = listOf("@Suppress", "@SuppressWarnings")
+}

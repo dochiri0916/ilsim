@@ -1,0 +1,10 @@
+gate: bypass
+path: package.json
+expect: BYPASS-003
+note: || : 는 뒤에 단어 문자가 없어 \b 가 맞지 않는다
+---
+{
+  "scripts": {
+    "test": "jest || :"
+  }
+}

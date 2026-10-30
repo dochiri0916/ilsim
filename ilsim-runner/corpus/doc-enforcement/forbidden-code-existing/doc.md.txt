@@ -1,0 +1,3 @@
+# 테스트
+
+- 테스트에서 Thread.sleep 을 쓰지 않는다. 기다려야 하면 Awaitility 를 쓴다.

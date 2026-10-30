@@ -1,0 +1,8 @@
+gate: bypass
+path: build.gradle
+expect: BYPASS-003
+note: Groovy의 괄호·등호 없는 호출 ignoreFailures true는 패턴에 안 걸린다
+---
+checkstyle {
+    ignoreFailures true
+}

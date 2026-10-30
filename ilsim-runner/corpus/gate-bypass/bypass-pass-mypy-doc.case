@@ -1,0 +1,6 @@
+gate: bypass
+path: docs/mypy-migration.md
+expect: PASS
+note: 문서 파일 이름의 mypy 를 검사 설정으로 오탐한다
+---
+# 마이그레이션 메모

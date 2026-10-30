@@ -22,6 +22,7 @@ import com.dochiri.ilsim.runner.risk.RiskScanner
 import com.dochiri.ilsim.runner.testing.MutationReport
 import com.dochiri.ilsim.runner.testing.TestFailures
 import com.dochiri.ilsim.runner.testing.TestIntegrity
+import com.dochiri.ilsim.runner.testing.VerificationBypass
 import java.nio.file.Path
 import java.time.Instant
 import kotlin.io.path.exists
@@ -138,11 +139,12 @@ class StageGates(
         risk(task, worktree, validation, review = false)?.let { return it }
 
         val changed = changedFiles(worktree).toSet()
+        bypass(task, worktree, changed, validation)?.let { return it }
         testIntegrity(task, worktree, changed, validation)?.let { return it }
 
         val testCommand = project.testCommand
         if (testCommand == null) {
-            validation["tests"] = "UNKNOWN"
+            validation["tests"] = NOT_CONFIGURED
             risk(task, worktree, validation, review = true)
             return null
         }
@@ -183,8 +185,19 @@ class StageGates(
         convention(task, worktree, validation),
         docRules(task, worktree, validation),
         risk(task, worktree, validation, review = false),
+        bypass(task, worktree, changedFiles(worktree).toSet(), validation),
         testIntegrity(task, worktree, changedFiles(worktree).toSet(), validation),
     )
+
+    private fun bypass(task: AssignedTask, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>): String? {
+        if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return null
+        val decided = decisions(task).map { listOfNotNull(it.question, it.text).joinToString(" ") }
+        val violations = VerificationBypass.scan(worktree, changed) { path -> decided.any { path in it || path.substringAfterLast('/') in it } }
+        validation["bypass"] = if (violations.isEmpty()) "PASSED" else "FAILED"
+        if (violations.isEmpty()) return null
+        return "검증을 끄거나 약하게 하는 변경 ${violations.size}건:\n" + violations.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" } +
+            "\n경고나 검사를 끄지 말고 원인을 고치세요. 꼭 필요하면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용과 파일 경로)으로 기록한 뒤 다시 제출하세요"
+    }
 
     private fun testIntegrity(task: AssignedTask, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>): String? {
         if (task.stage != "TEST_CODE") return null
@@ -197,7 +210,7 @@ class StageGates(
     private fun mutation(task: AssignedTask, project: ProjectEntry, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>) {
         val command = project.mutationCommand
         if (command == null) {
-            validation["mutation"] = "UNKNOWN"
+            validation["mutation"] = NOT_CONFIGURED
             return
         }
         log("변이 테스트 실행: $command")
@@ -229,8 +242,7 @@ class StageGates(
             ArchitectureChecker.check(worktree, StackDetector.detect(worktree), model, approvedOnly = true)
         } catch (e: IllegalArgumentException) {
             validation["architecture"] = "UNKNOWN"
-            log("아키텍처 검사 건너뜀: ${e.message}")
-            return null
+            return "승인된 아키텍처 규칙을 검사하지 못했습니다: ${e.message}\n규칙이 있는데 검사가 실패하면 통과로 보지 않습니다. 사용자에게 알리고 analyze_project로 다시 분석하세요"
         }
         val blocking = violations.filter { it.severity == "BLOCK" }
         if (model.applicability.status == Applicability.PARTIAL) log("아키텍처 부분 적용: ${model.applicability.reasons.joinToString("; ")}")
@@ -319,7 +331,7 @@ class StageGates(
 
     private fun analysis(task: AssignedTask, project: ProjectEntry, worktree: Path, validation: MutableMap<String, String>): String? {
         if (project.analysisCommands.isEmpty()) {
-            validation["analysis"] = "UNKNOWN"
+            validation["analysis"] = NOT_CONFIGURED
             return null
         }
         for (cmd in project.analysisCommands) {
@@ -342,5 +354,6 @@ class StageGates(
 
     companion object {
         val UNDECIDED_STAGES = setOf("TEST_CASES", "TEST_CODE", "IMPLEMENTATION")
+        const val NOT_CONFIGURED = "NOT_CONFIGURED"
     }
 }

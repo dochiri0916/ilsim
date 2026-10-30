@@ -1,0 +1,16 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-003
+note: assertNotNull(Foo()) 직접 생성은 변수 경유 패턴만 봐서 통과한다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertNotNull
+
+class FooTest {
+    @Test
+    fun works() {
+        assertNotNull(StringBuilder())
+    }
+}

@@ -1,0 +1,21 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-004
+note: catch 블록에 failures++ 처럼 fail 로 시작하는 단어만 있어도 던진 것으로 본다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    @Test
+    fun works() {
+        var failures = 0
+        try {
+            assertEquals(4, 1 + 2)
+        } catch (e: Exception) {
+            failures++
+        }
+    }
+}

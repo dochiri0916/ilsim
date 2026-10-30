@@ -1,0 +1,12 @@
+gate: bypass
+path: src/main/java/com/x/order/OrderController.java
+expect: BYPASS-001
+note: PMD 억제 주석 NOPMD는 목록에 없다
+---
+package com.x.order;
+
+public class OrderController {
+    public void handle() {
+        System.out.println("debug"); // NOPMD
+    }
+}

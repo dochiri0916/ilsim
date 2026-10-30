@@ -1,0 +1,8 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-003
+note: 작업 이름을 문자열 조건으로 골라 끄면 둘러싼 줄에 검사 작업 이름이 없다
+---
+tasks.matching { it.name.endsWith("est") }.configureEach {
+    enabled = false
+}

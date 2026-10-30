@@ -1,0 +1,17 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: PASS
+note: 동등성 반사 규칙을 확인하는 정상 테스트를 항상 통과하는 단언으로 오탐한다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    @Test
+    fun equalsIsReflexive() {
+        val user = User("a")
+        assertEquals(user, user)
+    }
+}

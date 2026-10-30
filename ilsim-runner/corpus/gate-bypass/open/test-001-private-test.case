@@ -1,0 +1,16 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: private 테스트 메서드는 JUnit5 가 실행하지 않지만 비활성화로 보지 않는다
+---
+package com.x
+
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+
+class FooTest {
+    @Test
+    private fun works() {
+        assertEquals(2, 1 + 2)
+    }
+}

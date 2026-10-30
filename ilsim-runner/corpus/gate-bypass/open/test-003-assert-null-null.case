@@ -1,0 +1,16 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-003
+note: assertNull(null) 은 패턴에 없다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertNull
+
+class FooTest {
+    @Test
+    fun works() {
+        assertNull(null)
+    }
+}

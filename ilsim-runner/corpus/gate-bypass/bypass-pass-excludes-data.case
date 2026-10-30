@@ -1,0 +1,7 @@
+gate: bypass
+path: ilsim-server/src/main/resources/seed/exclude-words.txt
+expect: PASS
+note: 검사와 무관한 데이터 파일 이름의 exclude 를 검사 제외 설정으로 오탐한다
+---
+foo
+bar

@@ -17,10 +17,14 @@ class RunnerTokenFilter(
 
     private val token: ByteArray = configured.ifBlank { RunnerTokenFile.loadOrCreate(Path.of(home, "token")) }.toByteArray()
 
-    override fun shouldNotFilter(request: HttpServletRequest): Boolean = !request.requestURI.startsWith("/runner/")
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean = PROTECTED.none { request.requestURI.startsWith(it) }
 
     override fun doFilterInternal(req: HttpServletRequest, res: HttpServletResponse, chain: FilterChain) {
         val given = req.getHeader("X-Ilsim-Token")
         if (given != null && MessageDigest.isEqual(given.toByteArray(), token)) chain.doFilter(req, res) else res.sendError(HttpServletResponse.SC_UNAUTHORIZED)
+    }
+
+    companion object {
+        private val PROTECTED = listOf("/runner/", "/mcp")
     }
 }

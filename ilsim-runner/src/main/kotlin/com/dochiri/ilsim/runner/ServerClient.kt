@@ -92,16 +92,19 @@ interface TaskSink {
 
 }
 
-class ServerClient(private val baseUrl: String, private val token: String) : AgentTaskServer {
+class ServerClient(private val baseUrl: String, private val token: String, private val access: Map<String, String> = emptyMap()) : AgentTaskServer {
     private val http = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(5)).build()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    private fun request(path: String): HttpRequest.Builder =
+        access.entries.fold(HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + path)).header("X-Ilsim-Token", token)) { b, (k, v) -> b.header(k, v) }
+
     private fun post(path: String, body: String): HttpResponse<String> =
         http.send(
-            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + path))
+            request(path)
                 .timeout(java.time.Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
-                .header("X-Ilsim-Token", token)
+                
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build(),
             HttpResponse.BodyHandlers.ofString(),
@@ -109,7 +112,7 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
 
     fun jevKey(): String? {
         val res = http.send(
-            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/secrets/jev")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).GET().build(),
+            request("/runner/api/secrets/jev").timeout(java.time.Duration.ofSeconds(5)).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
         )
         if (res.statusCode() == 204) return null
@@ -119,7 +122,7 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
 
     fun jevKeyStatus(): String {
         val res = http.send(
-            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/secrets/jev/status")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).GET().build(),
+            request("/runner/api/secrets/jev/status").timeout(java.time.Duration.ofSeconds(5)).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
         )
         check(res.statusCode() == 200) { "JEV 키 상태 조회 실패: HTTP ${res.statusCode()} ${res.body()}" }
@@ -128,7 +131,7 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
 
     fun saveJevKey(key: String) {
         val res = http.send(
-            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/secrets/jev")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token)
+            request("/runner/api/secrets/jev").timeout(java.time.Duration.ofSeconds(5))
                 .header("Content-Type", "application/json").PUT(HttpRequest.BodyPublishers.ofString(json.encodeToString(mapOf("key" to key)))).build(),
             HttpResponse.BodyHandlers.ofString(),
         )
@@ -137,7 +140,7 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
 
     fun deleteJevKey() {
         val res = http.send(
-            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/secrets/jev")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).DELETE().build(),
+            request("/runner/api/secrets/jev").timeout(java.time.Duration.ofSeconds(5)).DELETE().build(),
             HttpResponse.BodyHandlers.ofString(),
         )
         check(res.statusCode() == 200) { "JEV 키 삭제 실패: HTTP ${res.statusCode()} ${res.body()}" }
@@ -174,7 +177,7 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
 
     override fun agentTask(taskId: String): AgentTaskState? {
         val res = http.send(
-            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/tasks/$taskId")).timeout(java.time.Duration.ofSeconds(5)).header("X-Ilsim-Token", token).GET().build(),
+            request("/runner/api/tasks/$taskId").timeout(java.time.Duration.ofSeconds(5)).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
         )
         if (res.statusCode() == 404) return null
@@ -185,7 +188,7 @@ class ServerClient(private val baseUrl: String, private val token: String) : Age
     fun metrics(projectId: String?): TaskMetrics {
         val query = projectId?.let { "?projectId=" + java.net.URLEncoder.encode(it, Charsets.UTF_8) }.orEmpty()
         val res = http.send(
-            HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + "/runner/api/metrics$query")).timeout(java.time.Duration.ofSeconds(10)).header("X-Ilsim-Token", token).GET().build(),
+            request("/runner/api/metrics$query").timeout(java.time.Duration.ofSeconds(10)).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
         )
         check(res.statusCode() == 200) { "지표 조회 실패: HTTP ${res.statusCode()} ${res.body()}" }

@@ -1,0 +1,8 @@
+gate: bypass
+path: build.gradle.kts
+expect: BYPASS-003
+note: Property API ignoreFailures.set(true)는 [=(:] 뒤 true 패턴에 안 걸린다
+---
+detekt {
+    ignoreFailures.set(true)
+}

@@ -1,0 +1,15 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-003
+note: check(true) / require(true) 는 단언으로 세지만 항상 참 패턴에 없다
+---
+package com.x
+
+import kotlin.test.Test
+
+class FooTest {
+    @Test
+    fun works() {
+        check(true)
+    }
+}

@@ -1,0 +1,12 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: // @RepeatedTest 는 주석 처리 패턴에 없다
+---
+package com.x
+
+class FooTest {
+    // @RepeatedTest(3)
+    // fun works() {
+    // }
+}

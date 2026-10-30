@@ -1,0 +1,19 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-004
+note: catch (e: Error)는 AssertionError의 상위 타입이라 단언 실패를 삼키지만 정규식에 없다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class OrderServiceTest {
+    @Test
+    fun `주문 합계`() {
+        try {
+            assertEquals(3L, OrderService().total(listOf(1, 2)))
+        } catch (e: Error) {
+        }
+    }
+}

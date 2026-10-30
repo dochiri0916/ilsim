@@ -1,0 +1,18 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: assumeTrue(false, "msg") 는 인자 하나짜리 패턴만 봐서 통과한다
+---
+package com.x
+
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assumptions.assumeTrue
+
+class FooTest {
+    @Test
+    fun works() {
+        assumeTrue(false, "flaky")
+        assertEquals(2, 1 + 2)
+    }
+}

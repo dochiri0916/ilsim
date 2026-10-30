@@ -1,0 +1,17 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: Kotest 의 @Ignored 는 skipAnnotations 에 없다
+---
+package com.x
+
+import io.kotest.core.annotation.Ignored
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+
+@Ignored
+class FooTest : FunSpec({
+    test("works") {
+        (1 + 2) shouldBe 3
+    }
+})

@@ -1,0 +1,7 @@
+gate: bypass
+path: ilsim-server/src/main/ts/a.ts
+expect: BYPASS-001
+note: tslint:disable, biome-ignore 는 끄기 주석 목록에 없다
+---
+// biome-ignore lint/suspicious/noExplicitAny: legacy
+export const a: any = 1;

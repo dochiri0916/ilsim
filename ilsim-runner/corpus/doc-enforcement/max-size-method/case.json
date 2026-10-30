@@ -1,0 +1,2 @@
+{"stage":"IMPLEMENTATION","expect":"BLOCK","note":"메서드가 5줄 기준을 넘는다","doc":"docs/conventions.md",
+ "rules":[{"id":"doc:len","kind":"doc-max-size","description":"메서드는 5줄을 넘지 않는다","line":3,"params":{"scope":["main"],"target":["method"],"measure":["lines"],"max":["5"]}}]}

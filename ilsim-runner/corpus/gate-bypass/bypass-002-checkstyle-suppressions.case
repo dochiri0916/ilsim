@@ -1,0 +1,8 @@
+gate: bypass
+path: config/checkstyle/suppressions.xml
+expect: BYPASS-002
+note: Checkstyle 억제 파일 기본 위치 config/checkstyle/suppressions.xml은 파일 이름이 checkstyle로 시작하지 않아 빠진다
+---
+<suppressions>
+    <suppress checks=".*" files=".*"/>
+</suppressions>

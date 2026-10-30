@@ -1,0 +1,9 @@
+gate: bypass
+path: src/app/order.py
+expect: BYPASS-001
+note: ruff 파일 단위 억제 "# ruff: noqa"는 #\s*noqa 정규식에 안 걸린다
+---
+# ruff: noqa
+import os
+def total(a, b):
+    return a + b

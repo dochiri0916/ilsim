@@ -1,0 +1,9 @@
+gate: bypass
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: PASS
+note: 테스트 코드의 억제는 테스트 무결성 검사가 따로 본다
+---
+package com.x.order
+
+@Suppress("NonAsciiCharacters")
+class OrderServiceTest

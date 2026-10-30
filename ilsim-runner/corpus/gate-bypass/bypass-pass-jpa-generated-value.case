@@ -1,0 +1,17 @@
+gate: bypass
+path: ilsim-server/src/main/kotlin/com/x/Order.kt
+expect: PASS
+note: 정상 JPA 식별자 @GeneratedValue 를 커버리지 제외 @Generated 로 오탐한다
+---
+package com.x
+
+import jakarta.persistence.Entity
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.Id
+
+@Entity
+class Order(
+    @Id
+    @GeneratedValue
+    val id: Long = 0,
+)

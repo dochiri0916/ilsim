@@ -1,0 +1,6 @@
+gate: bypass
+path: build.gradle.kts
+expect: BYPASS-003
+note: setEnabled(false)는 \b(is)?[eE]nabled 경계에 안 걸린다
+---
+tasks.getByName("test").setEnabled(false)

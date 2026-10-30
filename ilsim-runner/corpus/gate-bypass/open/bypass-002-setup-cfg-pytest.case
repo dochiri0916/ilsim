@@ -1,0 +1,7 @@
+gate: bypass
+path: setup.cfg
+expect: BYPASS-002
+note: [tool:pytest] 섹션은 약화 섹션 목록에 없다
+---
+[tool:pytest]
+addopts = --ignore=tests

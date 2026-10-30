@@ -1,0 +1,8 @@
+gate: bypass
+path: build.gradle.kts
+expect: BYPASS-003
+note: 검사 실패를 무시하게 한다
+---
+tasks.withType<Checkstyle> {
+    isIgnoreFailures = true
+}

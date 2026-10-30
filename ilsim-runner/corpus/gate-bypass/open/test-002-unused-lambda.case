@@ -1,0 +1,16 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-002
+note: 정의만 하고 호출하지 않는 람다 안의 단언을 단언으로 센다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    @Test
+    fun works() {
+        val later = { assertEquals(3, 1 + 2) }
+    }
+}

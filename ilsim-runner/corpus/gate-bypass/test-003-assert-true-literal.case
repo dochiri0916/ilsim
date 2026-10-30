@@ -1,0 +1,16 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-003
+note: Kotlin assert(true)는 trivial 정규식(assertTrue/assertThat)에 없다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test
+
+class OrderServiceTest {
+    @Test
+    fun `주문 합계`() {
+        OrderService().total(listOf(1, 2))
+        assert(true)
+    }
+}

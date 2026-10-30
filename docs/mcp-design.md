@@ -102,7 +102,15 @@ Claude 앱(Claude Code)
 ## 7. `submit_result` 게이트
 
 - 정책 상한(2026-10-29, 대기업 하네스 사례의 "에이전트가 우회할 수 없는 상한"): 저장소 루트에 커밋한 `.ilsim-policy.json`(HEAD 내용만, 작업 중 Agent가 고쳐도 반영 안 됨)의 `maxSubmissions`(한 단계에서 실패한 제출 수), `maxClaudeCalls`(작업의 Claude 호출 수), `maxCostUsd`(작업의 JEV+Claude 비용)에 이르면 다음 제출을 검사 없이 거절하고 작업을 차단한다(재시도 불가 결과 보고). 사용자가 다시 시도하라고 해 `retry_task`를 부르면 세던 값을 0으로 돌린다. 값은 활성 작업 파일(`ActiveTask.submissions`·`claudeCalls`·`costUsd`)에 센다. 서버의 단계 시도 상한(3회)은 그대로다.
-- 제출 기록과 지표(2026-10-29): 제출마다 성공·실패, 실패 원인(`path`·`document`·`gates:<검사>`·`requirements`·`scope`·`scope-change`·`undecided`·`test-cases`·`test-bypass`·`guidelines`·`ai-audit`), Claude 호출 수, JEV·Claude 비용을 `attempt` 이벤트로 서버에 남긴다. 예전에는 실패한 제출이 서버 결과로 남지 않아 실패 원인과 그 비용을 셀 수 없었다. `ilsim-runner metrics <id>`가 서버 `GET /runner/api/metrics`로 단계별 제출·실패 원인·Claude 호출·비용과 작업별 요약을 보이고, 완료 작업 브랜치가 현재 브랜치에 병합됐는지 Git으로 확인한다. 검토 과다·기준값 조정의 근거로 쓴다. TypeSafe 응답에 JEV 비용(`usage.cost_usd`)이 없으면 입력 토큰(응답에 없으면 요청 JSON 크기로 어림한 토큰)에 백만 토큰당 $0.042를 곱해 추정하고 `ESTIMATED`로 표시한다(서버 사용량 집계에서는 미확인으로 남는다).
+- 제출 기록과 지표(2026-10-29): 제출마다 성공·실패, 실패 원인(`path`·`document`·`gates:<검사>`·`requirements`·`scope`·`scope-change`·`undecided`·`test-cases`·`test-bypass`·`guidelines`·`ai-audit`·`ai-audit-unknown`), Claude 호출 수, JEV·Claude 비용을 `attempt` 이벤트로 서버에 남긴다. 예전에는 실패한 제출이 서버 결과로 남지 않아 실패 원인과 그 비용을 셀 수 없었다. `ilsim-runner metrics <id>`가 서버 `GET /runner/api/metrics`로 단계별 제출·실패 원인·Claude 호출·비용과 작업별 요약을 보이고, 완료 작업 브랜치가 현재 브랜치에 병합됐는지 Git으로 확인한다. 검토 과다·기준값 조정의 근거로 쓴다. TypeSafe 응답에 JEV 비용(`usage.cost_usd`)이 없으면 입력 토큰(응답에 없으면 요청 JSON 크기로 어림한 토큰)에 백만 토큰당 $0.042를 곱해 추정하고 `ESTIMATED`로 표시한다(서버 사용량 집계에서는 미확인으로 남는다).
+
+- 판단 불가를 통과로 보지 않기(2026-10-30): 검증 상태에서 설정 없음(`NOT_CONFIGURED`: 테스트·변이·정적 분석 명령 미등록)과 실행·판정 실패(`UNKNOWN`)를 나눈다. JEV 판정이 없거나(요구사항·TC·영향 범위·변경 묶음) 테스트 명령이 없으면 독립 검토를 꼭 실행하고, 꼭 필요한 검토가 실행되지 못하면(`ai-audit=UNKNOWN`) 제출 실패(`ai-audit-unknown`)로 Agent가 잠시 뒤 다시 제출한다. 표본 검토의 실패는 막지 않는다. 승인된 아키텍처 규칙 검사가 예외로 실패해도 제출 실패다. 변이 실행 실패·`LOW`는 막지 않고 원장에 남긴다.
+- 검증 원장(2026-10-30, `Ledger`): 테스트 코드·구현 단계를 통과하면 TC 또는 요구사항마다 JEV 판정 확률, 연결된 REQ·TC, 테스트 위치(테스트 파일에서 TC·REQ ID를 찾은 `파일:줄`)와 검사 결과, 독립 검토 실행 여부·사유, 확인 못 한 항목(`PASSED`·`RED`·`NONE`이 아닌 검사)을 표로 만든다. `~/.ilsim/projects/<id>/specs/<기능>-<작업 id 앞 8자>/verification-<단계>.md`와 서버 산출물 `verification.md`에 두고, 제출 응답에는 확인 못 한 항목을, 작업 완료 응답에는 단계별 원장 전체를 붙여 사용자에게 알리게 한다. 테스트 위치가 빈 줄이 곧 추적 누락 후보다.
+- 검증 우회 차단(2026-10-30, `VerificationBypass`): 테스트 코드·구현 단계에서 이번 변경이 새로 넣은 줄만 본다. 프로덕션 코드의 억제 주석·애너테이션(`@Suppress`·`@SuppressWarnings`·`@Generated`·`NOSONAR`·`noinspection`·`ktlint-disable`·`eslint-disable`·`noqa` 등, BYPASS-001), 검사 설정 파일(detekt·checkstyle·PMD·SpotBugs·`.editorconfig`·ESLint·ArchUnit 저장소·`.ilsim-policy.json` 등) 변경(BYPASS-002), 빌드 설정의 검증 약화(`ignoreFailures`, 검사 작업 `enabled = false`, `-x test`, Maven 테스트 건너뛰기 등, BYPASS-003)를 막는다. 사용자가 허락하면 `record_decision`에 그 파일 경로를 적어 통과시킨다. 테스트 코드의 끄기는 기존 테스트 무결성 검사가 본다.
+- 게이트 회귀 세트와 레드팀(2026-10-30): `ilsim-runner/corpus/gate-bypass/*.case`(gate·path·expect·note 머리말 + 내용)를 `VerificationBypassTest`가 모두 돌려 기대대로 막는지(또는 통과시키는지) 확인한다. 저장소의 `.claude/agents/gate-redteam.md` 서브에이전트가 게이트를 통과하는 우회 변경을 찾아 `open/`에 사례로 남기면, 게이트를 고쳐 그 사례를 상위 폴더로 옮긴다. 같은 우회는 다시 통과하지 못한다. 1회차(2026-10-30) 후보 52개 중 50개가 통과하거나 정상 변경을 막아(우회 44, 오탐 6) 별칭 import·`@ ` 공백·`NOPMD`·커버리지 제외 주석·suppressions/baseline 파일·`ignoreFailures.set(true)`·블록 기준 `enabled = false`·`|| true`·커버리지 하한 0·`Enabled*` 조건·블록 주석 테스트·조기 return·자기 비교 단언·`runCatching` 삼키기 등을 막고 오탐 5건을 고쳤다(equals 반사성 1건은 막는 쪽으로 버림). 레드팀도 AI라서 틀릴 수 있다. 그래서 사례는 결정적 테스트로 실제 통과를 확인한 것만 남기고, `expect: PASS`(게이트를 느슨하게 하는 사례)와 범위가 애매한 사례는 사용자 확인을 거쳐 올린다. 레드팀이 못 찾은 우회는 JEV 판정·독립 검토·표본 검토가 따로 잡는다.
+- 원장의 문서 지침(2026-10-30): 검증 원장에 이 프로젝트 문서 구간 전체를 올린다. 판정한 구간은 결과(통과·불확실·판정 못 함)와 위반 확률, JEV가 이 작업과 관련 없다고 뺀 구간은 위치를 남겨 잘못 빠진 지침을 사용자가 볼 수 있게 한다.
+- 문서 규칙 회귀 세트(2026-10-30, `ilsim-runner/corpus/doc-enforcement/`, `DocEnforcementCorpusTest`): 문서·변환된 규칙·변경 전후 파일로 된 사례마다 임시 저장소에서 제출 정적 검사를 돌려 문서 규칙 위반이 막히는지 확인한다. 처음 10건에서 테스트만 있는 모듈과 Kotlin 프로덕션 코드에 Java 테스트가 섞인 모듈의 테스트 파일을 아예 읽지 않아 테스트 대상 문서 규칙이 적용되지 않던 결함을 찾아 고쳤다(`FactScanner.scan`이 `src/main` 외의 소스 루트를 테스트로 읽음).
+- TC 번호 추적 차단(2026-10-30): 테스트 코드 단계에서 정적 검사 TC를 뺀 모든 TC 번호가 저장소의 테스트 파일(이름·주석) 어딘가에 있어야 한다(`trace`, 실패 원인 `trace`). JEV 판정 전에 비용 없이 막는다.
 
 | 단계 | 게이트 |
 |---|---|
@@ -154,6 +162,8 @@ Claude 앱(Claude Code)
 | 날짜 | 결정 |
 |---|---|
 | 2026-10-24 | 실행 구조 A안, 일심 MCP 경유 필수 |
+| 2026-10-30 | 사용자 결정: 프로덕션 코드 억제 주석은 정당해 보이는 것(`@Suppress("UNCHECKED_CAST")` 등)도 허용 목록 없이 모두 막고, 사용자 허락을 `record_decision`으로 받는다. 실사용에서 자주 걸리는 것만 나중에 허용 목록으로 옮긴다 |
+| 2026-10-30 | 사용자 결정(하네스 엔지니어링 정리 대조, 추천안 B→A): 판단 불가를 통과로 보지 않기와 검증 원장을 먼저 넣고, 검증 우회 차단과 게이트 회귀 세트·레드팀 서브에이전트를 더한다(7장) |
 | 2026-10-29 | 사용자 지시: 대기업 하네스 사례를 따라 제출 기록·지표, 저장소 정책 상한, 같은 대화 안 지침 반복 전달 제거를 넣는다. 작업별 격리 실행은 설계 결정 대기 |
 | 2026-10-24 | 검색 인덱스 Docker 로컬 PostgreSQL+pgvector, 임베딩 로컬 Ollama `bge-m3` (2026-10-25 철회, 아래 JEV 문서 지침) |
 | 2026-10-24 | 독립 검토 조건부(테스트 코드 단계 항상, 구현 단계 조건부) + 건너뛴 검토 표본 축적 |

@@ -1,0 +1,8 @@
+gate: bypass
+path: build.gradle.kts
+expect: BYPASS-003
+note: 테스트 작업은 켜 둔 채 exclude("**/*")로 모든 테스트를 뺀다
+---
+tasks.test {
+    exclude("**/*")
+}

@@ -100,6 +100,7 @@ private const val USAGE = """사용법:
   JEV
     ilsim-runner jev                            JEV 연결 확인 (환경 변수 TYPESAFE_API_KEY 필요)
     ilsim-runner jev-key set|delete|status      서버에 JEV 키 등록·삭제·상태 (set 은 키를 표준 입력으로 받음, 명령 인자에 넣지 않음)
+    ilsim-runner remote <https://주소>|local|status  원격 일심 서버에 붙기(Runner 토큰·Cloudflare Access 서비스 토큰을 표준 입력으로 받아 ~/.ilsim 에 저장), local 은 이 PC 서버로 되돌림
     ilsim-runner jev-eval [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 사례로 JEV 위험 선별 평가 (코드 발췌가 TypeSafe로 전송, --agent는 Claude 비교)
     ilsim-runner jev-eval --project <경로>... [--limit <n>] [--agent]   실제 코드 후보에서 판단이 갈린 것만 추림 (라벨 없음)
     ilsim-runner jev-eval requirements [--data <폴더>] [--repeat <n>] [--agent] [--out <파일>]   주입형 diff로 요구사항 충족 판정 평가
@@ -149,6 +150,7 @@ fun main(args: Array<String>) {
         "jev" -> jevCheck()
         "mcp" -> mcp(store)
         "jev-key" -> jevKey(store, args)
+        "remote" -> remote(store, args)
         "hook" -> hook(store, args)
         "jev-eval" -> jevEval(store, args)
         else -> { println(USAGE); exitProcess(1) }
@@ -623,13 +625,13 @@ private fun metrics(store: ConfigStore, args: Array<String>) {
     val config = store.load()
     val project = config.projects[args[1]] ?: run { println("등록되지 않은 프로젝트: ${args[1]}"); exitProcess(1) }
     val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token")) ?: run { println("Runner 토큰이 없습니다"); exitProcess(1) }
-    val metrics = ServerClient(config.serverUrl, token).metrics(args[1])
+    val metrics = serverClient(store, token).metrics(args[1])
     println(MetricsReport.render(args[1], metrics, MetricsReport.merged(Path.of(project.path), metrics.summaries)))
 }
 
 private fun loadJevKey(store: ConfigStore, config: RunnerConfig) {
     RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
-        ?.let { token -> runCatching { ServerClient(config.serverUrl, token).jevKey() }.onSuccess { JevKey.fromServer = it } }
+        ?.let { token -> runCatching { serverClient(store, token).jevKey() }.onSuccess { JevKey.fromServer = it } }
 }
 
 private fun guidelines(store: ConfigStore, args: Array<String>) {
@@ -669,7 +671,7 @@ private fun mcp(store: ConfigStore) {
     System.setOut(System.err)
     val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
         ?: run { System.err.println("토큰이 없습니다. 서버를 먼저 실행해 ~/.ilsim/token 을 만들거나 ILSIM_TOKEN 환경변수를 설정하세요"); exitProcess(1) }
-    val client = ServerClient(store.load().serverUrl, token)
+    val client = serverClient(store, token)
     JevKey.loader = { client.jevKey() }
     JevKey.refresh()
     val cwd = Path.of(System.getenv("CLAUDE_PROJECT_DIR")?.takeIf { it.isNotBlank() } ?: System.getProperty("user.dir"))
@@ -677,10 +679,45 @@ private fun mcp(store: ConfigStore) {
     McpServer("ilsim", "0.1.0", IlsimMcp.INSTRUCTIONS, tools).serve(System.`in`.bufferedReader(), protocol)
 }
 
+fun serverClient(store: ConfigStore, token: String): ServerClient =
+    ServerClient(store.load().serverUrl, token, RunnerAccess.headers(System.getenv(), store.location.parent.resolve("access.json")))
+
+private fun remote(store: ConfigStore, args: Array<String>) {
+    val home = store.location.parent
+    fun secret(prompt: String): String = (System.console()?.readPassword(prompt)?.let(::String) ?: readLine()).orEmpty().trim()
+    when (val target = args.getOrNull(1)) {
+        null, "status" -> {
+            val config = store.load()
+            println("서버: ${config.serverUrl}")
+            println("Runner 토큰: ${if (RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), home.resolve("token")) != null) "있음" else "없음"}")
+            println("Cloudflare Access 서비스 토큰: ${if (RunnerAccess.headers(System.getenv(), home.resolve("access.json")).isNotEmpty()) "있음" else "없음"}")
+        }
+        "local" -> {
+            store.save(store.load().copy(serverUrl = "http://localhost:8080"))
+            home.resolve("access.json").toFile().delete()
+            println("서버를 이 PC(http://localhost:8080)로 되돌리고 Access 서비스 토큰을 지웠습니다")
+        }
+        else -> {
+            if (!target.startsWith("https://") && !target.startsWith("http://localhost") && !target.startsWith("http://127.0.0.1")) {
+                println("원격 서버 주소는 https:// 로 시작해야 합니다"); exitProcess(1)
+            }
+            val token = secret("Runner 토큰(서버 PC의 ~/.ilsim/token 내용): ")
+            if (token.isEmpty()) { println("토큰이 비어 있습니다"); exitProcess(1) }
+            val id = secret("Cloudflare Access Client ID(없으면 비워 둠): ")
+            val clientSecret = if (id.isEmpty()) "" else secret("Cloudflare Access Client Secret: ")
+            Secrets.write(home.resolve("token"), token + "\n")
+            if (id.isNotEmpty()) RunnerAccess.save(home.resolve("access.json"), AccessToken(id, clientSecret)) else home.resolve("access.json").toFile().delete()
+            store.save(store.load().copy(serverUrl = target.trimEnd('/')))
+            val status = runCatching { serverClient(store, token).jevKeyStatus() }
+            println(status.fold({ "연결했습니다: $target (JEV 키 상태: $it)" }, { "설정은 저장했지만 연결 확인에 실패했습니다: ${it.message}" }))
+        }
+    }
+}
+
 private fun jevKey(store: ConfigStore, args: Array<String>) {
     val token = RunnerToken.resolve(System.getenv("ILSIM_TOKEN"), store.location.parent.resolve("token"))
         ?: run { println("토큰이 없습니다. 서버를 먼저 실행해 ~/.ilsim/token 을 만들거나 ILSIM_TOKEN 환경변수를 설정하세요"); exitProcess(1) }
-    val client = ServerClient(store.load().serverUrl, token)
+    val client = serverClient(store, token)
     try {
         when (args.getOrNull(1)) {
             "set" -> {

@@ -1,0 +1,17 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-003
+note: assertTrue(true, "msg")처럼 메시지 인자를 붙이면 true\s*\) 패턴을 피한다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertTrue
+
+class OrderServiceTest {
+    @Test
+    fun `주문 합계`() {
+        OrderService().total(listOf(1, 2))
+        assertTrue(true, "합계 계산")
+    }
+}

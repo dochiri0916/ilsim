@@ -1,0 +1,17 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: if (1 == 1) return 은 true 리터럴 패턴을 피한다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    @Test
+    fun works() {
+        if (1 == 1) return
+        assertEquals(2, 1 + 2)
+    }
+}

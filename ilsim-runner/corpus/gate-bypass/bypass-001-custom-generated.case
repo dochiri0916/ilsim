@@ -1,0 +1,13 @@
+gate: bypass
+path: src/main/kotlin/com/x/order/PriceCalculator.kt
+expect: BYPASS-001
+note: JaCoCo는 이름에 Generated가 들어간 모든 애너테이션을 제외하므로 @NoCoverageGenerated로 커버리지에서 뺀다
+---
+package com.x.order
+
+annotation class NoCoverageGenerated
+
+class PriceCalculator {
+    @NoCoverageGenerated
+    fun total(a: Long, b: Long): Long = a + b
+}

@@ -1,0 +1,15 @@
+gate: test-integrity
+path: src/test/java/com/x/order/OrderServiceTest.java
+expect: PASS
+note: JUnit4 @Test(expected = ...)는 애너테이션이 단언인데 본문에 단언이 없다고 TEST-002로 막힌다
+---
+package com.x.order;
+
+import org.junit.Test;
+
+public class OrderServiceTest {
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsEmptyOrder() {
+        new OrderService().place(java.util.List.of());
+    }
+}

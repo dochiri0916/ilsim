@@ -1,0 +1,8 @@
+package com.x;
+
+import lombok.Getter;
+
+@Getter
+public class Order {
+    private long id;
+}

@@ -1,0 +1,17 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-001
+note: @Disabled로 끈 테스트
+---
+package com.x.order
+
+import org.junit.jupiter.api.Disabled
+import org.junit.jupiter.api.Test
+
+class OrderServiceTest {
+    @Disabled
+    @Test
+    fun `주문 합계`() {
+        assert(OrderService().total(listOf(1, 2)) == 3L)
+    }
+}

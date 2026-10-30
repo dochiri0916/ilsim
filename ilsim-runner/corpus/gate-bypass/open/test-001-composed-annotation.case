@@ -1,0 +1,17 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: 다른 파일에서 @Disabled 를 품은 합성 애노테이션(@Wip)을 붙이면 이름만 봐서 못 잡는다
+---
+package com.x
+
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+
+class FooTest {
+    @Wip
+    @Test
+    fun works() {
+        assertEquals(2, 1 + 2)
+    }
+}

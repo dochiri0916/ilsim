@@ -1,0 +1,19 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: PASS
+note: 문서 주석 예시의 @Test 를 감춘 테스트로 오탐한다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    /**
+     * 사용 예: @Test 로 표시한다.
+     */
+    @Test
+    fun works() {
+        assertEquals(3, compute())
+    }
+}

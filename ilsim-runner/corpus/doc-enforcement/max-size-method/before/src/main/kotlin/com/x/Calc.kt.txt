@@ -1,0 +1,5 @@
+package com.x
+
+class Calc {
+    fun one(): Int = 1
+}

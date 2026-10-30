@@ -176,7 +176,10 @@ class IlsimMcp(
                 guides.clear(task.taskId)
                 val removed = task.worktree?.let { Shell.git(ws.home, "worktree", "remove", it).exit == 0 }
                 "작업이 끝났습니다: ${task.feature}. 브랜치 ${task.branch}에 단계별 커밋이 있습니다. 병합 여부는 사용자가 정합니다" +
-                    when (removed) { true -> ". 작업 폴더를 지웠습니다"; false -> ". 작업 폴더(${task.worktree})를 지우지 못해 남겨 두었습니다"; null -> "" }
+                    when (removed) { true -> ". 작업 폴더를 지웠습니다"; false -> ". 작업 폴더(${task.worktree})를 지우지 못해 남겨 두었습니다"; null -> "" } +
+                    Artifacts(store).ledgers(ws.projectId, task.feature, task.taskId).takeIf { it.isNotEmpty() }?.let { ledgers ->
+                        "\n\n사용자에게 아래 검증 원장을 요약해 알리고, 확인 못 한 항목과 테스트 위치를 찾지 못한 항목은 빠짐없이 전하세요\n\n" + ledgers.joinToString("\n\n").let { if (it.length > MAX_OUTPUT) it.take(MAX_OUTPUT) + "\n…(생략)" else it }
+                    }.orEmpty()
             }
             state.status == "BLOCKED" -> {
                 active.save(ws.home, task.copy(stage = state.stage, status = "BLOCKED"))
@@ -394,16 +397,28 @@ class IlsimMcp(
             return "제출 실패($stage):\n${outcome.error}\n\n지적된 부분을 고친 뒤 submit_result를 다시 호출하세요"
         }
         val saved = Artifacts(store).path(ws.projectId, task.feature, task.taskId, stage)
+        outcome.ledger?.let { Artifacts(store).writeLedger(ws.projectId, task.feature, task.taskId, stage, it) }
         if (saved == null) Shell.gitOk(ws.root, "-c", "user.name=ilsim", "-c", "user.email=ilsim@localhost", "commit", "-m", "ilsim(${stage.lowercase()}): ${task.feature}")
-        server.result(task.taskId, StageResult(true, diff = outcome.diff, artifacts = outcome.artifacts, validation = validation, branch = task.branch,
+        server.result(task.taskId, StageResult(true, diff = outcome.diff, artifacts = outcome.artifacts + listOfNotNull(outcome.ledger?.let { LEDGER to it }), validation = validation, branch = task.branch,
             model = assigned.model, executionId = assigned.executionId, stage = stage, usage = usage.toList(), decisions = decisions.toList()))
         active.save(ws.home, counted.copy(stage = stage, status = "SUBMITTED", stopBlocks = 0, attention = outcome.attention, undecided = outcome.undecided))
         guides.load(task.taskId)?.takeIf { !it.reported }?.let { guides.save(task.taskId, it.copy(reported = true)) }
         val checks = validation.entries.joinToString(", ") { "${it.key}=${it.value}" }.ifEmpty { "형식·경로 검사" }
-        return "통과($stage): $checks. ${if (saved == null) "커밋했습니다" else "문서를 저장했습니다($saved)"}\n\n" + nextStep()
+        val open = Ledger.unconfirmed(validation).takeIf { it.isNotEmpty() }?.let { " 확인 못 한 항목: ${it.joinToString(", ")}." }.orEmpty()
+        return "통과($stage): $checks.$open ${if (saved == null) "커밋했습니다" else "문서를 저장했습니다($saved)"}\n\n" + nextStep()
     }
 
-    private class Outcome(val error: String? = null, val cause: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap(), val attention: List<String> = emptyList(), val undecided: List<String> = emptyList())
+    private class Outcome(val error: String? = null, val cause: String? = null, val diff: String? = null, val artifacts: Map<String, String> = emptyMap(), val attention: List<String> = emptyList(), val undecided: List<String> = emptyList(), val ledger: String? = null)
+
+    private enum class AuditMode { REQUIRED, SAMPLE, SKIP }
+
+    private class AuditPlan(val mode: AuditMode, val reasons: List<String>) {
+        fun describe(result: String?): String = when (mode) {
+            AuditMode.REQUIRED -> "실행(${reasons.joinToString(", ")})"
+            AuditMode.SAMPLE -> "표본으로 실행"
+            AuditMode.SKIP -> "조건 충족으로 생략"
+        } + result?.let { " → $it" }.orEmpty()
+    }
 
     private fun verify(ws: Workspace, task: ActiveTask, assigned: AssignedTask, validation: MutableMap<String, String>, document: String?, log: (String) -> Unit): Outcome {
         val stage = assigned.stage
@@ -423,6 +438,10 @@ class IlsimMcp(
         val diff = if (text != null && key != null) "+++ ${key.substringAfterLast('/')}\n" + text.lines().joinToString("\n") { "+$it" } else {
             Shell.gitOk(ws.root, "add", "-A")
             Shell.gitOk(ws.root, "diff", "--cached", "HEAD")
+        }
+        if (stage == "TEST_CODE") untracedCases(ws, task, validation).takeIf { it.isNotEmpty() }?.let { cases ->
+            return Outcome(cause = "trace", error = "테스트 케이스 문서의 TC 번호가 어느 테스트 이름·주석에도 없습니다. 아래 TC마다 그 시나리오를 다루는 테스트의 이름이나 주석에 TC 번호를 그대로(예: TC-3) 넣고, 테스트가 없으면 작성한 뒤 다시 제출하세요:\n" +
+                cases.joinToString("\n") { "- ${it.id} ${it.text}" })
         }
         val check = if (stage == "IMPLEMENTATION") requirementCheck(ws, task, diff, validation) else null
         if (check != null && check.missing.isNotEmpty()) {
@@ -473,7 +492,8 @@ class IlsimMcp(
         }
         val unsettled = undecided?.unresolved.orEmpty()
         val proposals = gates.proposedRuleHits
-        val audit = if (auditNeeded(ws, stage, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved + proposals.map { "승인 전 문서 규칙 ${it.substringAfterLast('<').removeSuffix(">")}" }.distinct(), edited.size, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)) {
+        val plan = auditNeeded(ws, stage, validation, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved + proposals.map { "승인 전 문서 규칙 ${it.substringAfterLast('<').removeSuffix(">")}" }.distinct(), edited.size, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)
+        val audit = if (plan.mode != AuditMode.SKIP) {
             gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey),
                 listOfNotNull((if (guide.selected) guide.render() else TaskGuide.all(docSections(ws, task.feature).second)).takeIf { guide.guidelines.isNotEmpty() || !guide.selected },
                     proposals.takeIf { it.isNotEmpty() }?.let { "## 승인 전 문서 규칙에 걸린 곳(사용자 승인 전이라 막지 않음, 실제 위반인지 RULE로 판단)\n" + it.joinToString("\n") { h -> "- $h" } },
@@ -482,6 +502,9 @@ class IlsimMcp(
         } else {
             validation["ai-audit"] = "SKIPPED"
             StageGates.AuditOutcome(emptyMap(), emptyList())
+        }
+        if (plan.mode == AuditMode.REQUIRED && validation["ai-audit"] == "UNKNOWN") {
+            return Outcome(cause = "ai-audit-unknown", error = "독립 검토가 꼭 필요한 변경인데 검토를 실행하지 못했습니다(검토 사유: ${plan.reasons.joinToString(", ")}). 판단하지 못한 것을 통과로 보지 않습니다. 코드를 고치지 말고 잠시 뒤 submit_result를 다시 호출하세요. 계속 실패하면 사용자에게 알리세요")
         }
         if (audit.fixable.isNotEmpty()) {
             return Outcome(cause = "ai-audit", error = "AI 변경 검토가 아래를 지적했습니다. 해당 부분만 고치세요:\n" + audit.fixable.joinToString("\n") { "- [${it.type}] ${it.target} ${it.reason}" })
@@ -493,7 +516,75 @@ class IlsimMcp(
             else -> listOf("JEV를 쓸 수 없어 문서 지침을 고르지도 판정하지도 못했습니다. 이 프로젝트 문서: ${guide.documents.take(10).joinToString()}")
         }
         val unsure = if (stage !in APPROVAL_STAGES) emptyList() else unsettled.map { q -> "${q.label} (정함 확률 ${judged?.probabilities?.get(q.id)?.let { "%.2f".format(it) } ?: "판정 못 함"})" }
-        return Outcome(diff = diff, artifacts = artifacts + audit.artifacts, attention = attention, undecided = unsure)
+        val ledger = when (stage) {
+            "IMPLEMENTATION" -> requirementRows(ws, task, check)
+            "TEST_CODE" -> caseRows(ws, task, tests)
+            else -> null
+        }
+        val rendered = Ledger.render(stage, validation, ledger?.first, ledger?.second.orEmpty(), plan.describe(validation["ai-audit"]?.takeIf { plan.mode != AuditMode.SKIP }),
+            guidelineRows(docSections(ws, task.feature).second, guide, compliance))
+        return Outcome(diff = diff, artifacts = artifacts + audit.artifacts, attention = attention, undecided = unsure, ledger = rendered)
+    }
+
+    private fun guidelineRows(sections: List<DocSection>, guide: TaskGuide, compliance: Guidelines.Check?): List<Ledger.GuidelineRow> {
+        val selected = guide.guidelines.associateBy { it.source }
+        val judged = compliance?.probabilities.orEmpty().mapKeys { it.key.source }
+        val violated = compliance?.violated.orEmpty().map { it.source }.toSet()
+        val uncertain = compliance?.uncertain.orEmpty().map { it.source }.toSet()
+        return sections.map { s ->
+            val source = "${s.path}:${s.line}"
+            val verdict = when {
+                guide.selected && source !in selected -> Ledger.EXCLUDED
+                source in violated -> Ledger.VIOLATED
+                source in uncertain -> Ledger.UNCERTAIN
+                source in judged -> Ledger.PASSED
+                else -> Ledger.UNJUDGED
+            }
+            Ledger.GuidelineRow(source, s.heading, verdict, judged[source])
+        }
+    }
+
+    private fun requirementRows(ws: Workspace, task: ActiveTask, check: RequirementCheck.Result?): Pair<String, List<Ledger.Row>> {
+        val artifacts = Artifacts(store)
+        val requirements = artifacts.read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS")?.let(RequirementCheck::parse).orEmpty()
+        val cases = artifacts.read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty()
+        val linked = requirements.associate { r -> r.id to cases.filter { mentions(it.text, r.id) }.map { it.id } }
+        val found = testLocations(ws.root, requirements.map { it.id } + cases.map { it.id })
+        return "요구사항" to requirements.map { r ->
+            Ledger.Row(r.id, r.text, check?.probabilities?.get(r.id), linked[r.id].orEmpty(), (found[r.id].orEmpty() + linked[r.id].orEmpty().flatMap { found[it].orEmpty() }).distinct().take(MAX_LOCATIONS))
+        }
+    }
+
+    private fun caseRows(ws: Workspace, task: ActiveTask, tests: TestCodeCheck.Result?): Pair<String, List<Ledger.Row>> {
+        val artifacts = Artifacts(store)
+        val requirements = artifacts.read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS")?.let(RequirementCheck::parse).orEmpty()
+        val cases = artifacts.read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.static }
+        val found = testLocations(ws.root, cases.map { it.id })
+        return "TC" to cases.map { c -> Ledger.Row(c.id, c.text, tests?.coverage?.get(c.id), requirements.filter { mentions(c.text, it.id) }.map { it.id }, found[c.id].orEmpty().take(MAX_LOCATIONS)) }
+    }
+
+    private fun untracedCases(ws: Workspace, task: ActiveTask, validation: MutableMap<String, String>): List<TestCodeCheck.TestCase> {
+        val cases = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.static }
+        if (cases.isEmpty()) return emptyList()
+        val found = testLocations(ws.root, cases.map { it.id })
+        val missing = cases.filter { it.id !in found }
+        validation["trace"] = if (missing.isEmpty()) "PASSED" else "FAILED"
+        return missing
+    }
+
+    private fun mentions(text: String, id: String): Boolean = Regex("""(?<![\w-])${Regex.escape(id)}(?![\w-])""").containsMatchIn(text)
+
+    private fun testLocations(root: Path, ids: List<String>): Map<String, List<String>> {
+        if (ids.isEmpty()) return emptyMap()
+        val r = Shell.git(root, "grep", "-n", "-I", "-w", *ids.distinct().flatMap { listOf("-e", it) }.toTypedArray())
+        if (r.exit != 0) return emptyMap()
+        val out = linkedMapOf<String, MutableList<String>>()
+        r.output.lines().forEach { line ->
+            val parts = line.split(':', limit = 3)
+            if (parts.size < 3 || !Gate.isTestPath(parts[0])) return@forEach
+            ids.filter { mentions(parts[2], it) }.forEach { id -> out.getOrPut(id) { mutableListOf() } += "${parts[0].substringAfterLast('/')}:${parts[1]}" }
+        }
+        return out
     }
 
     private class Undecided(val open: List<UndecidedCheck.Question>, val result: UndecidedCheck.Result?) {
@@ -634,14 +725,17 @@ class IlsimMcp(
         return result
     }
 
-    private fun auditNeeded(ws: Workspace, stage: String, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, tests: TestCodeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, editedSuspects: Int, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): Boolean {
-        if (stage != "TEST_CODE" && stage != "IMPLEMENTATION") return false
+    private fun auditNeeded(ws: Workspace, stage: String, validation: Map<String, String>, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, tests: TestCodeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, editedSuspects: Int, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): AuditPlan {
+        if (stage != "TEST_CODE" && stage != "IMPLEMENTATION") return AuditPlan(AuditMode.SKIP, emptyList())
         val testing = stage == "TEST_CODE"
         val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
         val lines = diff.lines().count { (it.startsWith("+") || it.startsWith("-")) && !it.startsWith("+++") && !it.startsWith("---") }
         val reasons = listOfNotNull(
             "요구사항 판정 없음".takeIf { !testing && check == null },
             "테스트 코드 판정 없음".takeIf { testing && tests == null },
+            "테스트 명령 없음".takeIf { validation["tests"] == StageGates.NOT_CONFIGURED },
+            "영향 범위 판정 없음".takeIf { validation["scope"] == "UNKNOWN" },
+            "변경 묶음 판정 없음".takeIf { validation["scope-change"] == "UNKNOWN" },
             "판정이 불확실한 TC ${tests?.unsureCases?.joinToString { it.id }}".takeIf { tests != null && tests.unsureCases.isNotEmpty() },
             "검증 없이 통과할 수 있는지 불확실한 테스트 ${tests?.unsureFiles?.joinToString()}".takeIf { tests != null && tests.unsureFiles.isNotEmpty() },
             "테스트 코드가 커서 일부만 판정".takeIf { tests != null && tests.truncated },
@@ -655,14 +749,14 @@ class IlsimMcp(
         )
         if (reasons.isNotEmpty()) {
             DecisionScope.record("CHANGE_AUDIT", "AGENT", "조건부 검토: " + reasons.joinToString(", "), diff)
-            return true
+            return AuditPlan(AuditMode.REQUIRED, reasons)
         }
         val rate = (ws.project.auditSampleRate ?: AUDIT_SAMPLE_RATE).coerceIn(0.0, 1.0)
         val sampled = Math.floorMod(executionId.hashCode(), 100) < (rate * 100).toInt()
         DecisionScope.record("CHANGE_AUDIT", if (sampled) "SAMPLE" else "SKIP",
             if (sampled) "건너뛸 조건이지만 표본(${(rate * 100).toInt()}%)으로 검토" else "${if (testing) "TC·우회 테스트" else "요구사항"}·문서 지침 판정 충족·위험 후보 없음·변경 ${lines}줄로 검토 생략", diff)
         log(if (sampled) "독립 검토: 표본으로 실행" else "독립 검토: 조건 충족으로 생략")
-        return sampled
+        return AuditPlan(if (sampled) AuditMode.SAMPLE else AuditMode.SKIP, emptyList())
     }
 
     private fun gates(log: (String) -> Unit): StageGates =
@@ -691,6 +785,9 @@ class IlsimMcp(
         const val AUDIT_SAMPLE_RATE = 0.2
 
         const val AUDIT_MAX_DIFF_LINES = 300
+
+        private const val LEDGER = "verification.md"
+        private const val MAX_LOCATIONS = 3
 
         private val runnerCommand: String get() = System.getenv("ILSIM_RUNNER_BIN")?.takeIf { it.isNotBlank() } ?: "ilsim-runner"
 

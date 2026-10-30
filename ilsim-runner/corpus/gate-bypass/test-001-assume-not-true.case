@@ -1,0 +1,18 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-001
+note: assumeTrue(!true)는 assume(false) 정규식에 안 걸리지만 항상 건너뛴다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class OrderServiceTest {
+    @Test
+    fun `주문 합계`() {
+        assumeTrue(!true)
+        assertEquals(3L, OrderService().total(listOf(1, 2)))
+    }
+}

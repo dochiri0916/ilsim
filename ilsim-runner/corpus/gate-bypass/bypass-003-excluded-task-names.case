@@ -1,0 +1,6 @@
+gate: bypass
+path: settings.gradle.kts
+expect: BYPASS-003
+note: startParameter.excludedTaskNames로 -x test와 같은 효과를 낸다
+---
+gradle.startParameter.excludedTaskNames += "test"

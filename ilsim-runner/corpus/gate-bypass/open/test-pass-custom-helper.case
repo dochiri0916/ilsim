@@ -1,0 +1,15 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: PASS
+note: 단언 보조 메서드를 ensure 로 이름 지은 정상 테스트를 단언 없음으로 오탐한다
+---
+package com.x
+
+import kotlin.test.Test
+
+class FooTest {
+    @Test
+    fun totalIsThree() {
+        ensureTotal(3)
+    }
+}

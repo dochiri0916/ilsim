@@ -1,0 +1,11 @@
+gate: bypass
+path: src/main/kotlin/com/x/order/OrderService.kt
+expect: BYPASS-001
+note: 경고를 원인 대신 @Suppress로 숨긴다
+---
+package com.x.order
+
+class OrderService {
+    @Suppress("UNCHECKED_CAST")
+    fun load(raw: Any): List<String> = raw as List<String>
+}

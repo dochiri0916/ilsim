@@ -1,0 +1,16 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-003
+note: assertTrue { true } 람다 형식은 괄호 패턴을 피한다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertTrue
+
+class FooTest {
+    @Test
+    fun works() {
+        assertTrue { true }
+    }
+}

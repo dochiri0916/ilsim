@@ -1,0 +1,8 @@
+gate: bypass
+path: pom.xml
+expect: PASS
+note: <skipTests>false</skipTests>(테스트 강제 실행)가 skipTests 단어만으로 막힌다
+---
+<properties>
+    <skipTests>false</skipTests>
+</properties>

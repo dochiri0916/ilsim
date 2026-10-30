@@ -1,0 +1,11 @@
+gate: bypass
+path: src/main/kotlin/com/x/order/DiscountSpec.kt
+expect: BYPASS-001
+note: 프로덕션 파일 이름을 *Spec.kt(명세 패턴)로 지어 테스트 경로로 오인시켜 억제 검사를 건너뛴다
+---
+package com.x.order
+
+class DiscountSpec {
+    @Suppress("UNCHECKED_CAST")
+    fun load(raw: Any): List<String> = raw as List<String>
+}

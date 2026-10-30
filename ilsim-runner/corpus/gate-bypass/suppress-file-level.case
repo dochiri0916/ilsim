@@ -1,0 +1,9 @@
+gate: bypass
+path: src/main/kotlin/com/x/order/Mapper.kt
+expect: BYPASS-001
+note: 파일 단위 @file:Suppress
+---
+@file:Suppress("DEPRECATION")
+package com.x.order
+
+class Mapper

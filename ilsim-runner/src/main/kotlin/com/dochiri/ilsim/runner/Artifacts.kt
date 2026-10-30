@@ -45,7 +45,20 @@ class Artifacts(config: ConfigStore) {
         return file
     }
 
+    fun writeLedger(projectId: String, feature: String, taskId: String, stage: String, text: String): Path {
+        val file = folder(projectId, feature, taskId).resolve(ledgerName(stage))
+        KnowledgeFiles.write(file, text.trimEnd() + "\n")
+        return file
+    }
+
+    fun ledgers(projectId: String, feature: String, taskId: String): List<String> =
+        STAGES.mapNotNull { folder(projectId, feature, taskId).resolve(ledgerName(it)).takeIf { f -> f.exists() }?.readText()?.trimEnd() }
+
     companion object {
+        private val STAGES = listOf("REQUIREMENTS", "TEST_CASES", "TEST_CODE", "IMPLEMENTATION")
+
+        private fun ledgerName(stage: String) = "verification-${stage.lowercase()}.md"
+
         private val SAFE = Regex("""[A-Za-z0-9][A-Za-z0-9._-]*""")
         private const val DECISIONS = "decisions.json"
         private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }

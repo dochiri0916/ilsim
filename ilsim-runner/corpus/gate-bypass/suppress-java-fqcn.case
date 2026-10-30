@@ -1,0 +1,11 @@
+gate: bypass
+path: src/main/java/com/x/order/OrderService.java
+expect: BYPASS-001
+note: 정규화 이름으로 쓴 @SuppressWarnings
+---
+package com.x.order;
+
+public class OrderService {
+    @java.lang.SuppressWarnings("unchecked")
+    public Object load(Object raw) { return raw; }
+}

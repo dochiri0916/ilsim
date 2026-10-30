@@ -296,17 +296,59 @@ class McpTest {
     }
 
     @Test
+    fun `꼭 필요한 독립 검토를 실행하지 못하면 통과로 보지 않고 통과하면 검증 원장을 남긴다`() {
+        var failing = true
+        val ask: (String, String) -> String = { _, _ -> if (failing) throw IllegalStateException("검토 호출 실패") else """{"verdict":"PASS","findings":[]}""" }
+        fun run(name: String, args: String = "{}") = IlsimMcp(store, server, active, repo, ask, ::jev).tools().associateBy { it.name }.getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 소문자 |")); server.approve("t")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { // TC-1\n}\n")
+
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        val untraced = run("submit_result")
+        assertContains(untraced, "TC 번호가 어느 테스트 이름·주석에도 없습니다")
+        assertContains(untraced, "- TC-1 REQ-1 소문자")
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { // TC-1\n}\n")
+
+        val blocked = run("submit_result")
+        assertContains(blocked, "검토를 실행하지 못했습니다")
+        assertContains(blocked, "테스트 명령 없음")
+        assertEquals("TEST_CODE", server.stages[server.index])
+
+        failing = false
+        val passed = run("submit_result")
+        assertContains(passed, "통과(TEST_CODE)")
+        assertContains(passed, "확인 못 한 항목: ")
+        assertContains(passed, "tests=NOT_CONFIGURED(설정 없음)")
+        val ledger = server.results.last().artifacts.getValue("verification.md")
+        assertContains(ledger, "| TC-1 REQ-1 소문자 | - | REQ-1 | SlugTest.java:1 |")
+        assertContains(ledger, "독립 검토: 실행(")
+
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug {}\n")
+        val done = run("submit_result")
+        assertContains(done, "작업이 끝났습니다")
+        assertContains(done, "## 검증 원장 (TEST_CODE)")
+        assertContains(done, "## 검증 원장 (IMPLEMENTATION)")
+        assertContains(done, "| REQ-1 소문자로 바꾼다 | - | TC-1 | SlugTest.java:1 |")
+    }
+
+    @Test
     fun `구현 단계는 JEV가 누락으로 본 요구사항이 있으면 제출을 실패시키고 확실하면 독립 검토를 건너뛴다`() {
         var audits = 0
         val counting: (String, String) -> String = { _, _ -> audits++; """{"verdict":"PASS","findings":[]}""" }
         fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
         run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |\n| TC-2 | REQ-2 |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest {}\n")
         run("submit_result")
         assertEquals("IMPLEMENTATION", server.stages[server.index])
         val before = audits
@@ -336,7 +378,7 @@ class McpTest {
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/main/Slug.java`\n- `src/test/SlugTest.java`")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest {}\n")
         run("submit_result")
         assertEquals("IMPLEMENTATION", server.stages[server.index])
         assertContains(run("next_step"), "영향 범위와 관계없는 파일은 고치지 않는다")
@@ -401,7 +443,7 @@ class McpTest {
         assertContains(testing, "## 정하지 않은 사항")
         assertTrue("- Q1." !in testing.substringAfter("## 정하지 않은 사항"), testing)
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest {}\n")
         assertContains(run("submit_result"), "undecided=UNCERTAIN")
         assertContains(prompts.last(), "- GUESS:")
         assertContains(prompts.last(), "## 정하지 않은 사항\n- Q2. null 이면 예외를 던지는가?")
@@ -419,7 +461,7 @@ class McpTest {
         assertContains(recorded, "reopen_stage(TEST_CODE)로 테스트를 더할지")
         val passed = run("submit_result")
         assertContains(passed, "통과(IMPLEMENTATION)")
-        assertTrue("undecided=" !in passed, passed)
+        assertTrue("undecided=" !in passed.substringBefore("\n"), passed)
         assertTrue(server.results.last().decisions.none { it.purpose == "UNDECIDED_CHECK" })
         assertTrue(server.results.dropLast(1).last().decisions.any { it.purpose == "UNDECIDED_CHECK" && it.handler == "JEV" })
     }
@@ -431,12 +473,13 @@ class McpTest {
         fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
         jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
         run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/test/SlugTest.java`")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |\n| TC-2 | REQ-1 | 정상(정적 검사) | 구현 확인 | toLowerCase 를 쓴다 |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest {}\n")
 
         jevAnswer = { id -> when { id == "t0" -> 0.05; id[0] in "uvb" -> 0.05; else -> 0.95 } }
         val missing = run("submit_result")
@@ -468,7 +511,7 @@ class McpTest {
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void alphaMarker() {} }\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest { void alphaMarker() {} }\n")
         work.resolve("src/test/OtherTest.java").writeText("class OtherTest {}\n")
         assertContains(run("submit_result"), "test-cases=PASSED")
         assertEquals("IMPLEMENTATION", server.stages[server.index])
@@ -491,7 +534,7 @@ class McpTest {
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |\n| TC-2 | REQ-2 | 정상 | of(\"a b\") | \"a-b\" |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} void hyphen() {} }\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest { void lower() {} void hyphen() {} }\n")
         assertContains(run("submit_result"), "tests=RED")
         val before = audits
 
@@ -520,7 +563,7 @@ class McpTest {
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest { void lower() {} }\n")
         assertContains(run("submit_result"), "tests=RED")
 
         work.resolve("src/main").createDirectories()
@@ -557,7 +600,7 @@ class McpTest {
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest { void lower() {} }\n")
         assertContains(run("submit_result"), "tests=RED")
 
         work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
@@ -586,7 +629,7 @@ class McpTest {
         jevAnswer = { null }
         run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest { void lower() {} }\n")
         assertContains(run("submit_result"), "tests=RED")
         work.resolve("src/main").createDirectories()
         work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
@@ -607,7 +650,7 @@ class McpTest {
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
         run("submit_result", doc("| TC-1 | REQ-1 |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/SlugTest.java").writeText("class SlugTest {}\n")
+        work.resolve("src/test/SlugTest.java").writeText("// TC-1 TC-2 TC-3 TC-4\nclass SlugTest {}\n")
         run("submit_result")
         assertEquals("IMPLEMENTATION", server.stages[server.index])
 
@@ -718,7 +761,7 @@ class McpTest {
         call("submit_result", doc("# 작별\n\n- REQ-1: 작별 인사를 더한다")); server.approve("t")
         call("submit_result", doc("| TC-1 | REQ-1 | 정상 | bye(\"Kim\") | \"Bye, Kim.\" |")); server.approve("t")
         work.resolve("src/test").createDirectories()
-        work.resolve("src/test/ByeTest.java").writeText("class ByeTest {}\n")
+        work.resolve("src/test/ByeTest.java").writeText("// TC-1\nclass ByeTest {}\n")
         val blocked = call("submit_result")
         assertContains(blocked, "문서 지침을 어긴 것으로 보입니다")
         assertContains(blocked, "record_decision(허락한 내용)")

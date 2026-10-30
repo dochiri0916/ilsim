@@ -1,0 +1,8 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-003
+note: setIgnoreFailures(true) 는 \b 때문에 ignoreFailures 패턴을 피한다
+---
+detekt {
+    setIgnoreFailures(true)
+}

@@ -1,0 +1,7 @@
+gate: bypass
+path: ilsim-server/src/main/python/a.py
+expect: BYPASS-001
+note: # pyright: ignore / mypy: ignore-errors 는 목록에 없다
+---
+# mypy: ignore-errors
+def f(x): return x.y

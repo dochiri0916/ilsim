@@ -1,0 +1,13 @@
+gate: bypass
+path: pom.xml
+expect: BYPASS-003
+note: <skip>과 true를 다른 줄로 나눠 줄 단위 검사를 피한다
+---
+<plugin>
+    <artifactId>maven-surefire-plugin</artifactId>
+    <configuration>
+        <skip>
+            true
+        </skip>
+    </configuration>
+</plugin>

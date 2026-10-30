@@ -1,0 +1,15 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-002
+note: 별칭 import(Test as Case)로 @Test 이름을 바꿔 테스트로 인식되지 않게 한다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test as Case
+
+class OrderServiceTest {
+    @Case
+    fun `주문 합계`() {
+        OrderService().total(listOf(1, 2))
+    }
+}
