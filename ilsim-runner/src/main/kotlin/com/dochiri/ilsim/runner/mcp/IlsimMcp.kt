@@ -734,6 +734,7 @@ class IlsimMcp(
         val configs = ScopeCheck.files(diff).keys.filter(VerificationBypass::config)
         val reasons = listOfNotNull(
             "설정·빌드 파일 변경 ${configs.joinToString()}(검증을 약하게 하는지 확인)".takeIf { configs.isNotEmpty() },
+            "변이 테스트 판정 못 함".takeIf { validation["mutation"] == "UNKNOWN" },
             "요구사항 판정 없음".takeIf { !testing && check == null },
             "테스트 코드 판정 없음".takeIf { testing && tests == null },
             "테스트 명령 없음".takeIf { validation["tests"] == StageGates.NOT_CONFIGURED },

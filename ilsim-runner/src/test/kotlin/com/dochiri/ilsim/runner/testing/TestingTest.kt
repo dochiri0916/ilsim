@@ -107,6 +107,21 @@ class TestingTest {
     }
 
     @Test
+    fun `변이 테스트 명령이 없으면 Gradle JVM 프로젝트에 PIT 를 초기화 스크립트로 붙인다`() {
+        val root = dir()
+        val home = dir()
+        write(root, "app/src/main/kotlin/x/Slug.kt", "package com.x.slug\n\nfun slug(s: String) = s.lowercase()\n")
+        write(root, "src/main/java/demo/Greeter.java", "package demo;\nclass Greeter {}\n")
+        val changed = setOf("app/src/main/kotlin/x/Slug.kt", "src/main/java/demo/Greeter.java", "README.md")
+        assertNull(PitestDefault.command(root, home, changed), "gradlew 가 없으면 기본 명령을 만들지 않는다")
+        write(root, "gradlew", "#!/bin/sh\n")
+        val command = assertNotNull(PitestDefault.command(root, home, changed))
+        assertTrue(command.startsWith("ILSIM_MUTATION_TARGETS='com.x.slug.Slug*,demo.Greeter*' ./gradlew :app:pitest pitest --init-script "), command)
+        assertTrue(Files.readString(home.resolve("mutation/pitest.init.gradle")).contains("targetTests = ['*']"))
+        assertNull(PitestDefault.command(root, home, setOf("README.md", "src/test/java/demo/GreeterTest.java")))
+    }
+
+    @Test
     fun `선언한 테스트가 결과 XML 에 없으면 실행되지 않은 테스트로 본다`() {
         val root = dir()
         val path = "src/test/kotlin/com/x/OrderTest.kt"

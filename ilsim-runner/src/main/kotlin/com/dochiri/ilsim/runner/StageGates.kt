@@ -21,6 +21,7 @@ import com.dochiri.ilsim.runner.risk.RiskConfig
 import com.dochiri.ilsim.runner.risk.RiskReviewer
 import com.dochiri.ilsim.runner.risk.RiskScanner
 import com.dochiri.ilsim.runner.testing.MutationReport
+import com.dochiri.ilsim.runner.testing.PitestDefault
 import com.dochiri.ilsim.runner.testing.TestFailures
 import com.dochiri.ilsim.runner.testing.TestIntegrity
 import com.dochiri.ilsim.runner.testing.VerificationBypass
@@ -111,6 +112,12 @@ class StageGates(
         }
     }
 
+    private fun taskTests(task: AssignedTask, worktree: Path, changed: Set<String>): Set<String> {
+        val committed = Shell.git(worktree, "log", "--format=", "--name-only", "--fixed-strings", "--grep=ilsim(test_code): ${task.feature}", "HEAD")
+            .takeIf { it.exit == 0 }?.output.orEmpty().lines()
+        return (committed + changed).filter { it.isNotBlank() && Gate.isTestPath(it) }.toSet()
+    }
+
     private fun committedTests(task: AssignedTask, worktree: Path): Map<String, String> {
         if (task.stage != "IMPLEMENTATION") return emptyMap()
         val inDiff = changedFiles(worktree).toSet()
@@ -175,12 +182,12 @@ class StageGates(
                 return if (failures.isNotEmpty()) "실패한 테스트 ${failures.size}건${if (failures.size >= 10) " 이상" else ""}:\n" + TestFailures.render(failures)
                 else "테스트 실패(종료 코드 ${r.exit}):\n" + TestFailures.trimOutput(r.output)
             }
-            val unexecuted = TestIntegrity.unexecuted(worktree, since, changed.filter(Gate::isTestPath).toSet())
+            val unexecuted = TestIntegrity.unexecuted(worktree, since, taskTests(task, worktree, changed))
             if (unexecuted.isNotEmpty()) {
                 validation["tests"] = "FAILED"
-                return "선언했지만 실행되지 않은 테스트가 있습니다. 테스트 실행기가 찾아 실행하도록 고치세요(private·companion·inner 아닌 중첩 클래스 등):\n" + unexecuted.take(20).joinToString("\n")
+                return "선언했지만 실행되지 않은 테스트가 있습니다. 사용자에게 알리고 reopen_stage(TEST_CODE)로 돌아가 테스트 실행기가 찾아 실행하도록 고치세요(private·companion·inner 아닌 중첩 클래스 등):\n" + unexecuted.take(20).joinToString("\n")
             }
-            mutation(task, project, worktree, changed, validation)
+            mutation(task, project, worktree, changed, validation)?.let { return it }
         }
         risk(task, worktree, validation, review = true)
         return null
@@ -214,11 +221,11 @@ class StageGates(
         return "테스트가 검증하지 못하는 변경 ${violations.size}건:\n" + violations.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
     }
 
-    private fun mutation(task: AssignedTask, project: ProjectEntry, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>) {
-        val command = project.mutationCommand
+    private fun mutation(task: AssignedTask, project: ProjectEntry, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>): String? {
+        val command = project.mutationCommand ?: PitestDefault.command(worktree, configStore.location.parent, changed.filterNot(Gate::isTestPath).toSet())
         if (command == null) {
             validation["mutation"] = NOT_CONFIGURED
-            return
+            return null
         }
         log("변이 테스트 실행: $command")
         val since = Instant.now().minusSeconds(2)
@@ -227,12 +234,16 @@ class StageGates(
         if (result == null) {
             validation["mutation"] = "UNKNOWN"
             log(if (r.exit != 0) "변이 테스트 실패(종료 ${r.exit}): ${r.output.takeLast(300)}" else "바뀐 소스에 대한 변이 결과가 없습니다")
-            return
+            return null
         }
         validation["mutation"] = if (result.score >= MutationReport.THRESHOLD) "PASSED" else "LOW"
         log("변이 점수 ${Math.round(result.score * 100)}% (${result.killed}/${result.total}), 기준 ${Math.round(MutationReport.THRESHOLD * 100)}%")
         survivors = result.survivors.take(10)
         result.survivors.take(10).forEach { log("살아남은 변이: $it") }
+        if (validation["mutation"] != "LOW" || decisions(task).any { "변이" in listOfNotNull(it.question, it.text).joinToString(" ") }) return null
+        return "테스트가 바뀐 코드의 변이 ${result.total}개 중 ${result.killed}개만 잡습니다(기준 ${Math.round(MutationReport.THRESHOLD * 100)}%). 살아남은 변이는 그 동작이 바뀌어도 테스트가 통과한다는 뜻입니다:\n" +
+            result.survivors.take(10).joinToString("\n") { "- $it" } +
+            "\n구현 단계에서는 테스트를 고칠 수 없습니다. 사용자에게 알리고 reopen_stage(TEST_CODE)로 돌아가 이 동작을 실제로 확인하는 단언을 넣으세요. 의미 없는 변이라고 보이면 멈추고 사용자에게 묻고, 허락하면 record_decision(변이 허락과 위치)으로 기록한 뒤 다시 제출하세요"
     }
 
     private fun architecture(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {

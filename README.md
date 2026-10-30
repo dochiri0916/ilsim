@@ -112,6 +112,7 @@ claude plugin marketplace update ilsim && claude plugin update ilsim@ilsim
 - `ilsim-runner jev-eval guidelines`는 정답이 있는 평가 세트(`ilsim-runner/corpus/jev-guideline`: 실제·가상 프로젝트와 시험 환경 10개의 문서·요청·변경·문서 규칙 후보)로 운영과 같은 JEV 질문의 정확도를 재고, 질문별 놓침·오경보와 기준값 제안을 보인다(`--repeat`로 반복 안정성, `--sections`로 구간 정답 확인, `--rules`로 문서 규칙 질문만).
 - 문서 목록은 `ilsim-runner docs <id>`로 보고, `docs add <id> <경로>`(저장소 밖 파일·폴더 가능)·`docs exclude <id> <경로>`·`docs remove <id> <경로>`로 고친다. 이 설정은 그 PC에만 남는다. 어느 PC에서나 빼야 하는 지침이 아닌 문서(인수인계·평가 데이터 등)는 저장소 루트 `.ilsimignore`에 한 줄에 경로 하나(파일 또는 폴더, `#` 줄은 무시)로 적는다. 커밋된 내용만 쓴다.
 - 저장소 루트 `.ilsim-policy.json`(커밋된 내용만)으로 작업 상한을 둔다. 예: `{"maxSubmissions": 5, "maxClaudeCalls": 10, "maxCostUsd": 2.0}`(한 단계 실패 제출 수, 작업의 Claude 호출 수, 작업의 AI 비용). 넘으면 작업이 차단되고, 사용자가 다시 시도하라고 하면 새로 센다.
+- 구현 단계에서 테스트가 통과하면 바뀐 운영 코드에 변이 테스트를 돌려, 변이를 60% 미만으로 잡으면(항상 참인 단언, 예외 삼키기 등) 제출이 실패한다. `ilsim-runner set <id> mutation "<명령>"`으로 정한 명령이 없으면 Gradle JVM 프로젝트는 프로젝트 빌드를 고치지 않고 초기화 스크립트로 PIT를 붙여 바뀐 클래스만 돌린다(처음 한 번 플러그인 다운로드). 그 밖의 프로젝트는 명령을 정해야 한다.
 - `ilsim-runner metrics <id>`는 서버에 쌓인 제출 기록으로 단계별 제출·실패 원인·Claude 호출·비용과 완료 작업의 병합 여부를 보인다.
 - `jev-eval`은 1회차 판정을 `~/.ilsim/eval-decisions`에 저장해, 바뀌지 않은 사례는 다시 묻지 않고 바뀐 사례만 JEV를 부른다. `--repeat`의 2회차부터는 흔들림을 재려고 저장된 판정 없이 새로 묻고, `--fresh`는 1회차도 새로 묻는다(JEV 모델이 바뀐 뒤 다시 잴 때). 끝에 새 호출과 재사용 횟수를 보인다.
 
