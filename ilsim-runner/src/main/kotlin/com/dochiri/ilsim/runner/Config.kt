@@ -49,3 +49,28 @@ object RunnerToken {
     fun resolve(env: String?, file: Path): String? =
         env?.takeIf { it.isNotBlank() } ?: file.takeIf { it.exists() }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
 }
+
+@Serializable
+data class AccessToken(val clientId: String, val clientSecret: String)
+
+object RunnerAccess {
+    private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
+
+    fun headers(env: Map<String, String>, file: Path): Map<String, String> {
+        val id = env["ILSIM_ACCESS_CLIENT_ID"]?.takeIf { it.isNotBlank() }
+        val secret = env["ILSIM_ACCESS_CLIENT_SECRET"]?.takeIf { it.isNotBlank() }
+        val token = if (id != null && secret != null) AccessToken(id, secret)
+            else file.takeIf { it.exists() }?.let { runCatching { json.decodeFromString<AccessToken>(it.readText()) }.getOrNull() }
+        return token?.let { mapOf("CF-Access-Client-Id" to it.clientId, "CF-Access-Client-Secret" to it.clientSecret) }.orEmpty()
+    }
+
+    fun save(file: Path, token: AccessToken): Unit = Secrets.write(file, json.encodeToString(token) + "\n")
+}
+
+object Secrets {
+    fun write(file: Path, text: String) {
+        file.parent.createDirectories()
+        file.writeText(text)
+        runCatching { java.nio.file.Files.setPosixFilePermissions(file, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")) }
+    }
+}
