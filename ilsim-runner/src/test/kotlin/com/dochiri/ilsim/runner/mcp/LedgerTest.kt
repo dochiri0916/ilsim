@@ -26,4 +26,20 @@ class LedgerTest {
         assertContains(text, "- 확인 못 한 항목: 없음")
         assertContains(text, "- 테스트 위치를 찾지 못한 항목: REQ-2")
     }
+
+    @Test
+    fun `문서 지침은 판정한 구간과 관련 없어 제외한 구간을 모두 남긴다`() {
+        val text = Ledger.render(
+            "IMPLEMENTATION", linkedMapOf("guidelines" to "UNCERTAIN"), null, emptyList(), "실행",
+            listOf(
+                Ledger.GuidelineRow("AGENTS.md:3", "주석 금지", Ledger.PASSED, 0.05),
+                Ledger.GuidelineRow("AGENTS.md:9", "로그", Ledger.UNCERTAIN, 0.5),
+                Ledger.GuidelineRow("docs/a.md:1", "배포", Ledger.EXCLUDED),
+            ),
+        )
+        assertContains(text, "구간 3개: 판정 대상 2개, 이 작업과 관련 없어 제외 1개")
+        assertContains(text, "| AGENTS.md:3 주석 금지 | 통과 | 0.05 |")
+        assertContains(text, "| AGENTS.md:9 로그 | 불확실 | 0.50 |")
+        assertContains(text, "관련 없어 제외한 구간(잘못 빠졌으면 사용자가 알려 주세요): docs/a.md:1")
+    }
 }

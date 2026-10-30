@@ -520,8 +520,27 @@ class IlsimMcp(
             "TEST_CODE" -> caseRows(ws, task, tests)
             else -> null
         }
-        val rendered = Ledger.render(stage, validation, ledger?.first, ledger?.second.orEmpty(), plan.describe(validation["ai-audit"]?.takeIf { plan.mode != AuditMode.SKIP }))
+        val rendered = Ledger.render(stage, validation, ledger?.first, ledger?.second.orEmpty(), plan.describe(validation["ai-audit"]?.takeIf { plan.mode != AuditMode.SKIP }),
+            guidelineRows(docSections(ws, task.feature).second, guide, compliance))
         return Outcome(diff = diff, artifacts = artifacts + audit.artifacts, attention = attention, undecided = unsure, ledger = rendered)
+    }
+
+    private fun guidelineRows(sections: List<DocSection>, guide: TaskGuide, compliance: Guidelines.Check?): List<Ledger.GuidelineRow> {
+        val selected = guide.guidelines.associateBy { it.source }
+        val judged = compliance?.probabilities.orEmpty().mapKeys { it.key.source }
+        val violated = compliance?.violated.orEmpty().map { it.source }.toSet()
+        val uncertain = compliance?.uncertain.orEmpty().map { it.source }.toSet()
+        return sections.map { s ->
+            val source = "${s.path}:${s.line}"
+            val verdict = when {
+                guide.selected && source !in selected -> Ledger.EXCLUDED
+                source in violated -> Ledger.VIOLATED
+                source in uncertain -> Ledger.UNCERTAIN
+                source in judged -> Ledger.PASSED
+                else -> Ledger.UNJUDGED
+            }
+            Ledger.GuidelineRow(source, s.heading, verdict, judged[source])
+        }
     }
 
     private fun requirementRows(ws: Workspace, task: ActiveTask, check: RequirementCheck.Result?): Pair<String, List<Ledger.Row>> {
