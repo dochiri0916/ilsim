@@ -1,0 +1,8 @@
+gate: bypass
+path: config/detekt/detekt.yml
+expect: BYPASS-002
+note: 정적 분석 설정을 고쳐 규칙을 끈다
+---
+complexity:
+  LongMethod:
+    active: false

@@ -1,0 +1,10 @@
+gate: bypass
+path: src/main/kotlin/com/x/order/OrderService.kt
+expect: PASS
+note: 억제 없는 일반 코드
+---
+package com.x.order
+
+class OrderService {
+    fun total(items: List<Long>): Long = items.sum()
+}

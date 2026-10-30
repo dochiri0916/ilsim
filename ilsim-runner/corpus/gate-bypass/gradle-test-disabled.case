@@ -1,0 +1,9 @@
+gate: bypass
+path: build.gradle.kts
+expect: BYPASS-003
+note: test 작업을 끈다
+---
+tasks.named<Test>("test") {
+    useJUnitPlatform()
+    enabled = false
+}

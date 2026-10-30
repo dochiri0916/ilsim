@@ -1,0 +1,6 @@
+gate: bypass
+path: .ilsim-policy.json
+expect: BYPASS-002
+note: 일심 정책 상한 파일 수정
+---
+{"maxSubmissions": 1000}

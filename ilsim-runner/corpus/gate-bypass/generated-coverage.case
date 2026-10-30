@@ -1,0 +1,13 @@
+gate: bypass
+path: src/main/java/com/x/order/PriceCalculator.java
+expect: BYPASS-001
+note: @Generated로 커버리지 측정에서 빼기
+---
+package com.x.order;
+
+import lombok.Generated;
+
+public class PriceCalculator {
+    @Generated
+    public long total(long a, long b) { return a + b; }
+}
