@@ -89,6 +89,7 @@ claude plugin marketplace update ilsim && claude plugin update ilsim@ilsim
 **막히면**
 
 - 서버 확인: `curl -s localhost:8080/api/status`. 재부팅 뒤에는 `cd ~/ilsim && docker compose up -d && scripts/dev-up.sh`
+- 서버를 늘 켜 두는 PC(macOS)는 `scripts/autostart.sh install`로 로그인할 때 서버가 뜨고 죽으면 다시 뜨게 한다(Docker Desktop도 로그인 때 시작하도록 둔다). 로그는 `~/Library/Logs/ilsim/server.log`, 상태는 `scripts/autostart.sh status`, 해제는 `uninstall`. 등록하면 `dev-up.sh`·`dev-down.sh`도 이 서비스를 다시 띄우고 멈춘다(`dev-down.sh`로 멈추면 다음 로그인이나 `dev-up.sh`까지 꺼져 있다). 이때 셸 환경 변수(`ILSIM_DB_URL` 등)는 서버에 전달되지 않는다.
 - `dquote>`가 뜨면 Ctrl+C를 누르고 블록을 다시 붙여 넣는다.
 - `~/ilsim`이 아닌 곳에 클론했다면 블록의 `~/ilsim`을 그 경로로 바꾼다.
 - 3333 포트가 이미 쓰이면 `.env`에 `MYSQL_PORT=<포트>`를 적고, 서버는 `ILSIM_DB_URL='jdbc:mysql://127.0.0.1:<포트>/ilsim?useUnicode=true&characterEncoding=utf8&connectionTimeZone=Asia/Seoul' scripts/dev-up.sh`로 띄운다.

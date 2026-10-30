@@ -4,9 +4,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="${TMPDIR:-/tmp}/ilsim-dev"
 mkdir -p "$LOG"
 
+PLIST="$HOME/Library/LaunchAgents/com.dochiri.ilsim.server.plist"
+
 "$ROOT/scripts/dev-down.sh" >/dev/null 2>&1 || true
 
-(cd "$ROOT" && nohup ./gradlew :ilsim-server:bootRun --console=plain >"$LOG/server.log" 2>&1 &)
+if [ -f "$PLIST" ]; then
+  LOG="$HOME/Library/Logs/ilsim"
+  launchctl bootstrap "gui/$(id -u)" "$PLIST"
+else
+  (cd "$ROOT" && nohup ./gradlew :ilsim-server:bootRun --console=plain >"$LOG/server.log" 2>&1 &)
+fi
 
 for _ in $(seq 1 60); do
   curl -sf -o /dev/null localhost:8080/api/status && break
