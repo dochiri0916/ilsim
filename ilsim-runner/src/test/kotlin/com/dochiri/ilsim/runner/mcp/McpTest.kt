@@ -296,11 +296,47 @@ class McpTest {
     }
 
     @Test
+    fun `꼭 필요한 독립 검토를 실행하지 못하면 통과로 보지 않고 통과하면 검증 원장을 남긴다`() {
+        var failing = true
+        val ask: (String, String) -> String = { _, _ -> if (failing) throw IllegalStateException("검토 호출 실패") else """{"verdict":"PASS","findings":[]}""" }
+        fun run(name: String, args: String = "{}") = IlsimMcp(store, server, active, repo, ask, ::jev).tools().associateBy { it.name }.getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 소문자 |")); server.approve("t")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { // TC-1\n}\n")
+
+        val blocked = run("submit_result")
+        assertContains(blocked, "검토를 실행하지 못했습니다")
+        assertContains(blocked, "테스트 명령 없음")
+        assertEquals("TEST_CODE", server.stages[server.index])
+
+        failing = false
+        val passed = run("submit_result")
+        assertContains(passed, "통과(TEST_CODE)")
+        assertContains(passed, "확인 못 한 항목: ")
+        assertContains(passed, "tests=NOT_CONFIGURED(설정 없음)")
+        val ledger = server.results.last().artifacts.getValue("verification.md")
+        assertContains(ledger, "| TC-1 REQ-1 소문자 | - | REQ-1 | SlugTest.java:1 |")
+        assertContains(ledger, "독립 검토: 실행(")
+
+        work.resolve("src/main").createDirectories()
+        work.resolve("src/main/Slug.java").writeText("class Slug {}\n")
+        val done = run("submit_result")
+        assertContains(done, "작업이 끝났습니다")
+        assertContains(done, "## 검증 원장 (TEST_CODE)")
+        assertContains(done, "## 검증 원장 (IMPLEMENTATION)")
+        assertContains(done, "| REQ-1 소문자로 바꾼다 | - | TC-1 | SlugTest.java:1 |")
+    }
+
+    @Test
     fun `구현 단계는 JEV가 누락으로 본 요구사항이 있으면 제출을 실패시키고 확실하면 독립 검토를 건너뛴다`() {
         var audits = 0
         val counting: (String, String) -> String = { _, _ -> audits++; """{"verdict":"PASS","findings":[]}""" }
         fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
         run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백을 하이픈으로 바꾼다")); server.approve("t")
