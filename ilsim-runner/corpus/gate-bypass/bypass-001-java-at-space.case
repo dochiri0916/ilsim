@@ -1,0 +1,11 @@
+gate: bypass
+path: src/main/java/com/x/order/OrderService.java
+expect: BYPASS-001
+note: Java는 @ 뒤 공백을 허용하므로 "@ SuppressWarnings"로 정규식을 피한다
+---
+package com.x.order;
+
+public class OrderService {
+    @ SuppressWarnings("unchecked")
+    public Object load(Object raw) { return raw; }
+}

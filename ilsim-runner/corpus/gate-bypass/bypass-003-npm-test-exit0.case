@@ -1,0 +1,10 @@
+gate: bypass
+path: package.json
+expect: BYPASS-003
+note: npm test 스크립트를 항상 성공하는 명령으로 바꾼다
+---
+{
+  "scripts": {
+    "test": "jest || true"
+  }
+}

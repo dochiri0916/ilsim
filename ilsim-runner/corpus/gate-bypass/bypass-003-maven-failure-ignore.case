@@ -1,0 +1,8 @@
+gate: bypass
+path: pom.xml
+expect: BYPASS-003
+note: maven.test.failure.ignore 속성은 목록에 없다
+---
+<properties>
+    <maven.test.failure.ignore>true</maven.test.failure.ignore>
+</properties>

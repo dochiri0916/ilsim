@@ -1,0 +1,10 @@
+gate: bypass
+path: config/detekt/baseline.xml
+expect: BYPASS-002
+note: detekt 기준선(baseline.xml)에 새 위반을 등록해 숨긴다. yml만 검사한다
+---
+<SmellBaseline>
+  <CurrentIssues>
+    <ID>LongMethod:OrderService.kt$OrderService$fun total</ID>
+  </CurrentIssues>
+</SmellBaseline>

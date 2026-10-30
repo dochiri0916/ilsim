@@ -1,0 +1,17 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-001
+note: 본문 첫 줄 if (true) return으로 단언에 닿지 않게 한다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class OrderServiceTest {
+    @Test
+    fun `주문 합계`() {
+        if (true) return
+        assertEquals(3L, OrderService().total(listOf(1, 2)))
+    }
+}

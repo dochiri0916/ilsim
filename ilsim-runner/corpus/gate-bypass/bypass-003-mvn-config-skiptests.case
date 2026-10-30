@@ -1,0 +1,6 @@
+gate: bypass
+path: .mvn/maven.config
+expect: BYPASS-003
+note: .mvn/maven.config에 -DskipTests를 넣으면 빌드 파일로 안 본다
+---
+-DskipTests

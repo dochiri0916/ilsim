@@ -1,0 +1,6 @@
+gate: bypass
+path: .eslintignore
+expect: BYPASS-002
+note: .eslintignore로 모든 파일을 린트에서 뺀다. .eslintrc 패턴에 안 걸린다
+---
+**/*

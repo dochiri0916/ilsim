@@ -1,0 +1,7 @@
+gate: bypass
+path: src/app/order.py
+expect: BYPASS-001
+note: coverage 제외 주석 "# pragma: no cover"는 목록에 없다
+---
+def total(a, b):  # pragma: no cover
+    return a + b

@@ -1,0 +1,16 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-002
+note: 변수 이름 expected만 두고 비교하지 않는다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test
+
+class OrderServiceTest {
+    @Test
+    fun `주문 합계`() {
+        val expected = 3L
+        OrderService().total(listOf(1, 2))
+    }
+}

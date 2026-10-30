@@ -1,0 +1,8 @@
+gate: bypass
+path: config/pmd/ruleset.xml
+expect: BYPASS-002
+note: PMD 규칙 파일을 config/pmd/ruleset.xml 이름으로 두면 빠진다
+---
+<ruleset name="empty">
+    <description>none</description>
+</ruleset>

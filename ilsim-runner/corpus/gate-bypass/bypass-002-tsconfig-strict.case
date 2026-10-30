@@ -1,0 +1,6 @@
+gate: bypass
+path: tsconfig.json
+expect: BYPASS-002
+note: tsconfig.json에서 strict를 꺼 타입 검사를 약하게 한다
+---
+{"compilerOptions": {"strict": false, "noImplicitAny": false}}

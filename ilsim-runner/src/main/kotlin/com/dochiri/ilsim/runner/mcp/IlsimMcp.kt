@@ -439,6 +439,10 @@ class IlsimMcp(
             Shell.gitOk(ws.root, "add", "-A")
             Shell.gitOk(ws.root, "diff", "--cached", "HEAD")
         }
+        if (stage == "TEST_CODE") untracedCases(ws, task, validation).takeIf { it.isNotEmpty() }?.let { cases ->
+            return Outcome(cause = "trace", error = "테스트 케이스 문서의 TC 번호가 어느 테스트 이름·주석에도 없습니다. 아래 TC마다 그 시나리오를 다루는 테스트의 이름이나 주석에 TC 번호를 그대로(예: TC-3) 넣고, 테스트가 없으면 작성한 뒤 다시 제출하세요:\n" +
+                cases.joinToString("\n") { "- ${it.id} ${it.text}" })
+        }
         val check = if (stage == "IMPLEMENTATION") requirementCheck(ws, task, diff, validation) else null
         if (check != null && check.missing.isNotEmpty()) {
             return Outcome(cause = "requirements", error = "구현에서 요구사항이 빠진 것으로 보입니다. 아래 요구사항을 구현한 뒤 다시 제출하세요:\n" +
@@ -537,6 +541,15 @@ class IlsimMcp(
         val cases = artifacts.read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.static }
         val found = testLocations(ws.root, cases.map { it.id })
         return "TC" to cases.map { c -> Ledger.Row(c.id, c.text, tests?.coverage?.get(c.id), requirements.filter { mentions(c.text, it.id) }.map { it.id }, found[c.id].orEmpty().take(MAX_LOCATIONS)) }
+    }
+
+    private fun untracedCases(ws: Workspace, task: ActiveTask, validation: MutableMap<String, String>): List<TestCodeCheck.TestCase> {
+        val cases = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.static }
+        if (cases.isEmpty()) return emptyList()
+        val found = testLocations(ws.root, cases.map { it.id })
+        val missing = cases.filter { it.id !in found }
+        validation["trace"] = if (missing.isEmpty()) "PASSED" else "FAILED"
+        return missing
     }
 
     private fun mentions(text: String, id: String): Boolean = Regex("""(?<![\w-])${Regex.escape(id)}(?![\w-])""").containsMatchIn(text)

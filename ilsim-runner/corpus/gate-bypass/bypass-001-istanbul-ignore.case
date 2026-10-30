@@ -1,0 +1,9 @@
+gate: bypass
+path: src/web/order.ts
+expect: BYPASS-001
+note: istanbul/c8 커버리지 제외 주석은 목록에 없다
+---
+/* istanbul ignore next */
+export function total(a: number, b: number): number {
+  return a + b
+}

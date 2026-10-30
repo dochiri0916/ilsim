@@ -1,0 +1,24 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: PASS
+note: 예외를 변수에 담고 catch 밖에서 단언하는 정상 패턴이 TEST-004로 막힌다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+class OrderServiceTest {
+    @Test
+    fun `빈 주문은 거절한다`() {
+        var error: Exception? = null
+        try {
+            OrderService().place(emptyList())
+        } catch (e: Exception) {
+            error = e
+        }
+        assertNotNull(error)
+        assertEquals("empty", error.message)
+    }
+}

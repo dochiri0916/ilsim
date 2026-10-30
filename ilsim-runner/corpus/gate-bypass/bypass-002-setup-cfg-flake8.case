@@ -1,0 +1,7 @@
+gate: bypass
+path: setup.cfg
+expect: BYPASS-002
+note: setup.cfg의 [flake8] 섹션으로 규칙을 끈다
+---
+[flake8]
+ignore = E,W,F

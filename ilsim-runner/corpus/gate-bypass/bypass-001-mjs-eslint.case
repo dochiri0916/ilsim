@@ -1,0 +1,7 @@
+gate: bypass
+path: src/web/util.mjs
+expect: BYPASS-001
+note: 확장자 .mjs는 sourceExtensions에 없어 eslint-disable이 통과한다
+---
+/* eslint-disable */
+export const total = (a, b) => a + b

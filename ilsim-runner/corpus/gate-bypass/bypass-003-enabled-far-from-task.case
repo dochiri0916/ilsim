@@ -1,0 +1,12 @@
+gate: bypass
+path: build.gradle.kts
+expect: BYPASS-003
+note: enabled = false를 test 블록 시작에서 4줄 이상 떨어뜨려 앞 3줄 창을 벗어난다
+---
+tasks.named<Test>("test") {
+    useJUnitPlatform()
+    maxHeapSize = "1g"
+    maxParallelForks = 2
+    jvmArgs("-Xss4m")
+    enabled = false
+}

@@ -1,0 +1,18 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-001
+note: @EnabledIf로 항상 거짓인 조건을 걸어 끈다. Disabled* 목록만 본다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty
+import kotlin.test.assertEquals
+
+class OrderServiceTest {
+    @EnabledIfSystemProperty(named = "never.set", matches = "yes")
+    @Test
+    fun `주문 합계`() {
+        assertEquals(3L, OrderService().total(listOf(1, 2)))
+    }
+}

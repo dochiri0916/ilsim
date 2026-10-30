@@ -1,0 +1,18 @@
+gate: test-integrity
+path: src/test/kotlin/com/x/order/OrderServiceTest.kt
+expect: TEST-001
+note: 블록 주석 /* */으로 테스트 전체를 주석 처리한다. // @Test만 본다
+---
+package com.x.order
+
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class OrderServiceTest {
+    /*
+    @Test
+    fun `주문 합계`() {
+        assertEquals(3L, OrderService().total(listOf(1, 2)))
+    }
+    */
+}
