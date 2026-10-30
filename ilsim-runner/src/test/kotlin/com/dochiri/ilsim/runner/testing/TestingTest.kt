@@ -107,6 +107,21 @@ class TestingTest {
     }
 
     @Test
+    fun `선언한 테스트가 결과 XML 에 없으면 실행되지 않은 테스트로 본다`() {
+        val root = dir()
+        val path = "src/test/kotlin/com/x/OrderTest.kt"
+        write(root, path, "package com.x\n\nclass OrderTest {\n    @Test\n    fun a() {}\n\n    @Test\n    private fun b() {}\n\n    class Inner {\n        @Test\n        fun c() {}\n    }\n}\n")
+        val since = Instant.now().minusSeconds(60)
+        assertEquals(emptyList(), TestIntegrity.unexecuted(root, since, setOf(path)), "결과 XML 이 없으면 판단하지 않는다")
+        write(root, "build/test-results/test/TEST-com.x.OrderTest.xml", """<testsuite><testcase name="a()" classname="com.x.OrderTest"/></testsuite>""")
+        assertEquals(listOf("$path: b", "$path: c"), TestIntegrity.unexecuted(root, since, setOf(path)))
+        write(root, "build/test-results/test/TEST-com.x.OrderTest.xml", """<testsuite><testcase name="a()" classname="com.x.OrderTest"/><testcase name="b()" classname="com.x.OrderTest"/><testcase name="c()[1]" classname="com.x.OrderTest${'$'}Inner"/></testsuite>""")
+        assertEquals(emptyList(), TestIntegrity.unexecuted(root, since, setOf(path)))
+        write(root, "build/test-results/test/TEST-com.x.OrderTest.xml", """<testsuite><testcase name="주문 a" classname="com.x.OrderTest"/><testcase name="주문 b" classname="com.x.OrderTest"/><testcase name="주문 c" classname="com.x.OrderTest"/></testsuite>""")
+        assertEquals(emptyList(), TestIntegrity.unexecuted(root, since, setOf(path)), "표시 이름으로 바뀌어도 실행 수가 선언 수 이상이면 통과")
+    }
+
+    @Test
     fun `PIT 결과에서 바뀐 소스의 점수와 살아남은 변이를 계산한다`() {
         val root = dir()
         write(root, "build/reports/pitest/mutations.xml", """

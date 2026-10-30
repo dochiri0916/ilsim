@@ -17,7 +17,9 @@ object VerificationBypass {
         "Suppress" to "@Suppress", "SuppressWarnings" to "@SuppressWarnings", "SuppressFBWarnings" to "@SuppressFBWarnings",
         "SuppressLint" to "@SuppressLint", "ArchIgnore" to "@ArchIgnore",
     )
-    private val generated = Regex("""@\s*(?:file:)?$QUALIFIER(\w*Generated)\b""")
+    private val generated = Regex("""@\s*(?:\w+:)?$QUALIFIER(\w*Generated)\b""")
+    private val exclusion = Regex("""@\s*(?:\w+:)?$QUALIFIER(\w*(?:Exclude|Ignore|Suppress|Skip|Disable)\w*(?:Coverage|Jacoco|Sonar|Lint|Warning|Inspection|Analysis|Check)\w*|\w*(?:Coverage|Jacoco|Sonar|Lint|Inspection|Analysis|Check)\w*(?:Exclude|Ignore|Suppress|Skip|Disable)\w*)\b""")
+    private val directive = Regex("""(?:#|//|/\*|<!--)[^\n]*?[@\w.]+(?:-|:\s*)(?:ignore|disable|nocheck)\b""", RegexOption.IGNORE_CASE)
     private val comments = listOf(
         Regex("""//\s*noinspection\b""") to "noinspection",
         Regex("""\bNOSONAR\b""") to "NOSONAR",
@@ -58,14 +60,27 @@ object VerificationBypass {
     private val disabling = Regex("""[eE]nabled\s*(\.set\s*\(|[=(:])\s*false|\bsetEnabled\s*\(\s*false|\bonlyIf\s*\{\s*false""")
     private val checkTask = Regex("""\b(test|check|detekt|ktlint|checkstyle|pmd|spotbugs|jacoco|pitest|lint|archTest|integrationTest)\w*""", RegexOption.IGNORE_CASE)
 
-    fun scan(root: Path, changed: Set<String>, allowed: (String) -> Boolean = { false }): List<Violation> =
-        scan(changed, added(root, changed), allowed)
+    private val documents = setOf("md", "markdown", "adoc", "rst")
+    private val buildScripts = Regex("""(^|/)(setup\.py|noxfile\.py|conftest\.py|fabfile\.py|gulpfile\.[cm]?[jt]s|Gruntfile\.[jt]s)$|\.config\.[cm]?[jt]s$|(^|/)\.[\w-]+rc\.[cm]?js$""")
 
-    internal fun scan(changed: Set<String>, added: Map<String, List<AddedLine>>, allowed: (String) -> Boolean = { false }): List<Violation> {
+    fun config(path: String): Boolean {
+        val ext = path.substringAfterLast('/').substringAfterLast('.', "")
+        if (ext in documents || Regex("""(^|/)src/[^/]+/resources/""").containsMatchIn(path)) return false
+        if (buildScripts.containsMatchIn(path)) return true
+        return !Gate.isTestPath(path) && ext !in sourceExtensions
+    }
+
+    fun scan(root: Path, changed: Set<String>, allowed: (String) -> Boolean = { false }, scoped: (String) -> Boolean = { true }): List<Violation> =
+        scan(changed, added(root, changed), allowed, scoped)
+
+    internal fun scan(changed: Set<String>, added: Map<String, List<AddedLine>>, allowed: (String) -> Boolean = { false }, scoped: (String) -> Boolean = { true }): List<Violation> {
         val out = mutableListOf<Violation>()
         for (path in changed.sorted()) {
             if (allowed(path)) continue
             val lines = added[path].orEmpty()
+            if (config(path) && !scoped(path)) {
+                out += Violation("BYPASS-004", "BLOCK", path, lines.firstOrNull()?.line ?: 1, "`${path.substringAfterLast('/')}` 은 요구사항 영향 범위에 없는 설정·빌드 파일입니다. 설정·빌드 파일은 요구사항에 적어 사용자 승인을 받은 경우만 바꿉니다")
+            }
             val source = path.substringAfterLast('.') in sourceExtensions || "/src/main/resources/" in "/$path"
             if (!source && configFiles.any { it.containsMatchIn(path) } || sectionConfig.containsMatchIn(path) && lines.any { sectionWeakening.containsMatchIn(it.text) }) {
                 out += Violation("BYPASS-002", "BLOCK", path, (lines.firstOrNull { sectionWeakening.containsMatchIn(it.text) } ?: lines.firstOrNull())?.line ?: 1, "검사 설정 `${path.substringAfterLast('/')}` 을 바꿨습니다. 검사 기준은 사용자만 바꿉니다")
@@ -75,7 +90,7 @@ object VerificationBypass {
                 out += weakened(path, lines)
                 continue
             }
-            if (Gate.isTestPath(path) && "src/main/" !in path || path.substringAfterLast('.') !in sourceExtensions) continue
+            if (Gate.isTestPath(path) && "src/main/" !in path || path.substringAfterLast('.') !in sourceExtensions + "kts") continue
             out += suppressed(path, lines)
         }
         return out
@@ -83,12 +98,15 @@ object VerificationBypass {
 
     private fun suppressed(path: String, lines: List<AddedLine>): List<Violation> {
         val names = annotations + lines.mapNotNull { aliasImport.find(it.text) }.filter { it.groupValues[1] in annotations }.associate { it.groupValues[2] to annotations.getValue(it.groupValues[1]) }
-        val annotation = Regex("""@\s*(?:file:)?$QUALIFIER(${names.keys.joinToString("|")})\b""")
-        return lines.mapNotNull { l ->
-            val code = l.text.replace(stringLiteral, "\"\"")
+        val annotation = Regex("""@\s*(?:\w+:)?$QUALIFIER(${names.keys.joinToString("|")})\b""")
+        return lines.mapIndexedNotNull { i, l ->
+            val joined = if (l.text.trim() == "@") "@" + lines.getOrNull(i + 1)?.text.orEmpty().trimStart() else l.text
+            val code = joined.replace(stringLiteral, "\"\"")
             val reason = annotation.find(code)?.let { names[it.groupValues[1]] }
                 ?: generated.find(code)?.let { "@${it.groupValues[1]}(커버리지 제외)" }
+                ?: exclusion.find(code)?.let { "@${it.groupValues[1]}(검사·커버리지 제외)" }
                 ?: comments.firstOrNull { it.first.containsMatchIn(code) }?.second
+                ?: directive.find(code)?.let { "검사 끄기 주석 `${it.value.trim().take(60)}`" }
             reason?.let { Violation("BYPASS-001", "BLOCK", path, l.line, "검사를 끄는 $it 를 새로 넣었습니다. 경고를 숨기지 말고 원인을 고치세요") }
         }
     }

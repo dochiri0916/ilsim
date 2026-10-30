@@ -1,0 +1,10 @@
+gate: bypass
+path: tsconfig.json
+expect: BYPASS-004
+note: useUnknownInCatchVariables=false 는 약화 키 목록에 없다
+---
+{
+  "compilerOptions": {
+    "useUnknownInCatchVariables": false
+  }
+}

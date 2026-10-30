@@ -1,0 +1,6 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-004
+note: setExcludedTaskNames 는 대문자 E 라 excludedTaskNames 패턴을 피한다
+---
+gradle.startParameter.setExcludedTaskNames(listOf("test", "detekt"))

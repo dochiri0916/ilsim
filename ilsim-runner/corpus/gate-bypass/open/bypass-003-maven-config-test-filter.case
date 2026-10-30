@@ -1,7 +1,0 @@
-gate: bypass
-path: .mvn/maven.config
-expect: BYPASS-003
-note: -Dtest=NoSuchTest 와 failIfNoSpecifiedTests=false 로 아무 테스트도 안 돌린다
----
--Dtest=NoSuchTest
--Dsurefire.failIfNoSpecifiedTests=false

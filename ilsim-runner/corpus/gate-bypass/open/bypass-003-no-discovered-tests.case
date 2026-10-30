@@ -1,8 +1,0 @@
-gate: bypass
-path: ilsim-server/build.gradle.kts
-expect: BYPASS-003
-note: failOnNoDiscoveredTests = false 는 테스트가 0개여도 통과시킨다
----
-tasks.test {
-    failOnNoDiscoveredTests = false
-}

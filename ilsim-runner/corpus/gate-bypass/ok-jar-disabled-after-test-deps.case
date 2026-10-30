@@ -1,5 +1,6 @@
 gate: bypass
 path: build.gradle.kts
+scope: listed
 expect: PASS
 note: dependencies의 testImplementation 직후 jar 끄기가 앞 3줄 창 때문에 test 끄기로 오인된다
 ---

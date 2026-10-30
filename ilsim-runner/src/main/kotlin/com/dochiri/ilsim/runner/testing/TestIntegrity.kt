@@ -103,6 +103,41 @@ object TestIntegrity {
         return body.length
     }
 
+    fun unexecuted(root: Path, since: Instant, changedTests: Set<String>): List<String> = changedTests.sorted().flatMap { path ->
+        val module = path.substringBefore("/src/", "").let { if (it.isEmpty()) root else root.resolve(it) }
+        val reports = reports(module, since)
+        if (reports.isEmpty()) return@flatMap emptyList()
+        val file = root.resolve(path)
+        if (!Files.isRegularFile(file)) return@flatMap emptyList()
+        val parsed = FactScanner.parse(root, file, true) ?: return@flatMap emptyList()
+        val base = file.name.substringBeforeLast('.')
+        val declared = runCatching { StructureParser.classes(parsed) }.getOrDefault(emptyList())
+            .flatMap { c -> c.funcs.filter { m -> m.annotations.any { it.substringAfterLast('.') in testAnnotations } } }
+            .map { it.name.trim('`') }.distinct()
+        if (declared.isEmpty()) return@flatMap emptyList()
+        val ran = reports.flatMap { p ->
+            Regex("""<testcase\s+([^>]*?)(/>|>([\s\S]*?)</testcase>)""").findAll(p.readText()).mapNotNull { m ->
+                if ("<skipped" in m.groupValues[3]) return@mapNotNull null
+                val cls = Regex("""classname="([^"]*)"""").find(m.groupValues[1])?.groupValues?.get(1).orEmpty()
+                val name = Regex("""\bname="([^"]*)"""").find(m.groupValues[1])?.groupValues?.get(1).orEmpty()
+                name.substringBefore('(').substringBefore('[').trim().takeIf { cls.substringAfterLast('.').substringBefore('$') == base }
+            }.toList()
+        }.toSet()
+        val missing = declared.filter { it !in ran }
+        if (missing.isEmpty() || ran.size >= declared.size) emptyList() else missing.map { "$path: $it" }
+    }
+
+    private fun reports(dir: Path, since: Instant): List<Path> {
+        if (!Files.isDirectory(dir)) return emptyList()
+        return Files.walk(dir, 10).use { s ->
+            s.filter { p ->
+                Files.isRegularFile(p) && p.extension == "xml" &&
+                    p.toString().let { "test-results" in it || "surefire-reports" in it || "failsafe-reports" in it } &&
+                    !p.getLastModifiedTime().toInstant().isBefore(since)
+            }.toList()
+        }
+    }
+
     fun skipped(root: Path, since: Instant, changedTests: Set<String>): List<String> {
         val classes = changedTests.map { it.substringAfterLast('/').substringBeforeLast('.') }.toSet()
         if (classes.isEmpty()) return emptyList()

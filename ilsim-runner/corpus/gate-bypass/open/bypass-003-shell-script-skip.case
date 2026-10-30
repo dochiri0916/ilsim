@@ -1,7 +1,0 @@
-gate: bypass
-path: scripts/verify.sh
-expect: BYPASS-003
-note: .sh 스크립트는 빌드 파일도 소스 확장자도 아니라 || true 가 통과한다
----
-#!/bin/sh
-./gradlew check || true

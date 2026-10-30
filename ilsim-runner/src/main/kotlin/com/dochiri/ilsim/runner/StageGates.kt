@@ -12,6 +12,7 @@ import com.dochiri.ilsim.runner.convention.DocRules
 import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevRiskScreen
+import com.dochiri.ilsim.runner.jev.ScopeCheck
 import com.dochiri.ilsim.runner.jev.UndecidedCheck
 import com.dochiri.ilsim.runner.memory.NoiseDetector
 import com.dochiri.ilsim.runner.memory.ProjectMemory
@@ -174,6 +175,11 @@ class StageGates(
                 return if (failures.isNotEmpty()) "실패한 테스트 ${failures.size}건${if (failures.size >= 10) " 이상" else ""}:\n" + TestFailures.render(failures)
                 else "테스트 실패(종료 코드 ${r.exit}):\n" + TestFailures.trimOutput(r.output)
             }
+            val unexecuted = TestIntegrity.unexecuted(worktree, since, changed.filter(Gate::isTestPath).toSet())
+            if (unexecuted.isNotEmpty()) {
+                validation["tests"] = "FAILED"
+                return "선언했지만 실행되지 않은 테스트가 있습니다. 테스트 실행기가 찾아 실행하도록 고치세요(private·companion·inner 아닌 중첩 클래스 등):\n" + unexecuted.take(20).joinToString("\n")
+            }
             mutation(task, project, worktree, changed, validation)
         }
         risk(task, worktree, validation, review = true)
@@ -192,7 +198,8 @@ class StageGates(
     private fun bypass(task: AssignedTask, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>): String? {
         if (task.stage != "TEST_CODE" && task.stage != "IMPLEMENTATION") return null
         val decided = decisions(task).map { listOfNotNull(it.question, it.text).joinToString(" ") }
-        val violations = VerificationBypass.scan(worktree, changed) { path -> decided.any { path in it || path.substringAfterLast('/') in it } }
+        val spec = requirements(task)
+        val violations = VerificationBypass.scan(worktree, changed, allowed = { path -> decided.any { path in it || path.substringAfterLast('/') in it } }, scoped = { path -> spec == null || ScopeCheck.listed(spec, path) })
         validation["bypass"] = if (violations.isEmpty()) "PASSED" else "FAILED"
         if (violations.isEmpty()) return null
         return "검증을 끄거나 약하게 하는 변경 ${violations.size}건:\n" + violations.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" } +

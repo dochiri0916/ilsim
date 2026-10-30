@@ -1,0 +1,11 @@
+gate: bypass
+path: pom.xml
+expect: BYPASS-004
+note: <skip>True</skip> 는 대소문자 구분 때문에 true 패턴을 피한다
+---
+<plugin>
+  <artifactId>maven-surefire-plugin</artifactId>
+  <configuration>
+    <skip>True</skip>
+  </configuration>
+</plugin>

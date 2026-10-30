@@ -15,18 +15,18 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class VerificationBypassTest {
-    private data class Case(val name: String, val gate: String, val path: String, val expect: String, val body: List<String>)
+    private data class Case(val name: String, val gate: String, val path: String, val expect: String, val body: List<String>, val listed: Boolean = false)
 
     private val corpus = Path.of("corpus/gate-bypass")
 
     private fun cases(): List<Case> = corpus.listDirectoryEntries("*.case").sortedBy { it.name }.map { file ->
         val (head, body) = file.readText().split("\n---\n", limit = 2)
         val fields = head.lines().filter { ':' in it }.associate { it.substringBefore(':').trim() to it.substringAfter(':').trim() }
-        Case(file.name, fields.getValue("gate"), fields.getValue("path"), fields.getValue("expect"), body.trimEnd().lines())
+        Case(file.name, fields.getValue("gate"), fields.getValue("path"), fields.getValue("expect"), body.trimEnd().lines(), fields["scope"] == "listed")
     }
 
     private fun found(case: Case): Set<String> = when (case.gate) {
-        "bypass" -> VerificationBypass.scan(setOf(case.path), mapOf(case.path to case.body.mapIndexed { i, t -> VerificationBypass.AddedLine(i + 1, t) })).map { it.ruleId }.toSet()
+        "bypass" -> VerificationBypass.scan(setOf(case.path), mapOf(case.path to case.body.mapIndexed { i, t -> VerificationBypass.AddedLine(i + 1, t) }), scoped = { case.listed }).map { it.ruleId }.toSet()
         "test-integrity" -> TestIntegrity.scan(listOf(FactScanner.parse(case.path, Path.of(case.path).extension, true, case.body)!!)).map { it.ruleId }.toSet()
         else -> error("알 수 없는 gate: ${case.gate} (${case.name})")
     }
@@ -41,6 +41,19 @@ class VerificationBypassTest {
             if (ok) null else "${c.name}: 기대 ${c.expect}, 실제 ${hits.ifEmpty { setOf("PASS") }}"
         }
         assertEquals(emptyList(), wrong)
+    }
+
+    @Test
+    fun `영향 범위에 없는 설정·빌드 파일 변경은 내용과 관계없이 막는다`() {
+        val configs = listOf("build.gradle.kts", ".detekt.yml", "codecov.yml", ".github/workflows/ci.yml", "jest.config.js", "conftest.py", "Makefile")
+        val code = listOf("src/main/kotlin/com/x/A.kt", "src/test/kotlin/com/x/ATest.kt", "docs/guide.md", "src/main/resources/seed/words.txt", "src/test/resources/fixture.json", "app/main.py")
+        assertEquals(configs, configs.filter(VerificationBypass::config))
+        assertEquals(emptyList(), code.filter(VerificationBypass::config))
+
+        val added = mapOf("codecov.yml" to listOf(VerificationBypass.AddedLine(1, "coverage:")))
+        assertEquals(listOf("BYPASS-004"), VerificationBypass.scan(setOf("codecov.yml"), added, scoped = { false }).map { it.ruleId })
+        assertEquals(emptyList(), VerificationBypass.scan(setOf("codecov.yml"), added, scoped = { true }).map { it.ruleId })
+        assertEquals(emptyList(), VerificationBypass.scan(setOf("codecov.yml"), added, allowed = { true }, scoped = { false }).map { it.ruleId })
     }
 
     @Test
@@ -59,7 +72,7 @@ class VerificationBypassTest {
             val hits = VerificationBypass.scan(root, setOf(file, "detekt.yml"))
             assertEquals(listOf("BYPASS-002" to "detekt.yml", "BYPASS-001" to file), hits.map { it.ruleId to it.file })
             assertEquals(5, hits.last().line)
-            assertEquals(listOf("BYPASS-001"), VerificationBypass.scan(root, setOf(file, "detekt.yml")) { it == "detekt.yml" }.map { it.ruleId })
+            assertEquals(listOf("BYPASS-001"), VerificationBypass.scan(root, setOf(file, "detekt.yml"), allowed = { it == "detekt.yml" }).map { it.ruleId })
         } finally {
             root.toFile().deleteRecursively()
         }

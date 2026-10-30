@@ -1,0 +1,9 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-004
+note: enabled = 와 false 를 줄바꿈으로 나눠 줄 단위 검사를 피한다
+---
+tasks.test {
+    enabled =
+        false
+}

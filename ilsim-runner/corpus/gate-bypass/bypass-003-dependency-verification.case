@@ -1,0 +1,6 @@
+gate: bypass
+path: gradle.properties
+expect: BYPASS-004
+note: org.gradle.dependency.verification=off 로 의존성 검증을 끈다
+---
+org.gradle.dependency.verification=off

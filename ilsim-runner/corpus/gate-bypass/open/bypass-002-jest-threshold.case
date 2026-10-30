@@ -1,6 +1,0 @@
-gate: bypass
-path: jest.config.js
-expect: BYPASS-002
-note: jest 커버리지 임계값을 낮춰도 설정 파일로 취급하지 않는다
----
-module.exports = { coverageThreshold: { global: { lines: 0 } } };

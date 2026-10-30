@@ -1,0 +1,10 @@
+gate: bypass
+path: .github/workflows/ci.yml
+expect: BYPASS-004
+note: CI 단계에 continue-on-error 를 켜도 yml 은 검사되지 않는다
+---
+jobs:
+  build:
+    steps:
+      - run: ./gradlew check
+        continue-on-error: true

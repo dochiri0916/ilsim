@@ -1,0 +1,9 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-004
+note: 변수를 거쳐 ignoreFailures 에 true 를 넣어 리터럴 true 패턴을 피한다
+---
+val lenient = true
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt> {
+    ignoreFailures = lenient
+}

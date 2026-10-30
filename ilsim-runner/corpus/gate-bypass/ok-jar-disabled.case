@@ -1,5 +1,6 @@
 gate: bypass
 path: build.gradle.kts
+scope: listed
 expect: PASS
 note: Spring Boot 멀티 모듈에서 흔한 jar 끄기는 검증 약화가 아니다
 ---

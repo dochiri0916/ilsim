@@ -38,6 +38,7 @@ import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.Requirement
 import com.dochiri.ilsim.runner.jev.RequirementCheck
 import com.dochiri.ilsim.runner.jev.ScopeCheck
+import com.dochiri.ilsim.runner.testing.VerificationBypass
 import com.dochiri.ilsim.runner.jev.TestCodeCheck
 import com.dochiri.ilsim.runner.jev.UndecidedCheck
 import com.dochiri.ilsim.runner.risk.RiskScanner
@@ -730,7 +731,9 @@ class IlsimMcp(
         val testing = stage == "TEST_CODE"
         val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
         val lines = diff.lines().count { (it.startsWith("+") || it.startsWith("-")) && !it.startsWith("+++") && !it.startsWith("---") }
+        val configs = ScopeCheck.files(diff).keys.filter(VerificationBypass::config)
         val reasons = listOfNotNull(
+            "설정·빌드 파일 변경 ${configs.joinToString()}(검증을 약하게 하는지 확인)".takeIf { configs.isNotEmpty() },
             "요구사항 판정 없음".takeIf { !testing && check == null },
             "테스트 코드 판정 없음".takeIf { testing && tests == null },
             "테스트 명령 없음".takeIf { validation["tests"] == StageGates.NOT_CONFIGURED },

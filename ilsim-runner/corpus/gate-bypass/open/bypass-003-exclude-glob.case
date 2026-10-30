@@ -1,8 +1,0 @@
-gate: bypass
-path: ilsim-server/build.gradle.kts
-expect: BYPASS-003
-note: exclude("**/*Test*") 는 **/* 정확 일치 패턴을 피한다
----
-tasks.test {
-    exclude("**/*Test*")
-}

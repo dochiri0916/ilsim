@@ -1,5 +1,6 @@
 gate: bypass
 path: ilsim-server/build.gradle.kts
+scope: listed
 expect: PASS
 note: 커버리지 하한을 0.8 로 올리는 정상 변경을 하한 0 으로 오탐한다
 ---

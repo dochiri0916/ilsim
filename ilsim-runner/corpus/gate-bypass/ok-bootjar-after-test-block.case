@@ -1,5 +1,6 @@
 gate: bypass
 path: build.gradle.kts
+scope: listed
 expect: PASS
 note: tasks.test 블록 바로 뒤 bootJar 끄기가 test 끄기로 오인된다
 ---

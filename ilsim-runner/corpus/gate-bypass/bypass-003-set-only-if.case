@@ -1,0 +1,8 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-004
+note: setOnlyIf { false } 는 \bonlyIf 패턴을 피한다
+---
+tasks.test {
+    setOnlyIf { false }
+}

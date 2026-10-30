@@ -1,0 +1,8 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-004
+note: isEnabled = (false) 는 = 바로 뒤 false 패턴을 피한다
+---
+tasks.test {
+    isEnabled = (false)
+}

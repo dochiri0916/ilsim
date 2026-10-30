@@ -1,7 +1,0 @@
-gate: bypass
-path: Makefile
-expect: BYPASS-003
-note: Makefile 은 빌드 파일 목록에 없어 -x test 가 검사되지 않는다
----
-build:
-	./gradlew build -x test
