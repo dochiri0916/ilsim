@@ -1,0 +1,15 @@
+package com.x
+
+class Calc {
+    fun one(): Int = 1
+
+    fun total(items: List<Int>): Int {
+        var sum = 0
+        for (i in items) {
+            sum += i
+        }
+        println(sum)
+        println(items.size)
+        return sum
+    }
+}

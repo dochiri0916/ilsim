@@ -1,0 +1,2 @@
+{"stage":"IMPLEMENTATION","expect":"BLOCK","note":"도메인 코드에 Lombok을 import","doc":"AGENTS.md",
+ "rules":[{"id":"doc:lombok","kind":"doc-forbidden-import","description":"Lombok 을 쓰지 않는다","line":5,"params":{"scope":["main"],"import":["^lombok\\."]}}]}

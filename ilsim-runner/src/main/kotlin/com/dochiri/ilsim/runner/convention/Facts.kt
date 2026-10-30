@@ -39,8 +39,10 @@ internal object FactScanner {
     fun scan(root: Path, modules: List<ModuleInfo>): Facts {
         val out = mutableListOf<ConvFile>()
         val seen = mutableSetOf<Path>()
-        for (m in modules) for (rel in m.sourceRoots.filter { it.contains("src/main") }) {
-            for ((r, test) in listOf(rel to false, rel.replaceFirst("src/main", "src/test") to true)) {
+        for (m in modules) {
+            val roots = m.sourceRoots.filter { it.contains("src/main") }.flatMap { listOf(it to false, it.replaceFirst("src/main", "src/test") to true) } +
+                m.sourceRoots.filterNot { it.contains("src/main") }.map { it to true }
+            for ((r, test) in roots.distinctBy { it.first }) {
                 val dir = root.resolve(r)
                 if (!dir.isDirectory()) continue
                 Files.walk(dir).use { s ->

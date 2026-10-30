@@ -1,0 +1,3 @@
+# 패키지
+
+- Controller 는 web 패키지에 둔다.

@@ -1,0 +1,2 @@
+{"stage":"IMPLEMENTATION","expect":"BLOCK","note":"Controller 를 web 패키지 밖에 둔다","doc":"docs/conventions.md",
+ "rules":[{"id":"doc:ctrl","kind":"doc-file-location","description":"Controller 는 web 패키지에 둔다","line":3,"params":{"scope":["main"],"name":[".*Controller"],"location":["**/web/**"]}}]}

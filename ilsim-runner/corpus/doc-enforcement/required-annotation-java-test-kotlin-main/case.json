@@ -1,0 +1,2 @@
+{"stage":"TEST_CODE","expect":"BLOCK","note":"Kotlin 프로덕션 코드와 Java 테스트가 섞인 모듈에서도 테스트 규칙을 적용한다","doc":"docs/testing.md",
+ "rules":[{"id":"doc:display","kind":"doc-required-annotation","description":"테스트 메서드마다 @DisplayName 을 단다","line":3,"params":{"scope":["test"],"target":["test-method"],"annotation":["DisplayName"]}}]}

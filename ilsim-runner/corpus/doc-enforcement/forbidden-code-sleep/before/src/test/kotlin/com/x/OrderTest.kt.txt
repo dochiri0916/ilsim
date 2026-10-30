@@ -1,0 +1,7 @@
+package com.x
+
+class OrderTest {
+    fun a() {
+        println(1)
+    }
+}

@@ -1,0 +1,2 @@
+{"stage":"IMPLEMENTATION","expect":"BLOCK","note":"service 패키지 클래스 이름이 Service 로 끝나지 않는다","doc":"docs/conventions.md",
+ "rules":[{"id":"doc:svc","kind":"doc-name-pattern","description":"service 패키지의 클래스 이름은 Service 로 끝난다","line":3,"params":{"scope":["main"],"path":["**/service/**"],"target":["class"],"pattern":[".*Service"]}}]}

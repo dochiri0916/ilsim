@@ -1,0 +1,10 @@
+package com.x;
+
+import org.junit.jupiter.api.Test;
+
+class OrderTest {
+    @Test
+    void total() {
+        org.junit.jupiter.api.Assertions.assertEquals(3, 1 + 2);
+    }
+}

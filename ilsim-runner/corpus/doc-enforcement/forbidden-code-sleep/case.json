@@ -1,0 +1,2 @@
+{"stage":"IMPLEMENTATION","expect":"BLOCK","note":"테스트만 있는 모듈의 테스트에 새로 넣은 Thread.sleep","doc":"docs/testing.md",
+ "rules":[{"id":"doc:sleep","kind":"doc-forbidden-code","description":"테스트에서 Thread.sleep 을 쓰지 않는다","line":3,"params":{"scope":["test"],"pattern":["Thread\\.sleep"]}}]}

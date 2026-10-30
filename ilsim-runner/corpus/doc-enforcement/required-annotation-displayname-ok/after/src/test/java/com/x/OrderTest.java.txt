@@ -1,0 +1,12 @@
+package com.x;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+class OrderTest {
+    @Test
+    @DisplayName("주문 합계를 구한다")
+    void total() {
+        org.junit.jupiter.api.Assertions.assertEquals(3, 1 + 2);
+    }
+}

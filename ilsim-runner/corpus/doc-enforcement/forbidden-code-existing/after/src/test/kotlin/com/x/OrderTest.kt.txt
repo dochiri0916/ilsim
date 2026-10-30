@@ -1,0 +1,11 @@
+package com.x
+
+class OrderTest {
+    fun a() {
+        Thread.sleep(10)
+    }
+
+    fun b() {
+        println(2)
+    }
+}
