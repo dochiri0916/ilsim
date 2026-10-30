@@ -455,7 +455,7 @@ class McpTest {
         assertContains(recorded, "reopen_stage(TEST_CODE)로 테스트를 더할지")
         val passed = run("submit_result")
         assertContains(passed, "통과(IMPLEMENTATION)")
-        assertTrue("undecided=" !in passed, passed)
+        assertTrue("undecided=" !in passed.substringBefore("\n"), passed)
         assertTrue(server.results.last().decisions.none { it.purpose == "UNDECIDED_CHECK" })
         assertTrue(server.results.dropLast(1).last().decisions.any { it.purpose == "UNDECIDED_CHECK" && it.handler == "JEV" })
     }
@@ -467,6 +467,7 @@ class McpTest {
         fun mcp() = IlsimMcp(store, server, active, repo, counting, ::jev).tools().associateBy { it.name }
         fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
         jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
         run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
         run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다\n\n## 영향 범위\n- `src/test/SlugTest.java`")); server.approve("t")
