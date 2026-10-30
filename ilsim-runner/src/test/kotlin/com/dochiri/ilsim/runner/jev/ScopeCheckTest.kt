@@ -108,4 +108,20 @@ class ScopeCheckTest {
         assertEquals(listOf(0.9, 0.1), p)
         assertEquals(2, asked.size)
     }
+
+    @Test
+    fun `애매한 변경 묶음만 따로 다시 물어 더 낮은 확률을 쓴다`() {
+        val changes = listOf(
+            ScopeCheck.Change("A.kt", "@@\n-a\n+b", "-a\n+b"),
+            ScopeCheck.Change("B.kt", "@@\n+c", "+c"),
+            ScopeCheck.Change("C.kt", "@@\n+d", "+d"),
+        )
+        val asked = mutableListOf<String>()
+        val p = ScopeCheck.recheck(jev { item -> asked += item; if ("A.kt" in item) 0.1 else 0.9 }, "spec", "IMPLEMENTATION", listOf("A.kt", "B.kt", "C.kt"), changes, listOf(0.5, 0.6, 0.95))
+        assertEquals(listOf(0.1, 0.6, 0.95), p)
+        assertEquals(2, asked.size)
+        assertTrue(ScopeCheck.editsExisting(changes[0]))
+        assertFalse(ScopeCheck.editsExisting(changes[1]))
+        assertFalse(ScopeCheck.editsExisting(ScopeCheck.Change("D.kt", "", "-import a.B\n+import a.C\n+val x = 1")))
+    }
 }

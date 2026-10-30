@@ -57,6 +57,8 @@ object ScopeCheck {
         out
     }
 
+    fun editsExisting(change: Change): Boolean = change.changed.lines().any { it.startsWith("-") && !trivial.matches(it) }
+
     private fun edited(line: String) = line.startsWith("+") || line.startsWith("-")
 
     fun scope(markdown: String): String? {
@@ -115,7 +117,15 @@ object ScopeCheck {
     fun askChanges(jev: Jev, spec: String, stage: String, changed: List<String>, changes: List<Change>): List<Double?>? =
         batched(jev, spec, stage, changed, changes.map { it.path to it.diff }, "changes", "c", MAX_CHANGE_WEIGHT, ::changeQuestion)
 
-    private fun batched(jev: Jev, spec: String, stage: String, changed: List<String>, items: List<Pair<String, String>>, key: String, prefix: String, limit: Int, question: (Int, String) -> NoulQuestion): List<Double?>? {
+    fun recheck(jev: Jev, spec: String, stage: String, changed: List<String>, changes: List<Change>, probabilities: List<Double?>): List<Double?> {
+        val unsure = probabilities.indices.filter { i -> probabilities[i]?.let { it > OUTSIDE && it < INSIDE } == true }
+        if (unsure.isEmpty()) return probabilities
+        val again = batched(jev, spec, stage, changed, unsure.map { changes[it].path to changes[it].diff }, "changes", "c", MAX_CHANGE_WEIGHT, ::changeQuestion, 1) ?: return probabilities
+        val alone = unsure.zip(again).toMap()
+        return probabilities.mapIndexed { i, p -> alone[i]?.let { a -> minOf(p!!, a) } ?: p }
+    }
+
+    private fun batched(jev: Jev, spec: String, stage: String, changed: List<String>, items: List<Pair<String, String>>, key: String, prefix: String, limit: Int, question: (Int, String) -> NoulQuestion, size: Int = Guidelines.BATCH): List<Double?>? {
         val shownSpec = spec.take(MAX_SPEC_CHARS)
         val budget = Guidelines.MAX_STATE_WEIGHT - Guidelines.weight(shownSpec) - Guidelines.weight(changed.joinToString("\n")) - Guidelines.weight(STAGES[stage].orEmpty())
         val shown = items.map { (path, diff) -> path to Guidelines.cut(diff, limit) }
@@ -123,7 +133,7 @@ object ScopeCheck {
         var used = 0
         shown.forEachIndexed { index, (path, diff) ->
             val size = Guidelines.weight(path) + Guidelines.weight(diff)
-            if (batches.isEmpty() || batches.last().size >= Guidelines.BATCH || used + size > budget) { batches += mutableListOf<Int>(); used = 0 }
+            if (batches.isEmpty() || batches.last().size >= size || used + size > budget) { batches += mutableListOf<Int>(); used = 0 }
             batches.last() += index
             used += size
         }

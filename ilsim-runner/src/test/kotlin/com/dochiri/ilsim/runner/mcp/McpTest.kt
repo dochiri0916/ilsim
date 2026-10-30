@@ -541,6 +541,35 @@ class McpTest {
     }
 
     @Test
+    fun `기존 코드를 고친 애매한 변경 묶음은 다시 물은 뒤 독립 검토로 올린다`() {
+        store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
+        repo.resolve("src/main").createDirectories()
+        repo.resolve("src/main/Text.java").writeText("class Text {\n    String trim(String s) { return s.trim(); }\n}\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "text")
+        val prompts = mutableListOf<String>()
+        val reviewer: (String, String) -> String = { prompt, _ -> prompts += prompt; """{"verdict":"PASS","findings":[]}""" }
+        fun mcp() = IlsimMcp(store, server, active, repo, reviewer, ::jev).tools().associateBy { it.name }
+        fun run(name: String, args: String = "{}") = mcp().getValue(name).call(Json.parseToJsonElement(args).jsonObject)
+        jevAnswer = { id -> if (id[0] in "uvb") 0.05 else 0.95 }
+        run("analyze_project")
+        run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        run("submit_result", doc("# 슬러그\n\n- REQ-1: 소문자로 바꾼다")); server.approve("t")
+        run("submit_result", doc("| TC-1 | REQ-1 | 정상 | of(\"A\") | \"a\" |")); server.approve("t")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/SlugTest.java").writeText("class SlugTest { void lower() {} }\n")
+        assertContains(run("submit_result"), "tests=RED")
+
+        work.resolve("src/main/Slug.java").writeText("class Slug { String of(String s) { return s.toLowerCase(); } }\n")
+        work.resolve("src/main/Text.java").writeText("class Text {\n    String trim(String s) { return s.strip(); }\n}\n")
+        jevAnswer = { id -> when { id[0] == 'c' -> 0.5; id[0] in "uvb" -> 0.05; else -> 0.95 } }
+        assertContains(run("submit_result"), "scope-change=UNCERTAIN")
+        val decisions = server.results.last().decisions
+        assertTrue(decisions.any { it.purpose == "CHANGE_AUDIT" && "애매한 기존 코드 수정 1개" in it.reason }, decisions.toString())
+        assertTrue(prompts.any { "요구사항에 필요한지 애매한 기존 코드 수정" in it && "Text.java (범위 안 확률 0.50)" in it && "Slug.java (범위" !in it.substringAfter("애매한 기존 코드 수정") }, prompts.joinToString("\n---\n").take(3000))
+    }
+
+    @Test
     fun `JEV를 못 쓰면 독립 검토에 이 프로젝트 문서 구간 전체를 넣는다`() {
         store.save(store.load().let { c -> c.copy(projects = mapOf("p" to c.projects.getValue("p").copy(testCommand = "test -f src/main/Slug.java"))) })
         repo.resolve("AGENTS.md").writeText("# 규칙\n\n## 작업 원칙\n\n- 요청 범위 밖 리팩터링이나 검증 규칙 완화를 하지 않는다.\n")
