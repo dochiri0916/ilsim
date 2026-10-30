@@ -56,7 +56,7 @@ object TestIntegrity {
             if (Regex("""@Test\s*\([^)]*enabled\s*=\s*false""").containsMatchIn(l)) add("TEST-001", i + 1, "enabled = false 로 꺼진 테스트입니다")
         }
         val text = f.lines.joinToString("\n")
-        blockComment.findAll(text).filter { Regex("""@(Test|ParameterizedTest)\b""").containsMatchIn(it.value) }
+        blockComment.findAll(text).filter { Regex("""@(Test|ParameterizedTest)\b[\s\S]*?\b(fun|void|def)\b""").containsMatchIn(it.value) }
             .forEach { add("TEST-001", text.take(it.range.first).count { c -> c == '\n' } + 1, "블록 주석으로 감춘 테스트입니다. 지우거나 되살리세요") }
         for (c in StructureParser.classes(f)) for (m in c.funcs.filter { m -> names(m.annotations).any { it in testAnnotations } }) {
             val annotated = names(m.annotations)

@@ -17,7 +17,7 @@ object VerificationBypass {
         "Suppress" to "@Suppress", "SuppressWarnings" to "@SuppressWarnings", "SuppressFBWarnings" to "@SuppressFBWarnings",
         "SuppressLint" to "@SuppressLint", "ArchIgnore" to "@ArchIgnore",
     )
-    private val generated = Regex("""@\s*(?:file:)?$QUALIFIER(\w*Generated\w*)\b""")
+    private val generated = Regex("""@\s*(?:file:)?$QUALIFIER(\w*Generated)\b""")
     private val comments = listOf(
         Regex("""//\s*noinspection\b""") to "noinspection",
         Regex("""\bNOSONAR\b""") to "NOSONAR",
@@ -28,14 +28,15 @@ object VerificationBypass {
         Regex("""(istanbul|c8|v8)\s+ignore""") to "커버리지 제외 주석",
         Regex("""#\s*(ruff:\s*)?(noqa|type:\s*ignore|pylint:\s*disable|pragma:\s*no\s*(cover|branch)|nosec)""") to "noqa/pylint/커버리지 제외",
     )
+    private val stringLiteral = Regex(""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\\n])*'""")
     private val aliasImport = Regex("""^\s*import\s+[\w.]+\.(\w+)\s+as\s+(\w+)""")
     private val configFiles = listOf(
-        Regex("""(^|/)detekt[^/]*\.ya?ml$"""), Regex("""(^|/)(checkstyle|pmd|spotbugs|findbugs|detekt|codenarc|ktlint|lint)/"""),
-        Regex("""(^|/)(checkstyle|pmd|spotbugs|findbugs|codenarc)[^/]*\.xml$"""), Regex("""(^|/)[^/]*(suppressions?|baseline|exclude-filter|excludes?)[^/]*\.(xml|ya?ml|json|txt)$""", RegexOption.IGNORE_CASE),
+        Regex("""(^|/)\.?detekt[^/]*\.ya?ml$"""), Regex("""(^|/)(checkstyle|pmd|spotbugs|findbugs|detekt|codenarc|ktlint|lint)/"""),
+        Regex("""(^|/)(checkstyle|pmd|spotbugs|findbugs|codenarc)[^/]*\.xml$"""), Regex("""(^|/)[^/]*(suppressions?|baseline|exclude-filter|findbugs-exclude|spotbugs-exclude)[^/]*\.(xml|ya?ml|json)$""", RegexOption.IGNORE_CASE),
         Regex("""(^|/)\.editorconfig$"""), Regex("""(^|/)lint\.xml$"""), Regex("""(^|/)sonar-project\.properties$"""),
         Regex("""(^|/)archunit[^/]*\.properties$"""), Regex("""(^|/)archunit_store/"""),
         Regex("""(^|/)\.eslintrc[^/]*$"""), Regex("""(^|/)\.?eslint\.config\.[^/]+$"""), Regex("""(^|/)\.(eslint|prettier|stylelint)ignore$"""),
-        Regex("""(^|/)\.?(ruff|flake8|pylintrc|mypy|coveragerc|pyrightconfig)[^/]*$"""),
+        Regex("""(^|/)\.?(ruff|flake8|pylintrc|mypy|coveragerc|pyrightconfig)(\.(toml|ini|cfg|json|ya?ml))?$"""),
         Regex("""(^|/)\.ilsim-policy\.json$"""),
     )
     private val sectionConfig = Regex("""(^|/)(setup\.cfg|tox\.ini|pyproject\.toml|tsconfig[^/]*\.json|jsconfig\.json)$""")
@@ -51,7 +52,7 @@ object VerificationBypass {
         Regex("""--passWithNoTests|--no-verify""") to "검사 건너뛰기 옵션",
         Regex("""\|\|\s*(true|exit\s+0|:)\b|;\s*exit\s+0\b""") to "실패해도 성공으로 끝내기(|| true)",
         Regex("""exclude(TestsMatching)?\s*\(\s*["']\*\*/\*["']|excludeTestsMatching\s*\(\s*["']\*["']""") to "모든 테스트 제외",
-        Regex("""\bminimum\s*(\.set\s*\(|[=:(]|\s)\s*["']?0(\.0*)?["']?(\.toBigDecimal\(\)|\b)|<minimum>\s*0(\.0*)?\s*<""") to "커버리지 하한 0",
+        Regex("""\bminimum\s*(\.set\s*\(|[=:(]|\s)\s*["']?0(\.0+)?(?![.\d])["']?|<minimum>\s*0(\.0+)?\s*<""") to "커버리지 하한 0",
     )
 
     private val disabling = Regex("""[eE]nabled\s*(\.set\s*\(|[=(:])\s*false|\bsetEnabled\s*\(\s*false|\bonlyIf\s*\{\s*false""")
@@ -65,7 +66,8 @@ object VerificationBypass {
         for (path in changed.sorted()) {
             if (allowed(path)) continue
             val lines = added[path].orEmpty()
-            if (configFiles.any { it.containsMatchIn(path) } || sectionConfig.containsMatchIn(path) && lines.any { sectionWeakening.containsMatchIn(it.text) }) {
+            val source = path.substringAfterLast('.') in sourceExtensions || "/src/main/resources/" in "/$path"
+            if (!source && configFiles.any { it.containsMatchIn(path) } || sectionConfig.containsMatchIn(path) && lines.any { sectionWeakening.containsMatchIn(it.text) }) {
                 out += Violation("BYPASS-002", "BLOCK", path, (lines.firstOrNull { sectionWeakening.containsMatchIn(it.text) } ?: lines.firstOrNull())?.line ?: 1, "검사 설정 `${path.substringAfterLast('/')}` 을 바꿨습니다. 검사 기준은 사용자만 바꿉니다")
                 continue
             }
@@ -83,9 +85,10 @@ object VerificationBypass {
         val names = annotations + lines.mapNotNull { aliasImport.find(it.text) }.filter { it.groupValues[1] in annotations }.associate { it.groupValues[2] to annotations.getValue(it.groupValues[1]) }
         val annotation = Regex("""@\s*(?:file:)?$QUALIFIER(${names.keys.joinToString("|")})\b""")
         return lines.mapNotNull { l ->
-            val reason = annotation.find(l.text)?.let { names[it.groupValues[1]] }
-                ?: generated.find(l.text)?.let { "@${it.groupValues[1]}(커버리지 제외)" }
-                ?: comments.firstOrNull { it.first.containsMatchIn(l.text) }?.second
+            val code = l.text.replace(stringLiteral, "\"\"")
+            val reason = annotation.find(code)?.let { names[it.groupValues[1]] }
+                ?: generated.find(code)?.let { "@${it.groupValues[1]}(커버리지 제외)" }
+                ?: comments.firstOrNull { it.first.containsMatchIn(code) }?.second
             reason?.let { Violation("BYPASS-001", "BLOCK", path, l.line, "검사를 끄는 $it 를 새로 넣었습니다. 경고를 숨기지 말고 원인을 고치세요") }
         }
     }
