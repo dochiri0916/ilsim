@@ -1,0 +1,16 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-004
+note: val r = runCatching { } 는 줄 시작 runCatching 패턴을 피한다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    @Test
+    fun works() {
+        val r = runCatching { assertEquals(4, 1 + 2) }
+    }
+}

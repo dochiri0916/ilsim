@@ -1,0 +1,19 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: @DisabledIfEnvironmentVariables 컨테이너 애노테이션은 목록에 없다
+---
+package com.x
+
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariables
+import org.junit.jupiter.api.Assertions.assertEquals
+
+class FooTest {
+    @DisabledIfEnvironmentVariables(DisabledIfEnvironmentVariable(named = "PATH", matches = ".*"))
+    @Test
+    fun works() {
+        assertEquals(2, 1 + 2)
+    }
+}

@@ -1,0 +1,15 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-002
+note: 변수 이름에 assert 가 들어 있으면 단언이 있는 것으로 본다
+---
+package com.x
+
+import kotlin.test.Test
+
+class FooTest {
+    @Test
+    fun works() {
+        val assertedCount = 1 + 2
+    }
+}

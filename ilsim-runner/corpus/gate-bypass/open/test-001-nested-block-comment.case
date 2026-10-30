@@ -1,0 +1,15 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: Kotlin 중첩 블록 주석은 첫 */ 에서 끝난다고 보는 정규식을 피한다
+---
+package com.x
+
+class FooTest {
+    /* /* note */
+    @kotlin.test.Test
+    fun works() {
+        kotlin.test.assertEquals(2, 1 + 2)
+    }
+    */
+}

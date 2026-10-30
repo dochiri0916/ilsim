@@ -1,0 +1,10 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-003
+note: Kotlin DSL 의 isFailOnViolation = false 는 failOnViolation 패턴을 피한다
+---
+tasks.jacocoTestCoverageVerification {
+    violationRules {
+        isFailOnViolation = false
+    }
+}

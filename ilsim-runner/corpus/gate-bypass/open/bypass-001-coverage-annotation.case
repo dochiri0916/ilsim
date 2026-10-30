@@ -1,0 +1,11 @@
+gate: bypass
+path: ilsim-server/src/main/kotlin/com/x/A.kt
+expect: BYPASS-001
+note: Generated 가 이름에 없는 커버리지 제외 애노테이션(@ExcludeFromCoverage)은 못 본다
+---
+package com.x
+
+@ExcludeFromCoverage
+class A {
+    fun f() = 1
+}

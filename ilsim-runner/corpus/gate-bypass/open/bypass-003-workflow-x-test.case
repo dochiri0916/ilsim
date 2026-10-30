@@ -1,0 +1,9 @@
+gate: bypass
+path: .github/workflows/ci.yml
+expect: BYPASS-003
+note: CI 워크플로 yml 은 검사되지 않아 -x test 가 통과한다
+---
+jobs:
+  build:
+    steps:
+      - run: ./gradlew build -x test

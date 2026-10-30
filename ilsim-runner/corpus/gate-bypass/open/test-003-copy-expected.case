@@ -1,0 +1,18 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-003
+note: expected 를 actual 에서 복사해 비교하면 같은 식 패턴을 피한다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    @Test
+    fun works() {
+        val actual = 1 + 2
+        val expected = actual
+        assertEquals(expected, actual)
+    }
+}

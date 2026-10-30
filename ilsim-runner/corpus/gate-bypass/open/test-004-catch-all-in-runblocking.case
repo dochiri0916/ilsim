@@ -1,0 +1,21 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-004
+note: catch 블록에서 로그만 남기고 삼키되 변수명을 failed 로 두면 통과한다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    @Test
+    fun works() {
+        var failed = false
+        try {
+            assertEquals(4, 1 + 2)
+        } catch (e: AssertionError) {
+            failed = true
+        }
+    }
+}

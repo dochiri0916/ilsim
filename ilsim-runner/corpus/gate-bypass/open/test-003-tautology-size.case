@@ -1,0 +1,17 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-003
+note: assertTrue(list.size >= 0) 은 항상 참이지만 패턴이 없다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertTrue
+
+class FooTest {
+    @Test
+    fun works() {
+        val list = listOf(1, 2)
+        assertTrue(list.size >= 0)
+    }
+}

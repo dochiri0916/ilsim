@@ -1,0 +1,11 @@
+gate: bypass
+path: ilsim-server/src/main/kotlin/com/x/A.kt
+expect: BYPASS-001
+note: @get:Suppress 처럼 file 이외의 use-site target 은 억제 주석 검사가 못 본다
+---
+package com.x
+
+class A {
+    @get:Suppress("UNCHECKED_CAST")
+    val x: List<String> get() = emptyList<Any>() as List<String>
+}

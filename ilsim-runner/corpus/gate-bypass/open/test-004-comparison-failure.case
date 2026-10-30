@@ -1,0 +1,20 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-004
+note: catch (ComparisonFailure) 는 던질 수 있는 타입 목록에 없다
+---
+package com.x
+
+import org.junit.ComparisonFailure
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class FooTest {
+    @Test
+    fun works() {
+        try {
+            assertEquals("a", "b")
+        } catch (e: ComparisonFailure) {
+        }
+    }
+}

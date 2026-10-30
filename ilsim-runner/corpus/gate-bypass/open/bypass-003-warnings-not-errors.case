@@ -1,0 +1,10 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-003
+note: allWarningsAsErrors = false 는 컴파일 경고 실패를 끄지만 패턴이 없다
+---
+kotlin {
+    compilerOptions {
+        allWarningsAsErrors = false
+    }
+}

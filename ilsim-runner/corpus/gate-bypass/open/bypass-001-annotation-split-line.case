@@ -1,0 +1,11 @@
+gate: bypass
+path: ilsim-server/src/main/java/com/x/A.java
+expect: BYPASS-001
+note: @ 와 SuppressWarnings 를 줄바꿈으로 나눠 한 줄 검사를 피한다
+---
+package com.x;
+
+@
+SuppressWarnings("unchecked")
+class A {
+}

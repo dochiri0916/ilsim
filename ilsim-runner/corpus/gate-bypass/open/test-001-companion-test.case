@@ -1,0 +1,18 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-001
+note: companion object 안의 @Test 는 실행되지 않는다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    companion object {
+        @Test
+        fun works() {
+            assertEquals(2, 1 + 2)
+        }
+    }
+}

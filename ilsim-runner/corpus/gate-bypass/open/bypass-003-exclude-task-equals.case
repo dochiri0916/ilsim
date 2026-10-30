@@ -1,0 +1,8 @@
+gate: bypass
+path: ilsim-server/build.gradle.kts
+expect: BYPASS-003
+note: --exclude-task=test 는 공백을 요구하는 -x 패턴을 피한다
+---
+tasks.register<Exec>("ci") {
+    commandLine("./gradlew", "build", "--exclude-task=test")
+}

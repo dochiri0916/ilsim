@@ -1,0 +1,16 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-003
+note: assertEquals(2, 1 + 1) 은 상수끼리 비교라 항상 참이다
+---
+package com.x
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FooTest {
+    @Test
+    fun works() {
+        assertEquals(2, 1 + 1)
+    }
+}

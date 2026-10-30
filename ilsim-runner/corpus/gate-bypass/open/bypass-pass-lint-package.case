@@ -1,0 +1,10 @@
+gate: bypass
+path: ilsim-runner/src/main/kotlin/com/dochiri/ilsim/runner/lint/Linter.kt
+expect: PASS
+note: 패키지 이름이 lint 인 정상 소스를 검사 설정 디렉터리로 오탐한다
+---
+package com.dochiri.ilsim.runner.lint
+
+class Linter {
+    fun run() = 1
+}

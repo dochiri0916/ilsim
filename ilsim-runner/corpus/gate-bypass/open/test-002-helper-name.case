@@ -1,0 +1,17 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-002
+note: then( 만 호출해도 단언으로 센다(프라미스/체인 호출)
+---
+package com.x
+
+import kotlin.test.Test
+
+class FooTest {
+    @Test
+    fun works() {
+        val r = java.util.concurrent.CompletableFuture.completedFuture(1)
+        r.thenAccept { }.then()
+    }
+    private fun Any.then() = this
+}

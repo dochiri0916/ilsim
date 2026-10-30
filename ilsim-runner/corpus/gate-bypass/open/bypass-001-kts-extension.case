@@ -1,0 +1,7 @@
+gate: bypass
+path: ilsim-server/src/main/kotlin/com/x/job.main.kts
+expect: BYPASS-001
+note: .kts 는 검사 대상 확장자가 아니라 억제 주석이 통과한다
+---
+@file:Suppress("UNUSED_VARIABLE")
+val x = 1

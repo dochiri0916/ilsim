@@ -1,0 +1,15 @@
+gate: test-integrity
+path: ilsim-server/src/test/kotlin/com/x/FooTest.kt
+expect: TEST-002
+note: 바로 앞 테스트의 @Test(expected=) 가 4줄 창에 들어와 단언 없는 다음 테스트도 면제된다
+---
+package com.x
+
+import org.junit.Test
+
+class FooTest {
+    @Test(expected = IllegalStateException::class)
+    fun a() { error("x") }
+    @Test
+    fun b() { 1 + 2 }
+}
