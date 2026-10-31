@@ -13,7 +13,7 @@ object Guidelines {
     const val IRRELEVANT = 0.2
     const val VIOLATED = 0.8
     const val CLEAR = 0.4
-    const val UNSURE = 0.5
+    const val UNSURE = 0.4
     const val LEGACY = 0.6
     const val APPLIES = 0.5
     const val BATCH = 10
@@ -26,12 +26,13 @@ object Guidelines {
     const val MAX_OUTLINE = 60
     const val MAX_START_CHARS = 1500
 
-    data class Check(val probabilities: Map<Guideline, Double>, val violated: List<Guideline>, val uncertain: List<Guideline>, val truncated: Boolean, val parts: List<Part> = emptyList())
+    data class Check(val probabilities: Map<Guideline, Double>, val violated: List<Guideline>, val uncertain: List<Guideline>, val truncated: Boolean, val parts: List<Part> = emptyList(), val blocking: Map<Guideline, Double> = probabilities)
 
     data class Part(val guideline: Guideline, val text: String, val batch: Double?, val single: Double?, val before: Double? = null, val added: Double? = null) {
         val raw: Double? get() = listOfNotNull(batch, single).maxOrNull()
         val legacy: Boolean get() = (before ?: 0.0) >= LEGACY && (added ?: 1.0) <= CLEAR
         val probability: Double? get() = if (legacy) added else raw
+        val agreed: Double? get() = if (legacy) added else listOfNotNull(batch, single).minOrNull()
     }
 
     data class Selection(val guidelines: List<Guideline>, val filtered: Map<String, Double>)
@@ -205,7 +206,7 @@ object Guidelines {
     private val STAGES = mapOf(
         "REQUIREMENTS" to "요구사항 문서를 쓰는 단계. diff는 요구사항 문서이고 코드는 아직 없다.",
         "TEST_CASES" to "테스트 케이스 문서를 쓰는 단계. diff는 테스트 케이스 문서이고 코드는 아직 없다.",
-        "TEST_CODE" to "테스트 코드를 쓰는 단계. diff는 테스트 코드만 담고 프로덕트 코드는 다음 구현 단계에서 만든다.",
+        "TEST_CODE" to "테스트 코드를 쓰는 단계. diff는 테스트 코드만 담고 프로덕트 코드는 다음 구현 단계에서 만든다. 어떤 테스트를 쓸지는 앞 단계에서 승인된 테스트 케이스로 정해졌으므로, 지침이 말하는 종류의 테스트를 새로 더 쓰지 않은 것은 위반이 아니다. 단, diff에 있는 테스트 파일의 위치·실행 방식·이름·단언·데이터 준비가 지침과 다르면 위반이다.",
         "IMPLEMENTATION" to "구현 단계. diff는 프로덕트 코드만 담는다. 테스트는 앞 단계(테스트 코드 단계)에서 이미 작성돼 이 diff에 없다.",
     )
     private val MD_LINK = Regex("""\]\(([^)\s#]+\.(?:md|markdown|adoc|rst))(?:#[^)]*)?\)""")
@@ -247,9 +248,10 @@ object Guidelines {
             pool.shutdownNow()
         }
         val probabilities = guidelines.mapNotNull { g -> parts.filter { it.guideline == g }.mapNotNull { it.probability }.maxOrNull()?.let { g to it } }.toMap()
-        val violated = guidelines.filter { (probabilities[it] ?: 0.0) >= VIOLATED }
+        val blocking = guidelines.mapNotNull { g -> parts.filter { it.guideline == g }.mapNotNull { it.agreed }.maxOrNull()?.let { g to it } }.toMap()
+        val violated = guidelines.filter { (blocking[it] ?: 0.0) >= VIOLATED }
         val uncertain = guidelines.filter { it !in violated && (truncated || (it.relevance >= APPLIES && (probabilities[it] ?: 1.0) > UNSURE)) }
-        return Check(probabilities, violated, uncertain, truncated, parts)
+        return Check(probabilities, violated, uncertain, truncated, parts, blocking)
     }
 
     private fun judgeAll(jev: Jev, stage: String, units: List<Pair<Guideline, String>>, view: String, decisions: List<String>, pool: java.util.concurrent.ExecutorService): Map<Pair<Guideline, String>, Double?>? =
@@ -354,8 +356,8 @@ object Guidelines {
         return text
     }
 
-    fun permitted(jev: Jev, guidelines: List<Guideline>, decisions: List<String>): Set<Guideline>? {
-        if (guidelines.isEmpty() || decisions.isEmpty()) return emptySet()
+    fun permitted(jev: Jev, guidelines: List<Guideline>, decisions: List<String>): Map<Guideline, Double>? {
+        if (guidelines.isEmpty() || decisions.isEmpty()) return emptyMap()
         val state = mapOf(
             "decided" to decisions,
             "guidelines" to guidelines.mapIndexed { i, g -> mapOf("id" to "g$i", "source" to g.source, "heading" to g.heading, "text" to g.text.take(MAX_PERMISSION_TEXT)) },
@@ -365,7 +367,7 @@ object Guidelines {
                 .withCriteria("사용자가 이 지침과 다르게 하도록 정함", "사용자 결정이 이 지침과 관계없음")
         }
         val answers = jev.probabilities(state, questions) ?: return null
-        return guidelines.filterIndexed { i, _ -> (answers["x$i"] ?: 0.0) >= PERMITTED }.toSet()
+        return guidelines.withIndex().mapNotNull { (i, g) -> answers["x$i"]?.let { g to it } }.toMap()
     }
 
     private fun checkBatch(jev: Jev, stage: String, batch: List<Pair<Guideline, String>>, diff: String, decisions: List<String> = emptyList()): List<Double?>? {

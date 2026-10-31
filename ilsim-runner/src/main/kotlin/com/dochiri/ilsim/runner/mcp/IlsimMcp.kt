@@ -415,6 +415,7 @@ class IlsimMcp(
             active.save(ws.home, counted)
             Shell.git(ws.root, "reset", "-q")
             log("제출 실패: ${outcome.error.take(MAX_FAILURE_LOG)}")
+            decisions.filter { it.purpose.startsWith("GUIDELINE") }.forEach { log("판정 ${it.purpose}/${it.handler}: ${it.reason.take(MAX_FAILURE_LOG)}") }
             return "제출 실패($stage):\n${outcome.error}\n\n지적된 부분을 고친 뒤 submit_result를 다시 호출하세요"
         }
         val saved = Artifacts(store).path(ws.projectId, task.feature, task.taskId, stage)
@@ -508,7 +509,8 @@ class IlsimMcp(
         val compliance = guidelineCheck(guide, stage, diff, validation, userDecisions + approvedCases, userDecisions)
         if (compliance != null && compliance.violated.isNotEmpty()) {
             return Outcome(cause = "guidelines", error = "이 프로젝트 문서 지침을 어긴 것으로 보입니다. 아래 지침에 맞게 고친 뒤 다시 제출하세요. 승인된 요구사항이나 사용자 뜻대로 한 부분인데 지적됐다면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용)으로 기록한 뒤 다시 제출하세요:\n" +
-                compliance.violated.joinToString("\n") { g -> "- ${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()} (위반 확률 ${"%.2f".format(compliance.probabilities[g])})\n  ${g.text.lines().filter { it.isNotBlank() }.take(6).joinToString(" ").take(400)}" })
+                compliance.violated.joinToString("\n") { g -> "- ${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()} (위반 확률 ${"%.2f".format(compliance.blocking[g])})\n  ${g.text.lines().filter { it.isNotBlank() }.take(6).joinToString(" ").take(400)}" +
+                    compliance.parts.filter { it.guideline == g && (it.agreed ?: 0.0) >= Guidelines.VIOLATED }.joinToString("") { "\n  걸린 항목: ${it.text.take(300)}" } })
         }
         val unresolved = when {
             compliance != null -> compliance.uncertain.map { it.source }
@@ -739,8 +741,10 @@ class IlsimMcp(
         }
         val checked = if (guide.selected) runCatching { Guidelines.check(jev(), stage, guide.guidelines, diff, decisions) }.getOrNull() else null
         val flagged = checked?.let { it.violated + it.uncertain }.orEmpty()
-        val permitted = if (flagged.isEmpty()) emptySet() else runCatching { Guidelines.permitted(jev(), flagged, userDecisions) }.getOrNull().orEmpty()
-        if (permitted.isNotEmpty()) DecisionScope.record("GUIDELINE_PERMISSION", "JEV", "사용자 결정으로 허락한 지침: ${permitted.joinToString { it.source }}", diff)
+        val permission = if (flagged.isEmpty()) emptyMap() else runCatching { Guidelines.permitted(jev(), flagged, userDecisions) }.getOrNull().orEmpty()
+        val permitted = permission.filterValues { it >= Guidelines.PERMITTED }.keys
+        if (permission.isNotEmpty()) DecisionScope.record("GUIDELINE_PERMISSION", "JEV",
+            "사용자 결정으로 허락한 지침 ${permitted.size}개(${Guidelines.PERMITTED} 이상): " + permission.entries.joinToString { "${it.key.source}=${"%.2f".format(it.value)}" }, diff)
         val result = checked?.copy(violated = checked.violated - permitted, uncertain = checked.uncertain - permitted)
         validation["guidelines"] = when {
             result == null -> "UNKNOWN"

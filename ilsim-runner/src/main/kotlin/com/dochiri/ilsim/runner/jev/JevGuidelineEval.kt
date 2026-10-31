@@ -178,23 +178,24 @@ object JevGuidelineEval {
                 val e2e = Guidelines.check(jev, d.stage, selected, diff)
                 selected.forEach { g ->
                     val label = p.corpus.sections["${g.path}:${g.line}"]?.rule ?: return@forEach
-                    add("v-e2e", "${d.id}/${g.source}", label && g.source in d.violates, e2e?.probabilities?.get(g))
+                    add("v-e2e", "${d.id}/${g.source}", label && g.source in d.violates, e2e?.blocking?.get(g))
                 }
-                val jevScore = e2e?.let { c -> selected.mapNotNull { c.probabilities[it] }.maxOrNull() ?: 0.0 }
+                val jevScore = e2e?.let { c -> selected.mapNotNull { c.blocking[it] }.maxOrNull() ?: 0.0 }
                 add("diff", d.id, d.violates.isNotEmpty(), jevScore)
                 val caught = if (staticCatch(diff, approvedRules(p))) 1.0 else 0.0
                 add("diff-static", d.id, d.violates.isNotEmpty(), caught)
                 add("diff-all", d.id, d.violates.isNotEmpty(), jevScore?.let { maxOf(it, caught) })
+                add("diff-review", d.id, d.violates.isNotEmpty(), e2e?.let { c -> maxOf(selected.mapNotNull { c.probabilities[it] }.maxOrNull() ?: 0.0, caught) })
                 d.violates.filter { v -> selected.none { it.source == v } }.forEach { add("missed-selection", "${d.id}/$it", true, 0.0) }
                 val gold = p.sections.filter { p.relevant(it, request) == true }.map { Guideline(it.path, it.line, it.heading, it.text, 1.0) }
                 val check = Guidelines.check(jev, d.stage, gold, diff)
                 val withCases = Guidelines.check(jev, d.stage, gold, diff, listOf("승인된 테스트 케이스 TC-1: REQ-1 | 정상 | ${request.text.take(160)} | 요청대로 동작한다"))
                 gold.forEach { g ->
                     val expected = g.source in d.violates
-                    add("v", "${d.id}/${g.source}", expected, check?.probabilities?.get(g))
+                    add("v", "${d.id}/${g.source}", expected, check?.blocking?.get(g))
                     val parts = check?.parts.orEmpty().filter { it.guideline == g }
                     add("v-first", "${d.id}/${g.source}", expected, parts.mapNotNull { it.batch }.maxOrNull())
-                    add("v-tc", "${d.id}/${g.source}", expected, withCases?.probabilities?.get(g))
+                    add("v-tc", "${d.id}/${g.source}", expected, withCases?.blocking?.get(g))
                     parts.forEachIndexed { i, part ->
                         add("part-batch", "${d.id}/${g.source}#$i", expected, part.batch)
                         part.single?.let { add("part-single", "${d.id}/${g.source}#$i", expected, it) }
@@ -280,8 +281,10 @@ object JevGuidelineEval {
             val bad = groups.filter { it.first().expected }
             val good = groups.filter { !it.first().expected }
             val static = observations.filter { it.question == "diff-static" && it.expected && (it.p ?: 0.0) >= 1.0 }.map { it.project to it.item }.toSet()
-            appendLine("변경 단위 종합(정적 문서 규칙+JEV, 모든 반복 기준): 위반 ${bad.size}개 중 막음 ${bad.count { g -> g.all { it.p!! >= Guidelines.VIOLATED } }}(정적 ${static.size}), 검토로 올림 ${bad.count { g -> g.any { it.p!! < Guidelines.VIOLATED } && g.all { it.p!! > Guidelines.UNSURE } }}, 조용히 통과 ${bad.count { g -> g.any { it.p!! <= Guidelines.UNSURE } }} / 정상 ${good.size}개 중 잘못 막음 ${good.count { g -> g.any { it.p!! >= Guidelines.VIOLATED } }}, 검토로 올림 ${good.count { g -> g.any { it.p!! > Guidelines.UNSURE && it.p!! < Guidelines.VIOLATED } }}")
-            bad.filter { g -> g.any { it.p!! <= Guidelines.UNSURE } }.forEach { g -> appendLine("  조용히 통과: ${g.first().project}/${g.first().item} ${g.joinToString("/") { "%.2f".format(it.p) }}") }
+            val review = observations.filter { it.question == "diff-review" && it.p != null }.associate { Triple(it.project, it.item, it.round) to it.p!! }
+            fun reviewed(o: Observation) = review[Triple(o.project, o.item, o.round)] ?: o.p!!
+            appendLine("변경 단위 종합(정적 문서 규칙+JEV, 모든 반복 기준, 막음은 두 판정 모두 위반, 검토는 판정 원점수): 위반 ${bad.size}개 중 막음 ${bad.count { g -> g.all { it.p!! >= Guidelines.VIOLATED } }}(정적 ${static.size}), 검토로 올림 ${bad.count { g -> g.any { it.p!! < Guidelines.VIOLATED } && g.all { reviewed(it) > Guidelines.UNSURE } }}, 조용히 통과 ${bad.count { g -> g.any { reviewed(it) <= Guidelines.UNSURE } }} / 정상 ${good.size}개 중 잘못 막음 ${good.count { g -> g.any { it.p!! >= Guidelines.VIOLATED } }}, 검토로 올림 ${good.count { g -> g.none { it.p!! >= Guidelines.VIOLATED } && g.any { reviewed(it) > Guidelines.UNSURE } }}")
+            bad.filter { g -> g.any { reviewed(it) <= Guidelines.UNSURE } }.forEach { g -> appendLine("  조용히 통과: ${g.first().project}/${g.first().item} ${g.joinToString("/") { "%.2f".format(reviewed(it)) }}") }
             appendLine()
         }
         appendLine("질문 | 사례(양성) | AUROC | 현재 기준 | 정확도 | 놓침 | 오경보 | 판정 실패 | 제안 기준(놓침 0 또는 오경보 0)")
