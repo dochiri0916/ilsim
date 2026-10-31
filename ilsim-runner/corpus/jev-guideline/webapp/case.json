@@ -205,6 +205,39 @@
         "CONTRIBUTING.md:9",
         "docs/architecture.md:9"
       ]
+    },
+    {
+      "id": "tc-lockout-ok",
+      "request": "login-lockout",
+      "file": "diffs/tc-lockout-ok.diff",
+      "stage": "TEST_CASES"
+    },
+    {
+      "id": "tc-lockout-testid",
+      "request": "login-lockout",
+      "file": "diffs/tc-lockout-testid.diff",
+      "stage": "TEST_CASES",
+      "violates": [
+        "docs/testing.md:3"
+      ]
+    },
+    {
+      "id": "tc-lockout-snapshot",
+      "request": "login-lockout",
+      "file": "diffs/tc-lockout-snapshot.diff",
+      "stage": "TEST_CASES",
+      "violates": [
+        "docs/testing.md:3"
+      ]
+    },
+    {
+      "id": "tc-lockout-location",
+      "request": "login-lockout",
+      "file": "diffs/tc-lockout-location.diff",
+      "stage": "TEST_CASES",
+      "violates": [
+        "docs/testing.md:3"
+      ]
     }
   ]
 }

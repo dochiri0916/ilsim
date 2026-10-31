@@ -306,6 +306,48 @@
       "violates": [
         "docs/spec/coupon.md:8"
       ]
+    },
+    {
+      "id": "tc-cancel-ok",
+      "request": "order-cancel",
+      "file": "diffs/tc-cancel-ok.diff",
+      "stage": "TEST_CASES"
+    },
+    {
+      "id": "tc-cancel-unit-springboot",
+      "request": "order-cancel",
+      "file": "diffs/tc-cancel-unit-springboot.diff",
+      "stage": "TEST_CASES",
+      "violates": [
+        "docs/testing.md:9"
+      ]
+    },
+    {
+      "id": "tc-cancel-sleep",
+      "request": "order-cancel",
+      "file": "diffs/tc-cancel-sleep.diff",
+      "stage": "TEST_CASES",
+      "violates": [
+        "docs/testing.md:9"
+      ]
+    },
+    {
+      "id": "tc-cancel-inline-data",
+      "request": "order-cancel",
+      "file": "diffs/tc-cancel-inline-data.diff",
+      "stage": "TEST_CASES",
+      "violates": [
+        "docs/testing.md:14"
+      ]
+    },
+    {
+      "id": "tc-cancel-integration-name",
+      "request": "order-cancel",
+      "file": "diffs/tc-cancel-integration-name.diff",
+      "stage": "TEST_CASES",
+      "violates": [
+        "docs/testing.md:9"
+      ]
     }
   ],
   "rules": [

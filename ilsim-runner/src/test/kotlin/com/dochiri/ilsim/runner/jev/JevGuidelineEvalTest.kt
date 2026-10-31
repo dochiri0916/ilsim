@@ -34,9 +34,9 @@ class JevGuidelineEvalTest {
 
         assertEquals(listOf("env-hexagonal", "env-layered", "env-library", "env-mixed", "env-multimodule", "env-sliced", "ilsim", "sandbox", "shop", "webapp"), projects.map { it.name })
         assertEquals(emptyList(), projects.flatMap(JevGuidelineEval::problems))
-        assertEquals(67, projects.sumOf { it.corpus.diffs.size })
+        assertEquals(76, projects.sumOf { it.corpus.diffs.size })
         assertEquals(61, projects.sumOf { it.corpus.rules.size })
-        assertTrue(projects.all { p -> p.corpus.diffs.all { p.diffs.getValue(it.id).startsWith("diff --git") } })
+        assertTrue(projects.all { p -> p.corpus.diffs.all { p.diffs.getValue(it.id).startsWith(if (it.stage == "TEST_CASES") "+++ test-spec.md" else "diff --git") } })
     }
 
     @Test
@@ -45,7 +45,7 @@ class JevGuidelineEvalTest {
         val observations = JevGuidelineEval.run(projects, 1) { jev { id -> if (id.startsWith("v") || id.startsWith("n")) 0.1 else 0.9 } }
         val byQuestion = observations.groupBy { it.question }
 
-        assertEquals(67, byQuestion.getValue("diff").size)
+        assertEquals(76, byQuestion.getValue("diff").size)
         assertEquals(61, byQuestion.getValue("f").size)
         assertEquals(61, byQuestion.getValue("f-single").size)
         assertEquals(9, byQuestion.getValue("q").size)

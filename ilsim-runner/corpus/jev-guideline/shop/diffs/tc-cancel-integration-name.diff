@@ -1,0 +1,8 @@
++++ test-spec.md
++# 테스트 케이스
++
++| TC | 요구사항 | 분류 | 방법 | 기대 결과 |
++|---|---|---|---|---|
++| TC-1 | REQ-1 | 정상 | `OrderCancelServiceTest`(단위). 가짜 저장소·결제 포트에 `OrderFixture.paid(10000)`로 주문을 넣고 취소. `@DisplayName` 한국어, given/when/then, AssertJ 단언 | 주문 상태 CANCELLED, 환불 10000 |
++| TC-2 | REQ-2 | 예외 | 같은 단위 시험. `OrderFixture.shipped()` 주문 취소 | `ShopException`(ORDER_NOT_CANCELLABLE), 환불 없음 |
++| TC-3 | REQ-1 | 통합 | `OrderCancelApiTest`. `@SpringBootTest`로 API 호출, 데이터는 `OrderFixture` | 200, 상태 CANCELLED |
