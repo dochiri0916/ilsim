@@ -116,8 +116,10 @@ class TestingTest {
         assertNull(PitestDefault.command(root, home, changed), "gradlew 가 없으면 기본 명령을 만들지 않는다")
         write(root, "gradlew", "#!/bin/sh\n")
         val command = assertNotNull(PitestDefault.command(root, home, changed))
-        assertTrue(command.startsWith("ILSIM_MUTATION_TARGETS='com.x.slug.Slug*,demo.Greeter*' ./gradlew :app:pitest pitest --init-script "), command)
-        assertTrue(Files.readString(home.resolve("mutation/pitest.init.gradle")).let { it.contains("targetTests = ['*']") && it.contains("addJUnitPlatformLauncher") })
+        assertTrue(command.startsWith("ILSIM_MUTATION_TARGETS='com.x.slug.Slug*,demo.Greeter*' ./gradlew pitest :app:pitest --init-script "), command)
+        val withTests = assertNotNull(PitestDefault.command(root, home, setOf("app/src/main/kotlin/x/Slug.kt"), setOf("web/src/test/kotlin/x/SlugApiTest.kt")))
+        assertTrue(" ./gradlew :app:pitest :web:pitest --init-script " in withTests, "다른 모듈의 테스트가 바뀐 소스를 검사하면 그 모듈에서도 변이 테스트를 돌린다")
+        assertTrue(Files.readString(home.resolve("mutation/pitest.init.gradle")).let { it.contains("targetTests = ['*']") && it.contains("addJUnitPlatformLauncher") && it.contains("upToDateWhen { false }") })
         assertNull(PitestDefault.command(root, home, setOf("README.md", "src/test/java/demo/GreeterTest.java")))
     }
 
@@ -156,6 +158,17 @@ class TestingTest {
         assertEquals(2, r.survivors.size)
         assertTrue(r.score < MutationReport.THRESHOLD)
         assertNull(MutationReport.evaluate(root, Instant.now().minusSeconds(60), setOf("src/main/kotlin/com/x/None.kt")))
+    }
+
+    @Test
+    fun `여러 모듈의 결과에 같은 변이가 있으면 한 곳에서라도 잡히면 잡힌 것으로 본다`() {
+        val root = dir()
+        fun mutation(status: String) = "<mutation status='$status'><sourceFile>Repo.kt</sourceFile><mutatedClass>com.x.Repo</mutatedClass><mutatedMethod>find</mutatedMethod><lineNumber>3</lineNumber><mutator>NullReturn</mutator><description>replaced return</description></mutation>"
+        write(root, "domain/build/reports/pitest/mutations.xml", "<mutations>${mutation("NO_COVERAGE")}</mutations>")
+        write(root, "app/build/reports/pitest/mutations.xml", "<mutations>${mutation("KILLED")}</mutations>")
+        val r = assertNotNull(MutationReport.evaluate(root, Instant.now().minusSeconds(60), setOf("domain/src/main/kotlin/com/x/Repo.kt")))
+        assertEquals(1, r.total)
+        assertEquals(1, r.killed)
     }
 
     @Test

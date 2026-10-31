@@ -19,6 +19,7 @@ object PitestDefault {
         allprojects {
             pluginManager.withPlugin('java') {
                 apply plugin: info.solidsoft.gradle.pitest.PitestPlugin
+                tasks.named('pitest') { outputs.upToDateWhen { false } }
                 pitest {
                     pitestVersion = '$PITEST'
                     junit5PluginVersion = '$JUNIT5'
@@ -28,6 +29,10 @@ object PitestDefault {
                     timestampedReports = false
                     failWhenNoMutations = false
                     threads = Runtime.runtime.availableProcessors()
+                    additionalMutableCodePaths = project.provider {
+                        def runtime = project.configurations.findByName('runtimeClasspath')
+                        runtime == null ? [] : runtime.allDependencies.withType(ProjectDependency).collect { d -> project.rootProject.project(d.path) }.findAll { it.extensions.findByName('sourceSets') != null }.collectMany { it.sourceSets.main.output.classesDirs.files as List }
+                    }
                     addJUnitPlatformLauncher = project.provider {
                         !project.configurations.matching { it.name in ['testImplementation', 'testRuntimeOnly'] }.any { c -> c.allDependencies.any { it.group == 'org.junit.platform' && it.name == 'junit-platform-launcher' } }
                     }
@@ -36,7 +41,7 @@ object PitestDefault {
         }
     """.trimIndent() + "\n"
 
-    fun command(root: Path, home: Path, changedSources: Set<String>): String? {
+    fun command(root: Path, home: Path, changedSources: Set<String>, tests: Set<String> = emptySet()): String? {
         if (!Files.isRegularFile(root.resolve("gradlew"))) return null
         val sources = changedSources.filter { source.containsMatchIn(it) && Files.isRegularFile(root.resolve(it)) }.sorted()
         if (sources.isEmpty()) return null
@@ -45,7 +50,7 @@ object PitestDefault {
             val declared = Files.readAllLines(root.resolve(path)).firstNotNullOfOrNull { pkg.find(it)?.groupValues?.get(1) }
             listOfNotNull(declared, name).joinToString(".") + "*"
         }.distinct()
-        val tasks = sources.map { it.substringBefore("src/main/").trimEnd('/') }.distinct()
+        val tasks = (sources.map { it.substringBefore("src/main/") } + tests.filter { "src/test/" in it }.map { it.substringBefore("src/test/") }).map { it.trimEnd('/') }.distinct().sorted()
             .map { if (it.isEmpty()) "pitest" else ":" + it.replace('/', ':') + ":pitest" }
         val init = home.resolve("mutation").resolve("pitest.init.gradle")
         Files.createDirectories(init.parent)

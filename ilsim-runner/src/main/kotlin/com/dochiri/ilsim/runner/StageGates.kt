@@ -222,7 +222,7 @@ class StageGates(
     }
 
     private fun mutation(task: AssignedTask, project: ProjectEntry, worktree: Path, changed: Set<String>, validation: MutableMap<String, String>): String? {
-        val command = project.mutationCommand ?: PitestDefault.command(worktree, configStore.location.parent, changed.filterNot(Gate::isTestPath).toSet())
+        val command = project.mutationCommand ?: PitestDefault.command(worktree, configStore.location.parent, changed.filterNot(Gate::isTestPath).toSet(), taskTests(task, worktree, changed))
         if (command == null) {
             validation["mutation"] = NOT_CONFIGURED
             return null

@@ -22,9 +22,7 @@ object MutationReport {
     fun evaluate(root: Path, since: Instant, changedSources: Set<String>): MutationResult? {
         val names = changedSources.map { it.substringAfterLast('/') }.toSet()
         if (names.isEmpty()) return null
-        var killed = 0
-        var total = 0
-        val survivors = mutableListOf<String>()
+        val best = linkedMapOf<String, Pair<Boolean, String>>()
         Files.walk(root, 10).use { s ->
             s.filter { Files.isRegularFile(it) && it.name == "mutations.xml" && !it.getLastModifiedTime().toInstant().isBefore(since) }.forEach { p ->
                 Regex("""<mutation\s+([^>]*)>(.*?)</mutation>""", RegexOption.DOT_MATCHES_ALL).findAll(p.readText()).forEach { m ->
@@ -33,13 +31,13 @@ object MutationReport {
                     val file = tag(body, "sourceFile")
                     if (file !in names || status == "NON_VIABLE") return@forEach
                     if (tag(body, "mutatedMethod") in noiseMethods || noiseText.containsMatchIn(tag(body, "description") + " " + tag(body, "mutatedClass"))) return@forEach
-                    total++
-                    if (status in killedStatuses) killed++
-                    else survivors += "$file:${tag(body, "lineNumber")} ${tag(body, "description")} ($status)"
+                    val key = listOf("mutatedClass", "mutatedMethod", "methodDescription", "lineNumber", "mutator", "indexes", "description").joinToString("|") { tag(body, it) }
+                    val killed = status in killedStatuses
+                    if (best[key]?.first != true) best[key] = killed to "$file:${tag(body, "lineNumber")} ${tag(body, "description")} ($status)"
                 }
             }
         }
-        return if (total == 0) null else MutationResult(killed, total, survivors)
+        return if (best.isEmpty()) null else MutationResult(best.values.count { it.first }, best.size, best.values.filterNot { it.first }.map { it.second })
     }
 
     private fun tag(body: String, name: String) = Regex("""<$name>(.*?)</$name>""", RegexOption.DOT_MATCHES_ALL).find(body)?.groupValues?.get(1)?.trim().orEmpty()
