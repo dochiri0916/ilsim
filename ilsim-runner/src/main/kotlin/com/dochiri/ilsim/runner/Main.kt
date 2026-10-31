@@ -6,6 +6,7 @@ import com.dochiri.ilsim.runner.architecture.SourceScanner
 import com.dochiri.ilsim.runner.architecture.ArchitectureMiner
 import com.dochiri.ilsim.runner.architecture.ArchitectureReport
 import com.dochiri.ilsim.runner.architecture.ArchitectureReviewer
+import com.dochiri.ilsim.runner.architecture.ArchitectureSelfTest
 import com.dochiri.ilsim.runner.architecture.RuleApproval
 import com.dochiri.ilsim.runner.architecture.ArchitectureStore
 import com.dochiri.ilsim.runner.architecture.Applicability
@@ -14,6 +15,7 @@ import com.dochiri.ilsim.runner.convention.ConventionChecker
 import com.dochiri.ilsim.runner.convention.ConventionMiner
 import com.dochiri.ilsim.runner.convention.ConventionReport
 import com.dochiri.ilsim.runner.convention.ConventionReviewer
+import com.dochiri.ilsim.runner.convention.ConventionSelfTest
 import com.dochiri.ilsim.runner.convention.ConventionStore
 import com.dochiri.ilsim.runner.convention.DocRuleStore
 import com.dochiri.ilsim.runner.convention.DocRules
@@ -139,6 +141,7 @@ fun main(args: Array<String>) {
         "approve" -> decide(store, args, approve = true)
         "reject" -> decide(store, args, approve = false)
         "check" -> check(store, args)
+        "selftest" -> selfTest(store, args)
         "risk" -> risk(store, args)
         "risk-dismiss" -> riskDismiss(store, args)
         "risk-ai" -> riskAi(store, args)
@@ -242,6 +245,10 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
         out.appendLine("교차 검증(단위를 하나씩 빼고 다시 뽑아 뺀 단위에 적용): 새 단위에서 어긋나는 규칙 ${crossValidated.unstable.size}개는 막지 않고 검토로만 씁니다")
         crossValidated.unstable.entries.take(20).forEach { (id, units) -> out.appendLine("  ~ $id (${units.joinToString()})") }
     }
+    if (mined.rules.isNotEmpty()) ArchitectureSelfTest.run(SourceScanner.scan(path, profile.modules), model).let { r ->
+        val desc = model.rules.associate { it.id to it.description }
+        out.append(selfTestReport(r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() }))
+    }
     if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("ARCHITECTURE_REVIEW")
         try {
@@ -313,6 +320,32 @@ private fun check(store: ConfigStore, args: Array<String>) {
         if (v.isNotEmpty()) failed = true
     }
     if (failed) exitProcess(1)
+}
+
+private fun selfTest(store: ConfigStore, args: Array<String>) {
+    val id = requireProject(store, args)
+    val path = Path.of(store.load().projects.getValue(id).path)
+    val profile = StackDetector.detect(path)
+    fun line(name: String, caught: Int, total: Int, missed: List<Pair<String, String>>, untested: List<Pair<String, String>> = emptyList()) =
+        print("[$name] " + selfTestReport(caught, total, missed, untested))
+    ArchitectureStore(store).load(id)?.let { model ->
+        val r = ArchitectureSelfTest.run(SourceScanner.scan(path, profile.modules), model)
+        val desc = model.rules.associate { it.id to it.description }
+        line("아키텍처", r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() })
+    }
+    val facts = FactScanner.scan(path, profile.modules)
+    listOfNotNull(ConventionStore(store).load(id)?.let { "코드 컨벤션" to it.rules }, DocRuleStore(store).load(id)?.let { "문서 지침 검증기" to it.rules }).forEach { (name, rules) ->
+        val r = ConventionSelfTest.run(facts, rules)
+        val desc = rules.associate { it.id to it.description }
+        line(name, r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() }, r.untested.map { it to desc[it].orEmpty() })
+    }
+}
+
+fun selfTestReport(caught: Int, total: Int, missed: List<Pair<String, String>>, untested: List<Pair<String, String>> = emptyList()): String = buildString {
+    appendLine("자체 시험(규칙마다 위반을 심어 검사기가 잡는지 확인): $caught/$total 규칙을 잡음" + if (untested.isNotEmpty()) ", 위반을 만들지 못한 규칙 ${untested.size}개" else "")
+    if (missed.isNotEmpty() || untested.isNotEmpty()) appendLine("  아래 규칙은 위반이 생겨도 정적 검사기가 잡지 못합니다")
+    missed.forEach { (rid, d) -> appendLine("  ✗ $rid  $d") }
+    untested.forEach { (rid, d) -> appendLine("  ? $rid  $d") }
 }
 
 private fun rulesCmd(store: ConfigStore, args: Array<String>) {
@@ -554,6 +587,10 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
     out.append(ConventionReport.summary(model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }), self))
     out.append(RecommendationReport.convention(model.rules))
+    if (mined.rules.isNotEmpty()) ConventionSelfTest.run(FactScanner.scan(path, profile.modules), model.rules).let { r ->
+        val desc = model.rules.associate { it.id to it.description }
+        out.append(selfTestReport(r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() }, r.untested.map { it to desc[it].orEmpty() }))
+    }
     if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("CONVENTION_REVIEW")
         try {
@@ -598,6 +635,11 @@ fun analyzeDocRules(store: ConfigStore, id: String, out: Appendable) {
     val file = rules.update(id) { latest -> DocRules.carryOver(latest, extracted).copy(files = docs.keys.sorted()).also { model = it } }
     out.appendLine("저장: $file (프로젝트 $id 문서 지침 검증기, 문서 구간 ${sections.size}개)")
     out.append(DocRules.report(checkNotNull(model)))
+    checkNotNull(model).rules.takeIf { it.isNotEmpty() }?.let { docRules ->
+        val r = ConventionSelfTest.run(facts, docRules)
+        val desc = docRules.associate { it.id to it.description }
+        out.append(selfTestReport(r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() }, r.untested.map { it to desc[it].orEmpty() }))
+    }
     extracted.notes.forEach { out.appendLine("  ! $it") }
     cost.summary()?.let { out.appendLine("문서 규칙 $it") }
 }

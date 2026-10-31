@@ -467,4 +467,22 @@ class DocRulesTest {
         assertEquals(listOf("doc:decided"), again.rules.map { it.id })
         assertEquals(listOf("doc:decided"), again.documents.single().rules)
     }
+
+    @Test
+    fun `자체 시험은 규칙 범위의 파일에 위반을 심어 검사기가 잡는지 보고 정규식에서 위반 예시를 만든다`() {
+        assertEquals("Thread.sleep(", RegexExample.of("""(?<![\w.])\QThread.sleep\E\s*\("""))
+        assertEquals("$.error.message", RegexExample.of("""\$\.error\.message"""))
+        assertEquals("customerId==1", RegexExample.of("""customerId\s*==\s*\d+L?"""))
+        assertEquals("//given", RegexExample.of("""//\s*(given|when|then)\b"""))
+        assertEquals(null, RegexExample.of("""[A-Z]{3}"""))
+        val test = FactScanner.parse("src/test/kotlin/com/x/ATest.kt", "kt", true, "package com.x\n\nclass ATest {\n    @Test\n    @DisplayName(\"한다\")\n    fun a() { }\n}\n".lines())!!
+        val facts = Facts(listOf(test))
+        fun rule(id: String, kind: String, params: Map<String, List<String>>) = ConventionRule(id, kind, id, DocProbes.normalize(kind, params))
+        val r = ConventionSelfTest.run(facts, listOf(
+            rule("sleep", "doc-forbidden-code", mapOf("scope" to listOf("test"), "pattern" to listOf("""Thread\.sleep"""))),
+            rule("display", "doc-required-annotation", mapOf("scope" to listOf("test"), "target" to listOf("test-method"), "annotation" to listOf("DisplayName"))),
+            rule("junit", "doc-forbidden-import", mapOf("scope" to listOf("test"), "import" to listOf("""^org\.junit\.jupiter\.api\.Assertions"""))),
+        ))
+        assertEquals(setOf("sleep", "display", "junit"), r.caught.toSet())
+    }
 }

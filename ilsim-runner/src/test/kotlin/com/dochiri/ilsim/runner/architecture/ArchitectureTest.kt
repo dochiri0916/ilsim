@@ -354,4 +354,23 @@ class ArchitectureTest {
         assertTrue("confinement:org.springdoc.core" !in CrossValidation.check(wide, wideModel).unstable, "여러 단위의 같은 역할로 일반화된 규칙은 안정적이다")
     }
 
+    @Test
+    fun `자체 시험은 규칙마다 위반 import를 심어 검사기가 잡는지 보고 검증에서 빠진 단위의 규칙은 못 잡은 것으로 남긴다`() {
+        val files = listOf("a", "b", "c").flatMap { area ->
+            listOf(
+                SourceFile("app", "app/src/main/kotlin/com/x/api/$area/presentation/controller/${area}Controller.kt", "com.x.api.$area.presentation.controller",
+                    listOf(ImportRef("com.x.api.$area.application.${area}Service", 3), ImportRef("org.springdoc.core.annotations.ParameterObject", 4))),
+                SourceFile("app", "app/src/main/kotlin/com/x/api/$area/application/${area}Service.kt", "com.x.api.$area.application", emptyList()),
+            )
+        }
+        val model = ArchitectureMiner.mine(files, "p")
+        assertTrue(model.rules.isNotEmpty())
+        val result = ArchitectureSelfTest.run(files, model)
+        assertEquals(model.rules.filterNot { it.rejected }.map { it.id }.toSet(), result.caught.toSet())
+        assertEquals(emptyList(), result.missed)
+
+        val hidden = model.copy(applicability = model.applicability.copy(unverifiedUnits = listOf("presentation.controller", "controller", "presentation")))
+        val partial = ArchitectureSelfTest.run(files, hidden)
+        assertTrue(partial.missed.isNotEmpty(), "검증에서 빠진 단위에 걸린 규칙은 위반을 심어도 잡히지 않는다")
+    }
 }
