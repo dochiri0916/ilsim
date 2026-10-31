@@ -117,7 +117,7 @@ class TestingTest {
         write(root, "gradlew", "#!/bin/sh\n")
         val command = assertNotNull(PitestDefault.command(root, home, changed))
         assertTrue(command.startsWith("ILSIM_MUTATION_TARGETS='com.x.slug.Slug*,demo.Greeter*' ./gradlew :app:pitest pitest --init-script "), command)
-        assertTrue(Files.readString(home.resolve("mutation/pitest.init.gradle")).contains("targetTests = ['*']"))
+        assertTrue(Files.readString(home.resolve("mutation/pitest.init.gradle")).let { it.contains("targetTests = ['*']") && it.contains("addJUnitPlatformLauncher") })
         assertNull(PitestDefault.command(root, home, setOf("README.md", "src/test/java/demo/GreeterTest.java")))
     }
 

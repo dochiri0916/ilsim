@@ -6,7 +6,7 @@ import java.nio.file.Path
 object PitestDefault {
     private const val PLUGIN = "1.19.0"
     private const val PITEST = "1.22.1"
-    private const val JUNIT5 = "1.2.1"
+    private const val JUNIT5 = "1.2.3"
 
     private val source = Regex("""(^|/)src/main/(java|kotlin)/.+\.(java|kt)$""")
     private val pkg = Regex("""^\s*package\s+([\w.]+)""")
@@ -28,6 +28,9 @@ object PitestDefault {
                     timestampedReports = false
                     failWhenNoMutations = false
                     threads = Runtime.runtime.availableProcessors()
+                    addJUnitPlatformLauncher = project.provider {
+                        !project.configurations.matching { it.name in ['testImplementation', 'testRuntimeOnly'] }.any { c -> c.allDependencies.any { it.group == 'org.junit.platform' && it.name == 'junit-platform-launcher' } }
+                    }
                 }
             }
         }
