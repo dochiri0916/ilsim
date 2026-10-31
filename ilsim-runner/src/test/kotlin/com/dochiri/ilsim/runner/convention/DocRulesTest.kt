@@ -393,4 +393,25 @@ class DocRulesTest {
         assertEquals(listOf("ai-review", "ai-review", null, "user"), model.rules.map { it.decidedBy })
         assertContains(DocRules.report(model), "자동 거절")
     }
+
+    @Test
+    fun `문자열 내용에 대한 규칙은 주석을 빼고 보고 주석 표시가 있는 규칙만 원래 줄을 본다`() {
+        val facts = Facts(listOf(FactScanner.parse("src/main/kotlin/com/x/StockRepository.kt", "kt", false, """
+            package com.x
+
+            /**
+             * DELETE 와 FOR UPDATE 는 쓰지 않는다.
+             */
+            interface StockRepository {
+                @Query("SELECT s FROM Stock s FOR UPDATE")
+                fun lock(): Stock // given
+            }
+        """.trimIndent().lines())!!))
+        fun hits(params: Map<String, List<String>>) =
+            DocProbes.byKind("doc-forbidden-code")!!.samples(facts, DocProbes.normalize("doc-forbidden-code", params)).filter { !it.ok }.map { it.line }
+        assertEquals(listOf(7), hits(mapOf("scope" to listOf("main"), "pattern" to listOf("FOR UPDATE", "\\bDELETE\\b"), "text" to listOf("raw"))), "주석 속 DELETE·FOR UPDATE 는 위반이 아니다")
+        assertEquals(listOf(7), hits(mapOf("scope" to listOf("main"), "pattern" to listOf("FOR UPDATE"), "text" to listOf("string"))))
+        assertEquals(emptyList(), hits(mapOf("scope" to listOf("main"), "pattern" to listOf("FOR UPDATE"))), "기본은 문자열 내용도 뺀다")
+        assertEquals(listOf(8), hits(mapOf("scope" to listOf("main"), "pattern" to listOf("//\\s*given"), "text" to listOf("raw"))))
+    }
 }

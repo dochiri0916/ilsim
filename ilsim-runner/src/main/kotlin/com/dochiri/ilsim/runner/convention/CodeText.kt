@@ -8,7 +8,7 @@ internal class FunctionSpan(val name: String, val start: Int, val end: Int, val 
 
 internal object CodeText {
 
-    fun scrub(lines: List<String>): CodeView {
+    fun scrub(lines: List<String>, keepStrings: Boolean = false): CodeView {
         val code = ArrayList<String>(lines.size)
         val comments = mutableListOf<Int>()
         var blockDepth = 0
@@ -28,9 +28,9 @@ internal object CodeText {
                     }
                     inString -> when {
                         raw && line.startsWith("\"\"\"", i) -> { inString = false; raw = false; out.append("\"\"\""); i += 3 }
-                        !raw && c == '\\' -> i += 2
+                        !raw && c == '\\' -> { if (keepStrings) out.append(line, i, minOf(i + 2, line.length)); i += 2 }
                         !raw && c == '"' -> { inString = false; out.append('"'); i++ }
-                        else -> i++
+                        else -> { if (keepStrings) out.append(c); i++ }
                     }
                     line.startsWith("//", i) -> { commented = true; i = line.length }
                     line.startsWith("/*", i) -> { commented = true; blockDepth = 1; i += 2 }
@@ -39,7 +39,7 @@ internal object CodeText {
                     c == '\'' -> {
                         var j = i + 1
                         while (j < line.length && line[j] != '\'') j += if (line[j] == '\\') 2 else 1
-                        out.append("''")
+                        if (keepStrings) out.append(line, i, minOf(j + 1, line.length)) else out.append("''")
                         i = j + 1
                     }
                     c == '`' -> {

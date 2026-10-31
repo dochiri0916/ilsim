@@ -16,7 +16,8 @@ internal abstract class DocProbe(kind: String, val targets: Set<String>, val req
 
 internal object DocProbes {
     private val scopes = setOf("main", "test", "all")
-    private val texts = setOf("code", "raw")
+    private val texts = setOf("code", "string", "raw")
+    private val commentMarkers = listOf("//", "/\\*", "\\*/", "#", "<!--")
     private val measures = setOf("lines", "nesting")
     private val testAnnotations = setOf("Test", "ParameterizedTest", "RepeatedTest", "TestFactory", "TestTemplate")
     private val regexKeys = listOf("pattern", "import", "name", "value")
@@ -43,7 +44,7 @@ internal object DocProbes {
         require(params.getValue("scope").singleOrNull() in scopes) { "scope 는 main, test, all 중 하나입니다" }
         params["target"]?.let { require(it.singleOrNull() in probe.targets) { "$kind 의 target 은 ${probe.targets.joinToString()} 중 하나입니다" } }
         if (probe.targets.isNotEmpty() && ("when" in params || "name" in params)) require("target" in params) { "when·name 을 쓰려면 target 이 필요합니다" }
-        params["text"]?.let { require(it.singleOrNull() in texts) { "text 는 code 또는 raw 입니다" } }
+        params["text"]?.let { require(it.singleOrNull() in texts) { "text 는 code, string, raw 중 하나입니다" } }
         params["measure"]?.let { require(it.singleOrNull() in measures) { "measure 는 lines 또는 nesting 입니다" } }
         params["max"]?.let { require(it.singleOrNull()?.toIntOrNull()?.let { n -> n >= 0 } == true) { "max 는 0 이상 정수 하나입니다" } }
         if (params["measure"]?.single() == "nesting") require(params["target"]?.single() != "file") { "nesting 은 메서드에만 씁니다" }
@@ -66,8 +67,14 @@ internal object DocProbes {
         return if (globs.isEmpty()) scoped else scoped.filter { file -> globs.any { it.matches(Path.of(file.path)) } }
     }
 
-    fun text(file: ConvFile, params: Map<String, List<String>>): List<String> =
-        if (params["text"]?.firstOrNull() == "raw") file.lines else file.view.code
+    fun text(file: ConvFile, params: Map<String, List<String>>): List<String> = when (params["text"]?.firstOrNull()) {
+        "raw" -> if (aboutComments(params)) file.lines else file.uncommented
+        "string" -> file.uncommented
+        else -> file.view.code
+    }
+
+    private fun aboutComments(params: Map<String, List<String>>) =
+        params["pattern"].orEmpty().any { p -> commentMarkers.any { it in p } }
 
     fun targets(f: Facts, params: Map<String, List<String>>): List<DocTarget> {
         val kind = params["target"]?.firstOrNull() ?: "file"

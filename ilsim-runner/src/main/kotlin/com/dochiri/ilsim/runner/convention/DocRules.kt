@@ -342,7 +342,7 @@ object DocRules {
         - target: 검사 대상. file(파일), class(최상위 타입), test-class(테스트 파일의 최상위 타입), method(메서드·함수), test-method(@Test·@ParameterizedTest 등이 붙은 메서드).
         - when: 이 애너테이션 중 하나가 붙은 대상만 검사(@ 없이, 예: ["Nested"]). target 이 필요하다.
         - name: 이름 전체가 이 정규식과 맞는 대상만 검사. target 이 필요하다.
-        - text: ["code"] 주석과 문자열 내용을 뺀 코드(기본), ["raw"] 원래 줄(주석이나 문자열에 대한 규칙일 때).
+        - text: ["code"] 주석과 문자열 내용을 뺀 코드(기본), ["string"] 주석만 뺀 코드(SQL·JSON 경로처럼 문자열 안 내용에 대한 규칙일 때), ["raw"] 원래 줄(주석에 대한 규칙일 때만, pattern 에 // 같은 주석 표시를 넣는다).
         kind:
         - doc-forbidden-import: import 경로 일부가 import: [정규식] 중 하나와 맞으면 위반. scope, path.
         - doc-required-annotation: annotation: [이름] 중 하나가 대상에 붙어 있어야 한다. value: [정규식] 이 있으면 그 애너테이션 괄호 안 값이 정규식과 맞아야 한다(예: 한국어 설명은 ["[가-힣]"]). target(class|test-class|method|test-method) 필수, when, name, value.
