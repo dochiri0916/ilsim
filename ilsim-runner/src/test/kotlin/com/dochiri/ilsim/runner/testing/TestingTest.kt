@@ -1,5 +1,6 @@
 package com.dochiri.ilsim.runner.testing
 
+import com.dochiri.ilsim.runner.Shell
 import com.dochiri.ilsim.runner.convention.FactScanner
 import java.nio.file.Files
 import java.nio.file.Path
@@ -188,5 +189,27 @@ class TestingTest {
         assertEquals(1, r.killed)
         assertEquals(1, r.survivors.size)
         assertTrue(r.survivors.single().contains("A.kt:4"))
+    }
+
+    @Test
+    fun `변이 점수는 이번에 바뀐 줄의 변이만 세고 새 파일은 전체를 센다`() {
+        val root = dir()
+        val old = "package com.x\n\nclass Req(\n    val name: String,\n    val phone: String,\n)\n"
+        write(root, "src/main/kotlin/com/x/Req.kt", old)
+        listOf(listOf("init", "-q"), listOf("add", "."), listOf("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a")).forEach { Shell.gitOk(root, *it.toTypedArray()) }
+        write(root, "src/main/kotlin/com/x/Req.kt", old.replace("    val phone: String,\n", "    val phone: String,\n    val result: String?,\n"))
+        write(root, "src/main/kotlin/com/x/Result.kt", "package com.x\n\nenum class Result { OK }\n")
+        fun mutation(file: String, line: Int, status: String) = "<mutation status='$status'><sourceFile>$file</sourceFile><mutatedClass>com.x.${file.removeSuffix(".kt")}</mutatedClass><mutatedMethod>m$line</mutatedMethod><lineNumber>$line</lineNumber><description>replaced return</description></mutation>"
+        write(root, "build/reports/pitest/mutations.xml", "<mutations>${mutation("Req.kt", 4, "SURVIVED")}${mutation("Req.kt", 5, "SURVIVED")}${mutation("Req.kt", 6, "KILLED")}${mutation("Result.kt", 3, "KILLED")}</mutations>")
+        val sources = setOf("src/main/kotlin/com/x/Req.kt", "src/main/kotlin/com/x/Result.kt")
+
+        val lines = MutationReport.changedLines(root, sources)
+        assertEquals(setOf(6), lines["Req.kt"])
+        assertNull(lines["Result.kt"])
+        val r = assertNotNull(MutationReport.evaluate(root, Instant.now().minusSeconds(60), sources, lines))
+        assertEquals(2 to 2, r.killed to r.total)
+        assertEquals(2, r.outside)
+        val untouched = assertNotNull(MutationReport.evaluate(root, Instant.now().minusSeconds(60), setOf("src/main/kotlin/com/x/Req.kt"), mapOf("Req.kt" to setOf(99))))
+        assertEquals(0 to 3, untouched.total to untouched.outside)
     }
 }

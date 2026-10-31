@@ -230,10 +230,17 @@ class StageGates(
         log("변이 테스트 실행: $command")
         val since = Instant.now().minusSeconds(2)
         val r = Shell.run(worktree, "sh", "-c", command, timeoutMinutes = 30)
-        val result = if (r.exit == 0) MutationReport.evaluate(worktree, since, changed.filterNot(Gate::isTestPath).toSet()) else null
+        val sources = changed.filterNot(Gate::isTestPath).toSet()
+        val result = if (r.exit == 0) MutationReport.evaluate(worktree, since, sources, MutationReport.changedLines(worktree, sources)) else null
         if (result == null) {
             validation["mutation"] = "UNKNOWN"
             log(if (r.exit != 0) "변이 테스트 실패(종료 ${r.exit}): ${r.output.takeLast(300)}" else "바뀐 소스에 대한 변이 결과가 없습니다")
+            return null
+        }
+        if (result.outside > 0) log("바뀐 줄 밖의 변이 ${result.outside}개는 이번 변경과 관계없어 점수에서 뺐습니다")
+        if (result.total == 0) {
+            validation["mutation"] = "NONE"
+            log("바뀐 줄에 변이가 없습니다")
             return null
         }
         validation["mutation"] = if (result.score >= MutationReport.THRESHOLD) "PASSED" else "LOW"
