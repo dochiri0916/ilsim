@@ -161,7 +161,26 @@ class IlsimMcp(
         val prompt = gates.promptWithRules(assigned.copy(testCommand = ws.project.testCommand), brief)
         val guide = guide(ws, task, assigned.prompt, assigned.stage)
         val folder = task.worktree?.let { "## 작업 폴더\n이 작업은 사용자 작업 트리와 분리된 `$it`(브랜치 ${task.branch})에서 합니다. 파일은 이 폴더 안의 경로로 만들고 고치며, 빌드·테스트 명령도 이 폴더에서 실행하세요(`cd $it`). 사용자 작업 트리(`${ws.home}`)의 파일은 고치지 마세요." }
-        return listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", folder, restored, prompt, once(task.taskId, "guide", guide.render(), guide.brief()), rules(assigned.stage)).joinToString("\n\n")
+        val head = listOfNotNull("## 일심 단계: ${assigned.stage} (시도 ${assigned.attempt})", criteria(assigned.stage), folder, restored, prompt).joinToString("\n\n")
+        val tail = rules(assigned.stage)
+        fun whole(middle: String) = listOf(head, middle, tail).joinToString("\n\n")
+        var room = (MAX_INSTRUCTION_WEIGHT - Guidelines.weight(head) - Guidelines.weight(tail)).coerceAtLeast(MIN_GUIDE_WEIGHT)
+        var rendered = guide.render(room, Guidelines::weight)
+        repeat(3) {
+            val over = Guidelines.weight(whole(rendered)) - MAX_INSTRUCTION_WEIGHT
+            if (over <= 0 || room <= MIN_GUIDE_WEIGHT) return@repeat
+            room = (guide.used(room, Guidelines::weight) - over).coerceAtLeast(MIN_GUIDE_WEIGHT)
+            rendered = guide.render(room, Guidelines::weight)
+        }
+        val guidance = once(task.taskId, "guide", rendered, guide.brief())
+        val text = whole(guidance)
+        val fitted = guide.fitted(room, Guidelines::weight)
+        runCatching { server.event(task.taskId, assigned.stage, "log", "단계 지시 분량: ${text.length}자(가중치 ${Guidelines.weight(text)}), 지시·문서·규칙 ${head.length}자, 문서 지침 ${guidance.length}자(원문 ${fitted}개·출처만 ${guide.guidelines.size - fitted}개)") }
+        return text
+    }
+
+    private fun criteria(stage: String): String? = CRITERIA[stage]?.let { items ->
+        "## 이 단계 완료 기준 (submit_result와 사용자 승인에서 확인한다. 하나라도 어기면 다시 해야 한다)\n" + items.joinToString("\n") { "- $it" }
     }
 
     private fun once(taskId: String, part: String, text: String, again: String): String {
@@ -803,13 +822,20 @@ class IlsimMcp(
     private fun gates(log: (String) -> Unit): StageGates =
         StageGates(store, ArchitectureStore(store), ConventionStore(store), ask, log)
 
-    private fun rules(stage: String): String = """
-        ## 일심 진행 규칙
-        - 이 단계에서 고칠 수 있는 경로: ${allowed(stage)}
-        - git commit·push·브랜치 변경은 하지 않는다. 커밋은 일심이 한다.${if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") "\n        - 요구사항 문서의 영향 범위와 관계없는 파일은 고치지 않는다. 제출 때 일심이 범위 밖 변경을 확인한다. 꼭 필요하면 멈추고 사용자에게 묻고, 허락하면 record_decision으로 기록한다." else ""}
-        - 단계를 마치면 submit_result를 호출한다${if (stage in Artifacts.DOCUMENT_STAGES) "(완성한 문서 전체를 document 에 넣는다)" else ""}. 실패하면 지적된 부분만 고치고 다시 호출한다.
-        - 사용자에게 보고할 때 submit_result 결과를 함께 알린다.
-        """.trimIndent()
+    private fun rules(stage: String): String {
+        val code = stage == "TEST_CODE" || stage == "IMPLEMENTATION"
+        return listOfNotNull(
+            "## 일심 진행 규칙 (제출 전 확인)",
+            "- 이 단계에서 고칠 수 있는 경로: ${allowed(stage)}",
+            "- git commit·push·브랜치 변경은 하지 않는다. 커밋은 일심이 한다.",
+            "- 요구사항 문서의 영향 범위와 관계없는 파일은 고치지 않는다.".takeIf { code },
+            "- 영향 범위 밖 변경이 꼭 필요하면 멈추고 사용자에게 묻고, 허락하면 record_decision으로 기록한다.".takeIf { code },
+            "- 제출 전에 check_change로 정적 검사를 돌리고 맨 위 완료 기준을 다시 확인한다.".takeIf { code },
+            "- 단계를 마치면 submit_result를 호출한다${if (stage in Artifacts.DOCUMENT_STAGES) "(완성한 문서 전체를 document 에 넣는다)" else ""}.",
+            "- 제출이 실패하면 지적된 부분만 고치고 다시 호출한다.",
+            "- 사용자에게 보고할 때 submit_result 결과를 함께 알린다.",
+        ).joinToString("\n")
+    }
 
     companion object {
         const val RUNNING = "RUNNING"
@@ -817,6 +843,44 @@ class IlsimMcp(
         private const val UNSHELVE_FAILED = "보관 변경 복원 실패"
 
         private const val MAX_OUTPUT = 12_000
+
+        const val MAX_INSTRUCTION_WEIGHT = 18_000
+        private const val MIN_GUIDE_WEIGHT = 4_000
+
+        private const val RULE_LINE = "승인된 아키텍처·컨벤션·문서 규칙, 위험 패턴, 아래 프로젝트 문서 지침에 새 위반을 만들지 않는다."
+        private const val SCOPE_LINE = "요구사항 문서의 영향 범위 밖 파일과 요구사항과 관계없는 코드를 바꾸지 않는다."
+        private val CRITERIA = mapOf(
+            "REQUIREMENTS" to listOf(
+                "요구사항마다 REQ-n ID와 검증 가능한 인수 조건을 적는다.",
+                "모호한 것은 추측하지 않고 `## 미결정 사항`에 Q1. 형식의 질문으로 남긴다.",
+                "`## 영향 범위`에 만들거나 고칠 파일을 저장소 기준 경로로 적는다.",
+                "아래 프로젝트 문서 지침을 어기지 않는다.",
+            ),
+            "TEST_CASES" to listOf(
+                "모든 REQ-n을 하나 이상의 TC-n에 연결한다.",
+                "사용자가 답하지 않은 미결정 질문의 동작을 TC로 정하지 않는다.",
+                "TC에 적는 테스트 위치·이름·실행 방식·데이터 준비·단언 방식은 아래 프로젝트 문서 지침과 같아야 한다.",
+            ),
+            "TEST_CODE" to listOf(
+                "테스트 경로의 파일만 바꾼다.",
+                "모든 TC 번호(TC-n)를 그 시나리오를 다루는 테스트의 이름이나 주석에 넣는다.",
+                "TC마다 시나리오를 실행하고 기대 결과를 단정하는 테스트를 쓴다.",
+                "구현 전이라 테스트는 실패해야 한다. 모두 통과하면 제출이 실패한다.",
+                "조건부 return·skip·@Disabled·단언 없음처럼 검증 없이 통과하는 테스트를 쓰지 않는다.",
+                "사용자가 답하지 않은 미결정 질문의 동작을 테스트로 정하지 않는다.",
+                SCOPE_LINE,
+                RULE_LINE,
+            ),
+            "IMPLEMENTATION" to listOf(
+                "테스트를 뺀 프로덕션 코드만 바꾼다.",
+                "모든 테스트를 통과시키고, 이 작업의 테스트가 실제로 실행되게 한다.",
+                "바뀐 코드의 변이를 테스트가 기준 이상 잡아야 한다.",
+                "요구사항 문서의 REQ-n을 모두 구현한다.",
+                "사용자가 답하지 않은 미결정 질문의 동작을 만들지 않는다.",
+                SCOPE_LINE,
+                RULE_LINE,
+            ),
+        )
 
         private const val MAX_DOCUMENT = 8_000
         private const val MAX_APPROVED_CASE = 160
@@ -834,16 +898,35 @@ class IlsimMcp(
         private val runnerCommand: String get() = System.getenv("ILSIM_RUNNER_BIN")?.takeIf { it.isNotBlank() } ?: "ilsim-runner"
 
         val INSTRUCTIONS = """
-            일심이 관리하는 저장소의 작업 절차:
-            1. 코드·문서를 바꾸는 요청이면 start_task에 사용자 요청 원문을 넘긴다(진행 중 작업은 next_step). 질문·설명 요청이면 작업을 만들지 않고 답만 한다. 분석이 없거나 낡았다고 거절되면 analyze_project 뒤 다시 시작한다.
-            2. 단계 지시의 작업 폴더(분리된 git worktree) 안에서 허용된 경로만 고치고 빌드·테스트도 그 폴더에서 한다. 중간 점검은 check_change, 규칙은 get_rules·get_guidelines.
-            3. 단계 지시의 프로젝트 문서 지침은 불합리해 보여도 그대로 따르고, 서로 또는 요구사항과 충돌해 따를 수 없으면 멈추고 사용자에게 묻는다. 단계를 마치면 submit_result, 실패하면 지적된 부분만 고쳐 다시 낸다.
-            4. 요구사항·테스트 케이스 문서는 파일로 만들지 않고 submit_result의 document로 낸다. 요약과 확인 못 한 지침을 알리고 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유).
-            5. 미결정 질문의 동작은 추측해 만들지 않는다. 사용자가 답하거나 영향 범위 밖 변경·지침과 다른 방식을 허락하면 record_decision(내용과 대상을 구체적으로)으로 남긴다.
-            6. git commit·push·병합·브랜치 변경은 하지 않는다(일심이 단계 통과 때 커밋). 작업이 끝난 뒤 사용자가 요청하면 병합·푸시는 할 수 있다.
-            7. 앞 단계 산출물이 틀려 통과할 수 없으면 우회하지 말고 알리고, 사용자가 원하면 reopen_stage(TEST_CODE, 고칠 점). 차단되면 사유를 알리고 사용자가 다시 하자고 하면 retry_task, 그만두자고 하면 cancel_task(사유).
-            8. 규칙 검토는 사용자가 원할 때 review_rules로 보여 주고 사용자가 정한 대로 decide_rules.
-            9. approve_stage·reject_stage·record_decision·reopen_stage·decide_rules·retry_task·cancel_task는 사용자가 채팅에서 말했을 때만 호출한다. 보고에는 단계 결과와 검증 결과를 함께 적는다.
+            일심이 관리하는 저장소의 작업 절차(한 줄에 지시 하나):
+            [시작]
+            - 코드·문서를 바꾸는 요청이면 start_task에 사용자 요청 원문을 넘긴다.
+            - 진행 중인 작업이 있으면 next_step으로 이어서 한다.
+            - 질문·설명 요청이면 작업을 만들지 않고 답만 한다.
+            - 분석이 없거나 낡았다고 거절되면 analyze_project를 실행한 뒤 다시 시작한다.
+            [단계 작업]
+            - 단계 지시의 작업 폴더(분리된 git worktree) 안에서 허용된 경로만 고친다.
+            - 빌드·테스트도 그 작업 폴더에서 실행한다.
+            - 중간 점검은 check_change로 하고, 규칙을 다시 볼 때는 get_rules·get_guidelines를 쓴다.
+            - 프로젝트 문서 지침은 불합리해 보여도 그대로 따른다.
+            - 지침끼리 또는 요구사항과 충돌해 따를 수 없으면 멈추고 사용자에게 묻는다.
+            - 미결정 질문의 동작은 추측해 만들지 않는다.
+            - git commit·push·병합·브랜치 변경은 하지 않는다(일심이 단계 통과 때 커밋한다).
+            [제출]
+            - 단계를 마치면 submit_result를 호출한다.
+            - 요구사항·테스트 케이스 문서는 파일로 만들지 않고 submit_result의 document로 낸다.
+            - 제출이 실패하면 지적된 부분만 고쳐 다시 낸다.
+            - 앞 단계 산출물이 틀려 통과할 수 없으면 우회하지 말고 사용자에게 알린다.
+            [사용자가 채팅에서 말했을 때만 호출]
+            - 승인 단계는 요약과 확인 못 한 지침을 알리고, 사용자가 승인하면 approve_stage를 호출한다.
+            - 사용자가 고칠 점을 말하면 reject_stage(사유)를 호출한다.
+            - 사용자가 미결정 질문에 답하거나 영향 범위 밖 변경·지침과 다른 방식을 허락하면 record_decision(내용과 대상을 구체적으로)으로 남긴다.
+            - 사용자가 앞 단계로 되돌리자고 하면 reopen_stage(TEST_CODE, 고칠 점)를 호출한다.
+            - 작업이 차단되면 사유를 알리고, 사용자가 다시 하자고 하면 retry_task, 그만두자고 하면 cancel_task(사유)를 호출한다.
+            - 규칙 검토는 사용자가 원할 때 review_rules로 보여 주고, 사용자가 정한 대로 decide_rules를 호출한다.
+            - 작업이 끝난 뒤 사용자가 요청하면 병합·푸시는 할 수 있다.
+            [보고]
+            - 사용자에게 보고할 때 단계 결과와 검증 결과를 함께 적는다.
         """.trimIndent()
 
         fun allowed(stage: String?): String = when (stage) {

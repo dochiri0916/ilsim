@@ -885,6 +885,26 @@ class McpTest {
     }
 
     @Test
+    fun `단계 지시는 맨 앞에 완료 기준을 두고 지침이 많아도 분량 상한 안에서 관련도 높은 지침부터 넣고 분량을 남긴다`() {
+        jevAnswer = { 0.9 }
+        val sections = (1..40).joinToString("\n\n") { i -> "## 규칙 $i\n" + "- 규칙 $i 설명 문장 ".repeat(120) }
+        repo.resolve("docs/guide.md").also { it.parent.createDirectories() }.writeText("# 지침\n\n$sections\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "docs")
+        call("analyze_project")
+
+        val step = call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""").substringAfter("\n\n")
+
+        assertTrue(step.startsWith("## 일심 단계: REQUIREMENTS"), step.take(200))
+        assertTrue(step.indexOf("## 이 단계 완료 기준") in 0 until step.indexOf("REQUIREMENTS 지시"), "완료 기준은 단계 지시보다 앞에 둔다")
+        assertTrue(step.trimEnd().endsWith("- 사용자에게 보고할 때 submit_result 결과를 함께 알린다."), step.takeLast(300))
+        assertTrue(com.dochiri.ilsim.runner.jev.Guidelines.weight(step) <= IlsimMcp.MAX_INSTRUCTION_WEIGHT, "분량 ${com.dochiri.ilsim.runner.jev.Guidelines.weight(step)}")
+        assertTrue(step.length < 50_000, "Claude Code가 파일로 넘기는 5만 자보다 작아야 한다")
+        assertContains(step, "분량 때문에 넣지 못한 지침입니다")
+        assertTrue(server.events.any { it.startsWith("log:단계 지시 분량: ") && "출처만" in it }, server.events.toString())
+    }
+
+    @Test
     fun `같은 대화에서 이미 준 지침은 다음 지시에서 제목만 주고 새 대화에서는 다시 전부 준다`() {
         fun tools() = IlsimMcp(store, server, active, repo, pass, ::jev).tools().associateBy { it.name }
         tools().getValue("analyze_project").call(Json.parseToJsonElement("{}").jsonObject)

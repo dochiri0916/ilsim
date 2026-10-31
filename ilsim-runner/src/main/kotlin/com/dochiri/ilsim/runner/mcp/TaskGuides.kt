@@ -24,7 +24,7 @@ data class TaskGuide(
     val reported: Boolean = false,
     val basis: String? = null,
 ) {
-    fun render(): String = buildString {
+    fun render(limit: Int = MAX_CHARS, measure: (String) -> Int = String::length): String = buildString {
         appendLine("## 프로젝트 문서 지침 (반드시 지킨다)")
         appendLine(OBEY)
         if (!selected) {
@@ -38,9 +38,13 @@ data class TaskGuide(
             append("이 작업에 적용되는 이 프로젝트 문서 지침이 없습니다(문서 구간 ${sections}개 판정).")
             return@buildString
         }
-        appendLine("이 작업에 적용되는 이 프로젝트 문서 구간입니다(${if (basis != null) "승인된 요구사항 문서 기준, " else ""}문서 구간 ${sections}개 중 ${guidelines.size}개). 제출할 때 일심이 지침마다 준수 여부를 판정하고, 어기면 제출이 실패합니다.")
-        appendSections(guidelines, relevance = true)
+        appendLine("이 작업에 적용되는 이 프로젝트 문서 구간입니다(${if (basis != null) "승인된 요구사항 문서 기준, " else ""}문서 구간 ${sections}개 중 ${guidelines.size}개, 관련도 높은 순). 제출할 때 일심이 지침마다 준수 여부를 판정하고, 어기면 제출이 실패합니다.")
+        appendSections(guidelines, relevance = true, limit, measure)
     }.trimEnd()
+
+    fun fitted(limit: Int, measure: (String) -> Int): Int = fit(guidelines, limit, measure).first.size
+
+    fun used(limit: Int, measure: (String) -> Int): Int = fit(guidelines, limit, measure).first.sumOf { measure(it.text) }
 
     fun brief(): String = buildString {
         appendLine("## 프로젝트 문서 지침 (이 대화에서 이미 받은 것과 같음, 반드시 지킨다)")
@@ -63,12 +67,22 @@ data class TaskGuide(
             appendSections(sections.map { Guideline(it.path, it.line, it.heading, it.text, 1.0) }, relevance = false)
         }.trimEnd()
 
-        private fun StringBuilder.appendSections(guidelines: List<Guideline>, relevance: Boolean) {
+        private fun fit(guidelines: List<Guideline>, limit: Int, measure: (String) -> Int): Pair<List<Guideline>, List<Guideline>> {
             var used = 0
+            val shown = mutableListOf<Guideline>()
             val omitted = mutableListOf<Guideline>()
             for (g in guidelines) {
-                if (used + g.text.length > MAX_CHARS) { omitted += g; continue }
-                used += g.text.length
+                val size = measure(g.text)
+                if (used + size > limit) { omitted += g; continue }
+                used += size
+                shown += g
+            }
+            return shown to omitted
+        }
+
+        private fun StringBuilder.appendSections(guidelines: List<Guideline>, relevance: Boolean, limit: Int = MAX_CHARS, measure: (String) -> Int = String::length) {
+            val (shown, omitted) = fit(guidelines, limit, measure)
+            for (g in shown) {
                 appendLine()
                 appendLine("### ${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()}${if (relevance) " (관련도 ${"%.2f".format(g.relevance)})" else ""}")
                 appendLine(g.text)
