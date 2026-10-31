@@ -26,7 +26,7 @@ object DocRules {
     private const val MAX_DIRECTORIES = 60
     private const val RECHECK_FROM = 0.15
     private const val RECHECK_UNTIL = 0.6
-    private const val VERSION = "doc-rules-v4"
+    private const val VERSION = "doc-rules-v5"
     private const val MAX_REMAINING = 20
     private const val MISCONVERTED_DIVISOR = 5
 
@@ -111,12 +111,18 @@ object DocRules {
             coverage += DocCoverage(result.section.path, result.section.line, result.section.heading, result.hash, ids, remaining.distinct())
         }
         val extracted = rules.values.map { it.kind to it.params }.toSet()
+        val twins = rules.values.map(::twin).toSet()
         val carried = kept.filter { old ->
-            old.id !in rules && (old.kind to old.params) !in extracted && old.origin?.let { o -> sections.any { it.path == o.path && quoted(it.text, o.quote) } } == true
-        }
+            old.id !in rules && (old.kind to old.params) !in extracted && (twin(old) !in twins || old.decidedBy == "user") && old.origin?.let { o -> sections.any { it.path == o.path && quoted(it.text, o.quote) } } == true
+        }.sortedByDescending { it.decidedBy == "user" }.distinctBy(::twin)
         if (carried.isNotEmpty()) notes += "다시 뽑을 때 빠졌지만 원문이 그대로인 이전 문서 규칙 ${carried.size}개를 이어받았습니다"
         carried.forEach { rules[it.id] = it }
-        return Extracted(rules.values.map { evidence(it, facts) }.sortedBy { it.id }, coverage.sortedWith(compareBy({ it.path }, { it.line })), notes)
+        val winners = rules.values.groupBy(::twin).mapValues { (_, same) -> same.firstOrNull { it.decidedBy == "user" } ?: same.first() }
+        val replaced = rules.values.associate { it.id to winners.getValue(twin(it)).id }
+        val dropped = replaced.count { (id, winner) -> id != winner }
+        if (dropped > 0) notes += "같은 문장에서 같은 종류로 뽑힌 문서 규칙 ${dropped}개를 하나로 합쳤습니다"
+        val merged = coverage.map { c -> c.copy(rules = c.rules.map { replaced[it] ?: it }.distinct()) }
+        return Extracted(winners.values.map { evidence(it, facts) }.sortedBy { it.id }, merged.sortedWith(compareBy({ it.path }, { it.line })), notes)
     }
 
     internal fun evidence(rule: ConventionRule, facts: Facts): ConventionRule {
@@ -226,8 +232,11 @@ object DocRules {
         else -> emptyList()
     }
 
+    private fun squash(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
+
+    private fun twin(rule: ConventionRule): String = rule.origin?.let { "${rule.kind}|${it.path}|${squash(it.quote)}" } ?: rule.id
+
     private fun quoted(text: String, quote: String): Boolean {
-        fun squash(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
         val q = squash(quote)
         return q.isNotEmpty() && q in squash(text)
     }

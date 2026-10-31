@@ -433,4 +433,38 @@ class DocRulesTest {
         val probe = DocProbes.byKind("doc-forbidden-code")!!
         assertEquals(listOf(4), probe.samples(facts, result.proposals.first().params).filter { !it.ok }.map { it.line })
     }
+
+    @Test
+    fun `표 행에 코드로 적힌 금지는 정적 규칙으로 옮기고 머리글과 코드가 아닌 표기는 남긴다`() {
+        val section = DocSection("docs/testing.md", 1, "통합 테스트", """
+            | 항목 | 규칙 |
+            |---|---|
+            | 설정 | 테스트마다 `@TestPropertySource`, `@MockitoBean` 같은 설정 변경 금지. 컨텍스트를 새로 만들어 느려짐 |
+            | 쓰지 않는 문장 | `SELECT ... FOR UPDATE`, DELETE |
+            | 고객사 | 쿼리에 직접 씀(Hibernate `@Filter` 미사용) |
+        """.trimIndent())
+        val result = StaticDocRules.extract(section)
+        assertEquals(listOf(listOf("TestPropertySource", "MockitoBean"), listOf("Filter")), result.proposals.map { it.params["annotation"] })
+        assertEquals(listOf("test", "test"), result.proposals.map { it.params.getValue("scope").single() })
+        assertTrue(result.uncovered.none { "항목" in it })
+    }
+
+    @Test
+    fun `같은 문장에서 같은 종류로 뽑힌 규칙은 하나로 합치고 사용자가 정한 규칙을 남긴다`() {
+        val twice = """
+            {"sections":[{"id":"s0","rules":[
+              {"kind":"doc-forbidden-import","params":{"scope":["test"],"import":["^org\\.junit\\.jupiter\\.api\\.Assertions"]},"description":"JUnit Assertions 를 import 하지 않는다","quote":"JUnit Assertions 는 쓰지 않는다"},
+              {"kind":"doc-forbidden-import","params":{"scope":["test"],"import":["^org\\.junit\\.jupiter\\.api\\.Assertions\\b"]},"description":"JUnit Assertions 금지","quote":"JUnit Assertions 는 쓰지 않는다."}
+            ],"remaining":[]}]}
+        """.trimIndent()
+        val first = DocRules.extract(listOf(writing), facts, null, documentJev) { twice }
+        assertEquals(1, first.rules.size)
+        assertEquals(first.rules.map { it.id }, first.documents.single().rules)
+        assertTrue(first.notes.any { "하나로 합쳤습니다" in it })
+
+        val decided = first.rules.single().copy(id = "doc:decided", params = mapOf("scope" to listOf("test"), "import" to listOf("^org\\.junit")), approved = true, decidedBy = "user")
+        val again = DocRules.extract(listOf(writing), facts, DocRules.DocRuleModel(listOf(decided)), documentJev) { twice }
+        assertEquals(listOf("doc:decided"), again.rules.map { it.id })
+        assertEquals(listOf("doc:decided"), again.documents.single().rules)
+    }
 }
