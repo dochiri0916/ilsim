@@ -240,7 +240,7 @@ class IlsimMcp(
             if (problems.isEmpty()) appendLine("문제 없음. 테스트·변이·독립 검토는 submit_result에서 실행합니다")
             else { appendLine("고칠 것:"); problems.forEach { appendLine("- $it") } }
             (notes.filter { it.startsWith("위험 후보") } + gates.reviewRuleHits.map { "검토 규칙: $it" }).takeIf { it.isNotEmpty() }?.let { candidates ->
-                appendLine("참고(차단하지 않음, 제출 때 독립 검토):")
+                appendLine("참고(차단하지 않음, 검증 원장에 남음):")
                 candidates.forEach { appendLine("- $it") }
             }
         }.trimEnd()
@@ -551,12 +551,12 @@ class IlsimMcp(
         val unsettled = undecided?.unresolved.orEmpty()
         val proposals = gates.proposedRuleHits
         val flagged = gates.reviewRuleHits
-        val plan = auditNeeded(ws, stage, validation, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved + proposals.map { "승인 전 문서 규칙 ${it.substringAfterLast('<').removeSuffix(">")}" }.distinct(), edited.size, gates.riskCandidates, flagged.size, diff, assigned.executionId.orEmpty(), log)
+        val plan = auditNeeded(ws, stage, validation, check?.let { it.copy(uncertain = it.uncertain.filterNot { r -> r.id in verified }) }, scope, tests, unsettled, unresolved + proposals.map { "승인 전 문서 규칙 ${it.substringAfterLast('<').removeSuffix(">")}" }.distinct(), edited.size, gates.riskCandidates, diff, assigned.executionId.orEmpty(), log)
         val audit = if (plan.mode != AuditMode.SKIP) {
             gates.aiAudit(assigned, ws.project, ws.root, diff, validation, ReviewCache.digest(assigned.prompt + ReviewRouter.policyKey),
                 listOfNotNull((if (guide.selected) guide.render() else TaskGuide.all(docSections(ws, task.feature).second)).takeIf { guide.guidelines.isNotEmpty() || !guide.selected },
                     proposals.takeIf { it.isNotEmpty() }?.let { "## 승인 전 문서 규칙에 걸린 곳(사용자 승인 전이라 막지 않음, 실제 위반인지 RULE로 판단)\n" + it.joinToString("\n") { h -> "- $h" } },
-                    flagged.takeIf { it.isNotEmpty() }?.let { "## 승인된 검토 규칙에 걸린 곳(관측 근거가 약하거나 새 단위에서 어긋날 수 있어 막지 않음, 이 변경이 실제로 규칙을 어겼으면 RULE로 보고)\n" + it.joinToString("\n") { h -> "- $h" } },
+                    flagged.takeIf { it.isNotEmpty() }?.let { "## 승인된 검토 규칙에 걸린 곳(관측 근거가 약하거나 새 단위에서 어긋날 수 있어 막지 않음, 이 검토가 다른 사유로 돌 때만 함께 본다. 이 변경이 실제로 규칙을 어겼으면 RULE로 보고)\n" + it.joinToString("\n") { h -> "- $h" } },
                     edited.takeIf { it.isNotEmpty() }?.let { "## 요구사항에 필요한지 애매한 기존 코드 수정(JEV 판정, 막지 않음. 요청 밖 동작 변경·기존 검사나 테스트 완화면 UNRELATED로 보고)\n" + it.joinToString("\n") { h -> "- $h" } }).joinToString("\n\n").ifEmpty { null },
                 unsettled.map { it.label })
         } else {
@@ -583,7 +583,7 @@ class IlsimMcp(
         }
         val rendered = Ledger.render(stage, validation, ledger?.first, ledger?.second.orEmpty(), plan.describe(validation["ai-audit"]?.takeIf { plan.mode != AuditMode.SKIP }) +
             audit.artifacts["ai-audit.md"]?.lines()?.filter { it.startsWith("- [") }?.joinToString("") { "\n  $it" }.orEmpty(),
-            guidelineRows(docSections(ws, task.feature).second, guide, compliance))
+            guidelineRows(docSections(ws, task.feature).second, guide, compliance), flagged)
         return Outcome(diff = diff, artifacts = artifacts + audit.artifacts, attention = attention, undecided = unsure, ledger = rendered)
     }
 
@@ -792,7 +792,7 @@ class IlsimMcp(
         return result
     }
 
-    private fun auditNeeded(ws: Workspace, stage: String, validation: Map<String, String>, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, tests: TestCodeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, editedSuspects: Int, riskCandidates: Int, reviewRuleHits: Int, diff: String, executionId: String, log: (String) -> Unit): AuditPlan {
+    private fun auditNeeded(ws: Workspace, stage: String, validation: Map<String, String>, check: RequirementCheck.Result?, scope: ScopeCheck.Result?, tests: TestCodeCheck.Result?, undecided: List<UndecidedCheck.Question>, unresolvedGuidelines: List<String>, editedSuspects: Int, riskCandidates: Int, diff: String, executionId: String, log: (String) -> Unit): AuditPlan {
         if (stage != "TEST_CODE" && stage != "IMPLEMENTATION") return AuditPlan(AuditMode.SKIP, emptyList())
         val testing = stage == "TEST_CODE"
         val maxLines = ws.project.auditMaxDiffLines ?: AUDIT_MAX_DIFF_LINES
@@ -815,7 +815,6 @@ class IlsimMcp(
             "문서 지침 판정 불확실 ${unresolvedGuidelines.joinToString()}".takeIf { unresolvedGuidelines.isNotEmpty() },
             "요구사항에 필요한지 애매한 기존 코드 수정 ${editedSuspects}개".takeIf { editedSuspects > 0 },
             "위험 후보 ${riskCandidates}건".takeIf { riskCandidates > 0 },
-            "승인된 검토 규칙에 걸림 ${reviewRuleHits}건".takeIf { reviewRuleHits > 0 },
             "변경 ${lines}줄(기준 ${maxLines}줄 초과)".takeIf { lines > maxLines },
         )
         if (reasons.isNotEmpty()) {

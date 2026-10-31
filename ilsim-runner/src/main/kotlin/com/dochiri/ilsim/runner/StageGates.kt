@@ -292,7 +292,7 @@ class StageGates(
         (violations.size - fresh.size).takeIf { it > 0 }?.let { log("아키텍처 규칙의 기존 위반 ${it}건은 이번 변경이 만든 것이 아니라서 막지 않습니다") }
         val blocking = fresh.filter { it.severity == "BLOCK" }
         architectureHits = fresh.filter { it.severity != "BLOCK" }.map(::hit)
-        architectureHits.take(10).forEach { log("승인된 검토 규칙에 걸림(막지 않고 독립 검토로 올림): $it") }
+        architectureHits.take(10).forEach { log("승인된 검토 규칙에 걸림(막지 않고 검증 원장에 남김): $it") }
         validation["architecture"] = when { blocking.isNotEmpty() -> "FAILED"; architectureHits.isNotEmpty() -> "REVIEW"; else -> "PASSED" }
         if (blocking.isEmpty()) return null
         return "아키텍처 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n", transform = ::hit)
@@ -321,8 +321,8 @@ class StageGates(
         if (kept.isNotEmpty()) log("컨벤션 규칙의 기존 위반 ${kept.size}건은 이번 변경이 만든 것이 아니라서 막지 않습니다")
         val blocking = fresh.filter { it.severity == "BLOCK" }
         conventionHits = fresh.filter { it.severity != "BLOCK" }.map(::hit) +
-            kept.filter { it.severity == "BLOCK" }.map { "${hit(it)} (이 파일에 원래 있던 위반. 검사기가 파일마다 한 곳만 알려 주면 같은 파일의 새 위반을 가리지 못하므로 검토)" }
-        conventionHits.take(10).forEach { log("승인된 규칙의 검토 대상(막지 않고 독립 검토로 올림): $it") }
+            kept.filter { it.severity == "BLOCK" }.map { "${hit(it)} (이 파일에 원래 있던 위반. 검사기가 파일마다 한 곳만 알려 주면 같은 파일의 새 위반을 가리지 못하므로 확인)" }
+        conventionHits.take(10).forEach { log("승인된 규칙의 확인 대상(막지 않고 검증 원장에 남김): $it") }
         validation["convention"] = when { blocking.isNotEmpty() -> "FAILED"; conventionHits.isNotEmpty() -> "REVIEW"; else -> "PASSED" }
         if (blocking.isEmpty()) return null
         return "컨벤션 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n", transform = ::hit)

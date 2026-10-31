@@ -356,7 +356,7 @@ fun selfTestReport(rules: List<RuleState>, caught: Collection<String>, missed: C
     val notCaught = approved.filter { it.id in missed }
     val notMade = approved.filter { it.id in untested }
     val off = rules.size - approved.size
-    appendLine("자체 시험(규칙마다 위반을 심어 제출 검사에서 걸리는지 확인): 승인 규칙 ${approved.size}개 중 막음 ${blocked.size}, 검토 필수 ${reviewed.size}, 못 잡음 ${notCaught.size}, 위반을 못 만듦 ${notMade.size}" +
+    appendLine("자체 시험(규칙마다 위반을 심어 제출 검사에서 걸리는지 확인): 승인 규칙 ${approved.size}개 중 막음 ${blocked.size}, 막지 않고 기록 ${reviewed.size}, 못 잡음 ${notCaught.size}, 위반을 못 만듦 ${notMade.size}" +
         if (off > 0) ". 승인 전·꺼 둔 규칙 ${off}개는 강제하지 않음" else "")
     if (notCaught.isNotEmpty() || notMade.isNotEmpty()) appendLine("  아래 승인 규칙은 위반이 생겨도 정적 검사가 잡지 못합니다")
     notCaught.forEach { appendLine("  ✗ ${it.id}  ${it.description}") }

@@ -13,6 +13,19 @@ class LedgerTest {
     }
 
     @Test
+    fun `막지 않은 검토 규칙 위반은 비용 없이 원장에 남기고 완료 응답 요약에도 남는다`() {
+        val hits = (1..12).map { "src/main/kotlin/com/x/domain/D$it.kt:4 `domain` 은 다른 단위에 의존하지 않아야 합니다: com.x.service.T <leaf-unit:domain>" }
+
+        val text = Ledger.render("IMPLEMENTATION", linkedMapOf("architecture" to "REVIEW"), null, emptyList(), "조건 충족으로 생략", ruleHits = hits)
+
+        assertContains(text, "- 확인 못 한 항목: architecture=REVIEW(검토 규칙에 걸림)")
+        assertContains(text, "- 막지 않은 검토 규칙 위반(사용자 확인): src/main/kotlin/com/x/domain/D1.kt:4 `domain` 은 다른 단위에 의존하지 않아야 합니다: com.x.service.T <leaf-unit:domain>")
+        assertContains(text, "- 막지 않은 검토 규칙 위반 …외 2건")
+        assertContains(Ledger.brief(text), "D10.kt:4")
+        assertFalse("D11.kt" in text)
+    }
+
+    @Test
     fun `요구사항마다 판정 확률과 테스트 위치를 표로 남기고 빈칸을 따로 알린다`() {
         val text = Ledger.render(
             "IMPLEMENTATION", linkedMapOf("tests" to "PASSED", "requirements" to "PASSED"), "요구사항",

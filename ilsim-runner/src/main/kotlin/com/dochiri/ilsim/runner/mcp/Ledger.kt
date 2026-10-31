@@ -21,7 +21,7 @@ object Ledger {
     fun unconfirmed(validation: Map<String, String>): List<String> =
         validation.filterValues { it !in confirmed }.map { (k, v) -> "$k=$v${meaning[v]?.let { "($it)" }.orEmpty()}" }
 
-    fun render(stage: String, validation: Map<String, String>, title: String?, rows: List<Row>, audit: String, guidelines: List<GuidelineRow> = emptyList()): String = buildString {
+    fun render(stage: String, validation: Map<String, String>, title: String?, rows: List<Row>, audit: String, guidelines: List<GuidelineRow> = emptyList(), ruleHits: List<String> = emptyList()): String = buildString {
         appendLine("## 검증 원장 ($stage)")
         if (title != null && rows.isNotEmpty()) {
             appendLine()
@@ -52,6 +52,8 @@ object Ledger {
         appendLine("- 독립 검토: $audit")
         val open = unconfirmed(validation)
         append("- 확인 못 한 항목: ${open.joinToString(", ").ifEmpty { "없음" }}")
+        ruleHits.take(MAX_RULE_HITS).forEach { append("\n- 막지 않은 검토 규칙 위반(사용자 확인): ${it.replace(Regex("""\s+"""), " ").take(MAX_HIT)}") }
+        if (ruleHits.size > MAX_RULE_HITS) append("\n- 막지 않은 검토 규칙 위반 …외 ${ruleHits.size - MAX_RULE_HITS}건")
         val blank = rows.filter { it.locations.isEmpty() }.map { it.id }
         if (title != null && blank.isNotEmpty()) append("\n- 테스트 위치를 찾지 못한 항목: ${blank.joinToString(", ")}")
     }
@@ -65,6 +67,8 @@ object Ledger {
 
     private const val MAX_TEXT = 60
     private const val MAX_EXCLUDED = 40
+    private const val MAX_RULE_HITS = 10
+    private const val MAX_HIT = 240
     const val EXCLUDED = "제외"
     const val PASSED = "통과"
     const val UNCERTAIN = "불확실"
