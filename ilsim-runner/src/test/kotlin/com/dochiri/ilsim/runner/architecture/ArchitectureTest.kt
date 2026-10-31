@@ -332,4 +332,26 @@ class ArchitectureTest {
         assertEquals(listOf("*.presentation.controller", "config"), ArchitectureMiner.generalized(listOf("account.presentation.controller", "config", "item.presentation.controller")))
         assertEquals(listOf("account.presentation.controller", "config"), ArchitectureMiner.generalized(listOf("account.presentation.controller", "config")))
     }
+
+    @Test
+    fun `교차 검증은 단위 하나를 빼고 뽑은 규칙이 뺀 단위를 막으면 불안정한 규칙으로 본다`() {
+        fun files(users: Map<String, String>): List<SourceFile> = listOf("a", "b", "c", "d", "e", "f", "g").flatMap { area ->
+            val doc = listOf(ImportRef("org.springdoc.core.annotations.ParameterObject", 3))
+            listOf(
+                SourceFile("app", "app/src/main/kotlin/com/x/api/$area/presentation/controller/${area}Controller.kt", "com.x.api.$area.presentation.controller",
+                    (if (users[area] == "controller") doc else emptyList()) + ImportRef("com.x.api.$area.application.${area}Service", 4)),
+                SourceFile("app", "app/src/main/kotlin/com/x/api/$area/application/${area}Service.kt", "com.x.api.$area.application", emptyList()),
+                SourceFile("app", "app/src/main/kotlin/com/x/api/$area/infra/${area}Client.kt", "com.x.api.$area.infra", if (users[area] == "infra") doc else emptyList()),
+                SourceFile("batch", "batch/src/main/kotlin/com/x/batch/$area/job/${area}Job.kt", "com.x.batch.$area.job", emptyList()),
+            )
+        }
+        val odd = files(mapOf("a" to "controller", "b" to "controller", "c" to "infra"))
+        val oddModel = ArchitectureMiner.mine(odd, "p")
+        assertTrue("c" in CrossValidation.check(odd, oddModel).unstable["confinement:org.springdoc.core"].orEmpty(), "한 단위에서만 본 역할은 그 단위가 없으면 규칙에서 빠져 새 단위를 막는다")
+        val wide = files(mapOf("a" to "controller", "b" to "controller", "c" to "controller"))
+        val wideModel = ArchitectureMiner.mine(wide, "p")
+        assertTrue(wideModel.rules.any { it.id == "confinement:org.springdoc.core" })
+        assertTrue("confinement:org.springdoc.core" !in CrossValidation.check(wide, wideModel).unstable, "여러 단위의 같은 역할로 일반화된 규칙은 안정적이다")
+    }
+
 }

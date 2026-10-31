@@ -1,6 +1,8 @@
 package com.dochiri.ilsim.runner
 
 import com.dochiri.ilsim.runner.architecture.ArchitectureChecker
+import com.dochiri.ilsim.runner.architecture.CrossValidation
+import com.dochiri.ilsim.runner.architecture.SourceScanner
 import com.dochiri.ilsim.runner.architecture.ArchitectureMiner
 import com.dochiri.ilsim.runner.architecture.ArchitectureReport
 import com.dochiri.ilsim.runner.architecture.ArchitectureReviewer
@@ -228,13 +230,18 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
     val recommended = ArchitectureRecommender.recommend(path, profile, mined)
     var model = RuleApproval.carryOver(registered?.let { archStore.load(id) }, mined.copy(rules = mined.rules + recommended))
     val self = if (mined.rules.isEmpty()) null else ArchitectureChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
-    val violating = self.orEmpty().map { it.ruleId }.toSet()
+    val crossValidated = if (mined.rules.isEmpty()) CrossValidation.Result(emptyMap()) else CrossValidation.check(SourceScanner.scan(path, profile.modules), mined)
+    val violating = self.orEmpty().map { it.ruleId }.toSet() + crossValidated.unstable.keys
     model = RuleApproval.autoApprove(model, violating)
     if (registered != null) {
         out.appendLine("저장: ${archStore.save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
     out.append(ArchitectureReport.summary(model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }), self))
     out.append(RecommendationReport.architecture(model.rules))
+    if (crossValidated.unstable.isNotEmpty()) {
+        out.appendLine("교차 검증(단위를 하나씩 빼고 다시 뽑아 뺀 단위에 적용): 새 단위에서 어긋나는 규칙 ${crossValidated.unstable.size}개는 막지 않고 검토로만 씁니다")
+        crossValidated.unstable.entries.take(20).forEach { (id, units) -> out.appendLine("  ~ $id (${units.joinToString()})") }
+    }
     if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("ARCHITECTURE_REVIEW")
         try {
