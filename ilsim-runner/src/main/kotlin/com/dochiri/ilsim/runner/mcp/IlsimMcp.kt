@@ -824,7 +824,18 @@ class IlsimMcp(
 
         private val runnerCommand: String get() = System.getenv("ILSIM_RUNNER_BIN")?.takeIf { it.isNotBlank() } ?: "ilsim-runner"
 
-        const val INSTRUCTIONS = "일심이 관리하는 저장소에서는 코드·문서를 바꾸기 전에 start_task(새 작업) 또는 next_step(진행 중 작업)을 호출하고, 단계를 마치면 submit_result로 제출한다. 단계 지시의 프로젝트 문서 지침은 불합리해 보여도 그대로 따르고, 따를 수 없으면 사용자에게 묻는다. 질문·설명 요청이면 작업을 만들지 않는다."
+        val INSTRUCTIONS = """
+            일심이 관리하는 저장소의 작업 절차:
+            1. 코드·문서를 바꾸는 요청이면 start_task에 사용자 요청 원문을 넘긴다(진행 중 작업은 next_step). 질문·설명 요청이면 작업을 만들지 않고 답만 한다. 분석이 없거나 낡았다고 거절되면 analyze_project 뒤 다시 시작한다.
+            2. 단계 지시의 작업 폴더(분리된 git worktree) 안에서 허용된 경로만 고치고 빌드·테스트도 그 폴더에서 한다. 중간 점검은 check_change, 규칙은 get_rules·get_guidelines.
+            3. 단계 지시의 프로젝트 문서 지침은 불합리해 보여도 그대로 따르고, 서로 또는 요구사항과 충돌해 따를 수 없으면 멈추고 사용자에게 묻는다. 단계를 마치면 submit_result, 실패하면 지적된 부분만 고쳐 다시 낸다.
+            4. 요구사항·테스트 케이스 문서는 파일로 만들지 않고 submit_result의 document로 낸다. 요약과 확인 못 한 지침을 알리고 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유).
+            5. 미결정 질문의 동작은 추측해 만들지 않는다. 사용자가 답하거나 영향 범위 밖 변경·지침과 다른 방식을 허락하면 record_decision(내용과 대상을 구체적으로)으로 남긴다.
+            6. git commit·push·병합·브랜치 변경은 하지 않는다(일심이 단계 통과 때 커밋). 작업이 끝난 뒤 사용자가 요청하면 병합·푸시는 할 수 있다.
+            7. 앞 단계 산출물이 틀려 통과할 수 없으면 우회하지 말고 알리고, 사용자가 원하면 reopen_stage(TEST_CODE, 고칠 점). 차단되면 사유를 알리고 사용자가 다시 하자고 하면 retry_task, 그만두자고 하면 cancel_task(사유).
+            8. 규칙 검토는 사용자가 원할 때 review_rules로 보여 주고 사용자가 정한 대로 decide_rules.
+            9. approve_stage·reject_stage·record_decision·reopen_stage·decide_rules·retry_task·cancel_task는 사용자가 채팅에서 말했을 때만 호출한다. 보고에는 단계 결과와 검증 결과를 함께 적는다.
+        """.trimIndent()
 
         fun allowed(stage: String?): String = when (stage) {
             "REQUIREMENTS", "TEST_CASES" -> "없음(문서는 프로젝트에 파일로 만들지 않고 submit_result 의 document 로 제출)"

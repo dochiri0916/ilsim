@@ -838,6 +838,12 @@ class McpTest {
     }
 
     @Test
+    fun `MCP 서버 안내는 모든 도구를 언제 쓰는지 알려 플러그인 스킬 없이 절차를 전한다`() {
+        val missing = tools().keys.filterNot { it in IlsimMcp.INSTRUCTIONS }
+        assertEquals(emptyList(), missing)
+    }
+
+    @Test
     fun `MCP 서버는 초기화·도구 목록·호출·오류를 JSON-RPC 로 답한다`() {
         val mcp = McpServer("ilsim", "0.1.0", "안내", listOf(McpTool("echo", "에코", buildJsonObject { put("type", "object") }) { args ->
             args["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("text 가 필요합니다")
