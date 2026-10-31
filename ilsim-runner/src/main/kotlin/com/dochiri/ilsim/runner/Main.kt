@@ -10,6 +10,7 @@ import com.dochiri.ilsim.runner.architecture.ArchitectureSelfTest
 import com.dochiri.ilsim.runner.architecture.RuleApproval
 import com.dochiri.ilsim.runner.architecture.ArchitectureStore
 import com.dochiri.ilsim.runner.architecture.Applicability
+import com.dochiri.ilsim.runner.architecture.Introduced
 import com.dochiri.ilsim.runner.convention.ConventionApproval
 import com.dochiri.ilsim.runner.convention.ConventionChecker
 import com.dochiri.ilsim.runner.convention.ConventionMiner
@@ -229,25 +230,23 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
     val path = Path.of(registered?.path ?: id).toAbsolutePath().normalize()
     val profile = StackDetector.detect(path)
     val archStore = ArchitectureStore(store)
+    val previous = registered?.let { archStore.load(id) }
     val mined = ArchitectureMiner.mine(path, profile)
     val recommended = ArchitectureRecommender.recommend(path, profile, mined)
-    var model = RuleApproval.carryOver(registered?.let { archStore.load(id) }, mined.copy(rules = mined.rules + recommended))
+    var model = RuleApproval.carryOver(previous, mined.copy(rules = mined.rules + recommended))
     val self = if (mined.rules.isEmpty()) null else ArchitectureChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
-    val crossValidated = if (mined.rules.isEmpty()) CrossValidation.Result(emptyMap()) else CrossValidation.check(SourceScanner.scan(path, profile.modules), mined)
-    val violating = self.orEmpty().map { it.ruleId }.toSet() + crossValidated.unstable.keys
-    model = RuleApproval.autoApprove(model, violating)
+    val files = SourceScanner.scan(path, profile.modules)
+    val crossValidated = if (mined.rules.isEmpty()) CrossValidation.Result(emptyMap()) else CrossValidation.check(files, mined)
+    val unstable = crossValidated.unstable.keys
+    model = RuleApproval.autoApprove(model, unstable)
     if (registered != null) {
         out.appendLine("저장: ${archStore.save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
     out.append(ArchitectureReport.summary(model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }), self))
     out.append(RecommendationReport.architecture(model.rules))
     if (crossValidated.unstable.isNotEmpty()) {
-        out.appendLine("교차 검증(단위를 하나씩 빼고 다시 뽑아 뺀 단위에 적용): 새 단위에서 어긋나는 규칙 ${crossValidated.unstable.size}개는 막지 않고 검토로만 씁니다")
+        out.appendLine("교차 검증(단위를 하나씩 빼고 다시 뽑아 뺀 단위에 적용): 새 단위에서 어긋나는 규칙 ${crossValidated.unstable.size}개는 막지 않고 새 위반을 독립 검토로 넘깁니다")
         crossValidated.unstable.entries.take(20).forEach { (id, units) -> out.appendLine("  ~ $id (${units.joinToString()})") }
-    }
-    if (mined.rules.isNotEmpty()) ArchitectureSelfTest.run(SourceScanner.scan(path, profile.modules), model).let { r ->
-        val desc = model.rules.associate { it.id to it.description }
-        out.append(selfTestReport(r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() }))
     }
     if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("ARCHITECTURE_REVIEW")
@@ -261,7 +260,7 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
                 answer.text
             }
             model = model.copy(review = model.review?.copy(reviewer = cost.lastReviewer ?: model.review!!.reviewer))
-            model = RuleApproval.autoApprove(model, violating).let { it.copy(rules = it.rules + proposed) }
+            model = RuleApproval.autoApprove(model, unstable).let { it.copy(rules = it.rules + proposed) }
             val reviewed = model
             archStore.update(id) { saved -> RuleApproval.keepUserDecisions(saved, reviewed).also { model = it } }
             out.appendLine()
@@ -270,6 +269,13 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
             out.appendLine("AI 검토를 건너뜀: ${e.message} (규칙은 후보 상태로 저장됨)")
         }
         cost.summary()?.let { out.appendLine(it) }
+    }
+    if (mined.rules.isEmpty()) return
+    val frozen = runCatching { Introduced.frozen(ArchitectureChecker.check(files, model, approvedOnly = true)) }.getOrDefault(emptyMap())
+    if (registered != null) archStore.update(id) { saved -> (saved ?: model).copy(frozen = frozen).also { model = it } }
+    out.appendLine(Introduced.trend(frozen, previous?.frozen?.takeIf { it.isNotEmpty() }))
+    ArchitectureSelfTest.run(files, model).let { r ->
+        out.append(selfTestReport(model.rules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.proposedSeverity == "BLOCK") }, r.caught, r.missed))
     }
 }
 
@@ -326,12 +332,9 @@ private fun selfTest(store: ConfigStore, args: Array<String>) {
     val id = requireProject(store, args)
     val path = Path.of(store.load().projects.getValue(id).path)
     val profile = StackDetector.detect(path)
-    fun line(name: String, caught: Int, total: Int, missed: List<Pair<String, String>>, untested: List<Pair<String, String>> = emptyList()) =
-        print("[$name] " + selfTestReport(caught, total, missed, untested))
     ArchitectureStore(store).load(id)?.let { model ->
         val r = ArchitectureSelfTest.run(SourceScanner.scan(path, profile.modules), model)
-        val desc = model.rules.associate { it.id to it.description }
-        line("아키텍처", r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() })
+        print("[아키텍처] " + selfTestReport(model.rules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.proposedSeverity == "BLOCK") }, r.caught, r.missed))
     }
     val facts = FactScanner.scan(path, profile.modules)
     DocRuleStore(store).load(id)?.let { model ->
@@ -340,16 +343,24 @@ private fun selfTest(store: ConfigStore, args: Array<String>) {
     }
     listOfNotNull(ConventionStore(store).load(id)?.let { "코드 컨벤션" to it.rules }, DocRuleStore(store).load(id)?.let { "문서 지침 검증기" to it.rules }).forEach { (name, rules) ->
         val r = ConventionSelfTest.run(facts, rules)
-        val desc = rules.associate { it.id to it.description }
-        line(name, r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() }, r.untested.map { it to desc[it].orEmpty() })
+        print("[$name] " + selfTestReport(rules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.severity == "BLOCK") }, r.caught, r.missed, r.untested))
     }
 }
 
-fun selfTestReport(caught: Int, total: Int, missed: List<Pair<String, String>>, untested: List<Pair<String, String>> = emptyList()): String = buildString {
-    appendLine("자체 시험(규칙마다 위반을 심어 검사기가 잡는지 확인): $caught/$total 규칙을 잡음" + if (untested.isNotEmpty()) ", 위반을 만들지 못한 규칙 ${untested.size}개" else "")
-    if (missed.isNotEmpty() || untested.isNotEmpty()) appendLine("  아래 규칙은 위반이 생겨도 정적 검사기가 잡지 못합니다")
-    missed.forEach { (rid, d) -> appendLine("  ✗ $rid  $d") }
-    untested.forEach { (rid, d) -> appendLine("  ? $rid  $d") }
+data class RuleState(val id: String, val description: String, val approved: Boolean, val blocking: Boolean)
+
+fun selfTestReport(rules: List<RuleState>, caught: Collection<String>, missed: Collection<String>, untested: Collection<String> = emptyList()): String = buildString {
+    val approved = rules.filter { it.approved }
+    val blocked = approved.filter { it.id in caught && it.blocking }
+    val reviewed = approved.filter { it.id in caught && !it.blocking }
+    val notCaught = approved.filter { it.id in missed }
+    val notMade = approved.filter { it.id in untested }
+    val off = rules.size - approved.size
+    appendLine("자체 시험(규칙마다 위반을 심어 제출 검사에서 걸리는지 확인): 승인 규칙 ${approved.size}개 중 막음 ${blocked.size}, 검토 필수 ${reviewed.size}, 못 잡음 ${notCaught.size}, 위반을 못 만듦 ${notMade.size}" +
+        if (off > 0) ". 승인 전·꺼 둔 규칙 ${off}개는 강제하지 않음" else "")
+    if (notCaught.isNotEmpty() || notMade.isNotEmpty()) appendLine("  아래 승인 규칙은 위반이 생겨도 정적 검사가 잡지 못합니다")
+    notCaught.forEach { appendLine("  ✗ ${it.id}  ${it.description}") }
+    notMade.forEach { appendLine("  ? ${it.id}  ${it.description}") }
 }
 
 private fun rulesCmd(store: ConfigStore, args: Array<String>) {
@@ -584,17 +595,12 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
     val recommended = ConventionRecommender.recommend(path, profile, mined)
     var model = ConventionApproval.carryOver(previous, mined.copy(rules = mined.rules + recommended))
     val self = if (mined.rules.isEmpty()) null else ConventionChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
-    val violating = self.orEmpty().map { it.ruleId }.toSet()
-    model = ConventionApproval.autoApprove(model, violating)
+    model = ConventionApproval.autoApprove(model)
     if (registered != null) {
         out.appendLine("저장: ${ConventionStore(store).save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
     out.append(ConventionReport.summary(model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }), self))
     out.append(RecommendationReport.convention(model.rules))
-    if (mined.rules.isNotEmpty()) ConventionSelfTest.run(FactScanner.scan(path, profile.modules), model.rules).let { r ->
-        val desc = model.rules.associate { it.id to it.description }
-        out.append(selfTestReport(r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() }, r.untested.map { it to desc[it].orEmpty() }))
-    }
     if (registered != null && mined.rules.isNotEmpty()) {
         val cost = CostTally("CONVENTION_REVIEW")
         try {
@@ -607,7 +613,7 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
                 answer.text
             }
             model = model.copy(review = model.review?.copy(reviewer = cost.lastReviewer ?: model.review!!.reviewer))
-            model = ConventionApproval.autoApprove(model, violating).let { it.copy(rules = it.rules + proposed) }
+            model = ConventionApproval.autoApprove(model).let { it.copy(rules = it.rules + proposed) }
             val reviewed = model
             ConventionStore(store).update(id) { saved -> ConventionApproval.keepUserDecisions(saved, reviewed).also { model = it } }
             out.appendLine()
@@ -616,6 +622,14 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
             out.appendLine("AI 검토를 건너뜀: ${e.message} (규칙은 후보 상태로 저장됨)")
         }
         cost.summary()?.let { out.appendLine(it) }
+    }
+    if (mined.rules.isEmpty()) return
+    val facts = FactScanner.scan(path, profile.modules)
+    val frozen = Introduced.frozen(ConventionChecker.check(facts, model, approvedOnly = true))
+    if (registered != null) ConventionStore(store).update(id) { saved -> (saved ?: model).copy(frozen = frozen).also { model = it } }
+    out.appendLine(Introduced.trend(frozen, previous?.frozen?.takeIf { it.isNotEmpty() }))
+    ConventionSelfTest.run(facts, model.rules).let { r ->
+        out.append(selfTestReport(model.rules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.severity == "BLOCK") }, r.caught, r.missed, r.untested))
     }
 }
 
@@ -634,16 +648,20 @@ fun analyzeDocRules(store: ConfigStore, id: String, out: Appendable) {
     }
     val sections = ProjectDocs.sections(docs)
     val cost = CostTally("DOC_RULES")
-    val extracted = DocRules.extract(sections, facts, rules.load(id), Jev.fromEnvironment()) { cost.ask(it, AI_MODEL) }
+    val jev = Jev.fromEnvironment()
+    val previous = rules.load(id)
+    val extracted = DocRules.extract(sections, facts, previous, jev) { cost.ask(it, AI_MODEL) }
+    val confirmed = DocRules.recheck(jev, path, extracted.rules)
     var model: DocRules.DocRuleModel? = null
-    val file = rules.update(id) { latest -> DocRules.carryOver(latest, extracted).copy(files = docs.keys.sorted()).also { model = it } }
+    val file = rules.update(id) { latest -> DocRules.carryOver(latest, extracted, confirmed).let { m -> m.copy(files = docs.keys.sorted(), frozen = DocRules.frozen(m)) }.also { model = it } }
     out.appendLine("저장: $file (프로젝트 $id 문서 지침 검증기, 문서 구간 ${sections.size}개)")
     out.append(DocRules.report(checkNotNull(model)))
+    if (confirmed.isNotEmpty()) out.appendLine("기존 코드 다수가 어기는 문서 규칙 ${confirmed.size}개는 걸린 코드가 원문을 어기는지 JEV로 다시 확인했습니다(${DocRules.CONFIRMED} 이상 승인·동결, ${DocRules.MISCONVERTED} 이하 잘못 옮김으로 거절, 사이는 사용자 확인)")
     out.append(DocRules.ledgerReport(DocRules.ledger(sections, checkNotNull(model))))
+    out.appendLine(Introduced.trend(checkNotNull(model).frozen, previous?.frozen?.takeIf { it.isNotEmpty() }))
     checkNotNull(model).rules.takeIf { it.isNotEmpty() }?.let { docRules ->
         val r = ConventionSelfTest.run(facts, docRules)
-        val desc = docRules.associate { it.id to it.description }
-        out.append(selfTestReport(r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() }, r.untested.map { it to desc[it].orEmpty() }))
+        out.append(selfTestReport(docRules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.severity == "BLOCK") }, r.caught, r.missed, r.untested))
     }
     extracted.notes.forEach { out.appendLine("  ! $it") }
     cost.summary()?.let { out.appendLine("문서 규칙 $it") }

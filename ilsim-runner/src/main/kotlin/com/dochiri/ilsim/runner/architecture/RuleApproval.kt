@@ -9,10 +9,10 @@ object RuleApproval {
     fun keepIds(model: ArchitectureModel): List<String> =
         model.rules.filter { it.review?.verdict == "KEEP" && !it.approved && !it.rejected }.map { it.id }
 
-    fun autoApprove(model: ArchitectureModel, violating: Set<String> = emptySet()): ArchitectureModel = model.copy(rules = model.rules.map {
+    fun autoApprove(model: ArchitectureModel, unstable: Set<String> = emptySet()): ArchitectureModel = model.copy(rules = model.rules.map {
         if (it.decidedBy != null && it.decidedBy != "ai-review") it
         else when (it.review?.verdict) {
-            "KEEP" -> it.copy(approved = true, rejected = false, decidedBy = "ai-review", proposedSeverity = if (it.id in violating) "REVIEW" else it.proposedSeverity)
+            "KEEP" -> it.copy(approved = true, rejected = false, decidedBy = "ai-review", proposedSeverity = if (it.id in unstable) "REVIEW" else it.proposedSeverity)
             "SUSPECT" -> it.copy(approved = false, rejected = true, decidedBy = "ai-review")
             else -> it.copy(approved = false, rejected = false, decidedBy = null)
         }

@@ -3,6 +3,8 @@ package com.dochiri.ilsim.runner
 import com.dochiri.ilsim.runner.architecture.Applicability
 import com.dochiri.ilsim.runner.architecture.ArchitectureChecker
 import com.dochiri.ilsim.runner.architecture.ArchitectureStore
+import com.dochiri.ilsim.runner.architecture.Introduced
+import com.dochiri.ilsim.runner.architecture.SourceScanner
 import com.dochiri.ilsim.runner.architecture.Violation
 import com.dochiri.ilsim.runner.audit.ChangeAudit
 import com.dochiri.ilsim.runner.brief.RulesBrief
@@ -10,6 +12,8 @@ import com.dochiri.ilsim.runner.convention.ConventionChecker
 import com.dochiri.ilsim.runner.convention.DocRuleStore
 import com.dochiri.ilsim.runner.convention.DocRules
 import com.dochiri.ilsim.runner.convention.ConventionStore
+import com.dochiri.ilsim.runner.convention.FactScanner
+import com.dochiri.ilsim.runner.convention.Facts
 import com.dochiri.ilsim.runner.jev.Jev
 import com.dochiri.ilsim.runner.jev.JevRiskScreen
 import com.dochiri.ilsim.runner.jev.ScopeCheck
@@ -28,6 +32,7 @@ import com.dochiri.ilsim.runner.testing.VerificationBypass
 import java.nio.file.Path
 import java.time.Instant
 import kotlin.io.path.exists
+import kotlin.io.path.readLines
 import kotlin.io.path.readText
 
 class StageGates(
@@ -43,6 +48,9 @@ class StageGates(
         private set
     var riskCandidates: Int = 0
         private set
+    private var architectureHits: List<String> = emptyList()
+    private var conventionHits: List<String> = emptyList()
+    val reviewRuleHits: List<String> get() = architectureHits + conventionHits
     private var survivors: List<String> = emptyList()
     private val reviewCache = ReviewCache(configStore.location.parent.resolve("reviews"))
     private val artifacts = Artifacts(configStore)
@@ -254,6 +262,7 @@ class StageGates(
     }
 
     private fun architecture(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {
+        architectureHits = emptyList()
         val model = architectures.load(task.projectId)
         if (model == null || model.rules.none { it.approved && !it.rejected }) {
             validation["architecture"] = "UNKNOWN"
@@ -263,32 +272,69 @@ class StageGates(
             validation["architecture"] = "SKIPPED"
             return null
         }
-        val violations = try {
-            ArchitectureChecker.check(worktree, StackDetector.detect(worktree), model, approvedOnly = true)
+        val profile = StackDetector.detect(worktree)
+        val changed = changedFiles(worktree).toSet()
+        val (violations, fresh) = try {
+            val files = SourceScanner.scan(worktree, profile.modules)
+            val now = ArchitectureChecker.check(files, model, approvedOnly = true)
+            val byPath = files.associateBy { it.path }
+            val head = files.filterNot { it.path in changed } + changed.mapNotNull { path ->
+                val module = byPath[path]?.module ?: SourceScanner.mainModule(profile.modules, path) ?: return@mapNotNull null
+                headLines(worktree, path)?.let { SourceScanner.parse(module, path, it) }
+            }
+            val before = runCatching { ArchitectureChecker.check(head, model, approvedOnly = true) }.getOrDefault(emptyList())
+            now to Introduced.filter(now, before, { currentLines(worktree, it) }, { if (it in changed) headLines(worktree, it) else currentLines(worktree, it) })
         } catch (e: IllegalArgumentException) {
             validation["architecture"] = "UNKNOWN"
             return "승인된 아키텍처 규칙을 검사하지 못했습니다: ${e.message}\n규칙이 있는데 검사가 실패하면 통과로 보지 않습니다. 사용자에게 알리고 analyze_project로 다시 분석하세요"
         }
-        val blocking = violations.filter { it.severity == "BLOCK" }
         if (model.applicability.status == Applicability.PARTIAL) log("아키텍처 부분 적용: ${model.applicability.reasons.joinToString("; ")}")
-        validation["architecture"] = if (blocking.isEmpty()) "PASSED" else "FAILED"
+        (violations.size - fresh.size).takeIf { it > 0 }?.let { log("아키텍처 규칙의 기존 위반 ${it}건은 이번 변경이 만든 것이 아니라서 막지 않습니다") }
+        val blocking = fresh.filter { it.severity == "BLOCK" }
+        architectureHits = fresh.filter { it.severity != "BLOCK" }.map(::hit)
+        architectureHits.take(10).forEach { log("승인된 검토 규칙에 걸림(막지 않고 독립 검토로 올림): $it") }
+        validation["architecture"] = when { blocking.isNotEmpty() -> "FAILED"; architectureHits.isNotEmpty() -> "REVIEW"; else -> "PASSED" }
         if (blocking.isEmpty()) return null
-        return "아키텍처 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
+        return "아키텍처 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n", transform = ::hit)
     }
 
     private fun convention(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {
+        conventionHits = emptyList()
         val model = conventions.load(task.projectId)
         if (model == null || model.rules.none { it.approved && !it.rejected }) {
             validation["convention"] = "UNKNOWN"
             return null
         }
         val changed = changedFiles(worktree).toSet()
-        val blocking = ConventionChecker.check(worktree, StackDetector.detect(worktree), model, approvedOnly = true, onlyFiles = changed)
-            .filter { it.severity == "BLOCK" }
-        validation["convention"] = if (blocking.isEmpty()) "PASSED" else "FAILED"
+        val facts = FactScanner.scan(worktree, StackDetector.detect(worktree).modules)
+        val violations = ConventionChecker.check(facts, model, approvedOnly = true, onlyFiles = changed)
+        val fresh = if (violations.isEmpty()) violations else {
+            val byPath = facts.files.associateBy { it.path }
+            val head = Facts(facts.files.filterNot { it.path in changed } + changed.mapNotNull { path ->
+                val current = byPath[path] ?: return@mapNotNull null
+                headLines(worktree, path)?.let { FactScanner.parse(path, path.substringAfterLast('.'), current.test, it)?.also { f -> f.module = current.module } }
+            }, facts.dependencies)
+            val before = ConventionChecker.check(head, model, approvedOnly = true, onlyFiles = changed)
+            Introduced.filter(violations, before, { currentLines(worktree, it) }, { headLines(worktree, it) })
+        }
+        val kept = violations - fresh.toSet()
+        if (kept.isNotEmpty()) log("컨벤션 규칙의 기존 위반 ${kept.size}건은 이번 변경이 만든 것이 아니라서 막지 않습니다")
+        val blocking = fresh.filter { it.severity == "BLOCK" }
+        conventionHits = fresh.filter { it.severity != "BLOCK" }.map(::hit) +
+            kept.filter { it.severity == "BLOCK" }.map { "${hit(it)} (이 파일에 원래 있던 위반. 검사기가 파일마다 한 곳만 알려 주면 같은 파일의 새 위반을 가리지 못하므로 검토)" }
+        conventionHits.take(10).forEach { log("승인된 규칙의 검토 대상(막지 않고 독립 검토로 올림): $it") }
+        validation["convention"] = when { blocking.isNotEmpty() -> "FAILED"; conventionHits.isNotEmpty() -> "REVIEW"; else -> "PASSED" }
         if (blocking.isEmpty()) return null
-        return "컨벤션 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n") { "${it.file}:${it.line} ${it.message} <${it.ruleId}>" }
+        return "컨벤션 위반 ${blocking.size}건:\n" + blocking.take(20).joinToString("\n", transform = ::hit)
     }
+
+    private fun hit(v: Violation): String = "${v.file}:${v.line} ${v.message} <${v.ruleId}>"
+
+    private fun headLines(worktree: Path, path: String): List<String>? =
+        Shell.git(worktree, "show", "HEAD:$path").takeIf { it.exit == 0 }?.output?.lines()
+
+    private fun currentLines(worktree: Path, path: String): List<String>? =
+        runCatching { worktree.resolve(path).readLines() }.getOrNull()
 
     private fun docRules(task: AssignedTask, worktree: Path, validation: MutableMap<String, String>): String? {
         val model = docRuleStore.load(task.projectId)

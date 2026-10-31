@@ -15,6 +15,7 @@ object Ledger {
         "UNCERTAIN" to "불확실",
         "LOW" to "기준 미달",
         "PROPOSED" to "승인 전 규칙에 걸림",
+        "REVIEW" to "검토 규칙에 걸림",
     )
 
     fun unconfirmed(validation: Map<String, String>): List<String> =

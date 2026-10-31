@@ -2,6 +2,7 @@ package com.dochiri.ilsim.runner.convention
 
 import com.dochiri.ilsim.runner.ReviewCache
 import com.dochiri.ilsim.runner.architecture.Evidence
+import com.dochiri.ilsim.runner.architecture.Introduced
 import com.dochiri.ilsim.runner.architecture.RuleReview
 import com.dochiri.ilsim.runner.architecture.Violation
 import com.dochiri.ilsim.runner.document.DocSection
@@ -39,6 +40,7 @@ object DocRules {
         val notes: List<String> = emptyList(),
         val files: List<String> = emptyList(),
         val applicable: Boolean = true,
+        val frozen: Map<String, Int> = emptyMap(),
     )
 
     internal class Proposal(val section: DocSection, val kind: String, val params: Map<String, List<String>>, val description: String, val quote: String)
@@ -294,21 +296,67 @@ object DocRules {
 
     fun asConvention(model: DocRuleModel): ConventionModel = ConventionModel(null, 0, 0, emptyMap(), model.rules)
 
-    fun carryOver(previous: DocRuleModel?, extracted: Extracted): DocRuleModel {
+    fun carryOver(previous: DocRuleModel?, extracted: Extracted, confirmed: Map<String, Double> = emptyMap()): DocRuleModel {
         val decided = previous?.rules.orEmpty().filter { it.decidedBy == "user" }
         val rules = extracted.rules.map { r ->
-            decided.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }?.let { r.copy(approved = it.approved, rejected = it.rejected, decidedBy = it.decidedBy) } ?: autoDecide(r)
+            decided.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }?.let { r.copy(approved = it.approved, rejected = it.rejected, decidedBy = it.decidedBy) } ?: autoDecide(r, confirmed[r.id])
         }
         return DocRuleModel(rules, extracted.documents, extracted.notes)
     }
 
-    internal fun autoDecide(r: ConventionRule): ConventionRule = when {
-        r.review?.verdict != "KEEP" -> r.copy(approved = false, rejected = false, decidedBy = null)
-        misconverted(r) -> r.copy(approved = false, rejected = true, decidedBy = "ai-review")
-        else -> r.copy(approved = true, rejected = false, decidedBy = "ai-review")
+    internal fun autoDecide(r: ConventionRule, confirmed: Double? = null): ConventionRule {
+        val checked = confirmed?.let { p -> r.copy(review = r.review?.copy(reason = r.review.reason + ", 기존 위반이 원문을 어길 확률 ${"%.2f".format(p)}")) } ?: r
+        return when {
+            r.review?.verdict != "KEEP" -> r.copy(approved = false, rejected = false, decidedBy = null)
+            !misconverted(r) -> r.copy(approved = true, rejected = false, decidedBy = "ai-review")
+            confirmed == null -> r.copy(approved = false, rejected = false, decidedBy = null)
+            confirmed >= CONFIRMED -> checked.copy(approved = true, rejected = false, decidedBy = "ai-review")
+            confirmed <= MISCONVERTED -> checked.copy(approved = false, rejected = true, decidedBy = "ai-review")
+            else -> checked.copy(approved = false, rejected = false, decidedBy = null)
+        }
     }
 
-    private fun misconverted(r: ConventionRule) = (r.evidence.total - r.evidence.compliant) * MISCONVERTED_DIVISOR > r.evidence.total
+    internal fun misconverted(r: ConventionRule) = (r.evidence.total - r.evidence.compliant) * MISCONVERTED_DIVISOR > r.evidence.total
+
+    fun frozen(model: DocRuleModel): Map<String, Int> =
+        model.rules.filter { it.approved && !it.rejected }.associate { it.id to it.evidence.total - it.evidence.compliant }.filterValues { it > 0 }.toSortedMap()
+
+    fun recheck(jev: Jev, root: Path, rules: List<ConventionRule>): Map<String, Double> {
+        if (!jev.enabled) return emptyMap()
+        return rules.filter { it.review?.verdict == "KEEP" && misconverted(it) && it.origin != null }.mapNotNull { r ->
+            val examples = r.evidence.examples.mapNotNull { snippet(root, it) }
+            if (examples.isEmpty()) return@mapNotNull null
+            val o = r.origin!!
+            val state = mapOf(
+                "quote" to o.quote,
+                "source" to "${o.path}:${o.line} ${o.heading}",
+                "rule" to r.description,
+                "violations" to "기존 코드 ${r.evidence.total}곳 중 ${r.evidence.total - r.evidence.compliant}곳이 rule 에 걸림",
+                "examples" to examples,
+            )
+            runCatching { jev.probability(state, RECHECK) }.getOrNull()?.let { r.id to it }
+        }.toMap()
+    }
+
+    internal fun snippet(root: Path, location: String): String? {
+        val path = location.substringBeforeLast(':')
+        val line = location.substringAfterLast(':').toIntOrNull() ?: return null
+        val lines = runCatching { root.resolve(path).readLines() }.getOrNull() ?: return null
+        if (line < 1 || line > lines.size) return null
+        val decl = lines.indexOfFirst { topType.containsMatchIn(it) }
+        val header = if (decl in 0 until line - 4) lines.subList((decl - 3).coerceAtLeast(0), decl + 1).dropWhile { !it.trimStart().startsWith("@") && !topType.containsMatchIn(it) } + "    …" else emptyList()
+        val around = lines.subList((line - 4).coerceAtLeast(0), (line + 1).coerceAtMost(lines.size))
+        return "$location\n" + (header + around).joinToString("\n").take(MAX_SNIPPET)
+    }
+
+    private val topType = Regex("""^(?:(?:public|internal|private|abstract|open|final|sealed|data|enum|annotation)\s+)*(?:class|interface|object|record|enum)\s+\w""")
+
+    private val RECHECK = NoulQuestion.of("m", "examples 는 기존 코드에서 rule(문서에서 옮긴 정적 규칙)에 걸린 곳이다. 이 코드가 quote(프로젝트 문서 원문)가 정한 규칙을 실제로 어기는가? 원문이 허용하는 다른 방식(다른 위치·범위에 표시, 원문이 적은 예외)을 따르고 있어서 rule 이 원문보다 좁거나 엄격하게 옮겨져 걸린 것이면 No. 원문이 정한 것을 코드가 따르지 않으면 Yes. 원문이 합리적인지는 따지지 않는다.")
+        .withCriteria("기존 코드가 문서 원문을 어김", "기존 코드는 원문을 지키고 옮긴 규칙만 어김")
+
+    const val CONFIRMED = 0.6
+    const val MISCONVERTED = 0.4
+    private const val MAX_SNIPPET = 900
 
     fun decide(model: DocRuleModel, ids: Collection<String>, approve: Boolean): DocRuleModel {
         val unknown = ids.filterNot { id -> model.rules.any { it.id == id } }
@@ -323,16 +371,8 @@ object DocRules {
         if (doc.isEmpty()) return violations
         val paths = doc.map { it.file }.distinct()
         val before = paths.mapNotNull { path -> base(path)?.let { FactScanner.parse(path, path.substringAfterLast('.'), "src/test/" in path, it) } }
-        val after = paths.associateWith { runCatching { worktree.resolve(it).readLines() }.getOrNull() }
         val old = ConventionChecker.check(Facts(before), asConvention(model), approvedOnly = true)
-        fun key(v: Violation, lines: List<String>?) = Triple(v.ruleId, v.file, lines?.getOrNull(v.line - 1)?.trim())
-        val left = old.groupingBy { v -> key(v, before.firstOrNull { it.path == v.file }?.lines) }.eachCount().toMutableMap()
-        return other + doc.filter { v ->
-            val k = key(v, after[v.file])
-            val n = left[k] ?: 0
-            if (n > 0) left[k] = n - 1
-            n == 0
-        }
+        return other + Introduced.filter(doc, old, { runCatching { worktree.resolve(it).readLines() }.getOrNull() }) { path -> before.firstOrNull { it.path == path }?.lines }
     }
 
     data class LedgerEntry(val path: String, val line: Int, val heading: String, val text: String, val status: String)
@@ -382,9 +422,11 @@ object DocRules {
         appendLine("문서 규칙 ${rules.size}개 (문서에서 옮긴 정적 규칙. 승인하면 바꾼 코드에 새로 생기는 위반을 막는다):")
         for (r in rules) {
             val auto = r.decidedBy == "ai-review"
+            val existing = r.evidence.total - r.evidence.compliant
             val state = when {
-                r.approved -> if (auto) "자동 승인" else "승인됨"
-                r.rejected -> if (auto) "자동 거절: 현재 코드 대부분이 어겨 문서를 잘못 옮겼을 수 있음" else "거절됨"
+                r.approved -> (if (auto) "자동 승인" else "승인됨") + if (existing > 0) "·기존 위반 ${existing}건 동결" else ""
+                r.rejected -> if (auto) "자동 거절: 기존 코드는 문서 원문을 지키는데 옮긴 규칙만 어겨 잘못 옮긴 것으로 판정" else "거절됨"
+                r.review?.verdict == "KEEP" && misconverted(r) -> "제안: 기존 코드 다수가 어겨 잘못 옮겼는지 확인 필요"
                 else -> "제안"
             }
             appendLine("  [$state·${r.severity}] ${r.description}  <${r.id}>")

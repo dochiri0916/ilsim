@@ -64,6 +64,7 @@ data class ArchitectureModel(
     val applicability: Applicability = Applicability(Applicability.APPLICABLE),
     val source: String = "MINED",
     val review: ModelReview? = null,
+    val frozen: Map<String, Int> = emptyMap(),
 )
 
 @Serializable

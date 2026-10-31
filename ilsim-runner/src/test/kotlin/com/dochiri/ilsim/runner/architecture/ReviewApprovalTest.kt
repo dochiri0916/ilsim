@@ -90,7 +90,7 @@ class ReviewApprovalTest {
         assertEquals("BLOCK", fresh.rules.first().proposedSeverity)
 
         val violated = RuleApproval.autoApprove(reviewed, setOf("a"))
-        assertEquals("REVIEW", violated.rules.first().proposedSeverity, "기존 코드가 이미 어기는 규칙은 검토로 낮춰 승인한다")
+        assertEquals("REVIEW", violated.rules.first().proposedSeverity, "교차 검증에서 새 단위와 어긋나는 규칙은 검토로 낮춰 승인한다(기존 위반은 낮추지 않고 동결한다)")
         assertTrue(violated.rules.first().approved)
 
         val decided = RuleApproval.reject(reviewed, listOf("a"))

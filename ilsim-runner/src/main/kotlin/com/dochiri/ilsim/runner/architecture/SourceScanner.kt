@@ -18,7 +18,7 @@ internal object SourceScanner {
     fun scan(root: Path, modules: List<ModuleInfo>): List<SourceFile> {
         val out = mutableListOf<SourceFile>()
         for (m in modules) {
-            for (rel in m.sourceRoots.filter { it == "src/main/kotlin" || it == "src/main/java" || it.contains("/src/main/") || it.startsWith("src/main/") }) {
+            for (rel in m.sourceRoots.filter(::mainRoot)) {
                 val dir = root.resolve(rel)
                 if (!dir.isDirectory()) continue
                 Files.walk(dir).use { s ->
@@ -31,15 +31,22 @@ internal object SourceScanner {
         return out
     }
 
-    fun parse(root: Path, module: String, file: Path): SourceFile? {
+    fun parse(root: Path, module: String, file: Path): SourceFile? = parse(module, root.relativize(file).toString(), file.readLines())
+
+    fun parse(module: String, path: String, lines: List<String>): SourceFile? {
         var pkg: String? = null
         val imports = mutableListOf<ImportRef>()
-        file.readLines().forEachIndexed { i, raw ->
+        lines.forEachIndexed { i, raw ->
             val line = raw.trim()
             if (pkg == null) pkgRegex.matchEntire(line)?.let { pkg = it.groupValues[1].replace("`", "") }
             else importRegex.matchEntire(line)?.let { imports += ImportRef(it.groupValues[1].replace("`", ""), i + 1) }
         }
         val p = pkg ?: return null
-        return SourceFile(module, root.relativize(file).toString(), p, imports)
+        return SourceFile(module, path, p, imports)
     }
+
+    fun mainModule(modules: List<ModuleInfo>, path: String): String? =
+        modules.firstOrNull { m -> m.sourceRoots.any { rel -> mainRoot(rel) && path.startsWith("$rel/") } }?.name
+
+    private fun mainRoot(rel: String): Boolean = rel == "src/main/kotlin" || rel == "src/main/java" || rel.contains("/src/main/") || rel.startsWith("src/main/")
 }

@@ -68,10 +68,10 @@ object ConventionApproval {
     fun approve(m: ConventionModel, ids: Collection<String>) = update(m, ids) { it.copy(approved = true, rejected = false, decidedBy = "user") }
     fun reject(m: ConventionModel, ids: Collection<String>) = update(m, ids) { it.copy(approved = false, rejected = true, decidedBy = "user") }
     fun keepIds(m: ConventionModel) = m.rules.filter { it.review?.verdict == "KEEP" && !it.approved && !it.rejected }.map { it.id }
-    fun autoApprove(m: ConventionModel, violating: Set<String> = emptySet()): ConventionModel = m.copy(rules = m.rules.map {
+    fun autoApprove(m: ConventionModel): ConventionModel = m.copy(rules = m.rules.map {
         if (it.decidedBy != null && it.decidedBy != "ai-review") it
         else when (it.review?.verdict) {
-            "KEEP" -> it.copy(approved = true, rejected = false, decidedBy = "ai-review", severity = if (it.id in violating) "REVIEW" else it.severity)
+            "KEEP" -> it.copy(approved = true, rejected = false, decidedBy = "ai-review")
             "SUSPECT" -> it.copy(approved = false, rejected = true, decidedBy = "ai-review")
             else -> it.copy(approved = false, rejected = false, decidedBy = null)
         }

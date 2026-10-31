@@ -379,7 +379,7 @@ class DocRulesTest {
     }
 
     @Test
-    fun `JEV 가 원문과 맞다고 본 문서 규칙은 자동 승인하고 기존 코드 대부분이 어기면 잘못 옮긴 것으로 보고 거절한다`() {
+    fun `JEV 가 원문과 맞다고 본 문서 규칙은 자동 승인하고 기존 코드 대부분이 어기면 걸린 코드가 원문을 어기는지 다시 확인한 결과로 정한다`() {
         fun rule(id: String, verdict: String?, compliant: Int, total: Int) = ConventionRule(
             "doc:$id", "doc-forbidden-code", id, mapOf("scope" to listOf("main")), severity = "BLOCK",
             evidence = com.dochiri.ilsim.runner.architecture.Evidence(compliant, total),
@@ -387,11 +387,61 @@ class DocRulesTest {
         )
         val extracted = DocRules.Extracted(listOf(rule("ok", "KEEP", 183, 188), rule("bad", "KEEP", 23, 89), rule("none", null, 1, 1), rule("user", "KEEP", 0, 10)), emptyList(), emptyList())
         val previous = DocRules.DocRuleModel(listOf(rule("user", "KEEP", 0, 10).copy(approved = true, decidedBy = "user"), rule("ok", "KEEP", 0, 1).copy(rejected = true, decidedBy = "ai-review")))
-        val model = DocRules.carryOver(previous, extracted)
-        assertEquals(listOf(true, false, false, true), model.rules.map { it.approved })
-        assertEquals(listOf(false, true, false, false), model.rules.map { it.rejected })
-        assertEquals(listOf("ai-review", "ai-review", null, "user"), model.rules.map { it.decidedBy })
-        assertContains(DocRules.report(model), "자동 거절")
+
+        val unchecked = DocRules.carryOver(previous, extracted)
+        assertEquals(listOf(true, false, false, true), unchecked.rules.map { it.approved })
+        assertEquals(listOf(false, false, false, false), unchecked.rules.map { it.rejected }, "다시 확인하지 못하면 거절하지 않고 사용자 확인으로 남긴다")
+        assertEquals(listOf("ai-review", null, null, "user"), unchecked.rules.map { it.decidedBy })
+        assertContains(DocRules.report(unchecked), "제안: 기존 코드 다수가 어겨 잘못 옮겼는지 확인 필요")
+        assertContains(DocRules.report(unchecked), "자동 승인·기존 위반 5건 동결")
+        assertEquals(mapOf("doc:ok" to 5, "doc:user" to 10), DocRules.frozen(unchecked))
+
+        val misconverted = DocRules.carryOver(previous, extracted, mapOf("doc:bad" to 0.1))
+        assertEquals(listOf(false, true, false, false), misconverted.rules.map { it.rejected })
+        assertContains(DocRules.report(misconverted), "자동 거절: 기존 코드는 문서 원문을 지키는데 옮긴 규칙만 어겨")
+        assertContains(misconverted.rules[1].review!!.reason, "기존 위반이 원문을 어길 확률 0.10")
+
+        val debt = DocRules.carryOver(previous, extracted, mapOf("doc:bad" to 0.9))
+        assertEquals(listOf(true, true, false, true), debt.rules.map { it.approved }, "걸린 코드가 실제로 원문을 어기면 승인하고 기존 위반은 동결한다")
+        assertEquals(66, DocRules.frozen(debt)["doc:bad"])
+
+        val unsure = DocRules.carryOver(previous, extracted, mapOf("doc:bad" to 0.5))
+        assertEquals(listOf(false, false), unsure.rules[1].let { listOf(it.approved, it.rejected) })
+    }
+
+    @Test
+    fun `기존 위반이 많은 규칙은 걸린 코드와 그 타입 머리를 반례로 주고 원문을 어기는지 묻는다`() {
+        val root = Files.createTempDirectory("ilsim-doc-recheck")
+        root.resolve("src/main/kotlin/com/x/CenterController.kt").also { it.parent.createDirectories() }.writeText("""
+            package com.x
+
+            import org.springframework.web.bind.annotation.RestController
+
+            @PreAuthorize("hasRole('ADMIN')")
+            @RestController
+            class CenterController {
+                fun list(): List<String> = emptyList()
+
+                fun count(): Int = 0
+
+                fun detail(): String = ""
+            }
+        """.trimIndent())
+        val rule = ConventionRule("doc:perm", "doc-required-annotation", "API 메서드마다 권한 표시를 붙인다", mapOf("scope" to listOf("main")),
+            evidence = com.dochiri.ilsim.runner.architecture.Evidence(1, 10, listOf("src/main/kotlin/com/x/CenterController.kt:12")),
+            review = com.dochiri.ilsim.runner.architecture.RuleReview("KEEP", "JEV 원문 일치 0.70"),
+            origin = DocOrigin("docs/api.md", 3, "API", "권한은 컨트롤러 클래스나 메서드에 표시한다", "h"))
+        val states = mutableListOf<JsonNode>()
+
+        val confirmed = DocRules.recheck(jev { _, body -> states.add(body.path("state")); 0.1 }, root, listOf(rule, rule.copy(id = "doc:few", evidence = com.dochiri.ilsim.runner.architecture.Evidence(9, 10, listOf("src/main/kotlin/com/x/CenterController.kt:12")))))
+
+        assertEquals(mapOf("doc:perm" to 0.1), confirmed, "위반이 적은 규칙은 다시 묻지 않는다")
+        val example = states.single().path("examples").first().asText()
+        assertContains(example, "@PreAuthorize(\"hasRole('ADMIN')\")")
+        assertContains(example, "class CenterController {")
+        assertContains(example, "fun detail(): String = \"\"")
+        assertEquals("권한은 컨트롤러 클래스나 메서드에 표시한다", states.single().path("quote").asText())
+        assertEquals(emptyMap(), DocRules.recheck(Jev(null), root, listOf(rule)))
     }
 
     @Test
