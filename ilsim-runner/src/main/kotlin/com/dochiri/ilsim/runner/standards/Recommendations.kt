@@ -100,8 +100,9 @@ object ArchitectureRecommender {
         val severity = if (bad.isEmpty()) "BLOCK" else "REVIEW"
         return rule.copy(
             description = "${rule.description} (현재 준수: $ok/$total 파일)" + if (bad.isEmpty()) "" else " · 이 프로젝트는 이미 따르지 않아 자동으로 꺼 둠(승인하면 켠다)",
+            approved = bad.isEmpty(),
             rejected = bad.isNotEmpty(),
-            decidedBy = if (bad.isEmpty()) null else "auto",
+            decidedBy = "auto",
             proposedSeverity = severity,
             evidence = Evidence(ok, total, violating.take(3).map { "${it.first}:${it.second}" }),
         )
@@ -167,8 +168,9 @@ object ConventionRecommender {
                 id = Recommendations.PREFIX + spec.kind,
                 kind = spec.kind,
                 description = "${spec.description} (현재 준수: $ok/${samples.size})" + if (off) " · 이 프로젝트는 이미 따르지 않아 자동으로 꺼 둠(승인하면 켠다)" else "",
+                approved = !off,
                 rejected = off,
-                decidedBy = if (off) "auto" else null,
+                decidedBy = "auto",
                 params = spec.params,
                 severity = if (ok == samples.size) "BLOCK" else "REVIEW",
                 evidence = Evidence(ok, samples.size, samples.filter { !it.ok }.take(3).map { "${it.file}:${it.line}" }),

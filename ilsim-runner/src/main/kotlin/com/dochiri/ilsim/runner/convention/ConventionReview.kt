@@ -68,8 +68,13 @@ object ConventionApproval {
     fun approve(m: ConventionModel, ids: Collection<String>) = update(m, ids) { it.copy(approved = true, rejected = false, decidedBy = "user") }
     fun reject(m: ConventionModel, ids: Collection<String>) = update(m, ids) { it.copy(approved = false, rejected = true, decidedBy = "user") }
     fun keepIds(m: ConventionModel) = m.rules.filter { it.review?.verdict == "KEEP" && !it.approved && !it.rejected }.map { it.id }
-    fun autoApprove(m: ConventionModel): ConventionModel = m.copy(rules = m.rules.map {
-        if (it.review?.verdict == "KEEP" && it.severity != "BLOCK" && !it.approved && !it.rejected) it.copy(approved = true, decidedBy = "ai-review") else it
+    fun autoApprove(m: ConventionModel, violating: Set<String> = emptySet()): ConventionModel = m.copy(rules = m.rules.map {
+        if (it.decidedBy != null && it.decidedBy != "ai-review") it
+        else when (it.review?.verdict) {
+            "KEEP" -> it.copy(approved = true, rejected = false, decidedBy = "ai-review", severity = if (it.id in violating) "REVIEW" else it.severity)
+            "SUSPECT" -> it.copy(approved = false, rejected = true, decidedBy = "ai-review")
+            else -> it.copy(approved = false, rejected = false, decidedBy = null)
+        }
     })
 
     fun keepUserDecisions(saved: ConventionModel?, m: ConventionModel): ConventionModel {
@@ -84,7 +89,7 @@ object ConventionApproval {
         return mined.copy(
             rules = mined.rules.map { r ->
                 previous.rules.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }
-                    ?.let { o -> if (o.decidedBy == "auto" || (r.decidedBy == "auto" && o.decidedBy != "user")) r.copy(review = o.review) else r.copy(approved = o.approved, rejected = o.rejected, decidedBy = o.decidedBy, review = o.review) } ?: r
+                    ?.let { o -> if (o.decidedBy == "auto" || o.decidedBy == "ai-review" || (r.decidedBy == "auto" && o.decidedBy != "user")) r.copy(review = o.review) else r.copy(approved = o.approved, rejected = o.rejected, decidedBy = o.decidedBy, review = o.review) } ?: r
             },
             review = previous.review,
         )
@@ -102,7 +107,7 @@ object ConventionApproval {
 object ConventionReport {
     fun summary(m: ConventionModel, selfCheck: List<com.dochiri.ilsim.runner.architecture.Violation>?): String = buildString {
         appendLine("컨벤션 추론: ${m.projectName} (main ${m.sourceFiles}개 · test ${m.testFiles}개 · ${m.languages})")
-        appendLine("규칙 후보 ${m.rules.size}개 (모두 사용자 승인 전):")
+        appendLine("규칙 후보 ${m.rules.size}개 (AI 검토 뒤 판정대로 승인·거절):")
         m.rules.forEach { appendLine("  - (${it.severity}) ${it.description}") }
         if (m.notes.isNotEmpty()) { appendLine(); appendLine("참고:"); m.notes.forEach { appendLine("  ! $it") } }
         if (selfCheck != null) {
@@ -113,12 +118,13 @@ object ConventionReport {
     }
 
     fun triage(m: ConventionModel, projectId: String): String = buildString {
-        val auto = m.rules.count { it.approved && it.decidedBy == "ai-review" }
+        val auto = m.rules.filter { it.decidedBy == "ai-review" || it.decidedBy == "auto" }
         val user = m.rules.count { it.decidedBy == "user" }
         val pending = m.rules.filter { !it.approved && !it.rejected }
-        appendLine("규칙 ${m.rules.size}개: AI 검토 후 자동 승인 ${auto} · 사용자 결정 ${user} · 사용자 선택 필요 ${pending.size}")
+        appendLine("규칙 ${m.rules.size}개: 자동 승인 ${auto.count { it.approved }}(차단 ${auto.count { it.approved && it.severity == "BLOCK" }}) · 자동 거절 ${auto.count { it.rejected }} · 사용자 결정 ${user} · 판정 없음 ${pending.size}")
+        appendLine("기존 코드가 이미 어기는 규칙은 검토로 낮춰 승인했습니다. 바꾸려면 approve·reject $projectId <id>")
         if (pending.isNotEmpty()) {
-            appendLine("선택이 필요한 규칙(승인: approve $projectId <id> · 거절: reject $projectId <id>):")
+            appendLine("AI 판정이 없어 꺼 둔 규칙:")
             pending.forEach { appendLine("  [${it.review?.verdict ?: "의견 없음"}] ${it.id} (${it.severity}) ${it.review?.reason.orEmpty()}") }
         }
     }

@@ -140,7 +140,7 @@ class IlsimMcp(
         active.save(ws.home, task)
         guides.save(created.taskId, buildGuide(home.at(task), created.feature, requirement))
         val pending = pendingRules(store, ws.projectId).takeIf { it.isNotEmpty() }?.let { counts ->
-            "\n주의: 사용자 승인을 기다리는 규칙이 있습니다(${counts.entries.joinToString { "${it.key} ${it.value}개" }}). 승인 전에는 제출 때 정적으로 강제하지 않습니다(문서 지침은 JEV가 판정). 단계를 진행하기 전에 사용자에게 review_rules로 보여 주고 decide_rules로 정하게 권하세요"
+            "\n주의: AI 판정이 없어 꺼 둔 규칙이 있습니다(${counts.entries.joinToString { "${it.key} ${it.value}개" }}). 제출 때 정적으로 강제하지 않습니다(문서 지침은 JEV가 판정). analyze_project를 다시 실행하면 AI가 판정해 켜거나 끕니다"
         }.orEmpty()
         val warning = home.installCommitHook(runnerCommand)?.let { "\n주의: $it" }.orEmpty() + pending
         return "작업을 만들었습니다: ${created.feature} (${created.taskId.take(8)}), 브랜치 $branch, 작업 폴더 $worktree$warning\n\n" + nextStep()

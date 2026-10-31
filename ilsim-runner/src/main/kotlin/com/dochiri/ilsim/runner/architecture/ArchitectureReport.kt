@@ -61,12 +61,13 @@ object ArchitectureReport {
     }
 
     fun triage(m: ArchitectureModel, projectId: String): String = buildString {
-        val auto = m.rules.count { it.approved && it.decidedBy == "ai-review" }
+        val auto = m.rules.filter { it.decidedBy == "ai-review" || it.decidedBy == "auto" }
         val user = m.rules.count { it.decidedBy == "user" }
         val pending = m.rules.filter { !it.approved && !it.rejected }
-        appendLine("규칙 ${m.rules.size}개: AI 검토 후 자동 승인 ${auto} · 사용자 결정 ${user} · 사용자 선택 필요 ${pending.size}")
+        appendLine("규칙 ${m.rules.size}개: 자동 승인 ${auto.count { it.approved }}(차단 ${auto.count { it.approved && it.proposedSeverity == "BLOCK" }}) · 자동 거절 ${auto.count { it.rejected }} · 사용자 결정 ${user} · 판정 없음 ${pending.size}")
+        appendLine("기존 코드가 이미 어기는 규칙은 검토로 낮춰 승인했습니다. 바꾸려면 approve·reject $projectId <id>")
         if (pending.isNotEmpty()) {
-            appendLine("선택이 필요한 규칙(승인: approve $projectId <id> · 거절: reject $projectId <id>):")
+            appendLine("AI 판정이 없어 꺼 둔 규칙:")
             pending.forEach { appendLine("  [${it.review?.verdict ?: "의견 없음"}] ${it.id} (${it.proposedSeverity}) ${it.review?.reason.orEmpty()}") }
         }
     }

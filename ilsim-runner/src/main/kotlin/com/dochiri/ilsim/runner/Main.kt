@@ -64,7 +64,7 @@ private const val USAGE = """사용법:
     ilsim-runner list                            등록된 프로젝트 보기
     ilsim-runner set <id> test|analysis|mutation <명령>   테스트·정적 분석·변이 테스트(PIT) 명령 지정
     ilsim-runner detect <path>                   기술 스택 감지
-  규칙 만들기 (정적 분석 → AI 1회 검토 → 확실한 것은 자동 승인, 나머지는 사용자 선택)
+  규칙 만들기 (정적 분석 → AI 1회 검토 → 판정대로 자동 승인·거절, 사용자는 바꿀 때만 approve·reject)
     ilsim-runner architecture <id>               아키텍처 규칙
     ilsim-runner convention <id>                 코드 컨벤션 규칙
     ilsim-runner doc-rules <id>                  그 프로젝트 문서에 적힌 규칙으로 문서 지침 검증기(doc: 규칙)를 만든다(JEV·Claude)
@@ -228,6 +228,8 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
     val recommended = ArchitectureRecommender.recommend(path, profile, mined)
     var model = RuleApproval.carryOver(registered?.let { archStore.load(id) }, mined.copy(rules = mined.rules + recommended))
     val self = if (mined.rules.isEmpty()) null else ArchitectureChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
+    val violating = self.orEmpty().map { it.ruleId }.toSet()
+    model = RuleApproval.autoApprove(model, violating)
     if (registered != null) {
         out.appendLine("저장: ${archStore.save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
@@ -245,7 +247,7 @@ fun analyzeArchitecture(store: ConfigStore, id: String, out: Appendable) {
                 answer.text
             }
             model = model.copy(review = model.review?.copy(reviewer = cost.lastReviewer ?: model.review!!.reviewer))
-            model = RuleApproval.autoApprove(model).let { it.copy(rules = it.rules + proposed) }
+            model = RuleApproval.autoApprove(model, violating).let { it.copy(rules = it.rules + proposed) }
             val reviewed = model
             archStore.update(id) { saved -> RuleApproval.keepUserDecisions(saved, reviewed).also { model = it } }
             out.appendLine()
@@ -538,6 +540,8 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
     val recommended = ConventionRecommender.recommend(path, profile, mined)
     var model = ConventionApproval.carryOver(previous, mined.copy(rules = mined.rules + recommended))
     val self = if (mined.rules.isEmpty()) null else ConventionChecker.check(path, profile, model.copy(rules = model.rules.filterNot { Recommendations.isRecommended(it.id) }))
+    val violating = self.orEmpty().map { it.ruleId }.toSet()
+    model = ConventionApproval.autoApprove(model, violating)
     if (registered != null) {
         out.appendLine("저장: ${ConventionStore(store).save(id, model)} (프로젝트 ${id} 전용)")
     } else out.appendLine("등록되지 않은 경로라 저장하지 않았습니다 (먼저 add 로 등록해야 규칙이 프로젝트 전용으로 저장됩니다)")
@@ -555,7 +559,7 @@ fun analyzeConvention(store: ConfigStore, id: String, out: Appendable) {
                 answer.text
             }
             model = model.copy(review = model.review?.copy(reviewer = cost.lastReviewer ?: model.review!!.reviewer))
-            model = ConventionApproval.autoApprove(model).let { it.copy(rules = it.rules + proposed) }
+            model = ConventionApproval.autoApprove(model, violating).let { it.copy(rules = it.rules + proposed) }
             val reviewed = model
             ConventionStore(store).update(id) { saved -> ConventionApproval.keepUserDecisions(saved, reviewed).also { model = it } }
             out.appendLine()

@@ -28,6 +28,7 @@ object DocRules {
     private const val RECHECK_UNTIL = 0.6
     private const val VERSION = "doc-rules-v3"
     private const val MAX_REMAINING = 20
+    private const val MISCONVERTED_DIVISOR = 5
 
     class Extracted(val rules: List<ConventionRule>, val documents: List<DocCoverage>, val notes: List<String>)
 
@@ -269,12 +270,20 @@ object DocRules {
     fun asConvention(model: DocRuleModel): ConventionModel = ConventionModel(null, 0, 0, emptyMap(), model.rules)
 
     fun carryOver(previous: DocRuleModel?, extracted: Extracted): DocRuleModel {
-        val decided = previous?.rules.orEmpty().filter { it.decidedBy != null }
+        val decided = previous?.rules.orEmpty().filter { it.decidedBy == "user" }
         val rules = extracted.rules.map { r ->
-            decided.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }?.let { r.copy(approved = it.approved, rejected = it.rejected, decidedBy = it.decidedBy) } ?: r
+            decided.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }?.let { r.copy(approved = it.approved, rejected = it.rejected, decidedBy = it.decidedBy) } ?: autoDecide(r)
         }
         return DocRuleModel(rules, extracted.documents, extracted.notes)
     }
+
+    internal fun autoDecide(r: ConventionRule): ConventionRule = when {
+        r.review?.verdict != "KEEP" -> r.copy(approved = false, rejected = false, decidedBy = null)
+        misconverted(r) -> r.copy(approved = false, rejected = true, decidedBy = "ai-review")
+        else -> r.copy(approved = true, rejected = false, decidedBy = "ai-review")
+    }
+
+    private fun misconverted(r: ConventionRule) = (r.evidence.total - r.evidence.compliant) * MISCONVERTED_DIVISOR > r.evidence.total
 
     fun decide(model: DocRuleModel, ids: Collection<String>, approve: Boolean): DocRuleModel {
         val unknown = ids.filterNot { id -> model.rules.any { it.id == id } }
@@ -308,7 +317,12 @@ object DocRules {
         appendLine()
         appendLine("문서 규칙 ${rules.size}개 (문서에서 옮긴 정적 규칙. 승인하면 바꾼 코드에 새로 생기는 위반을 막는다):")
         for (r in rules) {
-            val state = when { r.approved -> "승인됨"; r.rejected -> "거절됨"; else -> "제안" }
+            val auto = r.decidedBy == "ai-review"
+            val state = when {
+                r.approved -> if (auto) "자동 승인" else "승인됨"
+                r.rejected -> if (auto) "자동 거절: 현재 코드 대부분이 어겨 문서를 잘못 옮겼을 수 있음" else "거절됨"
+                else -> "제안"
+            }
             appendLine("  [$state·${r.severity}] ${r.description}  <${r.id}>")
             val faith = r.review?.reason ?: "JEV 확인 안 됨"
             val origin = r.origin?.let { "${it.path}:${it.line}" }.orEmpty()

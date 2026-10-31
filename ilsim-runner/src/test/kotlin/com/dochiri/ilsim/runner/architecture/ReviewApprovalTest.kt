@@ -81,28 +81,31 @@ class ReviewApprovalTest {
     }
 
     @Test
-    fun `KEEP 만 자동 승인하고 사용자가 정한 규칙과 다시 분석한 결과의 결정은 유지한다`() {
-        val soft = model.copy(rules = listOf(rule("a").copy(proposedSeverity = "REVIEW")) + model.rules.drop(1))
-        val reviewed = ArchitectureReviewer.apply(soft, response, "h", "sonnet")
-        val blockKeep = ArchitectureReviewer.apply(model, response, "h", "sonnet")
-        assertEquals(listOf(false, false, false), RuleApproval.autoApprove(blockKeep).rules.map { it.approved }, "BLOCK 규칙은 KEEP 이어도 자동 승인하지 않는다")
-        val decided = RuleApproval.reject(reviewed, listOf("a"))
-        val auto = RuleApproval.autoApprove(decided)
-        assertEquals(listOf(false, false, false), auto.rules.map { it.approved }, "거절한 a 는 승인하지 않고 SUSPECT 인 b 와 의견 없는 c 도 승인하지 않는다")
-
+    fun `AI 판정대로 KEEP 은 승인하고 SUSPECT 는 거절하며 사용자가 정한 규칙과 다시 분석한 결과의 결정은 유지한다`() {
+        val reviewed = ArchitectureReviewer.apply(model, response, "h", "sonnet")
         val fresh = RuleApproval.autoApprove(reviewed)
         assertEquals(listOf(true, false, false), fresh.rules.map { it.approved })
-        assertEquals("ai-review", fresh.rules.first().decidedBy)
+        assertEquals(listOf(false, true, false), fresh.rules.map { it.rejected }, "의견 없는 c 는 판정 없이 꺼 둔다")
+        assertEquals(listOf("ai-review", "ai-review", null), fresh.rules.map { it.decidedBy })
+        assertEquals("BLOCK", fresh.rules.first().proposedSeverity)
+
+        val violated = RuleApproval.autoApprove(reviewed, setOf("a"))
+        assertEquals("REVIEW", violated.rules.first().proposedSeverity, "기존 코드가 이미 어기는 규칙은 검토로 낮춰 승인한다")
+        assertTrue(violated.rules.first().approved)
+
+        val decided = RuleApproval.reject(reviewed, listOf("a"))
+        assertEquals(false, RuleApproval.autoApprove(decided).rules.first().approved, "사용자가 거절한 규칙은 AI 판정으로 바꾸지 않는다")
+
         val userApproved = RuleApproval.approve(fresh, listOf("b"))
         assertEquals("user", userApproved.rules[1].decidedBy)
-
-        val carried = RuleApproval.carryOver(userApproved, soft)
+        val carried = RuleApproval.autoApprove(RuleApproval.carryOver(userApproved, model))
         assertEquals(listOf(true, true, false), carried.rules.map { it.approved })
         assertEquals("KEEP", carried.rules.first().review?.verdict)
-        val changedParams = soft.copy(rules = listOf(rule("a").copy(proposedSeverity = "REVIEW", params = mapOf("unit" to listOf("other")))) + model.rules.drop(1))
+        assertEquals("BLOCK", RuleApproval.carryOver(violated, model).rules.first().proposedSeverity, "AI 결정은 다시 분석할 때 새 위반 기준으로 다시 계산한다")
+        val changedParams = model.copy(rules = listOf(rule("a").copy(params = mapOf("unit" to listOf("other")))) + model.rules.drop(1))
         assertEquals(false, RuleApproval.carryOver(userApproved, changedParams).rules.first().approved, "인자가 달라진 규칙은 새 규칙으로 본다")
 
         val triage = ArchitectureReport.triage(fresh, "p")
-        assertTrue(triage.contains("자동 승인 1") && triage.contains("선택 필요 2") && triage.contains("[SUSPECT] b") && triage.contains("[의견 없음] c"))
+        assertTrue(triage.contains("자동 승인 1(차단 1)") && triage.contains("자동 거절 1") && triage.contains("판정 없음 1") && triage.contains("[의견 없음] c"), triage)
     }
 }

@@ -118,7 +118,7 @@ claude plugin marketplace update ilsim && claude plugin update ilsim@ilsim
 
 ## 아키텍처·컨벤션 추천
 
-- 프로젝트 분석(`ilsim-runner architecture <id>`·`convention <id>`)은 코드에서 추출한 규칙과 함께 헥사고날·DDD·클린 아키텍처·객체지향·객체지향 생활 체조 기준의 추천 규칙(`recommend:` id)을 만든다. 의존 방향(도메인 → 애플리케이션 → 어댑터 금지), 도메인 순수성·캡슐화, 식별자 값 객체, 함수 길이·중첩, 파일 크기, 주석 없음, 생성자 주입 등이다. 추천은 AI 자동 승인 대상이 아니며 사용자가 Claude 앱에서 `review_rules`로 보고 `decide_rules`로 승인·거절한다(매번 사용자 확인 창).
+- 프로젝트 분석(`ilsim-runner architecture <id>`·`convention <id>`)은 코드에서 추출한 규칙과 함께 헥사고날·DDD·클린 아키텍처·객체지향·객체지향 생활 체조 기준의 추천 규칙(`recommend:` id)을 만든다. 의존 방향(도메인 → 애플리케이션 → 어댑터 금지), 도메인 순수성·캡슐화, 식별자 값 객체, 함수 길이·중첩, 파일 크기, 주석 없음, 생성자 주입 등이다. 추천은 현재 코드가 따르면 켜고 하나라도 어기면 꺼 둔다. 코드에서 추출한 규칙은 AI 검토 판정대로 KEEP은 승인(기존 코드가 이미 어기는 차단 규칙은 검토로 낮춤), SUSPECT는 거절하고, 문서 규칙은 JEV 원문 일치를 통과하면 승인하되 기존 코드의 20%를 넘게 어기면 잘못 옮긴 것으로 보고 거절한다. 사용자는 바꾸고 싶을 때만 Claude 앱에서 `review_rules`로 보고 `decide_rules`로 승인·거절한다(매번 사용자 확인 창).
 - 지금 다 지키는 추천은 BLOCK, 위반이 있으면 REVIEW로 제안한다. 위반이 있는 추천은 Claude 앱에서 리팩터링 작업으로 진행하고, 다시 분석해 위반이 없어지면 승인을 유지한 채 BLOCK으로 강화된다.
 - `ilsim-runner recommend <id|경로>`는 AI 없이 추천만 출력한다.
 

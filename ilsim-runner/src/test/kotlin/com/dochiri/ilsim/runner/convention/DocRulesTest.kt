@@ -377,4 +377,20 @@ class DocRulesTest {
         assertContains(brief, "### 이 프로젝트 문서에 적힌 규칙")
         assertContains(brief, "테스트에서 Thread.sleep 을 쓰지 않는다 (docs/testing.md:7)")
     }
+
+    @Test
+    fun `JEV 가 원문과 맞다고 본 문서 규칙은 자동 승인하고 기존 코드 대부분이 어기면 잘못 옮긴 것으로 보고 거절한다`() {
+        fun rule(id: String, verdict: String?, compliant: Int, total: Int) = ConventionRule(
+            "doc:$id", "doc-forbidden-code", id, mapOf("scope" to listOf("main")), severity = "BLOCK",
+            evidence = com.dochiri.ilsim.runner.architecture.Evidence(compliant, total),
+            review = verdict?.let { com.dochiri.ilsim.runner.architecture.RuleReview(it, "JEV") },
+        )
+        val extracted = DocRules.Extracted(listOf(rule("ok", "KEEP", 183, 188), rule("bad", "KEEP", 23, 89), rule("none", null, 1, 1), rule("user", "KEEP", 0, 10)), emptyList(), emptyList())
+        val previous = DocRules.DocRuleModel(listOf(rule("user", "KEEP", 0, 10).copy(approved = true, decidedBy = "user"), rule("ok", "KEEP", 0, 1).copy(rejected = true, decidedBy = "ai-review")))
+        val model = DocRules.carryOver(previous, extracted)
+        assertEquals(listOf(true, false, false, true), model.rules.map { it.approved })
+        assertEquals(listOf(false, true, false, false), model.rules.map { it.rejected })
+        assertEquals(listOf("ai-review", "ai-review", null, "user"), model.rules.map { it.decidedBy })
+        assertContains(DocRules.report(model), "자동 거절")
+    }
 }

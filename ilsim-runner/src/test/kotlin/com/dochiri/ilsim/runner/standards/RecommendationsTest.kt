@@ -173,7 +173,8 @@ class RecommendationsTest {
         assertEquals("auto", used.decidedBy)
         val clean = recommended(domain(false))
         assertFalse(clean.rejected)
-        assertEquals(null, clean.decidedBy)
+        assertTrue(clean.approved)
+        assertEquals("auto", clean.decidedBy)
     }
 
     @Test

@@ -9,8 +9,13 @@ object RuleApproval {
     fun keepIds(model: ArchitectureModel): List<String> =
         model.rules.filter { it.review?.verdict == "KEEP" && !it.approved && !it.rejected }.map { it.id }
 
-    fun autoApprove(model: ArchitectureModel): ArchitectureModel = model.copy(rules = model.rules.map {
-        if (it.review?.verdict == "KEEP" && it.proposedSeverity != "BLOCK" && !it.approved && !it.rejected) it.copy(approved = true, decidedBy = "ai-review") else it
+    fun autoApprove(model: ArchitectureModel, violating: Set<String> = emptySet()): ArchitectureModel = model.copy(rules = model.rules.map {
+        if (it.decidedBy != null && it.decidedBy != "ai-review") it
+        else when (it.review?.verdict) {
+            "KEEP" -> it.copy(approved = true, rejected = false, decidedBy = "ai-review", proposedSeverity = if (it.id in violating) "REVIEW" else it.proposedSeverity)
+            "SUSPECT" -> it.copy(approved = false, rejected = true, decidedBy = "ai-review")
+            else -> it.copy(approved = false, rejected = false, decidedBy = null)
+        }
     })
 
     fun keepUserDecisions(saved: ArchitectureModel?, model: ArchitectureModel): ArchitectureModel {
@@ -25,7 +30,7 @@ object RuleApproval {
         return mined.copy(
             rules = mined.rules.map { r ->
                 previous.rules.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }
-                    ?.let { o -> if (o.decidedBy == "auto" || (r.decidedBy == "auto" && o.decidedBy != "user")) r.copy(review = o.review) else r.copy(approved = o.approved, rejected = o.rejected, decidedBy = o.decidedBy, review = o.review) } ?: r
+                    ?.let { o -> if (o.decidedBy == "auto" || o.decidedBy == "ai-review" || (r.decidedBy == "auto" && o.decidedBy != "user")) r.copy(review = o.review) else r.copy(approved = o.approved, rejected = o.rejected, decidedBy = o.decidedBy, review = o.review) } ?: r
             },
             review = previous.review,
         )
