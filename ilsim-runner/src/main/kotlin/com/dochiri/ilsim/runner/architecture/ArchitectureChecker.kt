@@ -24,6 +24,12 @@ object ArchitectureChecker {
 
     private fun v(rule: ArchRule, d: Dep, msg: String) = Violation(rule.id, rule.proposedSeverity, d.file.path, d.line, msg)
 
+    private fun confined(rolePath: String, allowed: String): Boolean {
+        val path = if (allowed.startsWith("*.")) rolePath.substringAfter('.', "") else rolePath
+        val prefix = allowed.removePrefix("*.")
+        return path == prefix || path.startsWith("$prefix.")
+    }
+
     private fun evaluate(rule: ArchRule, deps: List<Dep>, model: ArchitectureModel): List<Violation> {
         val p = rule.params
         return when (rule.kind) {
@@ -38,7 +44,7 @@ object ArchitectureChecker {
                 .map { v(rule, it, "`${it.from.unit}` 은 다른 단위에 의존하지 않아야 합니다: ${it.name}") }
             "confinement" -> {
                 val allowed = p["confinedTo"]!!
-                deps.filter { d -> d.external == p["prefix"]!![0] && d.from.unit !in pseudoUnits && allowed.none { d.from.rolePath == it || d.from.rolePath.startsWith("$it.") } }
+                deps.filter { d -> d.external == p["prefix"]!![0] && d.from.unit !in pseudoUnits && allowed.none { confined(d.from.rolePath, it) } }
                     .map { v(rule, it, "`${it.external}` 는 ${allowed.joinToString { a -> "`$a`" }} 안에서만 사용해야 합니다 (현재 위치: `${it.from.rolePath.ifEmpty { it.from.unit }}`)") }
             }
             "shared-independence" -> deps.filter { it.to != null && it.from.slice == null && it.from.unit.startsWith("shared:") && it.to.slice != null }

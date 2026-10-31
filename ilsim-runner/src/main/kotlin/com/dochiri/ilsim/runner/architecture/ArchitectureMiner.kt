@@ -153,14 +153,20 @@ object ArchitectureMiner {
             if (files.size < 2) return@mapNotNull null
             val groups = ds.map { it.from.rolePath.split('.').filter(String::isNotEmpty) }.filter { it.isNotEmpty() }.groupBy { it[0] }
             if (groups.isEmpty() || groups.size > maxOf(1, unitCount / 2)) return@mapNotNull null
-            val allowed = groups.values.map { g ->
+            val allowed = generalized(groups.values.map { g ->
                 g.reduce { a, b -> a.zip(b).takeWhile { (x, y) -> x == y }.map { it.first } }.joinToString(".")
-            }.sorted()
+            })
             ArchRule("confinement:$prefix", "confinement",
                 "`$prefix` 는 ${allowed.joinToString { "`$it`" }} 안에서만 사용한다 (관측: ${files.size}개 파일 모두 해당)",
                 mapOf("prefix" to listOf(prefix), "confinedTo" to allowed),
                 if (files.size >= 5) "BLOCK" else "REVIEW", Evidence(files.size, files.size, ds.take(3).map { it.where }))
         }
+
+    internal fun generalized(paths: List<String>): List<String> {
+        val byRole = paths.filter { '.' in it }.groupBy { it.substringAfter('.') }.filterValues { it.size >= 2 }
+        val folded = byRole.values.flatten().toSet()
+        return (paths.filterNot { it in folded } + byRole.keys.map { "*.$it" }).distinct().sorted()
+    }
 
     private fun sharedRules(deps: List<Dep>, layout: Layout): List<ArchRule> {
         if (layout.mode != "SLICED") return emptyList()

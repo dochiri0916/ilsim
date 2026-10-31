@@ -326,4 +326,10 @@ class ArchitectureTest {
         val bad = project(*files, kt("com.acme.billing.service", "Pricing", "com.acme.catalog.domain.Item"))
         assertTrue(check(bad, m).any { it.ruleId == "cross-slice-targets" })
     }
+
+    @Test
+    fun `여러 슬라이스의 같은 역할 경로에만 쓰는 라이브러리는 새 슬라이스의 같은 역할에도 허용한다`() {
+        assertEquals(listOf("*.presentation.controller", "config"), ArchitectureMiner.generalized(listOf("account.presentation.controller", "config", "item.presentation.controller")))
+        assertEquals(listOf("account.presentation.controller", "config"), ArchitectureMiner.generalized(listOf("account.presentation.controller", "config")))
+    }
 }
