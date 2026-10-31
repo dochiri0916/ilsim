@@ -16,7 +16,7 @@ object ArchitectureChecker {
         val locator = Locator(model.layout)
         val a = model.applicability
         val deps = Dependencies.resolve(files, locator)
-            .filterNot { it.from.slice in a.unverifiedSlices || it.from.unit in a.unverifiedUnits }
+            .filterNot { it.from.slice in a.unverifiedSlices }
         val out = mutableListOf<Violation>()
         for (rule in model.rules.filter { !it.rejected && (!approvedOnly || it.approved) }) out += evaluate(rule, deps, model)
         return out.sortedWith(compareBy({ it.file }, { it.line }, { it.ruleId }))

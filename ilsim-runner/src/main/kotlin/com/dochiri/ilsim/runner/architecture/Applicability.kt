@@ -51,7 +51,7 @@ internal object ApplicabilityAssessor {
         val cyclicRatio = if (units.isEmpty()) 0.0 else cyclicUnits.size.toDouble() / units.size
         metrics["cyclicUnits"] = cyclicRatio
         if (cyclicRatio >= MAX_CYCLIC_UNITS) { hard = true; reasons += "단위의 ${pct(cyclicRatio)}가 순환 의존에 속해 층 구조가 없습니다" }
-        else if (cyclicUnits.isNotEmpty()) { soft = true; reasons += "순환 의존에 속한 단위는 검증에서 제외합니다: ${cyclicUnits.joinToString()}" }
+        else if (cyclicUnits.isNotEmpty()) { soft = true; reasons += "순환 의존에 속한 단위가 있습니다: ${cyclicUnits.joinToString()}. 이미 있는 의존은 두고 새 의존만 규칙대로 검증합니다" }
 
         val sliceCycles = Graphs.cycles(slicePairs)
         if (sliceCycles.isNotEmpty()) {
@@ -84,7 +84,6 @@ internal object ApplicabilityAssessor {
         }
         return Applicability(
             status, metrics, reasons,
-            unverifiedUnits = if (status == Applicability.PARTIAL) cyclicUnits.toList() else emptyList(),
             unverifiedSlices = if (status == Applicability.PARTIAL) unverifiedSlices else emptyList(),
         )
     }

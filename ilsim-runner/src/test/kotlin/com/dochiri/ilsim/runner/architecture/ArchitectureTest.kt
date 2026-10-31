@@ -271,14 +271,18 @@ class ArchitectureTest {
     }
 
     @Test
-    fun `일부만 순환이면 부분 적용하고 순환 단위는 검증에서 제외한다`() {
+    fun `일부만 순환이면 부분 적용하고 순환 단위도 이미 있는 의존은 두고 새 의존은 규칙대로 막는다`() {
         val base = flatFiles().toList()
         val tangled = mesh("x", "y").map { (p, t) -> p.replace("com/old", "com/shop") to t.replace("com.old", "com.shop") }
-        val m = mine(project(*(base + tangled).toTypedArray()))
+        val files = (base + tangled).toTypedArray()
+        val m = mine(project(*files))
         assertEquals(Applicability.PARTIAL, m.applicability.status)
-        assertEquals(listOf("x", "y"), m.applicability.unverifiedUnits)
-        val bad = project(*(base + tangled).toTypedArray(), kt("com.shop.x", "Z", "com.shop.controller.OrderController"))
-        assertTrue(check(bad, m).none { it.file.contains("/x/") })
+        assertEquals(emptyList(), m.applicability.unverifiedUnits)
+        assertTrue(m.applicability.reasons.any { "x, y" in it && "새 의존만" in it }, m.applicability.reasons.toString())
+        assertEquals(emptyList(), check(project(*files), m), "이미 있는 순환 의존은 위반이 아니다")
+        assertTrue(m.rules.any { it.id == "pure-layer:x" })
+        val bad = project(*files, kt("com.shop.x", "Z", "org.somelib.Thing"))
+        assertTrue(check(bad, m).any { it.file.contains("/x/") && it.ruleId == "pure-layer:x" }, "순환 단위에서 새로 생긴 금지 의존은 막는다")
     }
 
     @Test
@@ -369,7 +373,7 @@ class ArchitectureTest {
         assertEquals(model.rules.filterNot { it.rejected }.map { it.id }.toSet(), result.caught.toSet())
         assertEquals(emptyList(), result.missed)
 
-        val hidden = model.copy(applicability = model.applicability.copy(unverifiedUnits = listOf("presentation.controller", "controller", "presentation")))
+        val hidden = model.copy(applicability = model.applicability.copy(unverifiedSlices = model.layout.slices))
         val partial = ArchitectureSelfTest.run(files, hidden)
         assertTrue(partial.missed.isNotEmpty(), "검증에서 빠진 단위에 걸린 규칙은 위반을 심어도 잡히지 않는다")
     }
