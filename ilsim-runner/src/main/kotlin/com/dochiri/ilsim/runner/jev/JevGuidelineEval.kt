@@ -280,8 +280,8 @@ object JevGuidelineEval {
             val bad = groups.filter { it.first().expected }
             val good = groups.filter { !it.first().expected }
             val static = observations.filter { it.question == "diff-static" && it.expected && (it.p ?: 0.0) >= 1.0 }.map { it.project to it.item }.toSet()
-            appendLine("변경 단위 종합(정적 문서 규칙+JEV, 모든 반복 기준): 위반 ${bad.size}개 중 막음 ${bad.count { g -> g.all { it.p!! >= Guidelines.VIOLATED } }}(정적 ${static.size}), 검토로 올림 ${bad.count { g -> g.any { it.p!! < Guidelines.VIOLATED } && g.all { it.p!! > Guidelines.CLEAR } }}, 조용히 통과 ${bad.count { g -> g.any { it.p!! <= Guidelines.CLEAR } }} / 정상 ${good.size}개 중 잘못 막음 ${good.count { g -> g.any { it.p!! >= Guidelines.VIOLATED } }}, 검토로 올림 ${good.count { g -> g.any { it.p!! > Guidelines.CLEAR && it.p!! < Guidelines.VIOLATED } }}")
-            bad.filter { g -> g.any { it.p!! <= Guidelines.CLEAR } }.forEach { g -> appendLine("  조용히 통과: ${g.first().project}/${g.first().item} ${g.joinToString("/") { "%.2f".format(it.p) }}") }
+            appendLine("변경 단위 종합(정적 문서 규칙+JEV, 모든 반복 기준): 위반 ${bad.size}개 중 막음 ${bad.count { g -> g.all { it.p!! >= Guidelines.VIOLATED } }}(정적 ${static.size}), 검토로 올림 ${bad.count { g -> g.any { it.p!! < Guidelines.VIOLATED } && g.all { it.p!! > Guidelines.UNSURE } }}, 조용히 통과 ${bad.count { g -> g.any { it.p!! <= Guidelines.UNSURE } }} / 정상 ${good.size}개 중 잘못 막음 ${good.count { g -> g.any { it.p!! >= Guidelines.VIOLATED } }}, 검토로 올림 ${good.count { g -> g.any { it.p!! > Guidelines.UNSURE && it.p!! < Guidelines.VIOLATED } }}")
+            bad.filter { g -> g.any { it.p!! <= Guidelines.UNSURE } }.forEach { g -> appendLine("  조용히 통과: ${g.first().project}/${g.first().item} ${g.joinToString("/") { "%.2f".format(it.p) }}") }
             appendLine()
         }
         appendLine("질문 | 사례(양성) | AUROC | 현재 기준 | 정확도 | 놓침 | 오경보 | 판정 실패 | 제안 기준(놓침 0 또는 오경보 0)")

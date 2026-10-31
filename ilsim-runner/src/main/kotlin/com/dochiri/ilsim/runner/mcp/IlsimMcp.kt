@@ -357,9 +357,10 @@ class IlsimMcp(
         val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
         val state = server.agentTask(task.taskId) ?: throw IllegalStateException("서버에서 작업을 찾을 수 없습니다")
         val stage = state.stage?.takeIf { state.status == "ACTIVE" } ?: throw IllegalStateException("진행 중인 작업이 아닙니다(상태 ${state.status})")
-        if (stage == "REQUIREMENTS") throw IllegalStateException("요구사항 단계에서는 사용자의 답을 reject_stage(답)로 요구사항 문서에 반영하세요")
+        if (stage == "REQUIREMENTS" && state.stageStatus == "WAITING_APPROVAL") throw IllegalStateException("승인을 기다리는 요구사항 문서에는 사용자의 답을 reject_stage(답)로 반영하세요")
         val artifacts = Artifacts(store)
-        val spec = artifacts.read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS") ?: throw IllegalStateException("요구사항 문서가 없습니다")
+        val spec = artifacts.read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS")
+            ?: if (stage == "REQUIREMENTS" && question == null) "" else throw IllegalStateException("요구사항 문서가 없습니다")
         val id = question?.trim()?.uppercase()
         if (id != null) {
             val questions = UndecidedCheck.questions(spec)
@@ -503,7 +504,8 @@ class IlsimMcp(
         val specs = Artifacts(store)
         val approvedCases = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") specs.read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty()
             .map { "승인된 테스트 케이스 ${it.id}: ${it.text.take(MAX_APPROVED_CASE)}" } else emptyList()
-        val compliance = guidelineCheck(guide, stage, diff, validation, specs.decisions(ws.projectId, task.feature, task.taskId).map { listOfNotNull(it.question, it.text).joinToString(": ") } + approvedCases)
+        val userDecisions = specs.decisions(ws.projectId, task.feature, task.taskId).map { listOfNotNull(it.question, it.text).joinToString(": ") }
+        val compliance = guidelineCheck(guide, stage, diff, validation, userDecisions + approvedCases, userDecisions)
         if (compliance != null && compliance.violated.isNotEmpty()) {
             return Outcome(cause = "guidelines", error = "이 프로젝트 문서 지침을 어긴 것으로 보입니다. 아래 지침에 맞게 고친 뒤 다시 제출하세요. 승인된 요구사항이나 사용자 뜻대로 한 부분인데 지적됐다면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용)으로 기록한 뒤 다시 제출하세요:\n" +
                 compliance.violated.joinToString("\n") { g -> "- ${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()} (위반 확률 ${"%.2f".format(compliance.probabilities[g])})\n  ${g.text.lines().filter { it.isNotBlank() }.take(6).joinToString(" ").take(400)}" })
@@ -730,12 +732,16 @@ class IlsimMcp(
         return show(suspects) to show(edited)
     }
 
-    private fun guidelineCheck(guide: TaskGuide, stage: String, diff: String, validation: MutableMap<String, String>, decisions: List<String>): Guidelines.Check? {
+    private fun guidelineCheck(guide: TaskGuide, stage: String, diff: String, validation: MutableMap<String, String>, decisions: List<String>, userDecisions: List<String>): Guidelines.Check? {
         if (guide.selected && guide.guidelines.isEmpty()) {
             validation["guidelines"] = "NONE"
             return Guidelines.Check(emptyMap(), emptyList(), emptyList(), false)
         }
-        val result = if (guide.selected) runCatching { Guidelines.check(jev(), stage, guide.guidelines, diff, decisions) }.getOrNull() else null
+        val checked = if (guide.selected) runCatching { Guidelines.check(jev(), stage, guide.guidelines, diff, decisions) }.getOrNull() else null
+        val flagged = checked?.let { it.violated + it.uncertain }.orEmpty()
+        val permitted = if (flagged.isEmpty()) emptySet() else runCatching { Guidelines.permitted(jev(), flagged, userDecisions) }.getOrNull().orEmpty()
+        if (permitted.isNotEmpty()) DecisionScope.record("GUIDELINE_PERMISSION", "JEV", "사용자 결정으로 허락한 지침: ${permitted.joinToString { it.source }}", diff)
+        val result = checked?.copy(violated = checked.violated - permitted, uncertain = checked.uncertain - permitted)
         validation["guidelines"] = when {
             result == null -> "UNKNOWN"
             result.violated.isNotEmpty() -> "VIOLATED"

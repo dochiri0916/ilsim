@@ -13,12 +13,15 @@ object Guidelines {
     const val IRRELEVANT = 0.2
     const val VIOLATED = 0.8
     const val CLEAR = 0.4
+    const val UNSURE = 0.5
     const val LEGACY = 0.6
     const val APPLIES = 0.5
     const val BATCH = 10
     const val PARALLEL = 4
     const val MAX_REQUEST_CHARS = 4000
     const val MAX_STATE_WEIGHT = 22_000
+    const val PERMITTED = 0.8
+    private const val MAX_PERMISSION_TEXT = 600
     const val MAX_DIFF_WEIGHT = 12_000
     const val MAX_OUTLINE = 60
     const val MAX_START_CHARS = 1500
@@ -245,7 +248,7 @@ object Guidelines {
         }
         val probabilities = guidelines.mapNotNull { g -> parts.filter { it.guideline == g }.mapNotNull { it.probability }.maxOrNull()?.let { g to it } }.toMap()
         val violated = guidelines.filter { (probabilities[it] ?: 0.0) >= VIOLATED }
-        val uncertain = guidelines.filter { it !in violated && (truncated || (it.relevance >= APPLIES && (probabilities[it] ?: 1.0) > CLEAR)) }
+        val uncertain = guidelines.filter { it !in violated && (truncated || (it.relevance >= APPLIES && (probabilities[it] ?: 1.0) > UNSURE)) }
         return Check(probabilities, violated, uncertain, truncated, parts)
     }
 
@@ -349,6 +352,20 @@ object Guidelines {
             if (used / 2 > budget) return text.take(i)
         }
         return text
+    }
+
+    fun permitted(jev: Jev, guidelines: List<Guideline>, decisions: List<String>): Set<Guideline>? {
+        if (guidelines.isEmpty() || decisions.isEmpty()) return emptySet()
+        val state = mapOf(
+            "decided" to decisions,
+            "guidelines" to guidelines.mapIndexed { i, g -> mapOf("id" to "g$i", "source" to g.source, "heading" to g.heading, "text" to g.text.take(MAX_PERMISSION_TEXT)) },
+        )
+        val questions = guidelines.indices.associate { i ->
+            "x$i" to NoulQuestion.of("x$i", "decided(사용자가 직접 정한 사항) 중에 지침 g$i 의 규칙과 다르게 해도 된다고 허락하거나, g$i 가 정한 것과 다른 동작·구조·방식을 하라고 정한 항목이 있는가? 있으면 Yes. decided 가 g$i 와 관계없거나 g$i 를 따르는 내용뿐이면 No.")
+                .withCriteria("사용자가 이 지침과 다르게 하도록 정함", "사용자 결정이 이 지침과 관계없음")
+        }
+        val answers = jev.probabilities(state, questions) ?: return null
+        return guidelines.filterIndexed { i, _ -> (answers["x$i"] ?: 0.0) >= PERMITTED }.toSet()
     }
 
     private fun checkBatch(jev: Jev, stage: String, batch: List<Pair<Guideline, String>>, diff: String, decisions: List<String> = emptyList()): List<Double?>? {

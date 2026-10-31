@@ -680,6 +680,7 @@ class McpTest {
         jevAnswer = { 0.9 }
         jevByBody = { id, body -> when {
             id.startsWith("v") -> violation
+            id.startsWith("x") -> 0.05
             id[0] in "km" && "README.md" in body -> 0.05
             id == "s1" && "brew install" in body -> 0.05
             else -> null
@@ -810,6 +811,30 @@ class McpTest {
         assertEquals("요청 철회", server.cancelled)
         assertTrue(!folder.toFile().exists())
         assertContains(runCatching { call("cancel_task", """{"reason":"다시"}""") }.exceptionOrNull()!!.message!!, "진행 중인 일심 작업이 없습니다")
+    }
+
+    @Test
+    fun `사용자가 지침과 다르게 정한 결정은 위반 판정이 높아도 그 지침을 막지 않는다`() {
+        repo.resolve("docs").createDirectories()
+        repo.resolve("docs/spec.md").writeText("# 스펙\n\n## 목록\n모든 목록 API는 페이지를 받는다.\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "docs")
+        jevAnswer = { 0.9 }
+        var violation = 0.05
+        jevByBody = { id, body -> when {
+            id[0] == 'v' && "REQUIREMENTS" in body -> violation
+            id[0] == 'x' -> if ("페이지 적용 안 함" in body) 0.9 else 0.05
+            id[0] in "vb" -> 0.05
+            id[0] in "km" && "README.md" in body -> 0.05
+            else -> null
+        } }
+        call("analyze_project")
+        call("start_task", """{"requirement":"센터 목록 검색","feature":"slug"}""")
+        violation = 0.95
+        assertContains(call("submit_result", doc("# 검색\n\n- REQ-1: 목록은 배열로 준다")), "문서 지침을 어긴 것으로 보입니다")
+        assertContains(call("record_decision", """{"decision":"페이지 적용 안 함, 응답은 배열 그대로"}"""), "사용자 결정을 기록했습니다")
+        assertContains(call("submit_result", doc("# 검색\n\n- REQ-1: 목록은 배열로 준다")), "guidelines=PASSED")
+        assertTrue(server.results.last().decisions.any { it.purpose == "GUIDELINE_PERMISSION" && "docs/spec.md" in it.reason })
     }
 
     @Test
