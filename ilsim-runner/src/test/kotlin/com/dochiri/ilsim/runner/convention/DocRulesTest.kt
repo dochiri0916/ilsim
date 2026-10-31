@@ -410,6 +410,23 @@ class DocRulesTest {
     }
 
     @Test
+    fun `처리 내역은 검증기 버전이 바뀌어도 경로와 제목으로 구간 기록을 찾고 빠진 문장은 JEV가 규칙 문장이라고 본 것만 남긴다`() {
+        val section = DocSection("docs/testing.md", 3, "테스트 > 작성", "## 작성\n이 문서는 테스트 작성 방법을 설명한다.\n- 테스트에서 Thread.sleep 을 쓰지 않는다.\n- 테스트 이름은 한국어로 쓴다.\n")
+        val model = DocRules.DocRuleModel(documents = listOf(DocCoverage("docs/testing.md", 3, "테스트 > 작성", "old-version-hash", emptyList(), listOf("테스트 이름은 한국어로 쓴다."))))
+
+        val entries = DocRules.ledger(listOf(section), model)
+
+        assertEquals(listOf(DocRules.DROPPED, DocRules.DROPPED, DocRules.TO_JEV), entries.map { it.status }, "버전 해시가 달라도 같은 구간 기록을 쓴다")
+        val screened = DocRules.screen(jev { id, body -> if ("설명한다" in body.path("state").path("clauses").path(id.drop(1).toInt()).path("text").asText()) 0.1 else 0.9 }, entries)!!
+        assertEquals(listOf(DocRules.NOT_CLAUSE, DocRules.DROPPED, DocRules.TO_JEV), screened.map { it.status })
+        val report = DocRules.ledgerReport(screened)
+        assertContains(report, "3개 중 JEV 판정으로 넘김 1, 규칙 문장 아님(JEV 판정) 1, 기록 없이 빠짐 1")
+        assertContains(report, "테스트에서 Thread.sleep 을 쓰지 않는다.")
+        assertFalse("방법을 설명한다" in report, "JEV가 규칙 문장이 아니라고 본 것은 빠짐 목록에 넣지 않는다")
+        assertEquals(null, DocRules.screen(Jev(null), entries), "JEV를 못 쓰면 거르지 않았다고 알린다")
+    }
+
+    @Test
     fun `기존 위반이 많은 규칙은 걸린 코드와 그 타입 머리를 반례로 주고 원문을 어기는지 묻는다`() {
         val root = Files.createTempDirectory("ilsim-doc-recheck")
         root.resolve("src/main/kotlin/com/x/CenterController.kt").also { it.parent.createDirectories() }.writeText("""

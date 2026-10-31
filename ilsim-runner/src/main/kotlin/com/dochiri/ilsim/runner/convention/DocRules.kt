@@ -382,11 +382,14 @@ object DocRules {
     const val TO_JEV = "JEV 판정으로 넘김"
     const val NOT_RULE = "규칙 구간이 아니라고 판정"
     const val DROPPED = "기록 없이 빠짐"
+    const val NOT_CLAUSE = "규칙 문장 아님(JEV 판정)"
+    const val RULE_SENTENCE = 0.5
 
     fun ledger(sections: List<DocSection>, model: DocRuleModel): List<LedgerEntry> {
         val coverage = model.documents.associateBy { it.hash }
+        val places = model.documents.groupBy { it.path to it.heading }
         return sections.flatMap { s ->
-            val covered = coverage[sectionHash(s)]
+            val covered = coverage[sectionHash(s)] ?: places[s.path to s.heading]?.minByOrNull { kotlin.math.abs(it.line - s.line) }
             StaticDocRules.clauses(s).map { clause ->
                 val matched = model.rules.filter { r -> r.origin?.let { o -> o.path == s.path && (quoted(clause, o.quote) || quoted(o.quote, clause)) } == true }
                 val status = when {
@@ -401,14 +404,40 @@ object DocRules {
         }
     }
 
+    fun screen(jev: Jev, entries: List<LedgerEntry>): List<LedgerEntry>? {
+        val targets = entries.filter { it.status == DROPPED || it.status == NOT_RULE }.distinct()
+        if (targets.isEmpty()) return entries
+        if (!jev.enabled) return null
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(Guidelines.PARALLEL)
+        val scores = try {
+            targets.chunked(Guidelines.BATCH).map { batch ->
+                batch to pool.submit<Map<String, Double>?> {
+                    val state = mapOf("clauses" to batch.mapIndexed { i, e -> mapOf("id" to "c$i", "source" to "${e.path}:${e.line}", "heading" to e.heading, "text" to e.text) })
+                    jev.probabilities(state, batch.indices.associate { "c$it" to clauseQuestion(it) })
+                }
+            }.flatMap { (batch, answer) ->
+                val answers = answer.get() ?: return null
+                batch.mapIndexed { i, e -> e to (answers["c$i"] ?: 1.0) }
+            }.toMap()
+        } finally {
+            pool.shutdownNow()
+        }
+        return entries.map { e -> if ((scores[e] ?: 1.0) < RULE_SENTENCE) e.copy(status = NOT_CLAUSE) else e }
+    }
+
+    private fun clauseQuestion(i: Int): NoulQuestion =
+        NoulQuestion.of("c$i", "문장 c$i 는 이 프로젝트에서 코드나 테스트를 만들거나 고칠 때 지켜야 할 구체적인 규칙(정해진 동작·구조·이름·형식·금지 사항·테스트 방식 등)인가? 문서 소개, 배경, 이유 설명, 사실이나 현재 상태 서술, 예시, 일정, 설치·실행 안내면 No. 규칙이 합리적인지는 따지지 않는다.")
+            .withCriteria("지켜야 할 코드·테스트 규칙", "설명·서술·안내 문장")
+
     fun ledgerReport(entries: List<LedgerEntry>): String = buildString {
         if (entries.isEmpty()) return@buildString
         val counts = entries.groupingBy { it.status }.eachCount()
-        appendLine("문서 규칙 문장 처리 내역: ${entries.size}개 중 " + listOf(STATIC, STATIC_REJECTED, TO_JEV, NOT_RULE, DROPPED).filter { (counts[it] ?: 0) > 0 }.joinToString(", ") { "$it ${counts[it]}" })
+        val screened = (counts[NOT_CLAUSE] ?: 0) > 0
+        appendLine("문서 규칙 문장 처리 내역: ${entries.size}개 중 " + listOf(STATIC, STATIC_REJECTED, TO_JEV, NOT_CLAUSE, NOT_RULE, DROPPED).filter { (counts[it] ?: 0) > 0 }.joinToString(", ") { "$it ${counts[it]}" })
         listOf(DROPPED, NOT_RULE).forEach { status ->
             val shown = entries.filter { it.status == status }
             if (shown.isEmpty()) return@forEach
-            appendLine("  $status (정적 규칙도 JEV 기록도 없음, 제출 때 작업과 관련 있다고 고른 구간만 JEV가 판정):")
+            appendLine("  $status (정적 규칙도 JEV 기록도 없음${if (screened) ", JEV가 규칙 문장이라고 본 것" else ""}, 제출 때 작업과 관련 있다고 고른 구간만 JEV가 판정):")
             shown.take(MAX_REMAINING).forEach { appendLine("    ${it.path}:${it.line} ${it.text}") }
             if (shown.size > MAX_REMAINING) appendLine("    …외 ${shown.size - MAX_REMAINING}개")
         }

@@ -339,7 +339,7 @@ private fun selfTest(store: ConfigStore, args: Array<String>) {
     val facts = FactScanner.scan(path, profile.modules)
     DocRuleStore(store).load(id)?.let { model ->
         val project = store.load().projects.getValue(id)
-        print("[문서 지침 처리 내역] " + DocRules.ledgerReport(DocRules.ledger(ProjectDocs.sections(projectDocs(store.load(), id, path, project)), model)))
+        print("[문서 지침 처리 내역] " + DocRules.ledgerReport(DocRules.ledger(ProjectDocs.sections(projectDocs(store.load(), id, path, project)), model).let { DocRules.screen(Jev.fromEnvironment(), it) ?: it }))
     }
     listOfNotNull(ConventionStore(store).load(id)?.let { "코드 컨벤션" to it.rules }, DocRuleStore(store).load(id)?.let { "문서 지침 검증기" to it.rules }).forEach { (name, rules) ->
         val r = ConventionSelfTest.run(facts, rules)
@@ -657,7 +657,7 @@ fun analyzeDocRules(store: ConfigStore, id: String, out: Appendable) {
     out.appendLine("저장: $file (프로젝트 $id 문서 지침 검증기, 문서 구간 ${sections.size}개)")
     out.append(DocRules.report(checkNotNull(model)))
     if (confirmed.isNotEmpty()) out.appendLine("기존 코드 다수가 어기는 문서 규칙 ${confirmed.size}개는 걸린 코드가 원문을 어기는지 JEV로 다시 확인했습니다(${DocRules.CONFIRMED} 이상 승인·동결, ${DocRules.MISCONVERTED} 이하 잘못 옮김으로 거절, 사이는 사용자 확인)")
-    out.append(DocRules.ledgerReport(DocRules.ledger(sections, checkNotNull(model))))
+    out.append(DocRules.ledgerReport(DocRules.ledger(sections, checkNotNull(model)).let { DocRules.screen(jev, it) ?: it }))
     out.appendLine(Introduced.trend(checkNotNull(model).frozen, previous?.frozen?.takeIf { it.isNotEmpty() }))
     checkNotNull(model).rules.takeIf { it.isNotEmpty() }?.let { docRules ->
         val r = ConventionSelfTest.run(facts, docRules)
