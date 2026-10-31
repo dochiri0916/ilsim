@@ -302,6 +302,9 @@ class RequirementCheckTest {
         assertEquals(emptyList(), RequirementCheck.openQuestions("# 인사\n\n## 미결정 사항\n- 없음\n"))
         assertEquals(emptyList(), RequirementCheck.openQuestions("# 인사\n\n## 미결정 사항\n없음\n"))
         assertEquals(emptyList(), RequirementCheck.openQuestions("# 인사\n\n- REQ-1: 인사한다\n"))
+        val paragraphs = "## 미결정 사항\n\nQ1. 기준은? 후보:\n  - (a) 400 미만\n  - (b) 2xx\n\n**Q2.** 이름은?\n"
+        assertEquals(listOf("Q1. 기준은? 후보: - (a) 400 미만 - (b) 2xx", "**Q2.** 이름은?"), RequirementCheck.openQuestions(paragraphs))
+        assertEquals(listOf("Q1", "Q2"), UndecidedCheck.questions(paragraphs).map { it.id })
     }
 
     @Test

@@ -12,6 +12,7 @@ object RequirementCheck {
     private val item = Regex("""(REQ-\d+)\s*[:：.)\]|-]?\s*(.*)""")
     private val heading = Regex("""^(#{1,6})\s+(.*)$""")
     private val listItem = Regex("""^(?:[-*+]|\d+[.)])\s+(.*)$""")
+    private val question = Regex("""^[*_\[(]*Q\d+\b.*""", RegexOption.IGNORE_CASE)
     private val nothing = Regex("""^\(?\s*(없음|해당\s*없음|none)\s*\)?\.?$""", RegexOption.IGNORE_CASE)
 
     fun openQuestions(markdown: String): List<String> {
@@ -32,6 +33,7 @@ object RequirementCheck {
             val item = listItem.matchEntire(line.trimEnd())
             when {
                 item != null -> items += item.groupValues[1].trim()
+                question.matches(line.trim()) -> items += line.trim()
                 items.isNotEmpty() -> items[items.lastIndex] = items.last() + " " + line.trim()
             }
         }
