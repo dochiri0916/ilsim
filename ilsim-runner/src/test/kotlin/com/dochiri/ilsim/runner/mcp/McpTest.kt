@@ -178,6 +178,8 @@ class McpTest {
         assertContains(rejected, "일심 단계: REQUIREMENTS")
         assertContains(rejected, "지금까지 작성한 요구사항 문서")
         assertEquals("REQ-2 대문자 처리 추가", server.feedback)
+        val decisions = java.nio.file.Files.walk(home.resolve(".ilsim")).use { w -> w.filter { it.fileName.toString() == "decisions.json" }.toList() }
+        assertContains(decisions.single().toFile().readText(), "REQ-2 대문자 처리 추가", message = "거절 사유는 사용자 결정으로 남아 지침 판정이 따른다")
         assertContains(call("submit_result", doc("# 슬러그\n\nREQ-1 소문자로 바꾼다\nREQ-2 대문자도 처리한다")), "통과(REQUIREMENTS)")
         val cases = call("approve_stage", """{"stage":"REQUIREMENTS"}""")
         assertContains(cases, "일심 단계: TEST_CASES")
@@ -495,7 +497,7 @@ class McpTest {
         assertContains(passed, "test-cases=PASSED")
         assertContains(passed, "test-bypass=PASSED")
         assertTrue("ai-audit=SKIPPED" in passed || audits == 1, "확실하면 생략하거나 표본으로만 검토한다")
-        assertTrue(server.results.last().decisions.any { it.purpose == "TESTCODE_CHECK" && it.handler == "JEV" && "정적 검사 1개 제외" in it.reason })
+        assertTrue(server.results.last().decisions.any { it.purpose == "TESTCODE_CHECK" && it.handler == "JEV" && "정적 검사·기존 테스트 회귀 1개 제외" in it.reason })
         assertTrue(server.results.last().decisions.any { it.purpose == "CHANGE_AUDIT" && it.handler in setOf("SKIP", "SAMPLE") })
     }
 
@@ -767,6 +769,30 @@ class McpTest {
         assertContains(blocked, "record_decision(허락한 내용)")
         call("record_decision", """{"decision":"기존 greet 문구는 그대로 두는 회귀 테스트를 허락한다"}""")
         assertContains(call("submit_result"), "guidelines=PASSED")
+    }
+
+    @Test
+    fun `테스트 코드 단계 지침 판정은 승인된 테스트 케이스를 근거로 받아 승인한 테스트 방식을 다시 막지 않는다`() {
+        repo.resolve("docs").createDirectories()
+        repo.resolve("docs/spec.md").writeText("# 스펙\n\n## 테스트\n삭제된 행은 테스트하지 않는다.\n")
+        Shell.gitOk(repo, "add", "-A")
+        Shell.gitOk(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "docs")
+        jevAnswer = { 0.9 }
+        val bodies = mutableListOf<String>()
+        jevByBody = { id, body -> when {
+            id[0] == 'v' && "TEST_CODE" in body -> { bodies += body; if ("승인된 테스트 케이스 TC-1: REQ-1 | 예외 | 삭제된 행" in body) 0.05 else 0.95 }
+            id[0] in "vb" -> 0.05
+            id[0] in "km" && "README.md" in body -> 0.05
+            else -> null
+        } }
+        call("analyze_project")
+        call("start_task", """{"requirement":"삭제 제외","feature":"slug"}""")
+        call("submit_result", doc("# 삭제 제외\n\n- REQ-1: 삭제된 행은 목록에서 뺀다")); server.approve("t")
+        call("submit_result", doc("| TC-1 | REQ-1 | 예외 | 삭제된 행 | 목록에 없다 |")); server.approve("t")
+        work.resolve("src/test").createDirectories()
+        work.resolve("src/test/ListTest.java").writeText("// TC-1\nclass ListTest {}\n")
+        assertContains(call("submit_result"), "guidelines=PASSED")
+        assertTrue(bodies.isNotEmpty() && bodies.all { "승인된 테스트 케이스 TC-1" in it })
     }
 
     @Test

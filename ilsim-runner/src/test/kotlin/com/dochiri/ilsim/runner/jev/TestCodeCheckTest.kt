@@ -29,4 +29,17 @@ class TestCodeCheckTest {
         assertTrue(cases[3].static)
         assertEquals("REQ-1 | 정상 | `of(\"A\")` | `\"a\"`", cases[0].text)
     }
+
+    @Test
+    fun `기존 테스트를 그대로 돌려 확인하는 회귀 TC는 새 테스트를 요구하지 않는다`() {
+        val cases = TestCodeCheck.cases(
+            """
+            | TC-17 | REQ-5 | 기존 기능 회귀 | 기존 `CenterIntegrationTest`의 목록 테스트 실행(바꾸지 않음) | 그대로 통과한다 |
+            | TC-19 | REQ-6 | 기존 기능 회귀 | `./gradlew build`로 구조 규칙 테스트 실행 | 통과한다 |
+            | TC-21 | REQ-6 | 기존 기능 회귀 | 이름 없이 조회하면 예전처럼 전부 나온다 | 전부 나온다 |
+            | TC-22 | REQ-1 | 정상 | 새 조회 테스트 | 한 건 |
+            """.trimIndent(),
+        )
+        assertEquals(listOf(true, true, false, false), cases.map { it.exempt }, "새 시나리오를 적은 회귀 TC는 테스트가 필요하다")
+    }
 }

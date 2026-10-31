@@ -328,8 +328,9 @@ class IlsimMcp(
     }
 
     private fun reject(stage: String, feedback: String): String {
-        val (_, task) = waiting(stage)
+        val (ws, task) = waiting(stage)
         server.reject(task.taskId, feedback)
+        Artifacts(store).addDecision(ws.projectId, task.feature, task.taskId, UserDecision(null, feedback.trim(), stage, Instant.now().toString()))
         return "$stage 단계를 거절했습니다. 사유를 반영해 같은 단계를 다시 합니다\n\n" + nextStep()
     }
 
@@ -481,7 +482,10 @@ class IlsimMcp(
                 if (guide.selected) "${if (guide.basis != null) "승인된 요구사항 문서 기준, " else ""}문서 구간 ${guide.sections}개 중 ${guide.guidelines.size}개 선택(${Guidelines.IRRELEVANT} 초과): ${guide.scores.joinToString(", ")}" else "JEV 꺼짐으로 지침 선택 못 함, 문서 ${guide.documents.size}개 안내",
                 guide.scores.joinToString("\n") + guide.documents.joinToString("\n"))
         }
-        val compliance = guidelineCheck(guide, stage, diff, validation, Artifacts(store).decisions(ws.projectId, task.feature, task.taskId).map { listOfNotNull(it.question, it.text).joinToString(": ") })
+        val specs = Artifacts(store)
+        val approvedCases = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") specs.read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty()
+            .map { "승인된 테스트 케이스 ${it.id}: ${it.text.take(MAX_APPROVED_CASE)}" } else emptyList()
+        val compliance = guidelineCheck(guide, stage, diff, validation, specs.decisions(ws.projectId, task.feature, task.taskId).map { listOfNotNull(it.question, it.text).joinToString(": ") } + approvedCases)
         if (compliance != null && compliance.violated.isNotEmpty()) {
             return Outcome(cause = "guidelines", error = "이 프로젝트 문서 지침을 어긴 것으로 보입니다. 아래 지침에 맞게 고친 뒤 다시 제출하세요. 승인된 요구사항이나 사용자 뜻대로 한 부분인데 지적됐다면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용)으로 기록한 뒤 다시 제출하세요:\n" +
                 compliance.violated.joinToString("\n") { g -> "- ${g.source}${g.heading.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()} (위반 확률 ${"%.2f".format(compliance.probabilities[g])})\n  ${g.text.lines().filter { it.isNotBlank() }.take(6).joinToString(" ").take(400)}" })
@@ -559,13 +563,13 @@ class IlsimMcp(
     private fun caseRows(ws: Workspace, task: ActiveTask, tests: TestCodeCheck.Result?): Pair<String, List<Ledger.Row>> {
         val artifacts = Artifacts(store)
         val requirements = artifacts.read(ws.projectId, task.feature, task.taskId, "REQUIREMENTS")?.let(RequirementCheck::parse).orEmpty()
-        val cases = artifacts.read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.static }
+        val cases = artifacts.read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.exempt }
         val found = testLocations(ws.root, cases.map { it.id })
         return "TC" to cases.map { c -> Ledger.Row(c.id, c.text, tests?.coverage?.get(c.id), requirements.filter { mentions(c.text, it.id) }.map { it.id }, found[c.id].orEmpty().take(MAX_LOCATIONS)) }
     }
 
     private fun untracedCases(ws: Workspace, task: ActiveTask, validation: MutableMap<String, String>): List<TestCodeCheck.TestCase> {
-        val cases = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.static }
+        val cases = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.exempt }
         if (cases.isEmpty()) return emptyList()
         val found = testLocations(ws.root, cases.map { it.id })
         val missing = cases.filter { it.id !in found }
@@ -617,7 +621,7 @@ class IlsimMcp(
 
     private fun testedRequirements(ws: Workspace, task: ActiveTask, uncertain: List<Requirement>): Set<String> {
         val base = task.base ?: return emptySet()
-        val cases = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.static }
+        val cases = Artifacts(store).read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty().filterNot { it.exempt }
         val linked = uncertain.associateWith { r -> cases.filter { c -> Regex("""(?<![\w-])${Regex.escape(r.id)}(?![\w-])""").containsMatchIn(c.text) } }.filterValues { it.isNotEmpty() }
         if (linked.isEmpty()) return emptySet()
         val tests = runCatching { ScopeCheck.files(Shell.gitOk(ws.root, "diff", "--cached", base)).filterKeys { Gate.isTestPath(it) }.values.joinToString("") }.getOrNull()?.takeIf { it.isNotBlank() } ?: return emptySet()
@@ -644,7 +648,7 @@ class IlsimMcp(
             else -> "PASSED"
         }
         DecisionScope.record("TESTCODE_CHECK", if (result == null) "NONE" else "JEV",
-            result?.let { r -> "TC ${cases.size}개(정적 검사 ${cases.count { it.static }}개 제외): " + r.coverage.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } +
+            result?.let { r -> "TC ${cases.size}개(정적 검사·기존 테스트 회귀 ${cases.count { it.exempt }}개 제외): " + r.coverage.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } +
                 "; 우회: " + r.bypass.entries.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)}" } + if (r.truncated) " (diff 일부만 판정)" else "" }
                 ?: "JEV 꺼짐·실패", diff)
         return result
@@ -782,6 +786,7 @@ class IlsimMcp(
         private const val MAX_OUTPUT = 12_000
 
         private const val MAX_DOCUMENT = 8_000
+        private const val MAX_APPROVED_CASE = 160
 
         private const val MAX_FAILURE_LOG = 4_000
         private const val MAX_SUSPECT_LINES = 8

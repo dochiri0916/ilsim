@@ -87,6 +87,7 @@ object JevGuidelineEval {
         Question("v", "위반 판정(정답 구간)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("v-e2e", "위반 판정(실제 선택 구간)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("v-first", "위반 판정(재질문 전, 항목 최댓값)", Guidelines.VIOLATED, false, Goal.PRECISION),
+        Question("v-tc", "위반 판정(승인된 테스트 케이스를 함께 줌)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("diff", "변경 차단(가장 높은 위반 확률)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("diff-static", "변경 차단(승인한 문서 규칙 정적 검사)", Guidelines.VIOLATED, false, Goal.PRECISION),
         Question("diff-all", "변경 차단·검토(정적 문서 규칙과 JEV 중 큰 값)", Guidelines.VIOLATED, false, Goal.PRECISION),
@@ -187,11 +188,13 @@ object JevGuidelineEval {
                 d.violates.filter { v -> selected.none { it.source == v } }.forEach { add("missed-selection", "${d.id}/$it", true, 0.0) }
                 val gold = p.sections.filter { p.relevant(it, request) == true }.map { Guideline(it.path, it.line, it.heading, it.text, 1.0) }
                 val check = Guidelines.check(jev, d.stage, gold, diff)
+                val withCases = Guidelines.check(jev, d.stage, gold, diff, listOf("승인된 테스트 케이스 TC-1: REQ-1 | 정상 | ${request.text.take(160)} | 요청대로 동작한다"))
                 gold.forEach { g ->
                     val expected = g.source in d.violates
                     add("v", "${d.id}/${g.source}", expected, check?.probabilities?.get(g))
                     val parts = check?.parts.orEmpty().filter { it.guideline == g }
                     add("v-first", "${d.id}/${g.source}", expected, parts.mapNotNull { it.batch }.maxOrNull())
+                    add("v-tc", "${d.id}/${g.source}", expected, withCases?.probabilities?.get(g))
                     parts.forEachIndexed { i, part ->
                         add("part-batch", "${d.id}/${g.source}#$i", expected, part.batch)
                         part.single?.let { add("part-single", "${d.id}/${g.source}#$i", expected, it) }

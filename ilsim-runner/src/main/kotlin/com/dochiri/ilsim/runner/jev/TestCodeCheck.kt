@@ -12,9 +12,13 @@ object TestCodeCheck {
     private val row = Regex("""^\s*\|\s*(TC-\d+)\s*\|(.*)$""")
     private val bullet = Regex("""^\s*(?:[-*+]|\d+[.)])\s+\**(TC-\d+)\**\b(.*)$""")
     private val staticMark = Regex("""정적\s*검사|정적\s*확인|코드\s*확인""")
+    private val regressionMark = Regex("""회귀""")
+    private val existingRun = Regex("""기존[^|]*테스트|테스트[^|]*(?:실행|그대로)|gradlew|빌드""")
 
     data class TestCase(val id: String, val text: String) {
         val static: Boolean get() = staticMark.containsMatchIn(text)
+        val regression: Boolean get() = regressionMark.containsMatchIn(text) && existingRun.containsMatchIn(text)
+        val exempt: Boolean get() = static || regression
     }
 
     data class Result(
@@ -36,7 +40,7 @@ object TestCodeCheck {
     fun judge(jev: Jev, cases: List<TestCase>, diff: String): Result? {
         if (!jev.enabled) return null
         val shown = Guidelines.cut(diff, Guidelines.MAX_DIFF_WEIGHT)
-        val testable = cases.filterNot { it.static }
+        val testable = cases.filterNot { it.exempt }
         val coverage = if (testable.isEmpty()) emptyMap() else coverage(jev, testable, shown) ?: return null
         val files = ScopeCheck.files(diff).filterKeys { com.dochiri.ilsim.runner.Gate.isTestPath(it) }
         val bypass = if (files.isEmpty()) emptyMap() else bypass(jev, cases, files) ?: return null
