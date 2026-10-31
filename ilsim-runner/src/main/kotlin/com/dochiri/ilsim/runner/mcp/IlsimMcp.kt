@@ -536,7 +536,8 @@ class IlsimMcp(
         val specs = Artifacts(store)
         val approvedCases = if (stage == "TEST_CODE" || stage == "IMPLEMENTATION") specs.read(ws.projectId, task.feature, task.taskId, "TEST_CASES")?.let(TestCodeCheck::cases).orEmpty()
             .map { "승인된 테스트 케이스 ${it.id}: ${it.text.take(MAX_APPROVED_CASE)}" } else emptyList()
-        val userDecisions = specs.decisions(ws.projectId, task.feature, task.taskId).map { listOfNotNull(it.question, it.text).joinToString(": ") }
+        val userDecisions = specs.decisions(ws.projectId, task.feature, task.taskId).map { listOfNotNull(it.question, it.text).joinToString(": ") } +
+            DocRuleStore(store).load(ws.projectId)?.conflicts.orEmpty().filter { it.dropped.isNotEmpty() }.map { "프로젝트 문서 규칙 충돌 결정: ${it.reason}" }
         val compliance = guidelineCheck(guide, stage, diff, validation, userDecisions + approvedCases, userDecisions)
         if (compliance != null && compliance.violated.isNotEmpty()) {
             return Outcome(cause = "guidelines", error = "이 프로젝트 문서 지침을 어긴 것으로 보입니다. 아래 지침에 맞게 고친 뒤 다시 제출하세요. 승인된 요구사항이나 사용자 뜻대로 한 부분인데 지적됐다면 멈추고 사용자에게 묻고, 사용자가 허락하면 record_decision(허락한 내용)으로 기록한 뒤 다시 제출하세요:\n" +

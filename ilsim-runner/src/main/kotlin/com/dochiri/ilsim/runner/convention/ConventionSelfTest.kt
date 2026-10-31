@@ -6,20 +6,24 @@ internal object ConventionSelfTest {
     private val method = Regex("""\bfun\s|^\s*(public|protected|private|static|void)\b[^=;]*\(""")
     private val testMethod = Regex("""(\bfun\s+|\bvoid\s+)(`[^`]+`|\w+)(\s*\()""")
 
-    data class Result(val caught: List<String>, val missed: List<String>, val untested: List<String>) {
+    data class Result(val caught: List<String>, val missed: List<String>, val untested: List<String>, val reasons: Map<String, String> = emptyMap()) {
         val total: Int get() = caught.size + missed.size + untested.size
+        val unverified: Map<String, String> get() = (missed + untested).associateWith { reasons[it].orEmpty() }
     }
 
     fun run(facts: Facts, rules: List<ConventionRule>): Result {
         val caught = mutableListOf<String>()
         val missed = mutableListOf<String>()
         val untested = mutableListOf<String>()
+        val reasons = linkedMapOf<String, String>()
+        fun untested(rule: ConventionRule, reason: String) { untested += rule.id; reasons[rule.id] = reason }
         for (rule in rules.filter { !it.rejected }) {
             val probe = Probes.byKind(rule.kind)
-            if (probe == null) { untested += rule.id; continue }
-            val baseline = runCatching { probe.samples(facts, rule.params) }.getOrElse { untested += rule.id; continue }
+            if (probe == null) { untested(rule, "검사 종류가 없음"); continue }
+            val baseline = runCatching { probe.samples(facts, rule.params) }.getOrElse { untested(rule, "검사 실행 실패: ${it.message}"); continue }
             val failing = baseline.filterNot { it.ok }.map { it.file }.toSet()
             if (failing.isNotEmpty()) { caught += rule.id; continue }
+            val doc = DocProbes.byKind(rule.kind) != null
             val sampled = baseline.filter { it.ok }.map { it.file }.distinct()
             val inScope = (if (rule.params.containsKey("scope") || rule.params.containsKey("path")) DocProbes.files(facts, rule.params) else facts.files).map { it.path }
             val tests = facts.files.filter { it.path in sampled }.map { it.test }.toSet()
@@ -27,16 +31,22 @@ internal object ConventionSelfTest {
             val values = rule.params.values.flatten().filter { it.length >= 2 && it.all { c -> c.isLetterOrDigit() || c == '.' } }
             val related = facts.files.filter { f -> values.any { v -> f.pkg.split('.').contains(v) } }.sortedByDescending { f -> values.any { v -> f.pkg.endsWith(".$v") } }.distinctBy { it.pkg }.map { it.path }
             val chosen = ((sampled + inScope).distinct().filterNot { it in failing }.take(MAX_FILES) + related.take(MAX_FILES) + outside.take(MAX_FILES)).distinct().mapNotNull { p -> facts.files.firstOrNull { it.path == p } }
-            if (chosen.isEmpty()) { untested += rule.id; continue }
-            val hit = chosen.any { file ->
-                mutations(rule, file).any { lines ->
-                    val mutated = FactScanner.parse(file.path, file.path.substringAfterLast('.'), file.test, lines)?.also { it.module = file.module } ?: return@any false
-                    runCatching { probe.samples(Facts(listOf(mutated), facts.dependencies), rule.params).any { !it.ok } }.getOrDefault(false)
-                }
+            val present = !doc || (if ("target" in rule.params) runCatching { DocProbes.targets(facts, rule.params) }.getOrDefault(emptyList()).isNotEmpty() else DocProbes.files(facts, rule.params).isNotEmpty())
+            val variants = if (!present) emptyList() else chosen.flatMap { file -> (if (doc) DocMutations.variants(rule, file) else emptyList()).map { file to it } + mutations(rule, file).map { file to DocMutations.Variant(file.path, it) } }
+            val synthetic = if (doc && sampled.isEmpty()) DocMutations.synthesize(rule, facts) else null
+            if (variants.isEmpty() && synthetic == null) {
+                untested(rule, if (!present) "규칙이 가리키는 대상(scope·path·target·when·name)이 지금 코드에 없음" else "위반을 만들 방법이 없음")
+                continue
             }
-            if (hit) caught += rule.id else missed += rule.id
+            val hit = synthetic?.let { s -> runCatching { probe.samples(Facts(listOf(s), facts.dependencies), rule.params).any { !it.ok } }.getOrDefault(false) } == true || variants.any { (file, v) ->
+                val mutated = FactScanner.parse(v.path, v.path.substringAfterLast('.'), file.test, v.lines)?.also { it.module = file.module } ?: return@any false
+                runCatching { probe.samples(Facts(listOf(mutated), facts.dependencies), rule.params).any { !it.ok } }.getOrDefault(false)
+            }
+            if (hit) caught += rule.id
+            else if (!present) untested(rule, "규칙이 가리키는 대상(scope·path·target·when·name)이 지금 코드에 없음")
+            else { missed += rule.id; reasons[rule.id] = "심은 위반을 검사기가 잡지 못함(검사기나 규칙 형식 결함)" }
         }
-        return Result(caught, missed, untested)
+        return Result(caught, missed, untested, reasons)
     }
 
     private fun mutations(rule: ConventionRule, file: ConvFile): List<List<String>> {

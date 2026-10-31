@@ -30,8 +30,12 @@ object DocRules {
     private const val VERSION = "doc-rules-v5"
     private const val MAX_REMAINING = 20
     private const val MISCONVERTED_DIVISOR = 5
+    private const val MAX_REPAIRS = 5
 
-    class Extracted(val rules: List<ConventionRule>, val documents: List<DocCoverage>, val notes: List<String>)
+    class Extracted(val rules: List<ConventionRule>, val documents: List<DocCoverage>, val notes: List<String>, val attempted: List<String> = emptyList())
+
+    @Serializable
+    data class RuleConflict(val kept: String, val dropped: String, val reason: String)
 
     @Serializable
     data class DocRuleModel(
@@ -41,6 +45,8 @@ object DocRules {
         val files: List<String> = emptyList(),
         val applicable: Boolean = true,
         val frozen: Map<String, Int> = emptyMap(),
+        val attempted: List<String> = emptyList(),
+        val conflicts: List<RuleConflict> = emptyList(),
     )
 
     internal class Proposal(val section: DocSection, val kind: String, val params: Map<String, List<String>>, val description: String, val quote: String)
@@ -98,15 +104,7 @@ object DocRules {
                     notes += "${p.section.path}:${p.section.line} 원문과 다르다고 판정돼 정적 규칙에서 뺐습니다(${"%.2f".format(score)}): ${p.description}"
                     return@mapNotNull null
                 }
-                val rule = ConventionRule(
-                    id = PREFIX + ReviewCache.digest(p.kind + p.params.toSortedMap()).take(10),
-                    kind = p.kind,
-                    description = p.description,
-                    params = p.params,
-                    severity = "BLOCK",
-                    review = score?.let { RuleReview("KEEP", "JEV 원문 일치 ${"%.2f".format(it)}") },
-                    origin = DocOrigin(p.section.path, p.section.line, p.section.heading, p.quote, result.hash),
-                )
+                val rule = rule(p, score, result.hash)
                 rules.putIfAbsent(rule.id, rule)
                 rule.id
             }.distinct()
@@ -126,6 +124,64 @@ object DocRules {
         val merged = coverage.map { c -> c.copy(rules = c.rules.map { replaced[it] ?: it }.distinct()) }
         return Extracted(winners.values.map { evidence(it, facts) }.sortedBy { it.id }, merged.sortedWith(compareBy({ it.path }, { it.line })), notes)
     }
+
+    private fun rule(p: Proposal, score: Double?, hash: String, how: String = ""): ConventionRule = ConventionRule(
+        id = PREFIX + ReviewCache.digest(p.kind + p.params.toSortedMap()).take(10),
+        kind = p.kind,
+        description = p.description,
+        params = p.params,
+        severity = "BLOCK",
+        review = score?.let { RuleReview("KEEP", "JEV 원문 일치 ${"%.2f".format(it)}$how") },
+        origin = DocOrigin(p.section.path, p.section.line, p.section.heading, p.quote, hash),
+    )
+
+    internal fun repair(jev: Jev, root: Path, facts: Facts, sections: List<DocSection>, extracted: Extracted, confirmed: Map<String, Double>, attempted: Collection<String>, ask: (String) -> String): Extracted {
+        if (!jev.enabled) return Extracted(extracted.rules, extracted.documents, extracted.notes, attempted.toList())
+        val targets = extracted.rules.filter { r ->
+            r.review?.verdict == "KEEP" && misconverted(r) && r.origin != null && r.id !in attempted && confirmed[r.id]?.let { it < CONFIRMED } == true
+        }.take(MAX_REPAIRS)
+        if (targets.isEmpty()) return Extracted(extracted.rules, extracted.documents, extracted.notes, attempted.toList())
+        val tree = structure(facts)
+        var rules = extracted.rules
+        var documents = extracted.documents
+        val notes = extracted.notes.toMutableList()
+        val tried = attempted.toMutableList()
+        for (old in targets) {
+            val o = old.origin!!
+            val section = sections.firstOrNull { it.path == o.path && quoted(it.text, o.quote) } ?: continue
+            tried += old.id
+            val where = "${o.path}:${o.line}"
+            val proposals = runCatching {
+                parse(ask(prompt(listOf(section), tree) + "\n\n" + repairNote(old, old.evidence.examples.mapNotNull { snippet(root, it) })), listOf(section to sectionHash(section)), notes).flatMap { it.proposals }
+            }.getOrElse { e -> notes += "$where 기존 위반이 많은 문서 규칙을 다시 옮기지 못했습니다(${e.message}): ${old.description}"; continue }
+                .filter { p -> quoted(p.quote, o.quote) || quoted(o.quote, p.quote) }
+            val faith = verify(jev, proposals, tree, single = true).orEmpty()
+            val fixed = proposals.mapNotNull { p -> faith[p]?.takeIf { it >= FAITHFUL }?.let { score -> evidence(rule(p, score, o.hash, ", 반례로 다시 옮김"), facts) } }
+                .firstOrNull { !misconverted(it) }
+            if (fixed == null) {
+                notes += "$where 기존 위반이 많은 문서 규칙을 반례로 다시 옮겼지만 원문과 맞고 기존 코드가 지키는 규칙을 얻지 못했습니다: ${old.description}"
+                continue
+            }
+            rules = rules.filterNot { it.id == old.id || it.id == fixed.id } + fixed
+            documents = documents.map { c -> if (old.id in c.rules) c.copy(rules = c.rules.map { if (it == old.id) fixed.id else it }.distinct()) else c }
+            notes += "$where 기존 위반이 많은 문서 규칙을 반례로 다시 옮겼습니다: ${old.description} → ${fixed.description}"
+        }
+        return Extracted(rules.sortedBy { it.id }, documents, notes, tried.distinct())
+    }
+
+    private fun repairNote(rule: ConventionRule, examples: List<String>): String = buildString {
+        appendLine("다시 옮기기: 구간 s0 의 아래 규칙을 옮겼더니 기존 코드 ${rule.evidence.total}곳 중 ${rule.evidence.total - rule.evidence.compliant}곳이 어긴다.")
+        appendLine("걸린 코드가 원문은 지키는데 규칙을 원문보다 좁거나 엄격하게 옮겨서 걸렸을 수 있다. 아래 반례를 보고 원문과 다시 대조해, 원문 그대로인 규칙으로 고쳐 옮겨라.")
+        appendLine("원문이 허용하는 다른 방식(예: 클래스에 붙여도 된다면 inherit)은 params 에 담는다. 원문대로 옮길 수 없으면 rules 를 비우고 그 문장을 remaining 에 넣는다.")
+        appendLine("지금 규칙: " + Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), kotlinx.serialization.json.buildJsonObject {
+            put("kind", JsonPrimitive(rule.kind))
+            put("params", kotlinx.serialization.json.JsonObject(rule.params.mapValues { (_, v) -> JsonArray(v.map(::JsonPrimitive)) }))
+            put("description", JsonPrimitive(rule.description))
+            put("quote", JsonPrimitive(rule.origin?.quote.orEmpty()))
+        }))
+        appendLine("반례:")
+        examples.forEach { appendLine(it); appendLine() }
+    }.trimEnd()
 
     internal fun evidence(rule: ConventionRule, facts: Facts): ConventionRule {
         val samples = Probes.byKind(rule.kind)?.samples(facts, rule.params).orEmpty()
@@ -272,7 +328,7 @@ object DocRules {
             put("candidates", batch.mapIndexed { i, p -> mapOf("id" to "c$i", "section" to "s${sections.indexOf(p.section)}", "kind" to p.kind, "params" to p.params, "description" to p.description, "quote" to p.quote) })
         }
         val questions = batch.indices.associate { i ->
-            "f$i" to NoulQuestion.of("f$i", "후보 규칙 c$i 가 그 section 의 text 에 적힌 규칙을 그대로 옮긴 것인가? kinds 의 뜻대로 kind 와 params 를 읽었을 때 검사 대상(scope, path, target, when, name)과 조건(import, annotation, pattern, location, max 등)이 원문 규칙과 같으면 Yes. 원문에 없는 조건을 더했거나, 대상을 넓히거나 좁혔거나, 원문과 다른 규칙이면 No. 원문이 애너테이션 값의 언어·형식까지 정했는데(예: 한국어 설명) value 없이 애너테이션만 요구하면 원문보다 느슨하므로 No. 규칙이 합리적인지는 따지지 않는다. scope 와 path 가 원문이 말한 대상과 같은지 따로 확인한다: 원문이 '테스트에서'·'파서는'처럼 대상을 한정했는데 all 이거나 path 없이 전체를 검사하면 넓힌 것이고, 원문에 한정이 없는데 main 이나 test 로 줄였으면 좁힌 것이다. 한 문장에 규칙이 여럿이면 그중 하나만 옮겨도 옮긴 부분이 원문과 같으면 Yes. 원문이 역할 이름(서비스 클래스, JPA 엔티티, 컨트롤러, 리포지토리 등)으로 가리킨 대상을 그 역할의 애너테이션(when)이나 structure 에 있는 경로·패키지·이름으로 가린 것은 대상을 바꾼 것이 아니다. 검사는 이번 변경이 새로 만든 위반만 막으므로 '새 코드는 ~' 규칙을 모든 파일 대상으로 옮긴 것도 같은 규칙이다.")
+            "f$i" to NoulQuestion.of("f$i", "후보 규칙 c$i 가 그 section 의 text 에 적힌 규칙을 그대로 옮긴 것인가? kinds 의 뜻대로 kind 와 params 를 읽었을 때 검사 대상(scope, path, target, when, name)과 조건(import, annotation, pattern, location, max 등)이 원문 규칙과 같으면 Yes. 원문에 없는 조건을 더했거나, 대상을 넓히거나 좁혔거나, 원문과 다른 규칙이면 No. 원문이 애너테이션 값의 언어·형식까지 정했는데(예: 한국어 설명) value 없이 애너테이션만 요구하면 원문보다 느슨하므로 No. 원문이 클래스나 메서드 중 한 곳에 붙이면 된다고 했는데 inherit 없이 메서드마다 요구하면 원문보다 좁으므로 No. 규칙이 합리적인지는 따지지 않는다. scope 와 path 가 원문이 말한 대상과 같은지 따로 확인한다: 원문이 '테스트에서'·'파서는'처럼 대상을 한정했는데 all 이거나 path 없이 전체를 검사하면 넓힌 것이고, 원문에 한정이 없는데 main 이나 test 로 줄였으면 좁힌 것이다. 한 문장에 규칙이 여럿이면 그중 하나만 옮겨도 옮긴 부분이 원문과 같으면 Yes. 원문이 역할 이름(서비스 클래스, JPA 엔티티, 컨트롤러, 리포지토리 등)으로 가리킨 대상을 그 역할의 애너테이션(when)이나 structure 에 있는 경로·패키지·이름으로 가린 것은 대상을 바꾼 것이 아니다. 검사는 이번 변경이 새로 만든 위반만 막으므로 '새 코드는 ~' 규칙을 모든 파일 대상으로 옮긴 것도 같은 규칙이다.")
                 .withCriteria("원문 규칙을 그대로 옮김", "원문과 다르거나 원문에 없는 규칙")
         }
         val answers = jev.probabilities(state, questions) ?: return null
@@ -296,12 +352,105 @@ object DocRules {
 
     fun asConvention(model: DocRuleModel): ConventionModel = ConventionModel(null, 0, 0, emptyMap(), model.rules)
 
-    fun carryOver(previous: DocRuleModel?, extracted: Extracted, confirmed: Map<String, Double> = emptyMap()): DocRuleModel {
+    fun carryOver(previous: DocRuleModel?, extracted: Extracted, confirmed: Map<String, Double> = emptyMap(), others: List<ConventionRule> = emptyList()): DocRuleModel {
         val decided = previous?.rules.orEmpty().filter { it.decidedBy == "user" }
         val rules = extracted.rules.map { r ->
             decided.firstOrNull { it.id == r.id && it.kind == r.kind && it.params == r.params }?.let { r.copy(approved = it.approved, rejected = it.rejected, decidedBy = it.decidedBy) } ?: autoDecide(r, confirmed[r.id])
         }
-        return DocRuleModel(rules, extracted.documents, extracted.notes)
+        val (resolved, conflicts) = resolve(rules, others)
+        return DocRuleModel(resolved, extracted.documents, extracted.notes, attempted = extracted.attempted, conflicts = conflicts)
+    }
+
+    internal fun resolve(rules: List<ConventionRule>, others: List<ConventionRule> = emptyList()): Pair<List<ConventionRule>, List<RuleConflict>> {
+        val found = conflicts(rules, others)
+        if (found.isEmpty()) return rules to emptyList()
+        val byId = (others + rules).associateBy { it.id }
+        val dropped = linkedMapOf<String, String>()
+        val out = found.map { (required, forbidden) ->
+            val a = byId.getValue(required)
+            val b = byId.getValue(forbidden)
+            val loser = when {
+                a.decidedBy == "user" && b.decidedBy == "user" -> null
+                a.decidedBy == "user" -> b.takeIf { isDocRule(it.id) }
+                else -> a
+            }
+            val reason = "'${a.description}'(필요)와 '${b.description}'(금지)는 함께 지킬 수 없다. " + when {
+                loser == a -> "금지 규칙을 남기고 필요 규칙은 따르지 않는다"
+                loser != null -> "사용자가 승인한 필요 규칙을 남기고 금지 규칙은 따르지 않는다"
+                b.decidedBy == "user" -> "둘 다 사용자가 정한 규칙이라 그대로 둔다"
+                else -> "사용자가 승인한 필요 규칙과 컨벤션 규칙이 부딪친다. 컨벤션 규칙은 여기서 끄지 않으므로 사용자가 하나를 거절해야 한다"
+            }
+            loser?.let { dropped.putIfAbsent(it.id, reason) }
+            RuleConflict(if (loser == a) b.id else a.id, loser?.id.orEmpty(), reason)
+        }.distinct()
+        return rules.map { r -> if (r.id in dropped) r.copy(approved = false, rejected = true, decidedBy = "ai-review") else r } to out
+    }
+
+    private val requiring = setOf("doc-required-code", "doc-required-annotation")
+
+    internal fun conflicts(rules: List<ConventionRule>, others: List<ConventionRule> = emptyList()): List<Pair<String, String>> {
+        val active = (rules + others).filter { it.approved && !it.rejected }
+        return rules.filter { it.approved && !it.rejected && it.kind in requiring }.flatMap { a ->
+            synthetic(a).flatMap { probe ->
+                active.filter { it.id != a.id }.mapNotNull { b ->
+                    val check = Probes.byKind(b.kind) ?: return@mapNotNull null
+                    val hit = runCatching { check.samples(Facts(listOf(probe.first)), b.params) }.getOrDefault(emptyList()).any { !it.ok && it.line in probe.second }
+                    (a.id to b.id).takeIf { hit }
+                }
+            }
+        }.distinct()
+    }
+
+    private fun synthetic(rule: ConventionRule): List<Pair<ConvFile, Set<Int>>> {
+        val p = rule.params
+        val scope = p["scope"]?.firstOrNull() ?: "all"
+        val target = p["target"]?.firstOrNull() ?: "file"
+        val kept = mutableListOf<String>()
+        when (rule.kind) {
+            "doc-required-code" -> p.getValue("pattern").forEach { pattern ->
+                val example = RegexExample.of(pattern) ?: return emptyList()
+                kept += if (p["text"]?.firstOrNull() == "string") "val ilsimProbe = \"$example\"" else example
+            }
+            "doc-required-annotation" -> {
+                val values = p["value"].orEmpty().map(::Regex)
+                val value = if (values.isEmpty()) null else listOf("설명", "probe", "Probe 설명", "1").firstOrNull { v -> values.all { it.containsMatchIn(v) } } ?: return emptyList()
+                kept += "@" + p.getValue("annotation").first() + value?.let { "(\"$it\")" }.orEmpty()
+            }
+        }
+        val marks = p["when"].orEmpty().map { "@$it" }
+        val method = p["name"]?.firstNotNullOfOrNull { RegexExample.of(it)?.takeIf { n -> Regex("""[A-Za-z_]\w*""").matches(n) } } ?: "probeCase"
+        return listOf(false, true).filter { test -> scope == "all" || (scope == "test") == test }.mapNotNull { test ->
+            val type = if (test) "IlsimProbeTest" else "IlsimProbe"
+            val path = probePath(p["path"], test, type) ?: return@mapNotNull null
+            val annotationRule = rule.kind == "doc-required-annotation"
+            val lines = mutableListOf("package ilsimprobe", "")
+            val inserted = mutableSetOf<Int>()
+            fun add(line: String, mark: Boolean = false) { lines += line; if (mark) inserted += lines.size }
+            if (target in setOf("class", "test-class")) { marks.forEach { add(it) }; kept.forEach { add(it, true) } }
+            add("class $type {")
+            if (target in setOf("method", "test-method")) {
+                if (target == "test-method") add("    @Test")
+                marks.forEach { add("    $it") }
+                if (annotationRule) kept.forEach { add("    $it", true) }
+                add("    fun $method() {")
+                if (!annotationRule) kept.forEach { add("        $it", true) }
+                add("    }")
+            } else if (target == "file" && !annotationRule) kept.forEach { add("    $it", true) }
+            add("}")
+            val file = FactScanner.parse(path, "kt", test, lines) ?: return@mapNotNull null
+            val own = Probes.byKind(rule.kind) ?: return@mapNotNull null
+            val ok = runCatching { own.samples(Facts(listOf(file)), p) }.getOrDefault(emptyList()).let { s -> s.isNotEmpty() && s.all { it.ok } }
+            (file to inserted.toSet()).takeIf { ok && inserted.isNotEmpty() }
+        }
+    }
+
+    private fun probePath(globs: List<String>?, test: Boolean, type: String): String? {
+        val plain = "src/${if (test) "test" else "main"}/kotlin/ilsimprobe/$type.kt"
+        if (globs.isNullOrEmpty()) return plain
+        val glob = globs.first()
+        val made = glob.replace("**/", "").replace("**", "ilsimprobe").replace("*", type).let { if (it.endsWith(".kt") || it.endsWith(".java")) it else it.trimEnd('/') + "/$type.kt" }
+        val candidate = if (made.startsWith("src/")) made else "src/${if (test) "test" else "main"}/kotlin/$made"
+        return listOf(candidate, made).firstOrNull { DocProbes.glob(glob).matches(Path.of(it)) }
     }
 
     internal fun autoDecide(r: ConventionRule, confirmed: Double? = null): ConventionRule {
@@ -343,10 +492,23 @@ object DocRules {
         val line = location.substringAfterLast(':').toIntOrNull() ?: return null
         val lines = runCatching { root.resolve(path).readLines() }.getOrNull() ?: return null
         if (line < 1 || line > lines.size) return null
+        val keep = sortedSetOf<Int>()
         val decl = lines.indexOfFirst { topType.containsMatchIn(it) }
-        val header = if (decl in 0 until line - 4) lines.subList((decl - 3).coerceAtLeast(0), decl + 1).dropWhile { !it.trimStart().startsWith("@") && !topType.containsMatchIn(it) } + "    …" else emptyList()
-        val around = lines.subList((line - 4).coerceAtLeast(0), (line + 1).coerceAtMost(lines.size))
-        return "$location\n" + (header + around).joinToString("\n").take(MAX_SNIPPET)
+        if (decl in 0 until line - 1) {
+            var start = decl
+            while (start > 0 && decl - start < MAX_HEADER && lines[start - 1].trimStart().startsWith("@")) start--
+            (start..decl).forEach { keep += it }
+        }
+        ((line - 4).coerceAtLeast(0) until (line + 1).coerceAtMost(lines.size)).forEach { keep += it }
+        val text = buildString {
+            var previous = -1
+            for (i in keep) {
+                if (previous >= 0 && i > previous + 1) appendLine("    …")
+                appendLine(lines[i])
+                previous = i
+            }
+        }.trimEnd()
+        return "$location\n" + text.take(MAX_SNIPPET)
     }
 
     private val topType = Regex("""^(?:(?:public|internal|private|abstract|open|final|sealed|data|enum|annotation)\s+)*(?:class|interface|object|record|enum)\s+\w""")
@@ -357,6 +519,7 @@ object DocRules {
     const val CONFIRMED = 0.6
     const val MISCONVERTED = 0.4
     private const val MAX_SNIPPET = 900
+    private const val MAX_HEADER = 5
 
     fun decide(model: DocRuleModel, ids: Collection<String>, approve: Boolean): DocRuleModel {
         val unknown = ids.filterNot { id -> model.rules.any { it.id == id } }
@@ -375,37 +538,40 @@ object DocRules {
         return other + Introduced.filter(doc, old, { runCatching { worktree.resolve(it).readLines() }.getOrNull() }) { path -> before.firstOrNull { it.path == path }?.lines }
     }
 
-    data class LedgerEntry(val path: String, val line: Int, val heading: String, val text: String, val status: String)
+    data class LedgerEntry(val path: String, val line: Int, val heading: String, val text: String, val status: String, val reason: String? = null)
 
     const val STATIC = "정적 규칙"
+    const val STATIC_UNVERIFIED = "정적 규칙이 못 잡아 JEV 판정"
     const val STATIC_REJECTED = "정적 규칙 거절됨(JEV 판정)"
     const val TO_JEV = "JEV 판정으로 넘김"
-    const val NOT_RULE = "규칙 구간이 아니라고 판정"
-    const val DROPPED = "기록 없이 빠짐"
+    const val MISSING = "누락(판정 대상이 아닌 구간의 규칙 문장)"
+    const val NOT_RULE = "규칙 구간 아님(문장은 판정 못 함)"
     const val NOT_CLAUSE = "규칙 문장 아님(JEV 판정)"
     const val RULE_SENTENCE = 0.5
 
-    fun ledger(sections: List<DocSection>, model: DocRuleModel): List<LedgerEntry> {
+    fun ledger(sections: List<DocSection>, model: DocRuleModel, scores: Map<DocSection, Double>? = null, unverified: Map<String, String> = emptyMap()): List<LedgerEntry> {
         val coverage = model.documents.associateBy { it.hash }
         val places = model.documents.groupBy { it.path to it.heading }
         return sections.flatMap { s ->
             val covered = coverage[sectionHash(s)] ?: places[s.path to s.heading]?.minByOrNull { kotlin.math.abs(it.line - s.line) }
+            val judged = scores?.get(s)?.let { it > Guidelines.IRRELEVANT } ?: (covered != null)
             StaticDocRules.clauses(s).map { clause ->
                 val matched = model.rules.filter { r -> r.origin?.let { o -> o.path == s.path && (quoted(clause, o.quote) || quoted(o.quote, clause)) } == true }
-                val status = when {
-                    matched.any { !it.rejected } -> STATIC
-                    matched.isNotEmpty() -> STATIC_REJECTED
-                    covered == null -> NOT_RULE
-                    covered.remaining.any { quoted(clause, it) || quoted(it, clause) } -> TO_JEV
-                    else -> DROPPED
+                val live = matched.filter { !it.rejected }
+                val (status, reason) = when {
+                    live.any { it.id !in unverified } -> STATIC to null
+                    live.isNotEmpty() -> STATIC_UNVERIFIED to live.joinToString("; ") { "${it.id} ${unverified[it.id].orEmpty()}" }
+                    matched.isNotEmpty() -> STATIC_REJECTED to null
+                    judged -> TO_JEV to null
+                    else -> NOT_RULE to null
                 }
-                LedgerEntry(s.path, s.line, s.heading, clause, status)
+                LedgerEntry(s.path, s.line, s.heading, clause, status, reason)
             }
         }
     }
 
     fun screen(jev: Jev, entries: List<LedgerEntry>): List<LedgerEntry>? {
-        val targets = entries.filter { it.status == DROPPED || it.status == NOT_RULE }.distinct()
+        val targets = entries.filter { it.status == NOT_RULE }.distinct()
         if (targets.isEmpty()) return entries
         if (!jev.enabled) return null
         val pool = java.util.concurrent.Executors.newFixedThreadPool(Guidelines.PARALLEL)
@@ -422,7 +588,7 @@ object DocRules {
         } finally {
             pool.shutdownNow()
         }
-        return entries.map { e -> if ((scores[e] ?: 1.0) < RULE_SENTENCE) e.copy(status = NOT_CLAUSE) else e }
+        return entries.map { e -> if (e.status != NOT_RULE) e else e.copy(status = if ((scores[e] ?: 1.0) < RULE_SENTENCE) NOT_CLAUSE else MISSING) }
     }
 
     private fun clauseQuestion(i: Int): NoulQuestion =
@@ -430,15 +596,22 @@ object DocRules {
             .withCriteria("지켜야 할 코드·테스트 규칙", "설명·서술·안내 문장")
 
     fun ledgerReport(entries: List<LedgerEntry>): String = buildString {
-        if (entries.isEmpty()) return@buildString
+        if (entries.isEmpty()) {
+            appendLine("문서 규칙 문장 처리 내역: 규칙 문형 문장이 없습니다")
+            return@buildString
+        }
         val counts = entries.groupingBy { it.status }.eachCount()
-        val screened = (counts[NOT_CLAUSE] ?: 0) > 0
-        appendLine("문서 규칙 문장 처리 내역: ${entries.size}개 중 " + listOf(STATIC, STATIC_REJECTED, TO_JEV, NOT_CLAUSE, NOT_RULE, DROPPED).filter { (counts[it] ?: 0) > 0 }.joinToString(", ") { "$it ${counts[it]}" })
-        listOf(DROPPED, NOT_RULE).forEach { status ->
+        appendLine("문서 규칙 문장 처리 내역: ${entries.size}개 중 " + listOf(STATIC, STATIC_UNVERIFIED, STATIC_REJECTED, TO_JEV, MISSING, NOT_RULE, NOT_CLAUSE).filter { (counts[it] ?: 0) > 0 }.joinToString(", ") { "$it ${counts[it]}" })
+        val notes = mapOf(
+            MISSING to "JEV가 규칙 문장이라고 봤지만 그 구간이 규칙 구간 점수가 낮아 제출 때 판정하지 않음",
+            NOT_RULE to "규칙 구간 점수가 낮고 JEV를 못 써 문장이 규칙인지 확인 못 함",
+            STATIC_UNVERIFIED to "정적 규칙이 자체 시험에서 위반을 잡지 못해 제출 때 JEV 판정에 맡김",
+        )
+        notes.forEach { (status, note) ->
             val shown = entries.filter { it.status == status }
             if (shown.isEmpty()) return@forEach
-            appendLine("  $status (정적 규칙도 JEV 기록도 없음${if (screened) ", JEV가 규칙 문장이라고 본 것" else ""}, 제출 때 작업과 관련 있다고 고른 구간만 JEV가 판정):")
-            shown.take(MAX_REMAINING).forEach { appendLine("    ${it.path}:${it.line} ${it.text}") }
+            appendLine("  $status ($note):")
+            shown.take(MAX_REMAINING).forEach { appendLine("    ${it.path}:${it.line} ${it.text}${it.reason?.let { r -> "  [$r]" }.orEmpty()}") }
             if (shown.size > MAX_REMAINING) appendLine("    …외 ${shown.size - MAX_REMAINING}개")
         }
     }
@@ -449,11 +622,13 @@ object DocRules {
         if (rules.isEmpty() && remaining.isEmpty()) return@buildString
         appendLine()
         appendLine("문서 규칙 ${rules.size}개 (문서에서 옮긴 정적 규칙. 승인하면 바꾼 코드에 새로 생기는 위반을 막는다):")
+        val dropped = model.conflicts.associateBy { it.dropped }
         for (r in rules) {
             val auto = r.decidedBy == "ai-review"
             val existing = r.evidence.total - r.evidence.compliant
             val state = when {
                 r.approved -> (if (auto) "자동 승인" else "승인됨") + if (existing > 0) "·기존 위반 ${existing}건 동결" else ""
+                r.rejected && r.id in dropped -> "자동 끔: 규칙 충돌, ${dropped.getValue(r.id).kept}를 남김"
                 r.rejected -> if (auto) "자동 거절: 기존 코드는 문서 원문을 지키는데 옮긴 규칙만 어겨 잘못 옮긴 것으로 판정" else "거절됨"
                 r.review?.verdict == "KEEP" && misconverted(r) -> "제안: 기존 코드 다수가 어겨 잘못 옮겼는지 확인 필요"
                 else -> "제안"
@@ -462,6 +637,10 @@ object DocRules {
             val faith = r.review?.reason ?: "JEV 확인 안 됨"
             val origin = r.origin?.let { "${it.path}:${it.line}" }.orEmpty()
             appendLine("      $origin · $faith · 현재 코드 위반 ${r.evidence.total - r.evidence.compliant}/${r.evidence.total}")
+        }
+        if (model.conflicts.isNotEmpty()) {
+            appendLine("규칙 충돌 ${model.conflicts.size}건 (함께 지킬 수 없는 규칙, 금지 규칙을 남기고 사용자가 정한 규칙은 그대로 둔다):")
+            model.conflicts.forEach { appendLine("  ${it.kept} 남김${if (it.dropped.isNotEmpty()) ", ${it.dropped} 끔" else ""}: ${it.reason}") }
         }
         if (remaining.isNotEmpty()) {
             appendLine("정적 규칙으로 옮기지 못한 문장 ${remaining.size}개 (제출 때 JEV 문서 지침 판정으로 확인):")
@@ -480,7 +659,7 @@ object DocRules {
         - text: ["code"] 주석과 문자열 내용을 뺀 코드(기본), ["string"] 주석만 뺀 코드(SQL·JSON 경로처럼 문자열 안 내용에 대한 규칙일 때), ["raw"] 원래 줄(주석에 대한 규칙일 때만, pattern 에 // 같은 주석 표시를 넣는다).
         kind:
         - doc-forbidden-import: import 경로 일부가 import: [정규식] 중 하나와 맞으면 위반. scope, path.
-        - doc-required-annotation: annotation: [이름] 중 하나가 대상에 붙어 있어야 한다. value: [정규식] 이 있으면 그 애너테이션 괄호 안 값이 정규식과 맞아야 한다(예: 한국어 설명은 ["[가-힣]"]). target(class|test-class|method|test-method) 필수, when, name, value.
+        - doc-required-annotation: annotation: [이름] 중 하나가 대상에 붙어 있어야 한다. value: [정규식] 이 있으면 그 애너테이션 괄호 안 값이 정규식과 맞아야 한다(예: 한국어 설명은 ["[가-힣]"]). inherit: ["class"] 는 method·test-method 대상에서 원문이 클래스에 붙여도 된다고 할 때만 쓴다(메서드나 그 클래스에 붙어 있으면 통과). target(class|test-class|method|test-method) 필수, when, name, value, inherit.
         - doc-forbidden-annotation: annotation: [이름] 이 붙어 있으면 위반. target(생략하면 애너테이션이 붙은 모든 선언), when, name.
         - doc-name-pattern: pattern: [정규식] 중 하나가 대상 이름 전체와 맞아야 한다(파일은 확장자를 뺀 이름). target(file|class|test-class|method|test-method) 필수, when, name.
         - doc-forbidden-code: pattern: [정규식] 이 한 줄 안에서 찾아지면 위반. scope, path, text.

@@ -13,6 +13,7 @@ import com.dochiri.ilsim.runner.architecture.Applicability
 import com.dochiri.ilsim.runner.architecture.Introduced
 import com.dochiri.ilsim.runner.convention.ConventionApproval
 import com.dochiri.ilsim.runner.convention.ConventionChecker
+import com.dochiri.ilsim.runner.convention.ConventionRule
 import com.dochiri.ilsim.runner.convention.ConventionMiner
 import com.dochiri.ilsim.runner.convention.ConventionReport
 import com.dochiri.ilsim.runner.convention.ConventionReviewer
@@ -337,19 +338,22 @@ private fun selfTest(store: ConfigStore, args: Array<String>) {
         print("[아키텍처] " + selfTestReport(model.rules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.proposedSeverity == "BLOCK") }, r.caught, r.missed))
     }
     val facts = FactScanner.scan(path, profile.modules)
-    DocRuleStore(store).load(id)?.let { model ->
-        val project = store.load().projects.getValue(id)
-        print("[문서 지침 처리 내역] " + DocRules.ledgerReport(DocRules.ledger(ProjectDocs.sections(projectDocs(store.load(), id, path, project)), model).let { DocRules.screen(Jev.fromEnvironment(), it) ?: it }))
+    val docModel = DocRuleStore(store).load(id)
+    val docSelf = docModel?.rules?.takeIf { it.isNotEmpty() }?.let { ConventionSelfTest.run(facts, it) }
+    docModel?.let { model ->
+        val sections = ProjectDocs.sections(projectDocs(store.load(), id, path, store.load().projects.getValue(id)))
+        val jev = Jev.fromEnvironment()
+        println("[문서 지침 처리 내역] " + DocRules.ledgerReport(DocRules.ledger(sections, model, Guidelines.ruleScores(jev, sections), docSelf?.unverified.orEmpty()).let { DocRules.screen(jev, it) ?: it }).trimEnd())
     }
-    listOfNotNull(ConventionStore(store).load(id)?.let { "코드 컨벤션" to it.rules }, DocRuleStore(store).load(id)?.let { "문서 지침 검증기" to it.rules }).forEach { (name, rules) ->
-        val r = ConventionSelfTest.run(facts, rules)
-        print("[$name] " + selfTestReport(rules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.severity == "BLOCK") }, r.caught, r.missed, r.untested))
-    }
+    fun report(name: String, rules: List<ConventionRule>, r: ConventionSelfTest.Result) =
+        print("[$name] " + selfTestReport(rules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.severity == "BLOCK") }, r.caught, r.missed, r.untested, r.reasons))
+    ConventionStore(store).load(id)?.let { report("코드 컨벤션", it.rules, ConventionSelfTest.run(facts, it.rules)) }
+    docModel?.let { report("문서 지침 검증기", it.rules, docSelf ?: ConventionSelfTest.Result(emptyList(), emptyList(), emptyList())) }
 }
 
 data class RuleState(val id: String, val description: String, val approved: Boolean, val blocking: Boolean)
 
-fun selfTestReport(rules: List<RuleState>, caught: Collection<String>, missed: Collection<String>, untested: Collection<String> = emptyList()): String = buildString {
+fun selfTestReport(rules: List<RuleState>, caught: Collection<String>, missed: Collection<String>, untested: Collection<String> = emptyList(), reasons: Map<String, String> = emptyMap()): String = buildString {
     val approved = rules.filter { it.approved }
     val blocked = approved.filter { it.id in caught && it.blocking }
     val reviewed = approved.filter { it.id in caught && !it.blocking }
@@ -359,8 +363,8 @@ fun selfTestReport(rules: List<RuleState>, caught: Collection<String>, missed: C
     appendLine("자체 시험(규칙마다 위반을 심어 제출 검사에서 걸리는지 확인): 승인 규칙 ${approved.size}개 중 막음 ${blocked.size}, 막지 않고 기록 ${reviewed.size}, 못 잡음 ${notCaught.size}, 위반을 못 만듦 ${notMade.size}" +
         if (off > 0) ". 승인 전·꺼 둔 규칙 ${off}개는 강제하지 않음" else "")
     if (notCaught.isNotEmpty() || notMade.isNotEmpty()) appendLine("  아래 승인 규칙은 위반이 생겨도 정적 검사가 잡지 못합니다")
-    notCaught.forEach { appendLine("  ✗ ${it.id}  ${it.description}") }
-    notMade.forEach { appendLine("  ? ${it.id}  ${it.description}") }
+    notCaught.forEach { appendLine("  ✗ ${it.id}  ${it.description}${reasons[it.id]?.let { r -> "  [$r]" }.orEmpty()}") }
+    notMade.forEach { appendLine("  ? ${it.id}  ${it.description}${reasons[it.id]?.let { r -> "  [$r]" }.orEmpty()}") }
 }
 
 private fun rulesCmd(store: ConfigStore, args: Array<String>) {
@@ -652,18 +656,21 @@ fun analyzeDocRules(store: ConfigStore, id: String, out: Appendable) {
     val previous = rules.load(id)
     val extracted = DocRules.extract(sections, facts, previous, jev) { cost.ask(it, AI_MODEL) }
     val confirmed = DocRules.recheck(jev, path, extracted.rules)
+    val repaired = DocRules.repair(jev, path, facts, sections, extracted, confirmed, previous?.attempted.orEmpty()) { cost.ask(it, AI_MODEL) }
+    val others = ConventionStore(store).load(id)?.rules.orEmpty().filter { it.approved && !it.rejected && !DocRules.isDocRule(it.id) }
     var model: DocRules.DocRuleModel? = null
-    val file = rules.update(id) { latest -> DocRules.carryOver(latest, extracted, confirmed).let { m -> m.copy(files = docs.keys.sorted(), frozen = DocRules.frozen(m)) }.also { model = it } }
-    out.appendLine("저장: $file (프로젝트 $id 문서 지침 검증기, 문서 구간 ${sections.size}개)")
-    out.append(DocRules.report(checkNotNull(model)))
-    if (confirmed.isNotEmpty()) out.appendLine("기존 코드 다수가 어기는 문서 규칙 ${confirmed.size}개는 걸린 코드가 원문을 어기는지 JEV로 다시 확인했습니다(${DocRules.CONFIRMED} 이상 승인·동결, ${DocRules.MISCONVERTED} 이하 잘못 옮김으로 거절, 사이는 사용자 확인)")
-    out.append(DocRules.ledgerReport(DocRules.ledger(sections, checkNotNull(model)).let { DocRules.screen(jev, it) ?: it }))
-    out.appendLine(Introduced.trend(checkNotNull(model).frozen, previous?.frozen?.takeIf { it.isNotEmpty() }))
-    checkNotNull(model).rules.takeIf { it.isNotEmpty() }?.let { docRules ->
-        val r = ConventionSelfTest.run(facts, docRules)
-        out.append(selfTestReport(docRules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.severity == "BLOCK") }, r.caught, r.missed, r.untested))
+    val file = rules.update(id) { latest ->
+        DocRules.carryOver(latest, repaired, confirmed.filterKeys { k -> repaired.rules.any { it.id == k } }, others).let { m -> m.copy(files = docs.keys.sorted(), frozen = DocRules.frozen(m)) }.also { model = it }
     }
-    extracted.notes.forEach { out.appendLine("  ! $it") }
+    val saved = checkNotNull(model)
+    out.appendLine("저장: $file (프로젝트 $id 문서 지침 검증기, 문서 구간 ${sections.size}개)")
+    out.append(DocRules.report(saved))
+    if (confirmed.isNotEmpty()) out.appendLine("기존 코드 다수가 어기는 문서 규칙 ${confirmed.size}개는 걸린 코드가 원문을 어기는지 JEV로 다시 확인했습니다(${DocRules.CONFIRMED} 이상 승인·동결, 그보다 낮으면 반례를 주고 다시 옮기고, 그래도 안 되면 ${DocRules.MISCONVERTED} 이하는 거절·사이는 사용자 확인)")
+    val self = saved.rules.takeIf { it.isNotEmpty() }?.let { ConventionSelfTest.run(facts, it) }
+    out.append(DocRules.ledgerReport(DocRules.ledger(sections, saved, Guidelines.ruleScores(jev, sections), self?.unverified.orEmpty()).let { DocRules.screen(jev, it) ?: it }))
+    out.appendLine(Introduced.trend(saved.frozen, previous?.frozen?.takeIf { it.isNotEmpty() }))
+    self?.let { r -> out.append(selfTestReport(saved.rules.filterNot { it.rejected }.map { RuleState(it.id, it.description, it.approved, it.severity == "BLOCK") }, r.caught, r.missed, r.untested, r.reasons)) }
+    repaired.notes.forEach { out.appendLine("  ! $it") }
     cost.summary()?.let { out.appendLine("문서 규칙 $it") }
 }
 

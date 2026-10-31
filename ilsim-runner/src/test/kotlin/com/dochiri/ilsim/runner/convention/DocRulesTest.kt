@@ -410,20 +410,31 @@ class DocRulesTest {
     }
 
     @Test
-    fun `처리 내역은 검증기 버전이 바뀌어도 경로와 제목으로 구간 기록을 찾고 빠진 문장은 JEV가 규칙 문장이라고 본 것만 남긴다`() {
-        val section = DocSection("docs/testing.md", 3, "테스트 > 작성", "## 작성\n이 문서는 테스트 작성 방법을 설명한다.\n- 테스트에서 Thread.sleep 을 쓰지 않는다.\n- 테스트 이름은 한국어로 쓴다.\n")
-        val model = DocRules.DocRuleModel(documents = listOf(DocCoverage("docs/testing.md", 3, "테스트 > 작성", "old-version-hash", emptyList(), listOf("테스트 이름은 한국어로 쓴다."))))
+    fun `처리 내역은 모든 규칙 문형 문장을 정적 규칙·JEV 판정·누락 중 하나로 남기고 기록 없이 빠지는 문장이 없다`() {
+        val rules = DocSection("docs/testing.md", 3, "테스트 > 작성", "## 작성\n이 문서는 테스트 작성 방법을 설명한다.\n- 테스트에서 Thread.sleep 을 쓰지 않는다.\n- 테스트 이름은 한국어로 쓴다.\n")
+        val intro = DocSection("docs/history.md", 1, "기록", "# 기록\n배포는 금요일에 한다.\n이 문서는 지난 작업을 정리한다.\n")
+        val sleep = ConventionRule("doc:sleep", "doc-forbidden-code", "테스트에서 Thread.sleep 을 쓰지 않는다", mapOf("scope" to listOf("test"), "pattern" to listOf("""Thread\.sleep""")),
+            approved = true, origin = DocOrigin("docs/testing.md", 3, "테스트 > 작성", "테스트에서 Thread.sleep 을 쓰지 않는다.", "h"))
+        val model = DocRules.DocRuleModel(rules = listOf(sleep), documents = listOf(DocCoverage("docs/testing.md", 3, "테스트 > 작성", "old-version-hash", listOf("doc:sleep"), emptyList())))
 
-        val entries = DocRules.ledger(listOf(section), model)
+        val entries = DocRules.ledger(listOf(rules, intro), model, mapOf(rules to 0.9, intro to 0.1))
 
-        assertEquals(listOf(DocRules.DROPPED, DocRules.DROPPED, DocRules.TO_JEV), entries.map { it.status }, "버전 해시가 달라도 같은 구간 기록을 쓴다")
-        val screened = DocRules.screen(jev { id, body -> if ("설명한다" in body.path("state").path("clauses").path(id.drop(1).toInt()).path("text").asText()) 0.1 else 0.9 }, entries)!!
-        assertEquals(listOf(DocRules.NOT_CLAUSE, DocRules.DROPPED, DocRules.TO_JEV), screened.map { it.status })
+        assertEquals(listOf(DocRules.TO_JEV, DocRules.STATIC, DocRules.TO_JEV, DocRules.NOT_RULE, DocRules.NOT_RULE), entries.map { it.status },
+            "판정 대상 구간의 정적이 아닌 문장은 AI가 따로 적지 않았어도 제출 때 JEV가 판정한다")
+        assertEquals(listOf(DocRules.TO_JEV, DocRules.STATIC, DocRules.TO_JEV, DocRules.TO_JEV, DocRules.TO_JEV), DocRules.ledger(listOf(rules, intro), model.copy(documents = model.documents + DocCoverage("docs/history.md", 1, "기록", "x"))).map { it.status },
+            "점수가 없으면 구간 기록(버전 해시가 달라도 경로·제목)으로 판정 대상을 정한다")
+        val unverified = DocRules.ledger(listOf(rules), model, mapOf(rules to 0.9), mapOf("doc:sleep" to "심은 위반을 검사기가 잡지 못함"))
+        assertEquals(DocRules.STATIC_UNVERIFIED, unverified[1].status)
+        assertContains(unverified[1].reason!!, "심은 위반을 검사기가 잡지 못함")
+
+        val screened = DocRules.screen(jev { id, body -> if ("금요일" in body.path("state").path("clauses").path(id.drop(1).toInt()).path("text").asText()) 0.9 else 0.1 }, entries)!!
+        assertEquals(listOf(DocRules.MISSING, DocRules.NOT_CLAUSE), screened.drop(3).map { it.status })
         val report = DocRules.ledgerReport(screened)
-        assertContains(report, "3개 중 JEV 판정으로 넘김 1, 규칙 문장 아님(JEV 판정) 1, 기록 없이 빠짐 1")
-        assertContains(report, "테스트에서 Thread.sleep 을 쓰지 않는다.")
-        assertFalse("방법을 설명한다" in report, "JEV가 규칙 문장이 아니라고 본 것은 빠짐 목록에 넣지 않는다")
+        assertContains(report, "5개 중 정적 규칙 1, JEV 판정으로 넘김 2, 누락(판정 대상이 아닌 구간의 규칙 문장) 1, 규칙 문장 아님(JEV 판정) 1")
+        assertContains(report, "docs/history.md:1 배포는 금요일에 한다.")
+        assertFalse("기록 없이 빠짐" in report)
         assertEquals(null, DocRules.screen(Jev(null), entries), "JEV를 못 쓰면 거르지 않았다고 알린다")
+        assertEquals("문서 규칙 문장 처리 내역: 규칙 문형 문장이 없습니다\n", DocRules.ledgerReport(emptyList()), "문장이 없어도 한 줄로 끝난다")
     }
 
     @Test

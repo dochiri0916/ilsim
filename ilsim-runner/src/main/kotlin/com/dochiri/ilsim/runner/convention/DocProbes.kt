@@ -48,6 +48,10 @@ internal object DocProbes {
         params["measure"]?.let { require(it.singleOrNull() in measures) { "measure 는 lines 또는 nesting 입니다" } }
         params["max"]?.let { require(it.singleOrNull()?.toIntOrNull()?.let { n -> n >= 0 } == true) { "max 는 0 이상 정수 하나입니다" } }
         if (params["measure"]?.single() == "nesting") require(params["target"]?.single() != "file") { "nesting 은 메서드에만 씁니다" }
+        params["inherit"]?.let {
+            require(it.singleOrNull() == "class") { "inherit 는 class 하나만 씁니다" }
+            require(params["target"]?.single() in setOf("method", "test-method")) { "inherit 는 method·test-method 대상에만 씁니다" }
+        }
         regexKeys.forEach { key -> params[key]?.forEach { Regex(it) } }
         globKeys.forEach { key -> params[key]?.forEach { glob(it) } }
         return params.toSortedMap()
@@ -94,6 +98,9 @@ internal object DocProbes {
     }
 
     private fun classes(file: ConvFile) = file.types.filter { it.topLevel }.map { DocTarget(file, it.name, it.line, it.annotations, null, null) }
+
+    fun owner(t: DocTarget): DocTarget? =
+        t.file.types.filter { it.topLevel && it.line <= t.line }.maxByOrNull { it.line }?.let { DocTarget(t.file, it.name, it.line, it.annotations, null, null) }
 
     private fun methods(file: ConvFile): List<DocTarget> {
         val decls = file.annotated.filter { it.kind == "func" }
@@ -143,16 +150,18 @@ internal object ForbiddenImport : DocProbe("doc-forbidden-import", emptySet(), s
 }
 
 internal object RequiredAnnotation : DocProbe(
-    "doc-required-annotation", setOf("class", "test-class", "method", "test-method"), setOf("annotation", "target"), setOf("when", "name", "value"),
+    "doc-required-annotation", setOf("class", "test-class", "method", "test-method"), setOf("annotation", "target"), setOf("when", "name", "value", "inherit"),
 ) {
     override fun samples(f: Facts, params: Map<String, List<String>>): List<Sample> {
         val required = params.getValue("annotation")
         val values = params["value"].orEmpty().map(::Regex)
-        return DocProbes.targets(f, params).map { t ->
-            if (t.annotations.none { it in required }) return@map Sample(t.file.path, t.line, false, "${t.name} 에 ${DocProbes.annotations(required)} 가 없습니다")
+        val inherit = params["inherit"]?.firstOrNull() == "class"
+        return DocProbes.targets(f, params).map { target ->
+            val t = if (inherit && target.annotations.none { it in required }) DocProbes.owner(target)?.takeIf { o -> o.annotations.any { it in required } } ?: target else target
+            if (t.annotations.none { it in required }) return@map Sample(target.file.path, target.line, false, "${target.name} 에 ${DocProbes.annotations(required)} 가 없습니다${if (inherit) "(클래스에도 없음)" else ""}")
             val arguments = if (values.isEmpty()) emptyList() else DocProbes.annotationArguments(t, required)
             val ok = values.isEmpty() || (arguments.isNotEmpty() && arguments.all { a -> values.any { it.containsMatchIn(a) } })
-            Sample(t.file.path, t.line, ok, "${t.name} 의 ${DocProbes.annotations(required)} 값이 정해진 형식과 다릅니다")
+            Sample(target.file.path, target.line, ok, "${target.name} 의 ${DocProbes.annotations(required)} 값이 정해진 형식과 다릅니다")
         }
     }
 }
