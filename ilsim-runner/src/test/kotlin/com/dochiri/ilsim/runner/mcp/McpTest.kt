@@ -302,7 +302,7 @@ class McpTest {
     @Test
     fun `꼭 필요한 독립 검토를 실행하지 못하면 통과로 보지 않고 통과하면 검증 원장을 남긴다`() {
         var failing = true
-        val ask: (String, String) -> String = { _, _ -> if (failing) throw IllegalStateException("검토 호출 실패") else """{"verdict":"PASS","findings":[]}""" }
+        val ask: (String, String) -> String = { _, _ -> if (failing) throw IllegalStateException("검토 호출 실패") else """{"verdict":"PASS","findings":[{"type":"WEAK_TEST","target":"SlugTest.java","reason":"대문자 입력 시험이 없다"}]}""" }
         fun run(name: String, args: String = "{}") = IlsimMcp(store, server, active, repo, ask, ::jev).tools().associateBy { it.name }.getValue(name).call(Json.parseToJsonElement(args).jsonObject)
         run("analyze_project")
         run("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
@@ -338,6 +338,8 @@ class McpTest {
         assertContains(done, "## 검증 원장 (TEST_CODE)")
         assertContains(done, "## 검증 원장 (IMPLEMENTATION)")
         assertContains(done, "| REQ-1 소문자로 바꾼다 | - | TC-1 | SlugTest.java:1 |")
+        assertContains(done, "- [WEAK_TEST] SlugTest.java: 대문자 입력 시험이 없다")
+        assertTrue(done.indexOf("## 검증 원장 (IMPLEMENTATION)") < done.indexOf("## 검증 원장 (TEST_CODE)"))
     }
 
     @Test

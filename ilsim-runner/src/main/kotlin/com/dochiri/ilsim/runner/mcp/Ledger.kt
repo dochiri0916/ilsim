@@ -55,6 +55,11 @@ object Ledger {
         if (title != null && blank.isNotEmpty()) append("\n- 테스트 위치를 찾지 못한 항목: ${blank.joinToString(", ")}")
     }
 
+    fun brief(ledger: String): String = ledger.lines().filter { line ->
+        val t = line.trim()
+        t.startsWith("## ") || t.startsWith("- ") || (t.startsWith("| ") && !t.startsWith("| 지침 ") && " | $PASSED | " !in t && " | $EXCLUDED | " !in t)
+    }.joinToString("\n")
+
     private fun cell(text: String): String = text.replace("|", "\\|").replace(Regex("""\s+"""), " ").take(MAX_TEXT).trim()
 
     private const val MAX_TEXT = 60

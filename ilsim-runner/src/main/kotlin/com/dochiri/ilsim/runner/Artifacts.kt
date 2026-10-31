@@ -18,7 +18,7 @@ class Artifacts(config: ConfigStore) {
         return folder(projectId, feature, taskId).resolve(name)
     }
 
-    private fun folder(projectId: String, feature: String, taskId: String): Path {
+    fun folder(projectId: String, feature: String, taskId: String): Path {
         val folder = "$feature-${taskId.take(8)}"
         require(SAFE.matches(projectId) && SAFE.matches(folder)) { "잘못된 산출물 위치: $projectId/$folder" }
         return base.resolve(projectId).resolve("specs").resolve(folder)

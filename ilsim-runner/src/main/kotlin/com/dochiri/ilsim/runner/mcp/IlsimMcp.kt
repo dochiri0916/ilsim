@@ -183,7 +183,7 @@ class IlsimMcp(
                 "작업이 끝났습니다: ${task.feature}. 브랜치 ${task.branch}에 단계별 커밋이 있습니다. 병합 여부는 사용자가 정합니다" +
                     when (removed) { true -> ". 작업 폴더를 지웠습니다"; false -> ". 작업 폴더(${task.worktree})를 지우지 못해 남겨 두었습니다"; null -> "" } +
                     Artifacts(store).ledgers(ws.projectId, task.feature, task.taskId).takeIf { it.isNotEmpty() }?.let { ledgers ->
-                        "\n\n사용자에게 아래 검증 원장을 요약해 알리고, 확인 못 한 항목과 테스트 위치를 찾지 못한 항목은 빠짐없이 전하세요\n\n" + ledgers.joinToString("\n\n").let { if (it.length > MAX_OUTPUT) it.take(MAX_OUTPUT) + "\n…(생략)" else it }
+                        "\n\n사용자에게 아래 검증 원장을 요약해 알리고, 확인 못 한 항목과 테스트 위치를 찾지 못한 항목은 빠짐없이 전하세요. 통과한 지침은 뺐습니다(전체: ${Artifacts(store).folder(ws.projectId, task.feature, task.taskId)})\n\n" + ledgers.asReversed().joinToString("\n\n", transform = Ledger::brief).let { if (it.length > MAX_OUTPUT) it.take(MAX_OUTPUT) + "\n…(생략)" else it }
                     }.orEmpty()
             }
             state.status == "BLOCKED" -> {
@@ -548,7 +548,8 @@ class IlsimMcp(
             "TEST_CODE" -> caseRows(ws, task, tests)
             else -> null
         }
-        val rendered = Ledger.render(stage, validation, ledger?.first, ledger?.second.orEmpty(), plan.describe(validation["ai-audit"]?.takeIf { plan.mode != AuditMode.SKIP }),
+        val rendered = Ledger.render(stage, validation, ledger?.first, ledger?.second.orEmpty(), plan.describe(validation["ai-audit"]?.takeIf { plan.mode != AuditMode.SKIP }) +
+            audit.artifacts["ai-audit.md"]?.lines()?.filter { it.startsWith("- [") }?.joinToString("") { "\n  $it" }.orEmpty(),
             guidelineRows(docSections(ws, task.feature).second, guide, compliance))
         return Outcome(diff = diff, artifacts = artifacts + audit.artifacts, attention = attention, undecided = unsure, ledger = rendered)
     }

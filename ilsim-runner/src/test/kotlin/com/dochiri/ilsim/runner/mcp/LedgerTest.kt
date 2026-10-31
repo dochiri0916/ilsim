@@ -3,6 +3,7 @@ package com.dochiri.ilsim.runner.mcp
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class LedgerTest {
     @Test
@@ -41,5 +42,9 @@ class LedgerTest {
         assertContains(text, "| AGENTS.md:3 주석 금지 | 통과 | 0.05 |")
         assertContains(text, "| AGENTS.md:9 로그 | 불확실 | 0.50 |")
         assertContains(text, "관련 없어 제외한 구간(잘못 빠졌으면 사용자가 알려 주세요): docs/a.md:1")
+        val brief = Ledger.brief(text)
+        assertContains(brief, "| AGENTS.md:9 로그 | 불확실 | 0.50 |")
+        assertContains(brief, "- 확인 못 한 항목: guidelines=UNCERTAIN(불확실)")
+        assertFalse("주석 금지" in brief || "관련 없어 제외한 구간(" in brief || "| 지침 |" in brief)
     }
 }
