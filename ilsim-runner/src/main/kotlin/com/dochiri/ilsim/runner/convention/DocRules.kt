@@ -26,7 +26,7 @@ object DocRules {
     private const val MAX_DIRECTORIES = 60
     private const val RECHECK_FROM = 0.15
     private const val RECHECK_UNTIL = 0.6
-    private const val VERSION = "doc-rules-v3"
+    private const val VERSION = "doc-rules-v4"
     private const val MAX_REMAINING = 20
     private const val MISCONVERTED_DIVISOR = 5
 
@@ -68,13 +68,22 @@ object DocRules {
             coverage += cached.copy(path = s.path, line = s.line, heading = s.heading)
             kept.filter { it.id in cached.rules }.forEach { r -> rules.putIfAbsent(r.id, r.copy(origin = r.origin?.copy(path = s.path, line = s.line, heading = s.heading))) }
         }
-        val results = batches(pending).flatMap { batch ->
+        val static = pending.associate { (s, _) -> s to StaticDocRules.extract(s) }
+        val forAi = pending.filterNot { (s, _) -> static.getValue(s).let { it.proposals.isNotEmpty() && it.uncovered.isEmpty() } && s.text.lines().none { it.trimStart().startsWith("|") } }
+        val asked = batches(forAi).flatMap { batch ->
             try {
-                parse(ask(prompt(batch.map { it.first }, tree)), batch, notes)
+                parse(ask(prompt(batch.map { it.first }, tree, batch.map { static.getValue(it.first).proposals.map { p -> p.quote } })), batch, notes)
             } catch (e: Exception) {
                 notes += "문서 규칙 추출 실패(구간 ${batch.size}개, 다음 분석 때 다시 시도): ${e.message}"
                 emptyList()
             }
+        }.associateBy { it.section }
+        if (pending.isNotEmpty()) notes += "문서 규칙 정적 추출: 구간 ${pending.size}개 중 ${pending.size - forAi.size}개는 정적으로만 옮김, 정적 규칙 ${static.values.sumOf { it.proposals.size }}개, AI에 넘긴 구간 ${forAi.size}개"
+        val results = pending.mapNotNull { (s, hash) ->
+            val fromAi = asked[s]
+            val fixed = static.getValue(s).proposals
+            if (fromAi == null && s in forAi.map { it.first }) null
+            else SectionResult(s, hash, fixed + fromAi?.proposals.orEmpty(), fromAi?.remaining.orEmpty())
         }
         val faith = verify(jev, results.flatMap { it.proposals }, tree)
         if (faith == null) notes += "JEV 원문 일치 확인에 실패했습니다. 확인하지 못한 규칙은 의견 없이 제안합니다"
@@ -101,6 +110,12 @@ object DocRules {
             }.distinct()
             coverage += DocCoverage(result.section.path, result.section.line, result.section.heading, result.hash, ids, remaining.distinct())
         }
+        val extracted = rules.values.map { it.kind to it.params }.toSet()
+        val carried = kept.filter { old ->
+            old.id !in rules && (old.kind to old.params) !in extracted && old.origin?.let { o -> sections.any { it.path == o.path && quoted(it.text, o.quote) } } == true
+        }
+        if (carried.isNotEmpty()) notes += "다시 뽑을 때 빠졌지만 원문이 그대로인 이전 문서 규칙 ${carried.size}개를 이어받았습니다"
+        carried.forEach { rules[it.id] = it }
         return Extracted(rules.values.map { evidence(it, facts) }.sortedBy { it.id }, coverage.sortedWith(compareBy({ it.path }, { it.line })), notes)
     }
 
@@ -130,7 +145,7 @@ object DocRules {
         return (lines + listOfNotNull("- 그 밖의 디렉터리 ${dirs.size - MAX_DIRECTORIES}개".takeIf { dirs.size > MAX_DIRECTORIES })).joinToString("\n")
     }
 
-    internal fun prompt(sections: List<DocSection>, tree: String = ""): String = buildString {
+    internal fun prompt(sections: List<DocSection>, tree: String = "", extracted: List<List<String>> = emptyList()): String = buildString {
         appendLine("""
             아래는 한 프로젝트 문서에서 코드를 만들거나 고칠 때 따라야 할 규칙이 적힌 구간들이다. 각 구간에서 정적 분석으로 기계적으로 확인할 수 있는 규칙만 골라 아래 규칙 종류(kind)로 옮겨라.
             - 규칙이 합리적인지는 따지지 말고 적힌 그대로 옮긴다.
@@ -158,6 +173,7 @@ object DocRules {
         sections.forEachIndexed { i, s ->
             appendLine("[s$i] ${s.path}:${s.line} (${s.heading})")
             appendLine(s.text)
+            extracted.getOrNull(i)?.takeIf { it.isNotEmpty() }?.let { done -> appendLine("(이미 정적으로 옮긴 문장이라 다시 옮기지 않는다: ${done.joinToString(" / ")})") }
             appendLine()
         }
     }.trimEnd()

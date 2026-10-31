@@ -414,4 +414,23 @@ class DocRulesTest {
         assertEquals(emptyList(), hits(mapOf("scope" to listOf("main"), "pattern" to listOf("FOR UPDATE"))), "기본은 문자열 내용도 뺀다")
         assertEquals(listOf(8), hits(mapOf("scope" to listOf("main"), "pattern" to listOf("//\\s*given"), "text" to listOf("raw"))))
     }
+
+    @Test
+    fun `코드로 적힌 금지 문장은 AI 없이 정적 규칙으로 옮기고 조건이 붙은 문장은 남긴다`() {
+        val section = DocSection("docs/testing.md", 1, "테스트", """
+            - 테스트에서 `Thread.sleep()`을 쓰지 않는다.
+            - 테스트를 건너뛰려고 `@Disabled`를 붙이지 않는다.
+            - 동시성 테스트에서만 `@Transactional`을 쓰지 않는다.
+            - 조회 테스트는 나와야 할 행과 나오면 안 되는 행을 함께 확인한다.
+            배경 설명 문장이다
+        """.trimIndent())
+        val result = StaticDocRules.extract(section)
+        assertEquals(listOf("doc-forbidden-code", "doc-forbidden-annotation"), result.proposals.map { it.kind })
+        assertEquals(listOf("test"), result.proposals.first().params["scope"])
+        assertEquals(listOf("Disabled"), result.proposals.last().params["annotation"])
+        assertEquals(2, result.uncovered.size, "조건이 붙은 금지와 의미 규칙은 AI에 넘긴다")
+        val facts = Facts(listOf(FactScanner.parse("src/test/kotlin/com/x/ATest.kt", "kt", true, "package com.x\n\nclass ATest {\n    fun a() { Thread.sleep(10) }\n    // Thread.sleep 은 쓰지 않는다\n}\n".lines())!!))
+        val probe = DocProbes.byKind("doc-forbidden-code")!!
+        assertEquals(listOf(4), probe.samples(facts, result.proposals.first().params).filter { !it.ok }.map { it.line })
+    }
 }
