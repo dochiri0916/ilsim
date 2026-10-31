@@ -45,6 +45,16 @@ class Artifacts(config: ConfigStore) {
         return file
     }
 
+    fun snapshot(projectId: String, feature: String, taskId: String, stage: String) {
+        val file = path(projectId, feature, taskId, stage)?.takeIf { it.exists() } ?: return
+        KnowledgeFiles.write(reviewed(file), file.readText())
+    }
+
+    fun previous(projectId: String, feature: String, taskId: String, stage: String): String? =
+        path(projectId, feature, taskId, stage)?.let(::reviewed)?.takeIf { it.exists() }?.readText()
+
+    private fun reviewed(file: Path): Path = file.resolveSibling(file.fileName.toString().removeSuffix(".md") + ".reviewed.md")
+
     fun writeLedger(projectId: String, feature: String, taskId: String, stage: String, text: String): Path {
         val file = folder(projectId, feature, taskId).resolve(ledgerName(stage))
         KnowledgeFiles.write(file, text.trimEnd() + "\n")

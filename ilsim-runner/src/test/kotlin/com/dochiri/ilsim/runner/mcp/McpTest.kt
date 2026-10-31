@@ -885,6 +885,28 @@ class McpTest {
     }
 
     @Test
+    fun `승인 대기 응답은 산출물 요약을 주고 거절 뒤 다시 낸 문서는 달라진 줄만 주며 요청하면 전체를 준다`() {
+        call("analyze_project")
+        call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        val body = "# 슬러그\n\n## 요구사항\n- REQ-1: 소문자로 바꾼다\n\n## 예외 상황\n- 빈 문자열은 그대로 둔다\n\n## 영향 범위\n- src/Slug.java\n"
+
+        val first = call("submit_result", doc(body))
+
+        assertContains(first, "## 산출물 요약")
+        assertContains(first, "- REQ-1 소문자로 바꾼다")
+        assertContains(first, "영향 범위:\n- src/Slug.java")
+        assertTrue("빈 문자열은 그대로 둔다" !in first, "요약에는 요구사항과 영향 범위만 넣는다")
+        assertContains(call("next_step", """{"full":true}"""), "빈 문자열은 그대로 둔다")
+
+        call("reject_stage", """{"stage":"REQUIREMENTS","feedback":"REQ-2 추가"}""")
+        val again = call("submit_result", doc(body.replace("- REQ-1: 소문자로 바꾼다", "- REQ-1: 소문자로 바꾼다\n- REQ-2: 공백은 하이픈으로 바꾼다")))
+
+        val changed = again.substringAfter("직전 제출본과 달라진 줄")
+        assertContains(changed, "+ - REQ-2: 공백은 하이픈으로 바꾼다")
+        assertTrue("src/Slug.java" !in changed.substringBefore("승인을 묻기 전에"), "달라지지 않은 줄은 넣지 않는다")
+    }
+
+    @Test
     fun `단계 지시는 맨 앞에 완료 기준을 두고 지침이 많아도 분량 상한 안에서 관련도 높은 지침부터 넣고 분량을 남긴다`() {
         jevAnswer = { 0.9 }
         val sections = (1..40).joinToString("\n\n") { i -> "## 규칙 $i\n" + "- 규칙 $i 설명 문장 ".repeat(120) }

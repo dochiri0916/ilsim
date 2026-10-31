@@ -45,6 +45,7 @@ import com.dochiri.ilsim.runner.risk.RiskScanner
 import java.nio.file.Path
 import java.time.Instant
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -63,9 +64,9 @@ class IlsimMcp(
         McpTool("start_task", "코드·문서를 바꾸는 요청을 일심 작업으로 시작한다. 작업 브랜치로 전환하고 첫 단계 지시를 돌려준다.", schema(
             """{"type":"object","properties":{"requirement":{"type":"string","description":"사용자 요구사항 원문"},"feature":{"type":"string","description":"기능 이름(영문 소문자·숫자·하이픈, 생략 가능)"}},"required":["requirement"]}""",
         )) { args -> startTask(args.text("requirement") ?: throw IllegalArgumentException("requirement 가 필요합니다"), args.text("feature")) },
-        McpTool("next_step", "진행 중인 일심 작업의 상태와 현재 단계 지시를 돌려준다. 작업이 없으면 그 사실을 알린다.", schema(
-            """{"type":"object","properties":{}}""",
-        )) { nextStep() },
+        McpTool("next_step", "진행 중인 일심 작업의 상태와 현재 단계 지시를 돌려준다. 작업이 없으면 그 사실을 알린다. 승인 대기 중이면 산출물 요약(다시 낸 것이면 직전 제출본과 달라진 줄)을 준다.", schema(
+            """{"type":"object","properties":{"full":{"type":"boolean","description":"승인 대기 산출물 전체를 받으려면 true(사용자가 전체를 보자고 할 때만)"}}}""",
+        )) { args -> nextStep(args["full"]?.jsonPrimitive?.booleanOrNull == true) },
         McpTool("submit_result", "현재 단계 결과를 제출한다. 요구사항·테스트 케이스 단계는 문서 전체를 document로 넣는다. 일심이 검증하고 통과하면 코드 단계는 커밋하고 문서 단계는 일심 저장소(~/.ilsim)에 저장한 뒤 서버에 보고한다. 실패하면 고칠 점을 돌려준다.", schema(
             """{"type":"object","properties":{"summary":{"type":"string","description":"이 단계에서 한 일 요약"},"document":{"type":"string","description":"요구사항·테스트 케이스 단계에서 작성한 문서 전체(마크다운). 프로젝트에 파일로 만들지 않고 여기에 넣는다"}}}""",
         )) { args -> submit(args.text("summary"), args.text("document")) },
@@ -149,10 +150,10 @@ class IlsimMcp(
         return "작업을 만들었습니다: ${created.feature} (${created.taskId.take(8)}), 브랜치 $branch, 작업 폴더 $worktree$warning\n\n" + nextStep()
     }
 
-    private fun nextStep(): String {
+    private fun nextStep(full: Boolean = false): String {
         val ws = workspace()
         val task = active.load(ws.home) ?: return "진행 중인 일심 작업이 없습니다(프로젝트 ${ws.projectId}). 코드·문서를 바꾸는 요청이면 start_task로 시작하세요"
-        val assigned = server.claim(task.taskId, store.load().runnerId) ?: return describe(ws, task)
+        val assigned = server.claim(task.taskId, store.load().runnerId) ?: return describe(ws, task, full)
         val restored = if (task.shelved != null && task.shelvedStage == assigned.stage) unshelve(ws, task.shelved) else null
         active.save(ws.home, task.copy(stage = assigned.stage, status = RUNNING, stopBlocks = 0, attention = emptyList(), undecided = emptyList(),
             shelved = task.shelved.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }, shelvedStage = task.shelvedStage.takeIf { restored == null || restored.startsWith(UNSHELVE_FAILED) }))
@@ -188,7 +189,7 @@ class IlsimMcp(
         return if (delivered.put("$taskId:$part", hash) == hash) again else text
     }
 
-    private fun describe(ws: Workspace, task: ActiveTask): String {
+    private fun describe(ws: Workspace, task: ActiveTask, full: Boolean = false): String {
         val state = server.agentTask(task.taskId) ?: run {
             active.clear(ws.home)
             return "서버에서 작업을 찾을 수 없어 활성 작업을 지웠습니다"
@@ -211,7 +212,7 @@ class IlsimMcp(
             }
             state.stageStatus == "WAITING_APPROVAL" -> {
                 active.save(ws.home, task.copy(stage = state.stage, status = "WAITING_APPROVAL"))
-                "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 아래 산출물을 사용자에게 요약해 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요\n\n${artifact(ws, task, state.stage)}" +
+                "${state.stage} 단계 결과가 사용자 승인을 기다립니다. 아래 산출물을 사용자에게 보여 주고 승인 여부를 물어보세요. 사용자가 승인하면 approve_stage, 고칠 점을 말하면 reject_stage(사유)를 호출합니다. 사용자가 답하기 전에는 호출하지 마세요\n\n${if (full) artifact(ws, task, state.stage) else outline(ws, task, state.stage)}" +
                     openQuestions(ws, task, state.stage) +
                     task.attention.takeIf { it.isNotEmpty() }?.let { items ->
                         "\n\n승인을 묻기 전에 사용자에게 반드시 알리세요. 일심이 아래 문서 지침의 준수를 확인하지 못했습니다. 사용자가 산출물이 이 지침을 지키는지 직접 확인한 뒤 승인하도록 안내하세요:\n" + items.joinToString("\n") { "- $it" }
@@ -353,6 +354,7 @@ class IlsimMcp(
 
     private fun reject(stage: String, feedback: String): String {
         val (ws, task) = waiting(stage)
+        Artifacts(store).snapshot(ws.projectId, task.feature, task.taskId, stage)
         server.reject(task.taskId, feedback)
         Artifacts(store).addDecision(ws.projectId, task.feature, task.taskId, UserDecision(null, feedback.trim(), stage, Instant.now().toString()))
         return "$stage 단계를 거절했습니다. 사유를 반영해 같은 단계를 다시 합니다\n\n" + nextStep()
@@ -391,6 +393,15 @@ class IlsimMcp(
         val open = UndecidedCheck.open(spec, recorded.map { UndecidedCheck.Decision(it.question, it.text) })
         val untested = if (stage == "IMPLEMENTATION") ". 구현 단계에서 정한 동작은 앞 단계 테스트가 다루지 않습니다. 테스트가 필요하면 사용자에게 reopen_stage(TEST_CODE)로 테스트를 더할지 물어보세요" else ""
         return "사용자 결정을 기록했습니다(모두 ${recorded.size}개). 이후 단계 지시와 일심 검사가 요구사항 문서처럼 따릅니다. 남은 미결정 질문: ${open.joinToString { it.id }.ifEmpty { "없음" }}$untested"
+    }
+
+    private fun outline(ws: Workspace, task: ActiveTask, current: String?): String {
+        val artifacts = Artifacts(store)
+        val stage = current ?: return "산출물: 브랜치 ${task.branch}의 변경"
+        val text = artifacts.read(ws.projectId, task.feature, task.taskId, stage) ?: return "산출물: 브랜치 ${task.branch}의 변경"
+        val before = artifacts.previous(ws.projectId, task.feature, task.taskId, stage)?.takeIf { it.trim() != text.trim() }
+        val body = before?.let { "사용자가 고칠 점을 말한 직전 제출본과 달라진 줄입니다(- 지움, + 더함):\n" + ApprovalView.diff(it, text) } ?: ApprovalView.outline(stage, text)
+        return "## 산출물 요약 (전체 문서: ${artifacts.path(ws.projectId, task.feature, task.taskId, stage)}. 사용자가 전체를 보자고 하면 next_step(full=true))\n\n$body"
     }
 
     private fun artifact(ws: Workspace, task: ActiveTask, stage: String?): String {
@@ -859,6 +870,7 @@ class IlsimMcp(
             "TEST_CASES" to listOf(
                 "모든 REQ-n을 하나 이상의 TC-n에 연결한다.",
                 "사용자가 답하지 않은 미결정 질문의 동작을 TC로 정하지 않는다.",
+                "TC 표 마지막 열에 `테스트 위치·방식`(테스트 파일 경로, 새 파일이면 만들 경로, 단위·통합 등 종류)을 적는다.",
                 "TC에 적는 테스트 위치·이름·실행 방식·데이터 준비·단언 방식은 아래 프로젝트 문서 지침과 같아야 한다.",
             ),
             "TEST_CODE" to listOf(
