@@ -105,6 +105,9 @@ class IlsimMcp(
         McpTool("reopen_stage", "이미 통과한 코드 단계(TEST_CODE)로 되돌려 그 단계부터 다시 한다. 앞 단계 산출물(예: 테스트 기대값)이 틀려 현재 단계를 통과할 수 없을 때, 사용자가 되돌리자고 했을 때만 호출한다. 현재 단계의 미커밋 변경은 보관했다가 그 단계로 돌아오면 되살린다. 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
             """{"type":"object","properties":{"stage":{"type":"string","description":"되돌릴 단계(TEST_CODE)"},"feedback":{"type":"string","description":"그 단계에서 고칠 점"}},"required":["stage","feedback"]}""",
         )) { args -> reopen(args.text("stage") ?: throw IllegalArgumentException("stage 가 필요합니다"), args.text("feedback") ?: throw IllegalArgumentException("feedback 이 필요합니다")) },
+        McpTool("cancel_task", "사용자가 진행 중인 일심 작업을 그만두라고 말했을 때만 작업을 취소한다. 작업 폴더를 지우고 브랜치는 남긴다. 호출하면 앱이 사용자에게 다시 확인받는다.", schema(
+            """{"type":"object","properties":{"reason":{"type":"string","description":"사용자가 말한 취소 사유"}},"required":["reason"]}""",
+        )) { args -> cancelTask(args.text("reason") ?: throw IllegalArgumentException("reason 이 필요합니다")) },
         McpTool("record_decision", "요구사항 승인 뒤 사용자가 요구사항 문서의 미결정 질문에 답하거나 영향 범위 밖 변경을 허락하면 그 결정을 기록한다. 사용자가 채팅에서 말했을 때만 호출하고, 호출하면 앱이 사용자에게 다시 확인받는다. 기록한 결정은 이후 단계 지시와 일심 검사가 요구사항 문서처럼 따른다.", schema(
             """{"type":"object","properties":{"question":{"type":"string","description":"답한 미결정 질문 ID(예: Q2). 영향 범위 허락처럼 질문에 대한 답이 아니면 생략"},"decision":{"type":"string","description":"사용자가 정한 내용(사용자 말 그대로, 영향 범위 허락이면 파일 경로 포함)"}},"required":["decision"]}""",
         )) { args -> recordDecision(args.text("question"), args.text("decision") ?: throw IllegalArgumentException("decision 이 필요합니다")) },
@@ -172,6 +175,7 @@ class IlsimMcp(
             return "서버에서 작업을 찾을 수 없어 활성 작업을 지웠습니다"
         }
         return when {
+            state.status == "CANCELLED" -> "취소된 작업입니다: ${task.feature}. " + release(ws, task)
             state.status == "COMPLETED" -> {
                 active.clear(ws.home)
                 guides.clear(task.taskId)
@@ -332,6 +336,20 @@ class IlsimMcp(
         server.reject(task.taskId, feedback)
         Artifacts(store).addDecision(ws.projectId, task.feature, task.taskId, UserDecision(null, feedback.trim(), stage, Instant.now().toString()))
         return "$stage 단계를 거절했습니다. 사유를 반영해 같은 단계를 다시 합니다\n\n" + nextStep()
+    }
+
+    private fun cancelTask(reason: String): String {
+        val ws = workspace()
+        val task = active.load(ws.home) ?: throw IllegalStateException("진행 중인 일심 작업이 없습니다")
+        server.cancel(task.taskId, reason.trim())
+        return "작업을 취소했습니다: ${task.feature}. " + release(ws, task)
+    }
+
+    private fun release(ws: Workspace, task: ActiveTask): String {
+        active.clear(ws.home)
+        guides.clear(task.taskId)
+        val removed = task.worktree?.let { Shell.git(ws.home, "worktree", "remove", it).exit == 0 }
+        return "브랜치 ${task.branch}는 남겨 두었습니다" + when (removed) { true -> ". 작업 폴더를 지웠습니다"; false -> ". 작업 폴더(${task.worktree})에 커밋하지 않은 변경이 있어 지우지 못하고 남겨 두었습니다"; null -> "" }
     }
 
     private fun recordDecision(question: String?, decision: String): String {

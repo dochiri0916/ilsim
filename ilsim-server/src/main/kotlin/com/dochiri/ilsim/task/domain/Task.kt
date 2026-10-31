@@ -138,6 +138,7 @@ class Task private constructor(
     fun reopen(target: Stage, feedback: String?): Task {
         if (feedback.isNullOrBlank()) throw InvalidTaskRequestException("되돌리는 사유가 필요합니다")
         if (target.approval) throw InvalidTaskStateException("승인 단계는 되돌릴 수 없습니다")
+        if (status == TaskStatus.CANCELLED) throw InvalidTaskStateException("취소한 작업입니다")
         val stage = current()
         if (stage == null || target.ordinal >= stage.stage.ordinal || stage(target).status != StageStatus.PASSED) {
             throw InvalidTaskStateException("진행 중인 단계보다 앞의 통과한 코드 단계만 되돌릴 수 있습니다")
@@ -150,6 +151,11 @@ class Task private constructor(
             }
         }
         return copy(stages = reopened, runs = RunCount.ZERO, status = TaskStatus.ACTIVE)
+    }
+
+    fun cancel(): Task {
+        if (status != TaskStatus.ACTIVE && status != TaskStatus.BLOCKED) throw InvalidTaskStateException("진행 중이거나 차단된 작업만 취소할 수 있습니다(현재 $status)")
+        return copy(status = TaskStatus.CANCELLED)
     }
 
     fun stop(): Task {
@@ -177,7 +183,7 @@ class Task private constructor(
 
     private fun waitingStage(): StageState {
         val stage = current()
-        if (stage == null || stage.status != StageStatus.WAITING_APPROVAL) throw InvalidTaskStateException("승인 대기 중인 단계가 없습니다")
+        if (status != TaskStatus.ACTIVE || stage == null || stage.status != StageStatus.WAITING_APPROVAL) throw InvalidTaskStateException("승인 대기 중인 단계가 없습니다")
         return stage
     }
 

@@ -54,6 +54,17 @@ class TaskFailurePathTest {
     }
 
     @Test
+    fun `진행 중이거나 차단된 작업만 취소하고 취소한 작업은 다시 실행하지 않는다`() {
+        poll()
+        service.report(task.id.value, pass())
+        service.cancel(task.id.value, "요청 철회")
+        assertThat(service.latest(task).status).isEqualTo(TaskStatus.CANCELLED)
+        assertThat(poll()).isNull()
+        assertThatThrownBy { service.cancel(task.id.value, null) }.isInstanceOf(InvalidTaskStateException::class.java)
+        assertThatThrownBy { service.approve(task.id.value) }.isInstanceOf(InvalidTaskStateException::class.java)
+    }
+
+    @Test
     fun `승인 대기가 아니면 승인과 거절을 받지 않는다`() {
         assertThatThrownBy { service.approve(task.id.value) }.isInstanceOf(InvalidTaskStateException::class.java)
         assertThatThrownBy { service.reject(task.id.value, "사유") }.isInstanceOf(InvalidTaskStateException::class.java)

@@ -9,4 +9,4 @@ enum class Stage(val approval: Boolean) {
 
 enum class StageStatus { PENDING, RUNNING, WAITING_APPROVAL, PASSED, FAILED }
 
-enum class TaskStatus { ACTIVE, COMPLETED, BLOCKED }
+enum class TaskStatus { ACTIVE, COMPLETED, BLOCKED, CANCELLED }

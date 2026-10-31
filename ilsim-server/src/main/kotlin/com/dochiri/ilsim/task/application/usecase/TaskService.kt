@@ -252,6 +252,12 @@ class TaskService(
     }
 
     @Synchronized
+    override fun cancel(taskId: String, reason: String?) {
+        val next = update(taskId) { it.cancel() }
+        addEvent(taskId, next.current()?.stage?.name, "log", "사용자가 작업을 취소했습니다" + reason?.takeIf { it.isNotBlank() }?.let { ": ${it.trim()}" }.orEmpty())
+    }
+
+    @Synchronized
     override fun reject(taskId: String, feedback: String?) {
         update(taskId) { it.reject(feedback) }
     }

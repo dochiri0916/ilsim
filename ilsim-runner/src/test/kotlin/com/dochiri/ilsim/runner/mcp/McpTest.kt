@@ -49,7 +49,7 @@ class McpTest {
             if (status == "PENDING") { status = "RUNNING"; executions++ }
             return AssignedTask(taskId, "p", stages[index], 1, "slug", "claude-app", "user", "${stages[index]} 지시", executionId = "e$executions")
         }
-        override fun agentTask(taskId: String) = AgentTaskState(taskId, "p", "slug", if (blocked) "BLOCKED" else if (index >= stages.size) "COMPLETED" else "ACTIVE",
+        override fun agentTask(taskId: String) = AgentTaskState(taskId, "p", "slug", if (cancelled != null) "CANCELLED" else if (blocked) "BLOCKED" else if (index >= stages.size) "COMPLETED" else "ACTIVE",
             stages.getOrNull(index), if (index >= stages.size) null else status)
         override fun event(taskId: String, stage: String, type: String, data: String) { events += "$type:$data" }
         override fun result(taskId: String, result: StageResult) {
@@ -64,6 +64,8 @@ class McpTest {
         var blocked = false
         var instruction: String? = null
         override fun retry(taskId: String, instruction: String?) { this.instruction = instruction; blocked = false; status = "PENDING" }
+        var cancelled: String? = null
+        override fun cancel(taskId: String, reason: String) { cancelled = reason }
         var reopened: Pair<String, String>? = null
         override fun reopen(taskId: String, stage: String, feedback: String) {
             check(stages.indexOf(stage) in 0 until index) { "통과한 단계가 아닙니다" }
@@ -793,6 +795,21 @@ class McpTest {
         work.resolve("src/test/ListTest.java").writeText("// TC-1\nclass ListTest {}\n")
         assertContains(call("submit_result"), "guidelines=PASSED")
         assertTrue(bodies.isNotEmpty() && bodies.all { "승인된 테스트 케이스 TC-1" in it })
+    }
+
+    @Test
+    fun `사용자가 그만두라고 하면 작업을 취소하고 작업 폴더를 지운 뒤 새 작업을 시작할 수 있다`() {
+        call("analyze_project")
+        call("start_task", """{"requirement":"slugify 추가","feature":"slug"}""")
+        assertContains(hook("pre-tool-use", """{"cwd":"$repo","tool_name":"mcp__plugin_ilsim_ilsim__cancel_task","tool_input":{"reason":"요청 철회"}}""").stdout, "\"permissionDecision\":\"ask\"")
+        val folder = work
+        assertTrue(folder != repo && folder.toFile().exists())
+        val cancelled = call("cancel_task", """{"reason":"요청 철회"}""")
+        assertContains(cancelled, "작업을 취소했습니다")
+        assertContains(cancelled, "작업 폴더를 지웠습니다")
+        assertEquals("요청 철회", server.cancelled)
+        assertTrue(!folder.toFile().exists())
+        assertContains(runCatching { call("cancel_task", """{"reason":"다시"}""") }.exceptionOrNull()!!.message!!, "진행 중인 일심 작업이 없습니다")
     }
 
     @Test

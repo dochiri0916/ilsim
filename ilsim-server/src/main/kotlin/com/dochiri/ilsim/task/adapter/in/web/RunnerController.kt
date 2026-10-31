@@ -73,6 +73,11 @@ class RunnerController(private val runner: RunnerUseCase) {
     @PostMapping("/tasks/{id}/reject")
     fun reject(@PathVariable id: String, @RequestBody request: RejectRequest) = runner.reject(id, request.feedback)
 
+    data class CancelRequest(val reason: String? = null)
+
+    @PostMapping("/tasks/{id}/cancel")
+    fun cancel(@PathVariable id: String, @RequestBody(required = false) request: CancelRequest?) = runner.cancel(id, request?.reason)
+
     data class RetryRequest(val instruction: String? = null)
 
     @PostMapping("/tasks/{id}/retry")
