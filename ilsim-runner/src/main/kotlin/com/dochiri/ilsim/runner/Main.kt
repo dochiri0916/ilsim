@@ -334,6 +334,10 @@ private fun selfTest(store: ConfigStore, args: Array<String>) {
         line("아키텍처", r.caught.size, r.total, r.missed.map { it to desc[it].orEmpty() })
     }
     val facts = FactScanner.scan(path, profile.modules)
+    DocRuleStore(store).load(id)?.let { model ->
+        val project = store.load().projects.getValue(id)
+        print("[문서 지침 처리 내역] " + DocRules.ledgerReport(DocRules.ledger(ProjectDocs.sections(projectDocs(store.load(), id, path, project)), model)))
+    }
     listOfNotNull(ConventionStore(store).load(id)?.let { "코드 컨벤션" to it.rules }, DocRuleStore(store).load(id)?.let { "문서 지침 검증기" to it.rules }).forEach { (name, rules) ->
         val r = ConventionSelfTest.run(facts, rules)
         val desc = rules.associate { it.id to it.description }
@@ -635,6 +639,7 @@ fun analyzeDocRules(store: ConfigStore, id: String, out: Appendable) {
     val file = rules.update(id) { latest -> DocRules.carryOver(latest, extracted).copy(files = docs.keys.sorted()).also { model = it } }
     out.appendLine("저장: $file (프로젝트 $id 문서 지침 검증기, 문서 구간 ${sections.size}개)")
     out.append(DocRules.report(checkNotNull(model)))
+    out.append(DocRules.ledgerReport(DocRules.ledger(sections, checkNotNull(model))))
     checkNotNull(model).rules.takeIf { it.isNotEmpty() }?.let { docRules ->
         val r = ConventionSelfTest.run(facts, docRules)
         val desc = docRules.associate { it.id to it.description }

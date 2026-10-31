@@ -335,6 +335,45 @@ object DocRules {
         }
     }
 
+    data class LedgerEntry(val path: String, val line: Int, val heading: String, val text: String, val status: String)
+
+    const val STATIC = "정적 규칙"
+    const val STATIC_REJECTED = "정적 규칙 거절됨(JEV 판정)"
+    const val TO_JEV = "JEV 판정으로 넘김"
+    const val NOT_RULE = "규칙 구간이 아니라고 판정"
+    const val DROPPED = "기록 없이 빠짐"
+
+    fun ledger(sections: List<DocSection>, model: DocRuleModel): List<LedgerEntry> {
+        val coverage = model.documents.associateBy { it.hash }
+        return sections.flatMap { s ->
+            val covered = coverage[sectionHash(s)]
+            StaticDocRules.clauses(s).map { clause ->
+                val matched = model.rules.filter { r -> r.origin?.let { o -> o.path == s.path && (quoted(clause, o.quote) || quoted(o.quote, clause)) } == true }
+                val status = when {
+                    matched.any { !it.rejected } -> STATIC
+                    matched.isNotEmpty() -> STATIC_REJECTED
+                    covered == null -> NOT_RULE
+                    covered.remaining.any { quoted(clause, it) || quoted(it, clause) } -> TO_JEV
+                    else -> DROPPED
+                }
+                LedgerEntry(s.path, s.line, s.heading, clause, status)
+            }
+        }
+    }
+
+    fun ledgerReport(entries: List<LedgerEntry>): String = buildString {
+        if (entries.isEmpty()) return@buildString
+        val counts = entries.groupingBy { it.status }.eachCount()
+        appendLine("문서 규칙 문장 처리 내역: ${entries.size}개 중 " + listOf(STATIC, STATIC_REJECTED, TO_JEV, NOT_RULE, DROPPED).filter { (counts[it] ?: 0) > 0 }.joinToString(", ") { "$it ${counts[it]}" })
+        listOf(DROPPED, NOT_RULE).forEach { status ->
+            val shown = entries.filter { it.status == status }
+            if (shown.isEmpty()) return@forEach
+            appendLine("  $status (정적 규칙도 JEV 기록도 없음, 제출 때 작업과 관련 있다고 고른 구간만 JEV가 판정):")
+            shown.take(MAX_REMAINING).forEach { appendLine("    ${it.path}:${it.line} ${it.text}") }
+            if (shown.size > MAX_REMAINING) appendLine("    …외 ${shown.size - MAX_REMAINING}개")
+        }
+    }
+
     fun report(model: DocRuleModel): String = buildString {
         val rules = model.rules
         val remaining = model.documents.flatMap { d -> d.remaining.map { "${d.path}:${d.line} $it" } }

@@ -26,13 +26,17 @@ internal object StaticDocRules {
     fun extract(section: DocSection): Result {
         val proposals = mutableListOf<DocRules.Proposal>()
         val uncovered = mutableListOf<String>()
-        val clauses = sentences(section.text).filter(::ruleLike).map { Clause(it, "") } + tableClauses(section.text).filter { forbids.containsMatchIn(it.text) }
-        for (clause in clauses) {
+        for (clause in candidates(section)) {
             val found = forbidden(section, clause.text, clause.context)
             if (found.isEmpty()) uncovered += clause.text else proposals += found
         }
         return Result(proposals, uncovered)
     }
+
+    private fun candidates(section: DocSection): List<Clause> =
+        sentences(section.text).filter(::ruleLike).map { Clause(it, "") } + tableClauses(section.text).filter { forbids.containsMatchIn(it.text) }
+
+    fun clauses(section: DocSection): List<String> = candidates(section).map { it.text }.distinct()
 
     private fun tableClauses(text: String): List<Clause> {
         val lines = text.lines().map { it.trim() }
